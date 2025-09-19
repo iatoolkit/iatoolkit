@@ -1,19 +1,19 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=68", "wheel", "build"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "iatoolkit-core"
 version = "0.2.0"
 description = "Un toolkit de herramientas de IA"
-readme = "README.md"
+readme = "readme.md"
 requires-python = ">=3.12"
 license = {text = "MIT"}
 authors = [
     {name = "Fernando Libedinsky", email = "fernando.libedinsky@gmail.com"}
 ]
 maintainers = [
-    {name = "Tu Nombre", email = "tu.email@ejemplo.com"}
+    {name = "Fernando Libedinsky", email = "fernando.libedinsky@gmail.com"}
 ]
 keywords = ["ai", "toolkit", "machine-learning"]
 classifiers = [
@@ -21,22 +21,15 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
 dynamic = ["dependencies"]
 
-
 [project.urls]
 Homepage = "https://github.com/flibedinsky/iatoolkit-core"
-Documentation = "https://github.com/flibedinsky/iatoolkit-core/blob/main/README.md"
+Documentation = "https://github.com/flibedinsky/iatoolkit-core/blob/main/readme.md"
 Repository = "https://github.com/flibedinsky/iatoolkit-core.git"
 "Bug Tracker" = "https://github.com/flibedinsky/iatoolkit-core/issues"
-
-
-[tool.setuptools]
-py-modules = ["iatoolkit"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -46,9 +39,3 @@ where = ["src"]
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}
-
-[build-system]
-requires = ["setuptools>=68", "wheel", "build"]
-build-backend = "setuptools.build_meta"
-
-

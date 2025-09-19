@@ -53,7 +53,7 @@ class IAToolkit:
         self._injector: Optional[Injector] = None
         self._startup_executed = False
 
-    def create_app(self) -> Flask:
+    def create_iatoolkit(self):
 
         # 1. Configurar logging
         self._setup_logging()
@@ -92,7 +92,7 @@ class IAToolkit:
         self._start_companies()
 
         logging.info(f"🎉 IAToolkit v{VERSION} inicializado correctamente")
-        return self.app
+        return self
 
     def _get_config_value(self, key: str, default=None):
         """Obtiene un valor de configuración, primero del dict config, luego de env vars"""
@@ -406,11 +406,11 @@ class IAToolkit:
 
 
 # 🚀 Función de conveniencia para inicialización rápida
-def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:
+def create_app(config: Optional[Dict[str, Any]] = None) -> IAToolkit:
     toolkit = IAToolkit(config)
-    return toolkit.create_app()
+    return toolkit.create_iatoolkit()
 
 if __name__ == "__main__":
     toolkit = IAToolkit()
-    app = toolkit.create_app()
+    app = toolkit.create_iatoolkit()
     app.run()
