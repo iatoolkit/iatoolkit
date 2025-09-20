@@ -1,8 +1,10 @@
 name: Publish to PyPI
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
 
 permissions:
   id-token: write
@@ -13,29 +15,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-
-      - name: Clean
-        run: rm -rf dist build *.egg-info
-
-      - name: Show version
-        run: |
-          python - << 'PY'
-          import tomllib, pathlib
-          data = tomllib.loads(pathlib.Path("pyproject.toml").read_text())
-          print("Version:", data["project"]["version"])
-          PY
-
-      - name: Build
+          python-version: "3.12"
+      - name: Build package
         run: |
           python -m pip install --upgrade pip build
           python -m build
-          ls -l dist
-
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          skip-existing: true
