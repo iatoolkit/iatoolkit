@@ -3,7 +3,7 @@
 # Todos los derechos reservados.
 # En trámite de registro en el Registro de Propiedad Intelectual de Chile.
 
-from iatoolkit.context import current_iatoolkit
+from iatoolkit import current_iatoolkit
 from infra.llm_proxy import LLMProxy
 from repositories.models import Company, LLMQuery
 from repositories.llm_query_repo import LLMQueryRepo
@@ -19,10 +19,8 @@ from common.exceptions import IAToolkitException
 import threading
 import re
 import tiktoken
-from typing import Dict, Optional, List, TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from services.dispatcher_service import Dispatcher
+from typing import Dict, Optional, List
+from services.dispatcher_service import Dispatcher
 
 
 class llmClient:
@@ -38,7 +36,7 @@ class llmClient:
         self.llmquery_repo = llmquery_repo
         self.llm_proxy_factory = llm_proxy_factory
         self.util = util
-        self._dispatcher: Optional['Dispatcher'] = None # Cache for the lazy-loaded dispatcher
+        self._dispatcher = None # Cache for the lazy-loaded dispatcher
 
         # get the model from the environment variable
         self.model = os.getenv("LLM_MODEL", "")
@@ -57,7 +55,7 @@ class llmClient:
         """Lazy-loads and returns the Dispatcher instance."""
         if self._dispatcher is None:
             # Use the global context proxy to get the injector, then get the service
-            self._dispatcher = current_iatoolkit._get_injector().get("Dispatcher")
+            self._dispatcher = current_iatoolkit()._get_injector().get(Dispatcher)
         return self._dispatcher
 
 

@@ -3,7 +3,7 @@
 # Todos los derechos reservados.
 # En trámite de registro en el Registro de Propiedad Intelectual de Chile.
 
-from iatoolkit.context import current_iatoolkit
+from iatoolkit import current_iatoolkit
 from common.exceptions import IAToolkitException
 from services.prompt_manager_service import PromptService
 from repositories.llm_query_repo import LLMQueryRepo
@@ -53,7 +53,7 @@ class Dispatcher:
             return
 
         # ✅ NOW it is safe to get the injector and instantiate companies.
-        injector = current_iatoolkit._get_injector()
+        injector = current_iatoolkit()._get_injector()
         self.company_registry.set_injector(injector)
         self.company_classes = self.company_registry.instantiate_companies()
         logging.info(f"Dispatcher late-initialized with {len(self.company_classes)} companies")

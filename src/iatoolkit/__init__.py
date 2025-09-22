@@ -6,7 +6,7 @@ IAToolkit Package
 
 # Assuming 'toolkit.py' contains the IAToolkit class
 from .iatoolkit import IAToolkit, create_app
-from iatoolkit.context import current_iatoolkit
+from .iatoolkit import current_iatoolkit
 
 # Assuming 'app_factory.py' contains create_app and register_company
 from .company_registry import register_company

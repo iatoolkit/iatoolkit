@@ -2,7 +2,7 @@
 # Producto: IAToolkit Core
 # Framework opensource para chatbots empresariales con IA
 
-from flask import Flask, url_for
+from flask import Flask, url_for, current_app
 from flask_session import Session
 from flask_injector import FlaskInjector
 from flask_bcrypt import Bcrypt
@@ -18,27 +18,52 @@ import os
 import click
 from typing import Optional, Dict, Any
 from repositories.database_manager import DatabaseManager
-from .context import _iatoolkit_ctx_stack
 from injector import Binder, singleton, Injector
 from .toolkit_config import IAToolkitConfig
 
 VERSION = "2.0.0"
+
+# global variable for yhe unique instance of IAToolkit
+_iatoolkit_instance: Optional['IAToolkit'] = None
 
 
 class IAToolkit:
     """
     IAToolkit main class
     """
+    def __new__(cls, config: Optional[Dict[str, Any]] = None):
+        """
+        Implementa el patrón Singleton
+        """
+        global _iatoolkit_instance
+        if _iatoolkit_instance is None:
+            _iatoolkit_instance = super().__new__(cls)
+            _iatoolkit_instance._initialized = False
+        return _iatoolkit_instance
+
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
         Args:
             config: Diccionario opcional de configuración que sobrescribe variables de entorno
         """
+        if self._initialized:
+            return
+
         self.config = config or {}
         self.app: Optional[Flask] = None
         self.db_manager: Optional[DatabaseManager] = None
         self._injector: Optional[Injector] = None
+
+    @classmethod
+    def get_instance(cls) -> 'IAToolkit':
+        """
+        Obtiene la instancia única de IAToolkit
+        """
+        global _iatoolkit_instance
+        if _iatoolkit_instance is None:
+            _iatoolkit_instance = cls()
+        return _iatoolkit_instance
 
     def create_iatoolkit(self):
         """
@@ -73,15 +98,13 @@ class IAToolkit:
 
         # Step 7: Finalize setup within the application context
         with self.app.app_context():
-            # Push the toolkit instance to the global context stack
-            _iatoolkit_ctx_stack.push(self)
-
             self._setup_redis_sessions()
             self._setup_cors()
             self._setup_additional_services()
             self._setup_cli_commands()
             self._setup_context_processors()
 
+        self.app.extensions['iatoolkit'] = self
         logging.info(f"🎉 IAToolkit v{VERSION} inicializado correctamente")
         return self.app
 
@@ -103,14 +126,12 @@ class IAToolkit:
 
     def _register_routes(self):
         """Registers routes by passing the configured injector."""
-        from common.routes import main_bp, register_views
+        from common.routes import register_views
 
         # Pass the injector to the view registration function
-        register_views(self._injector)
+        register_views(self._injector, self.app)
 
-        # Register the blueprint with the app
-        self.app.register_blueprint(main_bp)
-        logging.info("✅ Routes and blueprint registered.")
+        logging.info("✅ Routes registered.")
 
     def _create_flask_instance(self):
         static_folder = self._get_config_value('STATIC_FOLDER') or self._get_default_static_folder()
@@ -267,7 +288,7 @@ class IAToolkit:
         binder.bind(LoadDocumentsService, to=LoadDocumentsService)
         binder.bind(ProfileService, to=ProfileService)
         binder.bind(JWTService, to=JWTService)
-        binder.bind(Dispatcher, to=Dispatcher)
+        binder.bind(Dispatcher, to=Dispatcher, scope=singleton)
 
     def _bind_infrastructure(self, binder: Binder):
         from infra.llm_client import llmClient
@@ -368,6 +389,10 @@ class IAToolkit:
                 "Database manager no inicializado"
             )
         return self.db_manager
+
+
+def current_iatoolkit() -> IAToolkit:
+    return IAToolkit.get_instance()
 
 # 🚀 Función de conveniencia para inicialización rápida
 def create_app(config: Optional[Dict[str, Any]] = None) -> Flask:

@@ -9,8 +9,6 @@ from flask import jsonify
 from views.history_view import HistoryView
 import os
 
-# 1. Create a Blueprint
-main_bp = Blueprint('', __name__)
 
 def logout(company_short_name: str):
     SessionManager.clear()
@@ -21,9 +19,8 @@ def logout(company_short_name: str):
         return redirect(url_for('home'))
 
 
-
 # 2. Define a function to register all views to the Blueprint
-def register_views(injector):
+def register_views(injector, app):
 
     from views.llmquery_view import LLMQueryView
     from views.tasks_view import TaskView
@@ -69,70 +66,55 @@ def register_views(injector):
     download_file_view = injector.get(DownloadFileView)
     chat_info_view = injector.get(ChatInfoView)
 
-    main_bp.add_url_rule('/', view_func=home_view.as_view('home'))
+    app.add_url_rule('/', view_func=home_view.as_view('home'))
 
     # main chat for iatoolkit front
-    main_bp.add_url_rule('/<company_short_name>/chat', view_func=chat_view.as_view('chat'))
+    app.add_url_rule('/<company_short_name>/chat', view_func=chat_view.as_view('chat'))
 
     # front if the company internal portal
-    main_bp.add_url_rule('/<company_short_name>/chat_login', view_func=external_chat_login_view.as_view('external_chat_login'))
-    main_bp.add_url_rule('/<company_short_name>/external_login/<external_user_id>', view_func=external_login_view.as_view('external_login'))
-    main_bp.add_url_rule('/auth/chat_token', view_func=chat_token_request_view.as_view('chat-token'))
+    app.add_url_rule('/<company_short_name>/chat_login', view_func=external_chat_login_view.as_view('external_chat_login'))
+    app.add_url_rule('/<company_short_name>/external_login/<external_user_id>', view_func=external_login_view.as_view('external_login'))
+    app.add_url_rule('/auth/chat_token', view_func=chat_token_request_view.as_view('chat-token'))
 
     # main pages for the iatoolkit frontend
-    main_bp.add_url_rule('/<company_short_name>/login', view_func=login_view.as_view('login'))
-    main_bp.add_url_rule('/<company_short_name>/signup',view_func=signup_view.as_view('signup'))
-    main_bp.add_url_rule('/<company_short_name>/logout', 'logout', logout)
-    main_bp.add_url_rule('/logout', 'logout', logout)
-    main_bp.add_url_rule('/<company_short_name>/verify/<token>', view_func=verify_account_view.as_view('verify_account'))
-    main_bp.add_url_rule('/<company_short_name>/forgot-password', view_func=forgot_password_view.as_view('forgot_password'))
-    main_bp.add_url_rule('/<company_short_name>/change-password/<token>', view_func=change_password_view.as_view('change_password'))
-    main_bp.add_url_rule('/<company_short_name>/select_company', view_func=select_company_view.as_view('select_company'))
+    app.add_url_rule('/<company_short_name>/login', view_func=login_view.as_view('login'))
+    app.add_url_rule('/<company_short_name>/signup',view_func=signup_view.as_view('signup'))
+    app.add_url_rule('/<company_short_name>/logout', 'logout', logout)
+    app.add_url_rule('/logout', 'logout', logout)
+    app.add_url_rule('/<company_short_name>/verify/<token>', view_func=verify_account_view.as_view('verify_account'))
+    app.add_url_rule('/<company_short_name>/forgot-password', view_func=forgot_password_view.as_view('forgot_password'))
+    app.add_url_rule('/<company_short_name>/change-password/<token>', view_func=change_password_view.as_view('change_password'))
+    app.add_url_rule('/<company_short_name>/select_company', view_func=select_company_view.as_view('select_company'))
 
     # this are backend endpoints mainly
-    main_bp.add_url_rule('/<company_short_name>/llm_query', view_func=llmquery_view.as_view('llm_query'))
-    main_bp.add_url_rule('/<company_short_name>/feedback', view_func=user_feedback_view.as_view('feedback'))
-    main_bp.add_url_rule('/<company_short_name>/prompts', view_func=prompt_view.as_view('prompt'))
-    main_bp.add_url_rule('/<company_short_name>/history', view_func=history_view.as_view('history'))
-    main_bp.add_url_rule('/tasks', view_func=tasks_view.as_view('tasks'))
-    main_bp.add_url_rule('/tasks/review/<int:task_id>', view_func=task_review_view.as_view('tasks-review'))
-    main_bp.add_url_rule('/load', view_func=file_store_view.as_view('load'))
-    main_bp.add_url_rule('/chat-info', view_func=chat_info_view.as_view('chat-info'))
+    app.add_url_rule('/<company_short_name>/llm_query', view_func=llmquery_view.as_view('llm_query'))
+    app.add_url_rule('/<company_short_name>/feedback', view_func=user_feedback_view.as_view('feedback'))
+    app.add_url_rule('/<company_short_name>/prompts', view_func=prompt_view.as_view('prompt'))
+    app.add_url_rule('/<company_short_name>/history', view_func=history_view.as_view('history'))
+    app.add_url_rule('/tasks', view_func=tasks_view.as_view('tasks'))
+    app.add_url_rule('/tasks/review/<int:task_id>', view_func=task_review_view.as_view('tasks-review'))
+    app.add_url_rule('/load', view_func=file_store_view.as_view('load'))
+    app.add_url_rule('/chat-info', view_func=chat_info_view.as_view('chat-info'))
 
     # for simulation of external endpoints
-    main_bp.add_url_rule(
+    app.add_url_rule(
         '/simulated-url/<company_short_name>/<object_name>',
         view_func=url_simulation_view.as_view('simulated-url')
     )
 
-    main_bp.add_url_rule(
+    app.add_url_rule(
         '/about',  # URL de la ruta
         view_func=lambda: render_template('about.html'))
 
-    main_bp.add_url_rule('/<company_short_name>/<external_user_id>/download-file/<path:filename>',
-                     view_func=download_file_view.as_view('download-file'))
+    app.add_url_rule('/version', 'version',
+                     lambda: jsonify({"version": app.config['VERSION']}))
 
+    app.add_url_rule('/<company_short_name>/<external_user_id>/download-file/<path:filename>',
+                     view_func=DownloadFileView.as_view('download-file'))
 
+    @app.route('/download/<path:filename>')
+    def download_file(filename):
+        temp_dir = os.path.join(current_app.root_path, 'static', 'temp')
+        return send_from_directory(temp_dir, filename, as_attachment=True)
 
-@main_bp.route('/about')
-def about():
-    return render_template('about.html', version=current_app.config.get('VERSION'))
-
-@main_bp.route('/version')
-def version():
-    return jsonify({"version": ''})
-
-@main_bp.route('/<company_short_name>/logout')
-def logout(company_short_name: str):
-    SessionManager.clear()
-    flash("Has cerrado sesión correctamente", "info")
-    if company_short_name:
-        return redirect(url_for('login', company_short_name=company_short_name))
-    else:
-        return redirect(url_for('home'))
-
-@main_bp.route('/download/<path:filename>')
-def download_file(filename):
-    temp_dir = os.path.join(current_app.root_path, 'static', 'temp')
-    return send_from_directory(temp_dir, filename, as_attachment=True)
 

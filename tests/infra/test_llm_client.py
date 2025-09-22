@@ -91,7 +91,7 @@ class TestLLMClient:
         toolkit_mock._get_injector.return_value = injector_mock
 
         # 4. Use patch to replace `current_iatoolkit` with our mock toolkit
-        with patch('infra.llm_client.current_iatoolkit', toolkit_mock):
+        with patch('infra.llm_client.current_iatoolkit', return_value=toolkit_mock):
             # 5. Define the sequence of LLM responses
             tool_call = ToolCall('call1', 'function_call', 'test_func', '{"a": 1}')
             response_with_tools = LLMResponse('r1', 'gpt-4o', 'completed', '', [tool_call], Usage(10, 5, 15))
