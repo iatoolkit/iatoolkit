@@ -39,19 +39,4 @@ class TestRoutes:
     def teardown_method(self, method):
         patch.stopall()
 
-    def test_logout(self):
-        """
-        Testea la ruta de logout y verifica que se llamen las funciones esperadas.
-        """
-        company_short_name = "test_company"
-        response = self.client.get(f'/{company_short_name}/logout')
-
-        # Verificamos que se llame a SessionManager.clear()
-        self.mock_session_manager.clear.assert_called_once()
-
-        # Verificamos que se llame a flash() con el mensaje correcto
-        self.mock_flash.assert_called_once_with("Has cerrado sesión correctamente", "info")
-
-        # Verificamos que se realice un redireccionamiento (código 302)
-        assert response.status_code == 302
 

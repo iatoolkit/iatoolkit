@@ -10,17 +10,17 @@ from flask_cors import CORS
 from common.auth import IAuthentication
 from common.util import Utility
 from common.exceptions import IAToolkitException
+from common.session_manager import SessionManager
 from urllib.parse import urlparse
 import redis
 import logging
 import os
 import click
-from functools import partial
 from typing import Optional, Dict, Any
-from injector import Binder, singleton, Injector
 from repositories.database_manager import DatabaseManager
 from .context import _iatoolkit_ctx_stack
-
+from injector import Binder, singleton, Injector
+from .toolkit_config import IAToolkitConfig
 
 VERSION = "2.0.0"
 
@@ -41,26 +41,50 @@ class IAToolkit:
         self._injector: Optional[Injector] = None
 
     def create_iatoolkit(self):
-
+        """
+            Creates, configures, and returns the Flask application instance.
+            his is the main entry point for the application factory.
+        """
         self._setup_logging()
+
+        # Step 1: Create the Flask app instance
         self._create_flask_instance()
 
-        # save current iatoolkit instance in the stack
-        ctx = self.app.app_context()
-        ctx.push()
-        _iatoolkit_ctx_stack.push(self)
-
+        # Step 2: Set up the core components that DI depends on
         self._setup_database()
-        self._setup_dependency_injection()
+
+        # Step 3: Create the Injector with CORE dependencies (NO VIEWS)
+        toolkit_config_module = IAToolkitConfig(app=self.app, db_manager=self.db_manager)
+        self._injector = Injector([
+            toolkit_config_module,
+            self._configure_core_dependencies # This method binds services, repos, etc.
+
+        ])
+
+        # Step 4: Explicitly bind the views to the injector.
+        self._bind_views(self._injector.binder)
+
+        # Step 5: Register routes using the fully configured injector
         self._register_routes()
-        self._setup_redis_sessions()
-        self._setup_cors()
-        self._setup_additional_services()
-        self._setup_cli_commands()
-        self._setup_context_processors()
+
+        # Step 6: Initialize FlaskInjector. This is now primarily for request-scoped injections
+        # and other integrations, as views are handled manually.
+        FlaskInjector(app=self.app, injector=self._injector)
+
+        # Step 7: Finalize setup within the application context
+        with self.app.app_context():
+            # Push the toolkit instance to the global context stack
+            _iatoolkit_ctx_stack.push(self)
+
+            self._setup_redis_sessions()
+            self._setup_cors()
+            self._setup_additional_services()
+            self._setup_cli_commands()
+            self._setup_context_processors()
 
         logging.info(f"🎉 IAToolkit v{VERSION} inicializado correctamente")
         return self.app
+
 
     def _get_config_value(self, key: str, default=None):
         """Obtiene un valor de configuración, primero del dict config, luego de env vars"""
@@ -76,6 +100,17 @@ class IAToolkit:
             handlers=[logging.StreamHandler()],
             force=True
         )
+
+    def _register_routes(self):
+        """Registers routes by passing the configured injector."""
+        from common.routes import main_bp, register_views
+
+        # Pass the injector to the view registration function
+        register_views(self._injector)
+
+        # Register the blueprint with the app
+        self.app.register_blueprint(main_bp)
+        logging.info("✅ Routes and blueprint registered.")
 
     def _create_flask_instance(self):
         static_folder = self._get_config_value('STATIC_FOLDER') or self._get_default_static_folder()
@@ -173,35 +208,12 @@ class IAToolkit:
 
         logging.info(f"✅ CORS configurado para: {all_origins}")
 
-    def _setup_dependency_injection(self):
-        """
-        Sets up the dependency injection system in the correct order.
-        Views are configured separately via FlaskInjector's modules.
-        """
-        # 1. Create a configuration module for all non-view components.
-        core_bindings = partial(self._configure_core_dependencies)
-
-        # 2. Create the main injector with only the core components.
-        self._injector = Injector([core_bindings])
-
-        # 3. Create a separate configuration module just for the views.
-        view_bindings = partial(self._bind_views)
-
-        # 4. Initialize FlaskInjector. It receives the main injector and is given
-        #    the special responsibility of handling the view bindings.
-        FlaskInjector(
-            app=self.app,
-            injector=self._injector,
-            modules=[view_bindings]
-        )
-        logging.info("✅ Dependency Injection configured.")
 
     def _configure_core_dependencies(self, binder: Binder):
         """⚙️ Configures all system dependencies."""
         try:
             # Core dependencies
             binder.bind(Injector, to=self._injector, scope=singleton)
-            binder.bind(DatabaseManager, to=self.db_manager, scope=singleton)
 
             # Bind all application components by calling the specific methods
             self._bind_repositories(binder)
@@ -281,10 +293,6 @@ class IAToolkit:
         binder.bind(ChangePasswordView, to=ChangePasswordView)
         binder.bind(LLMQueryView, to=LLMQueryView)
 
-    def _register_routes(self):
-        from common.routes import register_routes
-        register_routes(self.app)
-
     def _setup_additional_services(self):
         Bcrypt(self.app)
 
@@ -314,23 +322,24 @@ class IAToolkit:
             return {
                 'url_for': url_for,
                 'iatoolkit_version': VERSION,
-                'app_name': 'IAToolkit'
+                'app_name': 'IAToolkit',
+                'user': SessionManager.get('user'),
+                'user_company': SessionManager.get('company_short_name'),
             }
-
 
     def _get_default_static_folder(self) -> str:
         try:
-            # Buscar en el paquete src
-            current_dir = os.path.dirname(__file__)
-            return os.path.join(current_dir, 'static')
+            current_dir = os.path.dirname(os.path.abspath(__file__))  # .../src/iatoolkit
+            src_dir = os.path.dirname(current_dir)  # .../src
+            return os.path.join(src_dir, "static")
         except:
             return 'static'
 
     def _get_default_template_folder(self) -> str:
         try:
-            # Buscar en el paquete src
-            current_dir = os.path.dirname(__file__)
-            return os.path.join(current_dir, 'templates')
+            current_dir = os.path.dirname(os.path.abspath(__file__))  # .../src/iatoolkit
+            src_dir = os.path.dirname(current_dir)  # .../src
+            return os.path.join(src_dir, "templates")
         except:
             return 'templates'
 

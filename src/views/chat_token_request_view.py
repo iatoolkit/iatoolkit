@@ -20,8 +20,6 @@ class ChatTokenRequestView(MethodView):
     def __init__(self, profile_repo: ProfileRepo, jwt_service: JWTService):
         self.profile_repo = profile_repo
         self.jwt_service = jwt_service
-        # Acceder a la configuración de la app Flask para JWT_EXPIRATION_SECONDS_CHAT
-        self.jwt_expiration_seconds = current_app.config.get('JWT_EXPIRATION_SECONDS_CHAT', 3600)
 
     def _authenticate_requesting_company_via_api_key(self) -> tuple[
         Optional[int], Optional[str], Optional[tuple[dict, int]]]:
@@ -83,13 +81,15 @@ class ChatTokenRequestView(MethodView):
             return jsonify({
                     "error": f"API Key no autorizada para generar tokens para la compañía '{target_company_short_name}'"}), 403
 
+        jwt_expiration_seconds = current_app.config.get('JWT_EXPIRATION_SECONDS_CHAT', 3600)
+
         # Aquí, auth_company_id es el ID de la compañía para la que se generará el token.
         # auth_company_short_name es su nombre corto.
         token = self.jwt_service.generate_chat_jwt(
             company_id=auth_company_id,
             company_short_name=auth_company_short_name,  # Usamos el short_name autenticado
             external_user_id=external_user_id,
-            expires_delta_seconds=self.jwt_expiration_seconds
+            expires_delta_seconds=jwt_expiration_seconds
         )
 
         if token:

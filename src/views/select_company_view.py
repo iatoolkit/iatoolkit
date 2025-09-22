@@ -24,8 +24,6 @@ class SelectCompanyView(MethodView):
         self.profile_repo = profile_repo
         self.iauthentication = iauthentication
         self.query_repo = query_repo
-        self.config_data = self.fill_config_data()
-        self.super_user = SessionManager.get('user', {}).get('super_user')
 
     def get(self, company_short_name):
         iaut = self.iauthentication.verify(company_short_name)
@@ -37,18 +35,21 @@ class SelectCompanyView(MethodView):
         if not company:
             return render_template('error.html', message="Empresa no encontrada"), 404
 
+        super_user = SessionManager.get('user', {}).get('super_user')
+        config_data = self.fill_config_data()  # It's safer to call this here
+
         # get from session the company user is logged to
         user_agent = request.user_agent
         is_mobile = user_agent.platform in ["android", "iphone", "ipad"] or "mobile" in user_agent.string.lower()
         alert_message = request.args.get('alert_message', None)
         return render_template("select_company.html",
-                               companies=self.config_data,
+                               companies=config_data,
                                user_company=company_short_name,
                                company=company,
                                company_short_name=company_short_name,
                                alert_message=alert_message,
                                alert_icon='success' if alert_message else None,
-                               super_user=self.super_user,
+                               super_user=super_user,
                                is_mobile=is_mobile)
 
     def post(self, company_short_name):

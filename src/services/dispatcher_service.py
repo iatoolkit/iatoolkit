@@ -33,19 +33,42 @@ class Dispatcher:
         self.system_functions = _FUNCTION_LIST
         self.system_prompts = _SYSTEM_PROMPT
 
-        # Usar registry en lugar de autodiscovery
+        # Use the global registry
         self.company_registry = get_company_registry()
 
-        # get the application injector
-        injector = current_iatoolkit._get_injector()
-        self.company_registry.set_injector(injector)
-        self.company_classes = self.company_registry.instantiate_companies()
-        logging.info(f"Dispatcher configurado con {len(self.company_classes)} empresas")
+        # The dispatcher starts "empty" and will be initialized later.
+        self.company_classes = {}
 
         self.tool_handlers = {
             "iat_generate_excel": self.excel_service.excel_generator,
             "iat_send_email": self.mail_service.send_mail,
         }
+
+    def initialize_companies(self):
+        """
+        Initializes and instantiates all registered company classes.
+        This method should be called *after* the main injector is fully configured.
+        """
+        if self.company_classes: # Prevent re-initialization
+            return
+
+        # ✅ NOW it is safe to get the injector and instantiate companies.
+        injector = current_iatoolkit._get_injector()
+        self.company_registry.set_injector(injector)
+        self.company_classes = self.company_registry.instantiate_companies()
+        logging.info(f"Dispatcher late-initialized with {len(self.company_classes)} companies")
+
+    def start_execution(self):
+        """Runs the startup logic for all registered companies."""
+        # Ensure companies are initialized before starting them
+        if not self.company_classes:
+            self.initialize_companies()
+
+        for company_name, company_instance in self.company_classes.items():
+            logging.info(f'Starting execution for company: {company_name}')
+            company_instance.start_execution()
+
+        return True
 
     def init_db(self):
         # create system functions
@@ -76,13 +99,6 @@ class Dispatcher:
             print(f'inicializando clase: {company.__class__.__name__}')
             company.init_db()
 
-    def start_execution(self):
-        """Ejecuta la inicialización de todas las empresas registradas"""
-        for company_name, company_instance in self.company_classes.items():
-            logging.info(f'Iniciando ejecución para empresa: {company_name}')
-            company_instance.start_execution()
-
-        return True
 
     def dispatch(self, company_name: str, action: str, **kwargs) -> str:
         company_key = company_name.lower()
