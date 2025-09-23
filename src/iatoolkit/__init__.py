@@ -22,7 +22,11 @@ from services.dispatcher_service import Dispatcher
 from services.document_service import DocumentService
 from services.search_service import SearchService
 from repositories.profile_repo import ProfileRepo
+from repositories.llm_query_repo import LLMQueryRepo
 from repositories.database_manager import DatabaseManager
+from infra.call_service import CallServiceClient
+from common.util import Utility
+from repositories.models import Base, Company, Function, TaskType
 
 
 __all__ = [
@@ -37,5 +41,12 @@ __all__ = [
     'DocumentService',
     'SearchService',
     'ProfileRepo',
+    'LLMQueryRepo',
     'DatabaseManager',
+    'CallServiceClient',
+    'Utility',
+    'Company',
+    'Function',
+    'TaskType',
+    'Base',
 ]

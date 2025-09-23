@@ -6,6 +6,7 @@
 from iatoolkit import current_iatoolkit
 from common.exceptions import IAToolkitException
 from services.prompt_manager_service import PromptService
+from services.api_service import ApiService
 from repositories.llm_query_repo import LLMQueryRepo
 from repositories.models import Company, Function
 from services.excel_service import ExcelService
@@ -23,10 +24,12 @@ class Dispatcher:
                  prompt_service: PromptService,
                  llmquery_repo: LLMQueryRepo,
                  util: Utility,
+                 api_service: ApiService,
                  excel_service: ExcelService,
                  mail_service: MailService):
         self.prompt_service = prompt_service
         self.llmquery_repo = llmquery_repo
+        self.api_service = api_service
         self.util = util
         self.excel_service = excel_service
         self.mail_service = mail_service
@@ -43,6 +46,7 @@ class Dispatcher:
         self.tool_handlers = {
             "iat_generate_excel": self.excel_service.excel_generator,
             "iat_send_email": self.mail_service.send_mail,
+            "iat_api_call": self.api_service.call_api
         }
 
     def initialize_companies(self):
@@ -308,5 +312,50 @@ _FUNCTION_LIST = [
             },
             "required": ["from_email","recipient", "subject", "body", "attachments"]
         }
-     }
+     },
+    {
+        "name": "Llamada genérica a API",
+        "description": (
+            "Realiza una llamada HTTP genérica a un endpoint externo. "
+            "Permite usar distintos métodos (GET, POST, PUT, DELETE), "
+            "pasar cabeceras, parámetros de query y cuerpo de la petición. "
+            "El resultado será el contenido JSON devuelto por la API."
+        ),
+        "function_name": "iat_api_call",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "format": "uri",
+                    "description": "URL completa del endpoint (ej: 'https://api.ejemplo.com/data')"
+                },
+                "method": {
+                    "type": "string",
+                    "enum": ["GET", "POST", "PUT", "DELETE"],
+                    "description": "Método HTTP a utilizar"
+                },
+                "headers": {
+                    "type": "object",
+                    "description": "Diccionario opcional de cabeceras HTTP",
+                    "additionalProperties": {"type": "string"}
+                },
+                "params": {
+                    "type": "object",
+                    "description": "Parámetros opcionales de query string (ej: {'q': 'python'})",
+                    "additionalProperties": {"type": "string"}
+                },
+                "body": {
+                    "type": "object",
+                    "description": "Cuerpo de la petición (para POST/PUT). JSON arbitrario.",
+                    "additionalProperties": True
+                },
+                "timeout": {
+                    "type": "number",
+                    "description": "Tiempo máximo de espera en segundos (default: 10)"
+                }
+            },
+            "required": ["url", "method"]
+        }
+    }
 ]

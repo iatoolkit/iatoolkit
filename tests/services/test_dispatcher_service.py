@@ -11,6 +11,7 @@ from common.exceptions import IAToolkitException
 from repositories.llm_query_repo import LLMQueryRepo
 from services.excel_service import ExcelService
 from services.mail_service import MailService
+from services.api_service import ApiService
 from common.util import Utility
 
 
@@ -40,6 +41,7 @@ class TestDispatcher:
         self.mock_llm_query_repo = MagicMock(spec=LLMQueryRepo)
         self.excel_service = MagicMock(spec=ExcelService)
         self.mail_service = MagicMock(spec=MailService)
+        self.api_service = MagicMock(spec=ApiService)
         self.util = MagicMock(spec=Utility)
 
         # Mock our company class instance
@@ -76,7 +78,8 @@ class TestDispatcher:
             llmquery_repo=self.mock_llm_query_repo,
             util=self.util,
             excel_service=self.excel_service,
-            mail_service=self.mail_service
+            mail_service=self.mail_service,
+            api_service=self.api_service
         )
 
     def teardown_method(self, method):
@@ -161,7 +164,8 @@ class TestDispatcher:
                 llmquery_repo=self.mock_llm_query_repo,
                 util=self.util,
                 excel_service=self.excel_service,
-                mail_service=self.mail_service
+                mail_service=self.mail_service,
+                api_service=self.api_service
             )
 
             assert len(dispatcher.company_classes) == 0

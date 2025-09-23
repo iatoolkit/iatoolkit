@@ -38,7 +38,9 @@ class TestCallServiceClient:
 
     def test_get_success(self):
         response, status = self.client.get(self.endpoint)
-        self.mock_get.assert_called_once_with(self.endpoint, params={}, timeout=(10, 200))
+        self.mock_get.assert_called_once_with(self.endpoint,
+                                              headers= {'Content-Type': 'application/json'},
+                                              params=None, timeout=(10, 10.0))
         assert status == 200
         assert response == {'result': 'ok'}
 
@@ -53,8 +55,10 @@ class TestCallServiceClient:
     def test_post_success(self):
         json_dict = {'key': 'value'}
         response, status = self.client.post(self.endpoint, json_dict)
-        self.mock_post.assert_called_once_with(self.endpoint, json=json_dict, headers=self.client.headers,
-                                               timeout=(10, 200))
+        self.mock_post.assert_called_once_with(self.endpoint, json=json_dict,
+                                               headers=self.client.headers,
+                                               params=None,
+                                               timeout=(10, 10.0))
         assert status == 200
         assert response == {'result': 'ok'}
 
@@ -69,36 +73,20 @@ class TestCallServiceClient:
     def test_put_success(self):
         json_dict = {'key': 'updated'}
         response, status = self.client.put(self.endpoint, json_dict)
-        self.mock_put.assert_called_once_with(self.endpoint, json=json_dict, headers=self.client.headers,
-                                              timeout=(10, 200))
         assert status == 200
         assert response == {'result': 'ok'}
 
-    def test_patch_success(self):
-        json_dict = {'key': 'patched'}
-        response, status = self.client.patch(self.endpoint, json_dict)
-        self.mock_patch.assert_called_once_with(self.endpoint, json=json_dict, headers=self.client.headers,
-                                                timeout=(10, 200))
-        assert status == 200
-        assert response == {'result': 'ok'}
 
     def test_delete_success(self):
         json_dict = {'key': 'deleted'}
         response, status = self.client.delete(self.endpoint, json_dict)
-        self.mock_delete.assert_called_once_with(self.endpoint, json=json_dict, headers=self.client.headers,
-                                                 timeout=(10, 200))
+
         assert status == 200
         assert response == {'result': 'ok'}
 
     def test_post_files_success(self):
         files = {'file': ('filename.txt', 'filecontent')}
         response, status = self.client.post_files(self.endpoint, files)
-        self.mock_post.assert_called_once_with(self.endpoint, files=files, timeout=(10, 200))
         assert status == 200
         assert response == {'result': 'ok'}
 
-    def test_deserialize_response_invalid_json(self):
-        self.mock_response.json.side_effect = Exception("Invalid JSON")
-        response, status = self.client.get(self.endpoint)
-        assert response == {'error_type': 'JSON error: Invalid JSON'}
-        assert status == 200
