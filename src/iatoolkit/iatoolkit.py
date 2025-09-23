@@ -85,17 +85,14 @@ class IAToolkit:
             self._configure_core_dependencies # This method binds services, repos, etc.
         ])
 
-        # Step 4: Explicitly bind the views to the injector.
-        self._bind_views_after_injection()
-
-        # Step 5: Register routes using the fully configured injector
+        # Step 4: Register routes using the fully configured injector
         self._register_routes()
 
-        # Step 6: Initialize FlaskInjector. This is now primarily for request-scoped injections
+        # Step 5: Initialize FlaskInjector. This is now primarily for request-scoped injections
         # and other integrations, as views are handled manually.
         FlaskInjector(app=self.app, injector=self._injector)
 
-        # Step 7: Finalize setup within the application context
+        # Step 6: Finalize setup within the application context
         self._setup_redis_sessions()
         self._setup_cors()
         self._setup_additional_services()
@@ -237,6 +234,7 @@ class IAToolkit:
             self._bind_repositories(binder)
             self._bind_services(binder)
             self._bind_infrastructure(binder)
+            self._bind_views(binder)
 
             logging.info("✅ Dependencias configuradas correctamente")
 
@@ -300,15 +298,13 @@ class IAToolkit:
         binder.bind(IAuthentication, to=IAuthentication)
         binder.bind(Utility, to=Utility)
 
-    def _bind_views_after_injection(self):
+    def _bind_views(self, binder: Binder):
         """Vincula las vistas después de que el injector ha sido creado"""
         from views.llmquery_view import LLMQueryView
         from views.home_view import HomeView
         from views.chat_view import ChatView
         from views.change_password_view import ChangePasswordView
 
-        # Ahora sí podemos acceder a self._injector.binder
-        binder = self._injector.binder
         binder.bind(HomeView, to=HomeView)
         binder.bind(ChatView, to=ChatView)
         binder.bind(ChangePasswordView, to=ChangePasswordView)

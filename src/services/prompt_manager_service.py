@@ -101,14 +101,18 @@ class PromptService:
     def get_system_prompt(self):
         try:
             system_prompt_content = []
-            execution_dir = os.getcwd()
+
+            # get the filepaths for all system prompts
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            src_dir = os.path.dirname(current_dir)  # ../src
+            system_prompt_dir = os.path.join(src_dir, "prompts")
 
             # Obtener, ordenar y leer los system prompts
             system_prompts = self.llm_query_repo.get_system_prompts()
 
             for prompt in system_prompts:
                 # Construir la ruta absoluta para leer el archivo
-                absolute_filepath = os.path.join(execution_dir, prompt.filepath)
+                absolute_filepath = os.path.join(system_prompt_dir, prompt.filepath)
                 if not os.path.exists(absolute_filepath):
                     logging.warning(f"El archivo para el prompt de sistema no existe: {absolute_filepath}")
                     continue

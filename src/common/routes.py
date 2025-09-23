@@ -43,63 +43,40 @@ def register_views(injector, app):
     from views.external_login_view import ExternalLoginView
     from views.download_file_view import DownloadFileView
 
-    # Get instances from the injector
-    home_view = injector.get(HomeView)
-    chat_view = injector.get(ChatView)
-    external_chat_login_view = injector.get(ExternalChatLoginView)
-    chat_token_request_view = injector.get(ChatTokenRequestView)
-    login_view = injector.get(LoginView)
-    signup_view = injector.get(SignupView)
-    verify_account_view = injector.get(VerifyAccountView)
-    forgot_password_view = injector.get(ForgotPasswordView)
-    change_password_view = injector.get(ChangePasswordView)
-    select_company_view = injector.get(SelectCompanyView)
-    llmquery_view = injector.get(LLMQueryView)
-    user_feedback_view = injector.get(UserFeedbackView)
-    prompt_view = injector.get(PromptView)
-    history_view = injector.get(HistoryView)
-    tasks_view = injector.get(TaskView)
-    task_review_view = injector.get(TaskReviewView)
-    file_store_view = injector.get(FileStoreView)
-    external_login_view = injector.get(ExternalLoginView)
-    url_simulation_view = injector.get(URLSimulationView)
-    download_file_view = injector.get(DownloadFileView)
-    chat_info_view = injector.get(ChatInfoView)
-
-    app.add_url_rule('/', view_func=home_view.as_view('home'))
+    app.add_url_rule('/', view_func=HomeView.as_view('home'))
 
     # main chat for iatoolkit front
-    app.add_url_rule('/<company_short_name>/chat', view_func=chat_view.as_view('chat'))
+    app.add_url_rule('/<company_short_name>/chat', view_func=ChatView.as_view('chat'))
 
     # front if the company internal portal
-    app.add_url_rule('/<company_short_name>/chat_login', view_func=external_chat_login_view.as_view('external_chat_login'))
-    app.add_url_rule('/<company_short_name>/external_login/<external_user_id>', view_func=external_login_view.as_view('external_login'))
-    app.add_url_rule('/auth/chat_token', view_func=chat_token_request_view.as_view('chat-token'))
+    app.add_url_rule('/<company_short_name>/chat_login', view_func=ExternalChatLoginView.as_view('external_chat_login'))
+    app.add_url_rule('/<company_short_name>/external_login/<external_user_id>', view_func=ExternalLoginView.as_view('external_login'))
+    app.add_url_rule('/auth/chat_token', view_func=ChatTokenRequestView.as_view('chat-token'))
 
     # main pages for the iatoolkit frontend
-    app.add_url_rule('/<company_short_name>/login', view_func=login_view.as_view('login'))
-    app.add_url_rule('/<company_short_name>/signup',view_func=signup_view.as_view('signup'))
+    app.add_url_rule('/<company_short_name>/login', view_func=LoginView.as_view('login'))
+    app.add_url_rule('/<company_short_name>/signup',view_func=SignupView.as_view('signup'))
     app.add_url_rule('/<company_short_name>/logout', 'logout', logout)
     app.add_url_rule('/logout', 'logout', logout)
-    app.add_url_rule('/<company_short_name>/verify/<token>', view_func=verify_account_view.as_view('verify_account'))
-    app.add_url_rule('/<company_short_name>/forgot-password', view_func=forgot_password_view.as_view('forgot_password'))
-    app.add_url_rule('/<company_short_name>/change-password/<token>', view_func=change_password_view.as_view('change_password'))
-    app.add_url_rule('/<company_short_name>/select_company', view_func=select_company_view.as_view('select_company'))
+    app.add_url_rule('/<company_short_name>/verify/<token>', view_func=VerifyAccountView.as_view('verify_account'))
+    app.add_url_rule('/<company_short_name>/forgot-password', view_func=ForgotPasswordView.as_view('forgot_password'))
+    app.add_url_rule('/<company_short_name>/change-password/<token>', view_func=ChangePasswordView.as_view('change_password'))
+    app.add_url_rule('/<company_short_name>/select_company', view_func=SelectCompanyView.as_view('select_company'))
 
     # this are backend endpoints mainly
-    app.add_url_rule('/<company_short_name>/llm_query', view_func=llmquery_view.as_view('llm_query'))
-    app.add_url_rule('/<company_short_name>/feedback', view_func=user_feedback_view.as_view('feedback'))
-    app.add_url_rule('/<company_short_name>/prompts', view_func=prompt_view.as_view('prompt'))
-    app.add_url_rule('/<company_short_name>/history', view_func=history_view.as_view('history'))
-    app.add_url_rule('/tasks', view_func=tasks_view.as_view('tasks'))
-    app.add_url_rule('/tasks/review/<int:task_id>', view_func=task_review_view.as_view('tasks-review'))
-    app.add_url_rule('/load', view_func=file_store_view.as_view('load'))
-    app.add_url_rule('/chat-info', view_func=chat_info_view.as_view('chat-info'))
+    app.add_url_rule('/<company_short_name>/llm_query', view_func=LLMQueryView.as_view('llm_query'))
+    app.add_url_rule('/<company_short_name>/feedback', view_func=UserFeedbackView.as_view('feedback'))
+    app.add_url_rule('/<company_short_name>/prompts', view_func=PromptView.as_view('prompt'))
+    app.add_url_rule('/<company_short_name>/history', view_func=HistoryView.as_view('history'))
+    app.add_url_rule('/tasks', view_func=TaskView.as_view('tasks'))
+    app.add_url_rule('/tasks/review/<int:task_id>', view_func=TaskReviewView.as_view('tasks-review'))
+    app.add_url_rule('/load', view_func=FileStoreView.as_view('load'))
+    app.add_url_rule('/chat-info', view_func=ChatInfoView.as_view('chat-info'))
 
     # for simulation of external endpoints
     app.add_url_rule(
         '/simulated-url/<company_short_name>/<object_name>',
-        view_func=url_simulation_view.as_view('simulated-url')
+        view_func=URLSimulationView.as_view('simulated-url')
     )
 
     app.add_url_rule(
