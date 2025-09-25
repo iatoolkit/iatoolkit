@@ -48,8 +48,8 @@ class Company(Base):
     __tablename__ = 'companies'
 
     id = Column(Integer, primary_key=True)
+    short_name = Column(String(20), nullable=False, unique=True, index=True)
     name = Column(String(256), nullable=False)
-    short_name = Column(String(20), nullable=False, default='')
 
     # encrypted api-key
     llm_api_key = Column(String, nullable=True)

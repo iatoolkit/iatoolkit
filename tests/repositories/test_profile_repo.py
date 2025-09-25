@@ -110,8 +110,8 @@ class TestProfileRepo:
         assert result == []
 
     def test_get_companies_when_companies_exist(self):
-        company_opensoft = Company(name='Opensoft')
-        company_testlabs = Company(name='TestLabs')
+        company_opensoft = Company(name='Opensoft', short_name='open')
+        company_testlabs = Company(name='TestLabs', short_name='test')
         self.session.add(company_opensoft)
         self.session.add(company_testlabs)
         self.session.commit()
@@ -131,13 +131,13 @@ class TestProfileRepo:
         assert result.name == self.company.name
 
     def test_create_company_when_new_company(self):
-        result = self.repo.create_company(Company(name='NewCompany'))
+        result = self.repo.create_company(Company(name='NewCompany', short_name='new'))
 
         assert result.id is not None
         assert result.name == 'NewCompany'
 
     def test_save_feedback_when_ok(self):
-        company = self.repo.create_company(Company(name='maxxa'))
+        company = self.repo.create_company(Company(name='maxxa', short_name='maxxa'))
         feedback = UserFeedback(company_id=company.id,
                                 external_user_id='flibe',
                                 message='feedback message',

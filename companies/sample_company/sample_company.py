@@ -10,11 +10,11 @@ from iatoolkit import DatabaseManager
 from iatoolkit import SqlService
 from iatoolkit import BaseCompany
 from injector import inject
-from companies.sample_fintech.configuration import FUNCTION_LIST
+from companies.sample_company.configuration import FUNCTION_LIST
 import os
 
 
-class SampleFintech(BaseCompany):
+class SampleCompany(BaseCompany):
     @inject
     def __init__(self,
             profile_repo: ProfileRepo,
@@ -28,10 +28,10 @@ class SampleFintech(BaseCompany):
         if sample_db_uri:
             self.sample_db_manager = DatabaseManager(sample_db_uri, register_pgvector=False)
 
-    def init_db(self):
-        c = Company(name='Sample Fintech Company',
-                    short_name='sample_fintech',
-                    logo_file='sample_fintech.png',
+    def register_company(self):
+        # Initialize the company in the database if not exists
+        c = Company(name='Sample Company',
+                    short_name='sample_company',
                     allow_jwt=True,
                     parameters={})
         c = self.profile_repo.create_company(c)

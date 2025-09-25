@@ -98,10 +98,9 @@ class Dispatcher:
                 )
                 i += 1
 
-        # initialize the database for every company class
+        # register in the database  every company class
         for company in self.company_classes.values():
-            print(f'company: {company.__class__.__name__}')
-            company.init_db()
+            company.register_company()
 
     def dispatch(self, company_name: str, action: str, **kwargs) -> str:
         company_key = company_name.lower()

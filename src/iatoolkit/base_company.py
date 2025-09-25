@@ -15,8 +15,8 @@ class BaseCompany(ABC):
 
     @abstractmethod
     # initialize all the database tables  needed
-    def init_db(self):
-        raise NotImplementedError("La subclase debe implementar el método init_db()")
+    def register_company(self):
+        raise NotImplementedError("La subclase debe implementar el método create_company()")
 
     @abstractmethod
     # get context specific for this company

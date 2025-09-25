@@ -325,8 +325,8 @@ class IAToolkit:
         from services.dispatcher_service import Dispatcher
         from services.profile_service import ProfileService
 
-        @self.app.cli.command("init-db")
-        def init_db():
+        @self.app.cli.command("setup_all_companies")
+        def setup_all_companies():
             """🗄️ Inicializa la base de datos del sistema"""
             try:
                 dispatcher = self.get_injector().get(Dispatcher)

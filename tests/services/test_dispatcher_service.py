@@ -17,7 +17,7 @@ from common.util import Utility
 
 # A mock company class for testing purposes
 class MockSampleCompany(BaseCompany):
-    def init_db(self): pass
+    def register_company(self): pass
 
     def get_company_context(self, **kwargs) -> str: return "Company Context for Sample"
 
@@ -50,7 +50,7 @@ class TestDispatcher:
             llm_query_repo=self.mock_llm_query_repo
         )
         # Mock methods that will be called
-        self.mock_sample_company_instance.init_db = MagicMock()
+        self.mock_sample_company_instance.register_company = MagicMock()
         self.mock_sample_company_instance.handle_request = MagicMock(return_value={"result": "sample_company_response"})
         self.mock_sample_company_instance.get_company_context = MagicMock(return_value="Company Context for Sample")
         self.mock_sample_company_instance.start_execution = MagicMock(return_value=True)
@@ -91,10 +91,10 @@ class TestDispatcher:
         registry = get_company_registry()
         registry.clear()
 
-    def test_init_db_calls_init_db_on_each_company(self):
+    def test_setup_all_companies_calls_register_company_on_each_company(self):
         """Tests that init_db calls init_db on each registered company."""
         self.dispatcher.setup_all_companies()
-        self.mock_sample_company_instance.init_db.assert_called_once()
+        self.mock_sample_company_instance.register_company.assert_called_once()
 
     def test_dispatch_sample_company(self):
         """Tests that dispatch works correctly for a valid company."""
