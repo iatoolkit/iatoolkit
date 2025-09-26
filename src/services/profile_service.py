@@ -85,7 +85,6 @@ class ProfileService:
             "company_id": company.id,
             "company": company.name,
             "company_short_name": company.short_name,
-            "company_logo": company.logo_file
         }
         SessionManager.set('user', user_data)
 

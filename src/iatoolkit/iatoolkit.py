@@ -252,14 +252,12 @@ class IAToolkit:
 
     def _bind_repositories(self, binder: Binder):
         from repositories.document_repo import DocumentRepo
-        from repositories.document_type_repo import DocumentTypeRepo
         from repositories.profile_repo import ProfileRepo
         from repositories.llm_query_repo import LLMQueryRepo
         from repositories.vs_repo import VSRepo
         from repositories.tasks_repo import TaskRepo
 
         binder.bind(DocumentRepo, to=DocumentRepo)
-        binder.bind(DocumentTypeRepo, to=DocumentTypeRepo)
         binder.bind(ProfileRepo, to=ProfileRepo)
         binder.bind(LLMQueryRepo, to=LLMQueryRepo)
         binder.bind(VSRepo, to=VSRepo)

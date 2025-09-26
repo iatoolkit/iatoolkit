@@ -10,6 +10,8 @@ from repositories.llm_query_repo import LLMQueryRepo
 from repositories.profile_repo import ProfileRepo
 from repositories.models import LLMQuery, Company
 from common.util import Utility
+from common.session_manager import SessionManager
+from unittest.mock import patch
 
 
 class TestHistoryService:
@@ -98,19 +100,20 @@ class TestHistoryService:
         self.llm_query_repo.get_history.assert_called_once_with(self.mock_company, external_user_identifier)
 
     def test_get_history_success_with_local_user_id_only(self):
-        """Prueba la recuperación exitosa usando solo un local_user_id."""
         local_id = 456
-        # El identificador de usuario resuelto será 'User_456'
-        resolved_user_identifier = f'User_{local_id}'
+        resolved_user_identifier = 'fl@gmail.com'
 
-        mock_query = MagicMock(spec=LLMQuery)
-        mock_query.to_dict.return_value = {'id': 1, 'query': 'q1'}
-        self.llm_query_repo.get_history.return_value = [mock_query]
+        with patch('common.session_manager.session', new={}) as fake_session:
+            SessionManager.set('user', {'id': local_id, 'email': resolved_user_identifier})
 
-        result = self.history_service.get_history(
-            company_short_name='test_company',
-            local_user_id=local_id
-        )
+            mock_query = MagicMock(spec=LLMQuery)
+            mock_query.to_dict.return_value = {'id': 1, 'query': 'q1'}
+            self.llm_query_repo.get_history.return_value = [mock_query]
+
+            result = self.history_service.get_history(
+                company_short_name='test_company',
+                local_user_id=local_id
+            )
 
         assert result['message'] == 'Historial obtenido correctamente'
         self.llm_query_repo.get_history.assert_called_once_with(self.mock_company, resolved_user_identifier)

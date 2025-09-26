@@ -65,7 +65,7 @@ class QueryService:
             model = self.model
 
         # Validate the user and company
-        user_identifier = self.util.resolve_user_identifier(external_user_id, local_user_id)
+        user_identifier, is_local_user = self.util.resolve_user_identifier(external_user_id, local_user_id)
         if not user_identifier:
             raise IAToolkitException(IAToolkitException.ErrorType.INVALID_USER,
                         "No se pudo resolver el identificador del usuario")
@@ -87,8 +87,10 @@ class QueryService:
             # user roles are read at this point from company db
             user_info = self.dispatcher.get_user_info(
                 company_name=company_short_name,
-                user_id=user_identifier
+                user_identifier=user_identifier,
+                is_local_user=is_local_user
             )
+
             # add the user logged in to the user_info dictionary
             user_info['user_id'] = user_identifier
 
@@ -148,7 +150,7 @@ class QueryService:
                   client_data: dict = {},
                   files: list = []) -> dict:
         try:
-            user_identifier = self.util.resolve_user_identifier(external_user_id, local_user_id)
+            user_identifier, is_local_user = self.util.resolve_user_identifier(external_user_id, local_user_id)
             if not user_identifier:
                 return {"error": True,
                         "error_message": "No se pudo identificar al usuario"}

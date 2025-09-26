@@ -12,6 +12,7 @@ from repositories.models import Company, Function
 from services.excel_service import ExcelService
 from services.mail_service import MailService
 from iatoolkit.company_registry import get_company_registry
+from common.session_manager import SessionManager
 from common.util import Utility
 from injector import inject
 import logging
@@ -178,14 +179,20 @@ class Dispatcher:
             tools.append(ai_tool)
         return tools
 
-    def get_user_info(self, company_name: str, **kwargs) -> dict:
+    def get_user_info(self, company_name: str, user_identifier: str, is_local_user: bool) -> dict:
         if company_name not in self.company_classes:
             raise IAToolkitException(IAToolkitException.ErrorType.EXTERNAL_SOURCE_ERROR,
                                f"Empresa no configurada: {company_name}")
 
+        # get the data from the session
+        if is_local_user:
+            user_data = SessionManager.get('user', {})
+            return user_data
+
+        # non-local user, get data from the instance company
         company_instance = self.company_classes[company_name]
         try:
-            return company_instance.get_user_info(**kwargs)
+            return company_instance.get_user_info(user_identifier)
         except Exception as e:
             logging.exception(e)
             raise IAToolkitException(IAToolkitException.ErrorType.EXTERNAL_SOURCE_ERROR,

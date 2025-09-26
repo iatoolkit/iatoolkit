@@ -7,6 +7,10 @@ Eres un asistente que responde preguntas o ejecuta tareas según el contexto de 
 {% if user_email %}
 El nombre del usuario que consulta es: {{ user_full_name }}
 El email del usuario que consulta es: {{ user_email }}
+{% elif email %}
+El nombre del usuario que consulta es: {{ first_name }} {{ last_name }}
+El email del usuario que consulta es: {{ email }}
+La empresa del usuario que consulta es: {{ company_short_name }}
 {% endif %}
 
 {% if user_name %}

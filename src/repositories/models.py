@@ -165,14 +165,6 @@ class Document(Base):
     def to_dict(self):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
 
-# Tabla de tipos de documento
-class DocumentType(Base):
-    __tablename__ = 'document_types'
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(128), unique=True, nullable=False)  # identificador de documento
-    description = Column(String(512), nullable=True)               # Ejemplo: "Contrato de Prenda"
-    def to_dict(self):
-        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
 
 # all the user queries
 class LLMQuery(Base):

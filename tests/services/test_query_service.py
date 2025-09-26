@@ -42,7 +42,7 @@ class TestQueryService:
 
 
         # --- Common mock configurations ---
-        self.utility.resolve_user_identifier.side_effect = lambda external_user_id=None,local_user_id=0: external_user_id or f"User_{local_user_id}"
+        self.utility.resolve_user_identifier.side_effect = lambda external_user_id=None,local_user_id=0: (external_user_id, False) or (f"User_{local_user_id}", True)
 
         self.user = User(id=1, email='test@user.com')
         self.company = Company(id=100, name='Test Company', short_name='test_company')

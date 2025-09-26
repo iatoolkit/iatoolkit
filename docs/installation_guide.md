@@ -54,7 +54,11 @@ you will see this:
 Configuration es ready, add this variable to your environment
 IATOOLKIT_API_KEY=S1UGpvMwuuuuud118Xc0wyxzkbM0FaGdQCL0hALfo
 ```
-then, add the IATOOLKIT_API_KEY to your .env file
+
+after this you can see on the databases serveral tables created: 
+user, companies, user_companies, functions, llm_queries, ...
+
+you should add the IATOOLKIT_API_KEY to your .env file
 
 
 ## 5) Customize your company

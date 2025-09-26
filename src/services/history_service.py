@@ -23,7 +23,7 @@ class HistoryService:
                      external_user_id: str = None,
                      local_user_id: int = 0) -> dict:
         try:
-            user_identifier = self.util.resolve_user_identifier(external_user_id, local_user_id)
+            user_identifier, _ = self.util.resolve_user_identifier(external_user_id, local_user_id)
             if not user_identifier:
                 return {'error': "No se pudo resolver el identificador del usuario"}
 

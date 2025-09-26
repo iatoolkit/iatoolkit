@@ -36,7 +36,8 @@
             <label for="password" class="form-label d-block text-muted">Contraseña</label>
             <input type="password" id="password" name="password" class="form-control" required>
           </div>
-          <button type="submit" class="btn btn-primary w-100">Iniciar Sesión</button>
+          <button type="submit" class="btn btn-primary w-100">
+              Iniciar Sesión</button>
         </form>
 
         <div class="text-center mt-3">
@@ -91,7 +92,6 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/secure_chat_initiator.js') }}"></script>
 
 <script>
   // Variables pasadas desde Flask (HomeView)
@@ -128,6 +128,20 @@
       $('#company_short_name').on('change', function () {
           updateLinksAndForm();
       });
+
+      // Interceptamos el click en "Registrarse"
+    $('#signup-link').on('click', function (e) {
+        const selectedCompany = $('#company_short_name').val();
+
+        if (!selectedCompany || selectedCompany.trim() === '') {
+            e.preventDefault(); // evitar navegación al #
+            Swal.fire({
+                icon: 'warning',
+                title: 'Empresa no seleccionada',
+                text: 'Por favor, selecciona una empresa antes de registrarte.'
+            });
+        }
+    });
 
       // Event listener para el botón de "Abrir Chat (JWT)"
       $('#initiateJwtChatButton').on('click', function() {
