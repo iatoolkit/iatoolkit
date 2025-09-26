@@ -71,10 +71,7 @@ class SampleCompany(BaseCompany):
 
     def get_user_info(self, **kwargs) -> dict:
         user_id = kwargs.get('user_id', '')
-        return {'user_name': user_id,
-                'user_full_name': 'Sample User',
-                'user_email': 'fernando.libedinsky@gmail.com'
-                }
+        return {}
 
     def load_sample_schema(self):
         # each one of these entries must be a database table and

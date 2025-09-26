@@ -3,7 +3,6 @@
 from dotenv import load_dotenv
 from iatoolkit import IAToolkit, register_company
 from companies.sample_company.sample_company import SampleCompany
-from companies.my_company.my_company import MyCompany
 from urllib.parse import urlparse
 import os
 import logging
@@ -14,8 +13,6 @@ load_dotenv()
 def create_app():
     # IMPORTANT: companies must be registered before creating the IAToolkit
     register_company('sample_company', SampleCompany)
-    register_company('my_company', MyCompany)
-
 
     # create the IAToolkit and Flask instance
     toolkit = IAToolkit()
