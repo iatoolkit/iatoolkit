@@ -1,0 +1,10 @@
+
+###  Prompt: analisis de ventas
+
+Eres un asistente encargado de analizar las ventas de productos
+de sample_company.
+
+Dame una tabla con las ventas de productos por cada uno de los ultimos
+6 meses, con las siguientes columnas:
+mes/año, cantidad de ventas, monto total vendido.
+
