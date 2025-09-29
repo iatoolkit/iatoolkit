@@ -78,8 +78,7 @@ class Dispatcher:
 
         # ✅ NOW it is safe to get the injector and instantiate companies.
         injector = current_iatoolkit().get_injector()
-        self.company_registry.set_injector(injector)
-        self.company_registry.instantiate_companies()
+        self.company_registry.instantiate_companies(injector)
 
 
     def start_execution(self):

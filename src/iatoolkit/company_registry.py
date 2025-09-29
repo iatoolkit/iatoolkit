@@ -15,27 +15,21 @@ class CompanyRegistry:
     def __init__(self):
         self._company_classes: Dict[str, Type[BaseCompany]] = {}
         self._company_instances: Dict[str, BaseCompany] = {}
-        self._injector = None
 
-    def set_injector(self, injector) -> None:
-        """Establece el injector para crear instancias con dependencias"""
-        self._injector = injector
 
-    def instantiate_companies(self) -> Dict[str, BaseCompany]:
+    def instantiate_companies(self, injector) -> Dict[str, BaseCompany]:
         """
         Instancia todas las empresas registradas con inyección de dependencias.
 
         Returns:
             Dict con instancias de empresas {name: instance}
         """
-        if not self._injector:
-            raise RuntimeError("Injector no configurado. Llame a set_injector() primero.")
 
         for company_key, company_class in self._company_classes.items():
             if company_key not in self._company_instances:
                 try:
                     # use de injector to create the instance
-                    company_instance = self._injector.get(company_class)
+                    company_instance = injector.get(company_class)
                     self._company_instances[company_key] = company_instance
                     logging.info(f"company '{company_key}' created in dispatcher")
 
