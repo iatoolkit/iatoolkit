@@ -85,6 +85,17 @@ class LoadDocumentsService:
 
         return {'message': f'{files_loaded} files processed'}
 
+    # load the files for all of the companies.
+    def load_company_files(self, company: Company, connector: dict):
+        if not connector:
+            raise IAToolkitException(IAToolkitException.ErrorType.MISSING_PARAMETER,
+                        f"Falta configurar conector")
+
+        self.company = company
+        files_loaded = self.load_data_source(connector)
+
+        return {'message': f'{files_loaded} files processed'}
+
     def _load_document_type(self, company: Company, doc_type_name: str, type_config: Dict) -> int:
         # load specific document_types for a company
         connector = type_config.get('connector')

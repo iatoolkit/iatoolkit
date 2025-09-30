@@ -3,8 +3,9 @@
 # Todos los derechos reservados.
 # En trámite de registro en el Registro de Propiedad Intelectual de Chile.
 
-from iatoolkit import BaseCompany, Company, Function, PromptCategory
-from iatoolkit import ProfileRepo, LLMQueryRepo, PromptService, DatabaseManager, SqlService
+from iatoolkit import IAToolkit, BaseCompany, Company, Function, PromptCategory
+from iatoolkit import ProfileRepo, LLMQueryRepo, PromptService, DatabaseManager
+from iatoolkit import SqlService, LoadDocumentsService
 from injector import inject
 from companies.sample_company.configuration import FUNCTION_LIST
 from companies.sample_company.sample_company_database import SampleCompanyDatabase
@@ -161,4 +162,25 @@ class SampleCompany(BaseCompany):
             except Exception as e:
                 logging.exception(e)
                 click.echo(f"❌ Ocurrió un error inesperado: {e}")
+
+        @app.cli.command("load")
+        def load_documents():
+            if os.getenv('FLASK_ENV') == 'dev':
+                connector = {'type': 'local',
+                                  'path': "companies/sample_company/sample_documents", }
+            else:
+                connector = {'type': 's3',
+                                  'bucket': "iatoolkit",
+                                  'prefix': 'sample_company'}
+
+            load_documents_service = IAToolkit.get_instance().get_injector().get(LoadDocumentsService)
+            try:
+                result = load_documents_service.load_company_files(self.company, connector)
+                click.echo(result['message'])
+            except Exception as e:
+                logging.exception(e)
+                click.echo(f"Error: {str(e)}")
+
+
+
 

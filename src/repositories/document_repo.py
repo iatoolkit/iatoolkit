@@ -20,7 +20,7 @@ class DocumentRepo:
         self.session.commit()
         return new_document
 
-    def get(self, company: Company,filename: str ) -> Document:
+    def get(self, company: Company, filename: str ) -> Document:
         if not company or not filename:
             raise IAToolkitException(IAToolkitException.ErrorType.PARAM_NOT_FILLED,
                                'Falta empresa o filename')

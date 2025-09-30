@@ -66,14 +66,4 @@ def register_core_commands(app):
             logging.exception(e)
             click.echo(f"Error: {str(e)}")
 
-    @app.cli.command("load")
-    def load_documents():
-        from services.load_documents_service import LoadDocumentsService
 
-        load_documents_service = IAToolkit.get_instance().get_injector().get(LoadDocumentsService)
-        try:
-            result = load_documents_service.load()
-            click.echo(result['message'])
-        except Exception as e:
-            logging.exception(e)
-            click.echo(f"Error: {str(e)}")

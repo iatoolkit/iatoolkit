@@ -25,6 +25,7 @@ class FileProcessorConfig:
         self.log_file = log_file
         self.echo = echo
         self.context = context or {}
+        self.company = None
 
 class FileProcessor:
     def __init__(self,
