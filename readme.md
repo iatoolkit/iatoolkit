@@ -11,11 +11,11 @@ IAToolkit bridges the gap between powerful LLMs and your company's data.
 
 ## 🚀 Key Features
 
-**🔗 Unified Data Connection**:
+*   **🔗 Unified Data Connection**:
     *   **Natural Language to SQL**: Let your chatbot query relational databases (PostgreSQL, MySQL, SQLite) using everyday language.
     *   **Semantic Document Search**: Automatically chunk, embed, and search across your private documents (PDFs, Word, etc.) to provide contextually accurate answers.
 
-**🏢 Enterprise-Ready Multi-Tenancy**:
+*   **🏢 Enterprise-Ready Multi-Tenancy**:
     *   Deploy isolated "Company" modules, each with its own data, tools, and context. Perfect for SaaS products or internal departmental agents.
 
 **🧠 LLM Agnostic**:
