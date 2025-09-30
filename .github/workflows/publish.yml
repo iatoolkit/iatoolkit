@@ -1,4 +1,4 @@
-name: Publish IAToolkit to PyPI
+name: Publish IAToolkit in PyPI
 
 on:
   push:
