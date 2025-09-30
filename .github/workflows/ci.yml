@@ -1,7 +1,7 @@
 # .github/workflows/ci.yml
 
 # Nombre del workflow que aparecerá en la pestaña "Actions" de GitHub
-name: Python Application CI
+name: IAToolkit tests
 
 # Define cuándo se ejecutará este workflow
 on:
