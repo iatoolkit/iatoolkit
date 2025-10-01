@@ -52,103 +52,16 @@ class LoadDocumentsService:
             separators=["\n\n", "\n", "."]
         )
 
-    # load the files for all of the companies.
-    def load(self, doc_type: str = None):
+    def load_company_files(self,
+                         company: Company,
+                         connector_config: Dict,
+                         predefined_metadata: Dict = None,
+                         filters: Dict = None):
         """
-                Loads documents for all companies based on their configuration.
-                It can load all document types or a specific one if provided.
-
-                Args:
-                    doc_type (str, optional): A specific document type to load.
-                                              If None, all configured types are loaded.
-
-                Returns:
-                    Dict: A dictionary with a summary message.
-                """
-        # doc_type: an optional document_type for loading
-        files_loaded = 0
-        companies = self.profile_repo.get_companies()
-
-        for company in companies:
-            load_config = company.parameters.get('load', {})
-            if not load_config:
-                continue
-
-            print(f"Cargando datos de ** {company.short_name} **")
-
-            # Si hay configuraciones de tipos de documento específicos
-            doc_types_config = load_config.get('document_types', {})
-
-            if doc_types_config and len(doc_types_config) > 0:
-                # Si se especificó un tipo de documento, cargar solo ese tipo
-                if doc_type and doc_type in doc_types_config:
-                    files_loaded += self._load_document_type(company, doc_type, doc_types_config[doc_type])
-                # Si no se especificó, cargar todos los tipos configurados
-                elif not doc_type:
-                    for type_name, type_config in doc_types_config.items():
-                        files_loaded += self._load_document_type(company, type_name, type_config)
-            else:
-                # Comportamiento anterior: usar la configuración general
-                connector = load_config.get('connector', {})
-                if not connector:
-                    raise IAToolkitException(IAToolkitException.ErrorType.MISSING_PARAMETER,
-                                       f"Falta configurar conector en empresa {company.short_name}")
-
-                files_loaded += self.load_data_source(company=company,
-                                                      connector_config=connector)
-
-        return {'message': f'{files_loaded} files processed'}
-
-    def load_company_files(self, company: Company,
-                           connector: dict,
-                           predefined_metadata: Dict = None,
-                           filters: Dict = None):
-        """
-        Loads all files for a specific company using a given connector.
+        Loads all the company files from a connector
 
         Args:
             company (Company): The company to load files for.
-            connector (dict): The connector configuration.
-
-        Returns:
-            Dict: A dictionary with a summary message.
-        """
-        if not connector:
-            raise IAToolkitException(IAToolkitException.ErrorType.MISSING_PARAMETER,
-                        f"Falta configurar conector")
-
-        files_loaded = self.load_data_source(
-                            company=company,
-                            connector_config=connector,
-                            predefined_metadata=predefined_metadata,
-                            filters=filters)
-
-        return {'message': f'{files_loaded} files processed'}
-
-    def _load_document_type(self, company: Company, doc_type_name: str, type_config: Dict) -> int:
-        # load specific document_types for a company
-        connector = type_config.get('connector')
-        if not connector:
-            logging.warning(f"Falta configurar conector para tipo {doc_type_name} en empresa {company.short_name}")
-            raise IAToolkitException(IAToolkitException.ErrorType.MISSING_PARAMETER,
-                               f"Falta configurar conector para tipo {doc_type_name} en empresa {company.short_name}")
-
-        # get the metadata for this connector
-        predefined_metadata = type_config.get('metadata', {})
-
-        # config specific filters
-        filters = type_config.get('filters', {"filename_contains": ".pdf"})
-
-        return self.load_data_source(company=company,
-                                     connector_config=connector,
-                                     predefined_metadata=predefined_metadata,
-                                     filters=filters)
-
-    def load_data_source(self, company: Company, connector_config: Dict, predefined_metadata: Dict = None, filters: Dict = None):
-        """
-        Loads files from a data source using a connector and a FileProcessor.
-
-        Args:
             connector_config (Dict): The configuration for the file connector.
             predefined_metadata (Dict, optional): Metadata to be added to all documents from this source.
             filters (Dict, optional): Filters to apply to the files.
@@ -156,6 +69,10 @@ class LoadDocumentsService:
         Returns:
             int: The number of processed files.
         """
+        if not connector_config:
+            raise IAToolkitException(IAToolkitException.ErrorType.MISSING_PARAMETER,
+                        f"Falta configurar conector")
+
         try:
             if not filters:
                 filters = {"filename_contains": ".pdf"}

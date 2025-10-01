@@ -16,7 +16,7 @@ class DocumentService:
     @inject
     def __init__(self):
         # max number of pages to load
-        self.max_doc_pages = int(os.getenv("MAX_DOC_PAGES", "10"))
+        self.max_doc_pages = int(os.getenv("MAX_DOC_PAGES", "200"))
 
     def file_to_txt(self, filename, file_content):
         try:

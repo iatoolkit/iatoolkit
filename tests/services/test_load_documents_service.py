@@ -33,43 +33,25 @@ class TestLoadDocumentsService:
         self.company = Company(
             id=1,
             name='a big company',
-            short_name='company',
-            parameters={
-                "load": {
-                    "document_types": {
-                        "certificados":
-                            {
-                                "connector": {"type": "s3", "bucket": "test-bucket"},
-                                "metadata": {"document_type": "certificate"}
-                            }
-                    }
-                }
-            }
+            short_name='company'
         )
         self.mock_profile_repo.get_companies.return_value = [self.company]
 
-    def test_load_when_no_services_to_load(self):
-        self.mock_profile_repo.get_companies.return_value = []
-        result = self.service.load()
-
-        assert result == {'message': '0 files processed'}
-
-    def test_load_when_missing_connector(self):
-        self.company.parameters['load']['document_types']['certificados']['connector'] = None
+    def test_load_company_files_when_missing_connector(self):
 
         with pytest.raises(IAToolkitException) as excinfo:
-            self.service.load('certificados')
+            self.service.load_company_files(company=self.company,
+                                                 connector_config={})
 
         assert excinfo.value.error_type == IAToolkitException.ErrorType.MISSING_PARAMETER
-        assert "Falta configurar conector" in str(excinfo.value)
-
+        assert "configurar conector" in str(excinfo.value)
 
     @patch("logging.exception")
-    def test_load_data_source_when_exception(self, mock_logging_exception):
+    def test_load_company_files_when_exception(self, mock_logging_exception):
         mock_connector_config = {"type": "s3"}
         self.mock_file_connector_factory.create.side_effect = Exception("Test exception")
 
-        result = self.service.load_data_source(company=self.company,
+        result = self.service.load_company_files(company=self.company,
                                                connector_config=mock_connector_config)
 
         assert result == {"error": "Test exception"}
@@ -103,26 +85,6 @@ class TestLoadDocumentsService:
 
         assert excinfo.value.error_type == IAToolkitException.ErrorType.LOAD_DOCUMENT_ERROR
         assert "Error al procesar el archivo" in str(excinfo.value)
-
-    @patch("services.load_documents_service.FileProcessor")
-    def test_load_files_success(self, mock_file_processor):
-        mock_connector_config = {"type": "s3", "bucket": "test-bucket"}
-
-        # Mock del FileProcessor
-        mock_processor_instance = MagicMock()
-        mock_processor_instance.processed_files = 2
-        mock_file_processor.return_value = mock_processor_instance
-
-        # Mock del conector
-        mock_connector = MagicMock()
-        self.mock_file_connector_factory.create.return_value = mock_connector
-
-        result = self.service.load()
-
-        assert result == {'message': '2 files processed'}
-        self.mock_file_connector_factory.create.assert_called_with(mock_connector_config)
-        mock_file_processor.assert_called_once_with(mock_connector, ANY)
-        mock_processor_instance.process_files.assert_called_once()
 
     def test_load_when_file_is_created(self):
         # Mock del archivo y contenido

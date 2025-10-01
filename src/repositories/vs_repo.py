@@ -55,15 +55,15 @@ class VSRepo:
         try:
             # Construir la consulta SQL base
             sql_query_parts = ["""
-                               SELECT documents.id, \
-                                      documents.filename, \
-                                      documents.content, \
-                                      documents.content_b64, \
-                                      documents.meta
+                               SELECT iat_documents.id, \
+                                      iat_documents.filename, \
+                                      iat_documents.content, \
+                                      iat_documents.content_b64, \
+                                      iat_documents.meta
                                FROM iat_vsdocs, \
                                     iat_documents
                                WHERE iat_vsdocs.company_id = :company_id
-                                 AND iat_vsdocs.document_id = documents.id \
+                                 AND iat_vsdocs.document_id = iat_documents.id \
                                """]
 
             # Parámetros para la consulta

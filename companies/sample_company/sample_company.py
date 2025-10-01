@@ -5,7 +5,7 @@
 
 from iatoolkit import IAToolkit, BaseCompany, Company, Function, PromptCategory
 from iatoolkit import ProfileRepo, LLMQueryRepo, PromptService, DatabaseManager
-from iatoolkit import SqlService, LoadDocumentsService
+from iatoolkit import SqlService, LoadDocumentsService, SearchService
 from injector import inject
 from companies.sample_company.configuration import FUNCTION_LIST
 from companies.sample_company.sample_company_database import SampleCompanyDatabase
@@ -20,13 +20,17 @@ class SampleCompany(BaseCompany):
             profile_repo: ProfileRepo,
             llm_query_repo: LLMQueryRepo,
             prompt_service: PromptService,
-            sql_service: SqlService):
+            sql_service: SqlService,
+            search_service: SearchService):
         super().__init__(profile_repo, llm_query_repo)
         self.sql_service = sql_service
+        self.search_service = search_service
         self.prompt_service = prompt_service
-        self.company = self.profile_repo.get_company_by_short_name('sample_company')
         self.sample_db_manager = None
         self.sample_database = None
+
+        # set the company object
+        self.company = self.profile_repo.get_company_by_short_name('sample_company')
 
         # connect to Internal database
         sample_db_uri = os.getenv('SAMPLE_DATABASE_URI')
@@ -53,7 +57,8 @@ class SampleCompany(BaseCompany):
                     company_id=c.id,
                     name=function['function_name'],
                     description=function['description'],
-                    parameters=function['params']
+                    parameters=function['params'],
+                    system_function=False
                 )
             )
 
@@ -101,6 +106,9 @@ class SampleCompany(BaseCompany):
         if action == "sql_query":
             sql_query = kwargs.get('query')
             return self.sql_service.exec_sql(self.sample_db_manager, sql_query)
+        elif action == "document_search":
+            query_string = kwargs.get('query')
+            return self.search_service.search(self.company.id, query_string)
         else:
             return self.unsupported_operation(action)
 
@@ -166,10 +174,10 @@ class SampleCompany(BaseCompany):
         @app.cli.command("load")
         def load_documents():
             if os.getenv('FLASK_ENV') == 'dev':
-                connector = {'type': 'local',
+                connector_config = {'type': 'local',
                                   'path': "companies/sample_company/sample_documents", }
             else:
-                connector = {'type': 's3',
+                connector_config = {'type': 's3',
                                   'bucket': "iatoolkit",
                                   'prefix': 'sample_company'}
 
@@ -177,10 +185,10 @@ class SampleCompany(BaseCompany):
             try:
                 result = load_documents_service.load_company_files(
                     company=self.company,
-                    connector=connector,
+                    connector_config=connector_config,
                     predefined_metadata={},
                     filters={"filename_contains": ".pdf"})
-                click.echo(result['message'])
+                click.echo(f'{result} archivos procesados exitosamente.')
             except Exception as e:
                 logging.exception(e)
                 click.echo(f"Error: {str(e)}")

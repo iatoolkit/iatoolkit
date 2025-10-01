@@ -109,7 +109,7 @@ class Dispatcher:
                     prompt_name=prompt['name'],
                     description=prompt['description'],
                     order=1,
-                    is_system_prompt=True
+                    is_system_prompt=True,
                 )
                 i += 1
 
@@ -117,7 +117,7 @@ class Dispatcher:
         for company in self.company_instances.values():
             company.register_company()
 
-    def dispatch(self, company_name: str, action: str, **kwargs) -> str:
+    def dispatch(self, company_name: str, action: str, **kwargs) -> dict:
         company_key = company_name.lower()
 
         if company_key not in self.company_instances:
