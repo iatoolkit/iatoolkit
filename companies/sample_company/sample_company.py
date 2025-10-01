@@ -48,13 +48,15 @@ class SampleCompany(BaseCompany):
                     short_name='sample_company',
                     allow_jwt=True,
                     parameters={})
-        c = self.profile_repo.create_company(c)
+
+        # set the company object
+        self.company = self.profile_repo.create_company(c)
 
         # create or update the function list
         for function in FUNCTION_LIST:
             self.llm_query_repo.create_or_update_function(
                 Function(
-                    company_id=c.id,
+                    company_id=self.company.id,
                     name=function['function_name'],
                     description=function['description'],
                     parameters=function['params'],
@@ -83,7 +85,7 @@ class SampleCompany(BaseCompany):
                     prompt_name=prt['name'],
                     description=prt['description'],
                     order=prt['order'],
-                    company=c,
+                    company=self.company,
                     category=prt['category'],
                     active=prt.get('active', True)
                 )
@@ -157,16 +159,16 @@ class SampleCompany(BaseCompany):
         def populate_sample_db():
             """📦 Crea y puebla la base de datos de sample_company."""
             if not self.sample_database:
-                click.echo("❌ Error: La base de datos de SampleCompany no está configurada.")
+                click.echo("❌ Error: La base de datos no está configurada.")
                 click.echo("👉 Asegúrate de que 'SAMPLE_DATABASE_URI' esté definida en tu entorno.")
                 return
 
             try:
                 click.echo(
-                    "⚙️  Creando y poblando la base de datos para 'sample_company'. Esto puede tardar unos momentos...")
+                    "⚙️  Creando y poblando la base de datos, esto puede tardar unos momentos...")
                 self.sample_database.create_database()
                 self.sample_database.populate_database()
-                click.echo("✅ Base de datos de 'sample_company' poblada exitosamente.")
+                click.echo("✅ Base de datos de poblada exitosamente.")
             except Exception as e:
                 logging.exception(e)
                 click.echo(f"❌ Ocurrió un error inesperado: {e}")

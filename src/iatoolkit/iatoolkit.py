@@ -231,7 +231,7 @@ class IAToolkit:
         """⚙️ Configures all system dependencies."""
         try:
             # Core dependencies
-            binder.bind(Flask, to=self.app, scope=singleton)
+            binder.bind(Flask, to=self.app)
             binder.bind(DatabaseManager, to=self.db_manager, scope=singleton)
 
             # Bind all application components by calling the specific methods
@@ -285,7 +285,7 @@ class IAToolkit:
         binder.bind(LoadDocumentsService, to=LoadDocumentsService)
         binder.bind(ProfileService, to=ProfileService)
         binder.bind(JWTService, to=JWTService)
-        binder.bind(Dispatcher, to=Dispatcher, scope=singleton)
+        binder.bind(Dispatcher, to=Dispatcher)
 
     def _bind_infrastructure(self, binder: Binder):
         from infra.llm_client import llmClient
