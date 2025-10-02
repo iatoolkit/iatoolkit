@@ -25,7 +25,7 @@ class LLMProvider(Enum):
 
 
 class LLMAdapter(ABC):
-    """Interfaz común para adaptadores de LLM"""
+    """common interface for LLM adapters"""
 
     @abstractmethod
     def create_response(self, *args, **kwargs) -> LLMResponse:

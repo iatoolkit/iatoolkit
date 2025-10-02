@@ -48,7 +48,7 @@ class QueryService:
         self.session_context = session_context
         self.llm_client = llm_client
 
-        # Obtener el modelo de las variables de entorno
+        # get the model from the environment variable
         self.model = os.getenv("LLM_MODEL", "")
         if not self.model:
             raise IAToolkitException(IAToolkitException.ErrorType.API_KEY,

@@ -30,7 +30,7 @@ class RedisSessionManager:
                 ssl_cert_reqs=None,
                 decode_responses=True  # Importante para strings
             )
-            # Verificar conexión
+            # verify connection
             cls._client.ping()
             info = cls._client.info(section="server")
             db = cls._client.connection_pool.connection_kwargs.get('db', 0)
@@ -38,7 +38,6 @@ class RedisSessionManager:
 
     @classmethod
     def set(cls, key: str, value: str, ex: int = None):
-        """Guardar clave-valor con verificación inmediata"""
         client = cls._get_client()
         result = client.set(key, value, ex=ex)
         return result
@@ -52,20 +51,17 @@ class RedisSessionManager:
 
     @classmethod
     def remove(cls, key: str):
-        """Eliminar clave de Redis"""
         client = cls._get_client()
         result = client.delete(key)
         return result
 
     @classmethod
     def set_json(cls, key: str, value: dict, ex: int = None):
-        """Guardar objeto JSON en Redis"""
         json_str = json.dumps(value)
         return cls.set(key, json_str, ex=ex)
 
     @classmethod
     def get_json(cls, key: str, default: dict = None):
-        """Obtener objeto JSON de Redis"""
         if default is None:
             default = {}
 

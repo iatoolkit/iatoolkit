@@ -97,8 +97,8 @@ class ProfileRepo:
 
     def get_active_api_key_entry(self, api_key_value: str) -> ApiKey | None:
         """
-        Busca una API Key activa por su valor y carga la compañía asociada.
-        Retorna la entrada ApiKey si se encuentra y está activa, sino None.
+        search for an active API Key by its value.
+        returns the entry if found and is active, None otherwise.
         """
         try:
             # Usamos joinedload para cargar la compañía en la misma consulta

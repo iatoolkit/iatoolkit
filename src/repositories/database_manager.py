@@ -15,25 +15,20 @@ from pgvector.psycopg2 import register_vector
 class DatabaseManager:
     @inject
     def __init__(self, database_url: str, register_pgvector: bool = True):
-        """
-        Inicializa el gestor de la base de datos.
-        :param database_url: URL de la base de datos.
-        :param echo: Si True, habilita logs de SQL.
-        """
         self.url = make_url(database_url)
         self._engine = create_engine(database_url, echo=False)
         self.SessionFactory = sessionmaker(bind=self._engine)
         self.scoped_session = scoped_session(self.SessionFactory)
 
-        # REGISTRAR pgvector para cada nueva conexión solo en postgres
+        # in postgres, register the pgvector extension
         if register_pgvector and self.url.get_backend_name() == 'postgresql':
             event.listen(self._engine, 'connect', self.on_connect)
 
     @staticmethod
-    def on_connect(dbapi_connection, connection_record):
+    def on_connect(dbapi_connection):
         """
-        Esta función se ejecuta cada vez que se establece una conexión.
-        dbapi_connection es la conexión psycopg2 real.
+        this function is executed each time a new connection is established.
+        dbapi_connection is the psycopg2 real.
         """
         register_vector(dbapi_connection)
 

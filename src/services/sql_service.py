@@ -17,6 +17,23 @@ class SqlService:
         self.util = util
 
     def exec_sql(self, db_manager: DatabaseManager, sql_statement: str) -> str:
+        """
+        Executes a raw SQL statement and returns the result as a JSON string.
+
+        This method takes a DatabaseManager instance and a SQL query, executes it
+        against the database, and fetches all results. The results are converted
+        into a list of dictionaries, where each dictionary represents a row.
+        This list is then serialized to a JSON string.
+        If an exception occurs during execution, the transaction is rolled back,
+        and a custom IAToolkitException is raised.
+
+        Args:
+            db_manager: The DatabaseManager instance to get the database session from.
+            sql_statement: The raw SQL statement to be executed.
+
+        Returns:
+            A JSON string representing the list of rows returned by the query.
+        """
         try:
             # here the SQL is executed
             result = db_manager.get_session().execute(text(sql_statement))

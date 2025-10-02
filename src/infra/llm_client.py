@@ -87,7 +87,7 @@ class llmClient:
             start_time = time.time()
             logging.info(f"calling llm model '{self.model}' with {self.count_tokens(context)} tokens...")
 
-            # Obtener el proxy LLM
+            # get the proxy for the company
             llm_proxy = self.llm_proxy_factory.create_for_company(company)
 
             # here is the first call to the LLM
@@ -109,8 +109,8 @@ class llmClient:
                 stats = self.get_stats(response)
 
             except Exception as e:
-                # Si la API de OpenAI falla (por contexto, clave inválida, etc.),
-                # capturamos el error genérico y lo envolvemos en nuestra excepción personalizada.
+                # if the llm api fails: context, api-key, etc
+                # log the error and envolve in our own exception
                 error_message = f"Error calling LLM API: {str(e)}"
                 logging.error(error_message)
 
@@ -196,7 +196,7 @@ class llmClient:
                 )
                 stats_fcall = self.add_stats(stats_fcall, self.get_stats(response))
 
-            # get statistices
+            # save the statistices
             stats['response_time']=int(time.time() - start_time)
             stats['sql_retry_count'] = sql_retry_count
             stats['model'] = response.model

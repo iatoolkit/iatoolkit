@@ -111,7 +111,7 @@ class IAToolkit:
         return self.app
 
     def _get_config_value(self, key: str, default=None):
-        """Obtiene un valor de configuración, primero del dict config, luego de env vars"""
+        # get a value from the config dict or the environment variable
         return self.config.get(key, os.getenv(key, default))
 
     def _setup_logging(self):

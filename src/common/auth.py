@@ -73,8 +73,7 @@ class IAuthentication:
 
         # last verification of authentication
         if company_id is None or auth_method is None or local_user_id is None:
-            # Esta condición solo debería alcanzarse si hay un flujo no manejado o un error lógico.
-            # Si todos los métodos fallan en autenticar (y no devuelven error explícito antes),
+            # this condition should never happen,
             logging.error(
                 f"Fallo inesperado en la lógica de autenticación para {company_short_name}. Ningún método tuvo éxito o devolvió error.")
             return {"error_message": "Fallo interno en la autenticación o no autenticado"}
@@ -90,7 +89,7 @@ class IAuthentication:
 
     def _authenticate_via_api_key(self, company_short_name_from_url: str):
         """
-        Intenta autenticar usando API Key de los headers.
+        try to authenticate using an API Key from the header 'Authorization'.
         Retorna (company_id, None) en éxito.
         Retorna (None, error_message) en fallo.
         """
@@ -128,9 +127,9 @@ class IAuthentication:
     def _authenticate_via_chat_jwt(self, company_short_name_from_url: str) -> tuple[
         Optional[int], Optional[str], Optional[str]]:
         """
-        Autentica usando un JWT de sesión de chat del header 'X-Chat-Token'.
-        Retorna (company_id, external_user_id, None) en éxito.
-        Retorna (None, None, error_message) en fallo.
+        authenticate using an JWT chat session in the del header 'X-Chat-Token'.
+        Return (company_id, external_user_id, None) on exit
+        Returns (None, None, error_message) on fail.
         """
         chat_jwt = request.headers.get('X-Chat-Token')
         if not chat_jwt:
@@ -139,15 +138,15 @@ class IAuthentication:
         # open the jwt token and retrieve the payload
         jwt_payload = self.jwt_service.validate_chat_jwt(chat_jwt, company_short_name_from_url)
         if not jwt_payload:
-            # La validación falló (expirado, firma incorrecta, empresa no coincide, etc.)
-            # validate_chat_jwt ya habrá logueado el motivo específico.
+            # validation fails (token expired, incorrect signature, company , etc.)
+            # validate_chat_jwt logs the specific failure
             return None, None, "Token de chat expirado, debes reingresar al chat"
 
-        # Éxito: el JWT es válido y corresponde a la empresa y tipo esperados.
+        # JWT is validated: extract the company_id and external_user_id
         company_id = jwt_payload.get('company_id')
         external_user_id = jwt_payload.get('external_user_id')
 
-        # Sanity check adicional, aunque validate_chat_jwt debería cubrir esto.
+        # Sanity check aditional, should never happen
         if not isinstance(company_id, int) or not external_user_id:
             logging.error(
                 f"LLMQuery: JWT payload incompleto tras validación exitosa. CompanyID: {company_id}, UserID: {external_user_id}")
@@ -165,7 +164,7 @@ class IAuthentication:
         if company_short_name != SessionManager.get('company_short_name'):
             return redirect(url_for('login', company_short_name=company_short_name))
 
-        # Verificar timeout de inactividad
+        # check session timeout
         if not self.check_session_timeout():
             SessionManager.clear()
             return redirect(url_for('login', company_short_name=company_short_name))
@@ -182,18 +181,18 @@ class IAuthentication:
         # Tiempo actual en timestamp
         current_time = datetime.now(timezone.utc).timestamp()
 
-        # Calcular el tiempo de inactividad
+        # get inactivity duration
         inactivity_duration = current_time - last_activity
 
-        # Verificar si se excedió el tiempo máximo de inactividad
+        # verify if inactivity duration is greater than MAX_INACTIVITY_SECONDS
         if inactivity_duration > MAX_INACTIVITY_SECONDS:
-            # Cerrar sesión o invalidar sesión
-            return False  # Sesión caducó
+            # close session
+            return False
 
-        # Actualizar el timestamp de la última actividad si la sesión sigue activa
+        # update last activity timestamp
         SessionManager.set('last_activity', current_time)
 
-        return True  # Sesión sigue activa
+        return True  # session is active
 
 
 

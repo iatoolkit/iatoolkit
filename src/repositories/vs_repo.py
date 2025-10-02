@@ -39,26 +39,26 @@ class VSRepo:
     def query(self,
               company_id: int,
               query_text: str,
-              n_results=3,
+              n_results=5,
               metadata_filter=None
               ) -> list[Document]:
         """
-        Busca documentos similares a la consulta para una empresa específica.
+        search documents similar to the query for a company
 
         Args:
-            company_id: ID de la empresa
-            query_text: Texto de la consulta
-            n_results: Número máximo de resultados a devolver
-            metadata_filter: Diccionario con filtros de metadatos (ej: {"document_type": "certificate"})
+            company_id:
+            query_text: query text
+            n_results: max number of results to return
+            metadata_filter:  (ej: {"document_type": "certificate"})
 
         Returns:
-            Lista de documentos que coinciden con la consulta y los filtros
+            list of documents matching the query and filters
         """
         # Generate the embedding with the query text
         query_embedding = self.embedder.feature_extraction([query_text])[0]
 
         try:
-            # Construir la consulta SQL base
+            # build the SQL query
             sql_query_parts = ["""
                                SELECT iat_documents.id, \
                                       iat_documents.filename, \
@@ -71,14 +71,14 @@ class VSRepo:
                                  AND iat_vsdocs.document_id = iat_documents.id \
                                """]
 
-            # Parámetros para la consulta
+            # query parameters
             params = {
                 "company_id": company_id,
                 "query_embedding": query_embedding,
                 "n_results": n_results
             }
 
-            # Añadir filtros de metadatos si se especifican
+            # add metadata filter, if exists
             if metadata_filter and isinstance(metadata_filter, dict):
                 for key, value in metadata_filter.items():
                     # Usar el operador ->> para extraer el valor del JSON como texto.
@@ -88,23 +88,23 @@ class VSRepo:
                     sql_query_parts.append(f" AND documents.meta->>'{key}' = :{param_name}")
                     params[param_name] = str(value)     # parametros como string
 
-            # Unir todas las partes de la consulta
+            # join all the query parts
             sql_query = "".join(sql_query_parts)
 
-            # Añadir ordenamiento y límite
+            # add sorting and limit of results
             sql_query += " ORDER BY embedding <-> :query_embedding LIMIT :n_results"
 
             logging.debug(f"Executing SQL query: {sql_query}")
             logging.debug(f"With parameters: {params}")
 
-            # Ejecutar la consulta
+            # execute the query
             result = self.session.execute(text(sql_query), params)
 
             rows = result.fetchall()
             vs_documents = []
 
             for row in rows:
-                # Crear objeto Document con todos los datos
+                # create the document object with the data
                 meta_data = row[4] if len(row) > 4 and row[4] is not None else {}
                 doc = Document(
                     id=row[0],

@@ -18,6 +18,22 @@ class SearchService:
         self.doc_repo = doc_repo
 
     def search(self, company_id:  int, query: str, metadata_filter: dict = None) -> str:
+        """
+        Performs a semantic search for a given query within a company's documents.
+
+        This method queries the vector store for relevant documents based on the
+        provided query text. It then constructs a formatted string containing the
+        content of the retrieved documents, which can be used as context for an LLM.
+
+        Args:
+            company_id: The ID of the company to search within.
+            query: The text query to search for.
+            metadata_filter: An optional dictionary to filter documents by their metadata.
+
+        Returns:
+            A string containing the concatenated content of the found documents,
+            formatted to be used as a context.
+        """
         document_list = self.vs_repo.query(company_id=company_id,
                                            query_text=query,
                                            metadata_filter=metadata_filter)

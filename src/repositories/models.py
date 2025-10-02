@@ -13,11 +13,11 @@ import secrets
 import enum
 
 
-# Definir la base para el ORM
+# base class for the ORM
 class Base(DeclarativeBase):
     pass
 
-# Tabla de relación muchos a muchos entre User y Company
+# relation table for many-to-many relationship between companies and users
 user_company = Table('iat_user_company',
                      Base.metadata,
                     Column('user_id', Integer,
@@ -32,6 +32,7 @@ user_company = Table('iat_user_company',
                      )
 
 class ApiKey(Base):
+    """Represents an API key for a company to authenticate against the system."""
     __tablename__ = 'iat_api_keys'
 
     id = Column(Integer, primary_key=True)
@@ -45,6 +46,7 @@ class ApiKey(Base):
 
 
 class Company(Base):
+    """Represents a company or tenant in the multi-tenant system."""
     __tablename__ = 'iat_companies'
 
     id = Column(Integer, primary_key=True)
@@ -93,6 +95,7 @@ class Company(Base):
 
 # users with rights to use this app
 class User(Base):
+    """Represents an IAToolkit user who can be associated with multiple companies."""
     __tablename__ = 'iat_users'
 
     id = Column(Integer, primary_key=True)
@@ -130,6 +133,7 @@ class User(Base):
         }
 
 class Function(Base):
+    """Represents a custom or system function that the LLM can call (tool)."""
     __tablename__ = 'iat_functions'
 
     id = Column(Integer, primary_key=True)
@@ -150,6 +154,7 @@ class Function(Base):
 
 
 class Document(Base):
+    """Represents a file or document uploaded by a company for context."""
     __tablename__ = 'iat_documents'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -167,8 +172,8 @@ class Document(Base):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
 
 
-# all the user queries
 class LLMQuery(Base):
+    """Logs a query made to the LLM, including input, output, and metadata."""
     __tablename__ = 'iat_queries'
 
     id = Column(Integer, primary_key=True)
@@ -193,6 +198,7 @@ class LLMQuery(Base):
 
 
 class VSDoc(Base):
+    """Stores a text chunk and its corresponding vector embedding for similarity search."""
     __tablename__ = "iat_vsdocs"
 
     id = Column(Integer, primary_key=True)
@@ -209,13 +215,15 @@ class VSDoc(Base):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
 
 class TaskStatus(PyEnum):
-    pendiente = "pendiente"  # Tarea creada y en espera de ejecución.
-    ejecutado = "ejecutado"  # La IA ya procesó la tarea (resultado en llm_query).
-    aprobada = "aprobada"  # Validada y aprobada por humano.
-    rechazada = "rechazada"  # Validada y rechazada por humano.
-    fallida = "fallida"  # Error durante la ejecución.
+    """Enumeration for the possible statuses of a Task."""
+    pendiente = "pendiente"  # task created and waiting to be executed.
+    ejecutado = "ejecutado"  # the IA algorithm has been executed.
+    aprobada = "aprobada"  # validated and approved by human.
+    rechazada = "rechazada"  # validated and rejected by human.
+    fallida = "fallida"  # error executing the IA algorithm.
 
 class TaskType(Base):
+    """Defines a type of task that can be executed, including its prompt template."""
     __tablename__ = 'iat_task_types'
 
     id = Column(Integer, primary_key=True)
@@ -224,6 +232,7 @@ class TaskType(Base):
     template_args = Column(JSON, nullable=True)  # Argumentos/prefijos de configuración para el template.
 
 class Task(Base):
+    """Represents an asynchronous task to be executed by the system, often involving an LLM."""
     __tablename__ = 'iat_tasks'
 
     id = Column(Integer, primary_key=True)
@@ -253,6 +262,7 @@ class Task(Base):
     company = relationship("Company", back_populates="tasks")
 
 class UserFeedback(Base):
+    """Stores feedback and ratings submitted by users for specific interactions."""
     __tablename__ = 'iat_feedback'
 
     id = Column(Integer, primary_key=True)
@@ -268,6 +278,7 @@ class UserFeedback(Base):
 
 
 class PromptCategory(Base):
+    """Represents a category to group and organize prompts."""
     __tablename__ = 'iat_prompt_categories'
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
@@ -281,6 +292,7 @@ class PromptCategory(Base):
 
 
 class Prompt(Base):
+    """Represents a system or user-defined prompt template for the LLM."""
     __tablename__ = 'iat_prompt'
 
     id = Column(Integer, primary_key=True)

@@ -19,7 +19,7 @@ def logout(company_short_name: str):
         return redirect(url_for('home'))
 
 
-# 2. Define a function to register all views to the Blueprint
+# this function register all the views
 def register_views(injector, app):
 
     from views.llmquery_view import LLMQueryView

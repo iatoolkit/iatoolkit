@@ -197,7 +197,7 @@ class Dispatcher:
         """
         Asegura que los datos del usuario siempre tengan una estructura consistente.
         """
-        # Valores por defecto para un perfil robusto
+        # default values
         normalized_user = {
             "id": raw_data.get("id", 0),
             "user_email": raw_data.get("email", ""),
