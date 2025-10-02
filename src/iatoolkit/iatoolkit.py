@@ -90,7 +90,10 @@ class IAToolkit:
         # and other integrations, as views are handled manually.
         FlaskInjector(app=self.app, injector=self._injector)
 
-        # Step 6: Finalize setup within the application context
+        # Step 6: initialize dispatcher and registered compaies
+        self._init_dispatcher_and_company_instances()
+
+        # Step 7: Finalize setup within the application context
         self._setup_redis_sessions()
         self._setup_cors()
         self._setup_additional_services()
@@ -317,9 +320,17 @@ class IAToolkit:
     def _setup_additional_services(self):
         Bcrypt(self.app)
 
+    def _init_dispatcher_and_company_instances(self):
+        from iatoolkit.company_registry import get_company_registry
+        from services.dispatcher_service import Dispatcher
+
+        get_company_registry().instantiate_companies(self._injector)
+
+        dispatcher = self._injector.get(Dispatcher)
+        dispatcher.start_execution()
+
     def _setup_cli_commands(self):
         from iatoolkit.cli_commands import register_core_commands
-        from services.dispatcher_service import Dispatcher
         from iatoolkit.company_registry import get_company_registry
 
         # 1. Register core commands
@@ -328,16 +339,10 @@ class IAToolkit:
 
         # 2. Register company-specific commands
         try:
-            # Get the dispatcher, which holds the company instances
-            dispatcher = self.get_injector().get(Dispatcher)
-            registry = get_company_registry()
-
             # Iterate through the registered company names
-            for company_name in registry.get_registered_companies():
-                company_instance = dispatcher.get_company_instance(company_name)
-                if company_instance:
-                    company_instance.register_cli_commands(self.app)
-                    logging.info(f"✅ Comandos CLI para la compañía '{company_name}' registrados.")
+            all_company_instances = get_company_registry().get_all_company_instances()
+            for company_name, company_instance in all_company_instances.items():
+                company_instance.register_cli_commands(self.app)
 
         except Exception as e:
             logging.error(f"❌ Error durante el registro de comandos de compañías: {e}")

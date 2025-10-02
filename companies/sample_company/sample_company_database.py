@@ -47,7 +47,7 @@ class SampleCompanyDatabase:
                 id          INTEGER PRIMARY KEY,
                 customer_id INTEGER NOT NULL,
                 order_date  DATE    NOT NULL,
-                FOREIGN KEY (customer_id) REFERENCES sample_customers (id)
+                FOREIGN KEY (customer_id) REFERENCES {PREFIX_TABLE_NAME}customers (id)
             );
             """,
             f"""
@@ -57,12 +57,11 @@ class SampleCompanyDatabase:
                 order_id   INTEGER NOT NULL,
                 product_id INTEGER NOT NULL,
                 quantity   INTEGER NOT NULL,
-                FOREIGN KEY (order_id) REFERENCES sample_orders (id),
-                FOREIGN KEY (product_id) REFERENCES sample_products (id)
+                FOREIGN KEY (order_id) REFERENCES {PREFIX_TABLE_NAME}orders (id),
+                FOREIGN KEY (product_id) REFERENCES {PREFIX_TABLE_NAME}products (id)
             );
             """
         ]
-
         with self.db_manager.get_connection() as connection:
             for statement in create_statements:
                 connection.execute(text(statement))

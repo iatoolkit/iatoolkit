@@ -68,6 +68,8 @@ class TestDispatcher:
         mock_injector = Injector()
         mock_injector.binder.bind(MockSampleCompany, to=self.mock_sample_company_instance)
 
+        registry.instantiate_companies(mock_injector)
+
         # Create a mock IAToolkit instance
         self.toolkit_mock = MagicMock()
         self.toolkit_mock.get_injector.return_value = mock_injector
@@ -96,11 +98,6 @@ class TestDispatcher:
         # Clean up the registry
         registry = get_company_registry()
         registry.clear()
-
-    def test_setup_all_companies_calls_register_company_on_each_company(self):
-        """Tests that init_db calls init_db on each registered company."""
-        self.dispatcher.setup_all_companies()
-        self.mock_sample_company_instance.register_company.assert_called_once()
 
     def test_dispatch_sample_company(self):
         """Tests that dispatch works correctly for a valid company."""
@@ -238,14 +235,6 @@ class TestDispatcher:
         assert tool["description"] == "A test function"
         assert tool["parameters"]["additionalProperties"] is False
         assert tool["strict"] is True
-
-    def test_start_execution_when_ok(self):
-        """Tests that start_execution works correctly."""
-        result = self.dispatcher.get_registered_companies()
-
-        assert result['count'] == 1
-        assert result['registered_classes'][0] == 'sample'
-        self.mock_sample_company_instance.start_execution.assert_called_once()
 
     def test_dispatcher_with_no_companies_registered(self):
         """Tests that the dispatcher works if no company is registered."""

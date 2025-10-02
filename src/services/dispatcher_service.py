@@ -39,12 +39,6 @@ class Dispatcher:
         self._company_registry = None
         self._company_instances = None
 
-        # load into the dispatcher the configured companies
-        self.initialize_companies()
-
-        # run the statrtup logic for all companies
-        self.start_execution()
-
         self.tool_handlers = {
             "iat_generate_excel": self.excel_service.excel_generator,
             "iat_send_email": self.mail_service.send_mail,
@@ -66,25 +60,9 @@ class Dispatcher:
             self._company_instances = self.company_registry.get_all_company_instances()
         return self._company_instances
 
-    def initialize_companies(self):
-        from iatoolkit import current_iatoolkit
-        """
-        Initializes and instantiates all registered company classes.
-        This method should be called *after* the main injector is fully configured
-        and the company registry is populated.
-        """
-        if self.company_registry.get_all_company_instances():  # Check if already instantiated
-            return
-
-        # ✅ NOW it is safe to get the injector and instantiate companies.
-        injector = current_iatoolkit().get_injector()
-        self.company_registry.instantiate_companies(injector)
-
-
     def start_execution(self):
         """Runs the startup logic for all registered companies."""
         for company_name, company_instance in self.company_instances.items():
-            logging.info(f'Starting execution for company: {company_name}')
             company_instance.start_execution()
 
         return True
