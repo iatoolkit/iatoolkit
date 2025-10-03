@@ -1,0 +1,32 @@
+customer:
+  description: "Tabla de Clientes: Representa un cliente de la tienda. Contiene información de la empresa, contacto y ubicación."
+  CustomerID:
+    description: "Identificador único para cada cliente, usualmente un código corto. Es la clave primaria."
+    type: string
+  CompanyName:
+    description: "Nombre de la empresa del cliente."
+    type: string
+  ContactName:
+    description: "Nombre de la persona de contacto en la empresa cliente."
+    type: string
+  ContactTitle:
+    description: "Cargo de la persona de contacto."
+    type: string
+  Address:
+    description: "Dirección del cliente."
+    type: string
+  City:
+    description: "Ciudad del cliente."
+    type: string
+  Region:
+    description: "Región o estado del cliente."
+    type: string
+  PostalCode:
+    description: "Código postal del cliente."
+    type: string
+  Country:
+    description: "País del cliente."
+    type: string
+  Phone:
+    description: "Número de teléfono del cliente."
+    type: string

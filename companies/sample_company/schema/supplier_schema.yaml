@@ -1,0 +1,23 @@
+supplier:
+  description: "Tabla de Proveedores: Contiene información sobre los proveedores de productos."
+  SupplierID:
+    description: "Identificador único para cada proveedor. Es la clave primaria."
+    type: integer
+  CompanyName:
+    description: "Nombre de la empresa del proveedor."
+    type: string
+  ContactName:
+    description: "Nombre de la persona de contacto en la empresa proveedora."
+    type: string
+  Country:
+    description: "País del proveedor."
+    type: string
+  City:
+    description: "Ciudad del proveedor."
+    type: string
+  Phone:
+    description: "Número de teléfono del proveedor."
+    type: string
+  Address:
+    description: "Dirección del proveedor."
+    type: string

@@ -1,0 +1,11 @@
+category:
+  description: "Tabla de Categorías: Almacena las diferentes categorías de productos, como Bebidas, Condimentos, etc."
+  CategoryID:
+    description: "Identificador único para cada categoría. Es la clave primaria."
+    type: integer
+  CategoryName:
+    description: "Nombre de la categoría."
+    type: string
+  Description:
+    description: "Descripción detallada de la categoría."
+    type: string

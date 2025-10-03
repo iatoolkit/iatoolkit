@@ -8,7 +8,7 @@ from iatoolkit import ProfileRepo, LLMQueryRepo, PromptService, DatabaseManager
 from iatoolkit import SqlService, LoadDocumentsService, SearchService
 from injector import inject
 from companies.sample_company.configuration import FUNCTION_LIST
-from companies.sample_company.sample_company_database import SampleCompanyDatabase
+from companies.sample_company.sample_northwind_database import SampleCompanyDatabase
 import os
 import click
 import logging
@@ -33,7 +33,7 @@ class SampleCompany(BaseCompany):
         self.company = self.profile_repo.get_company_by_short_name('sample_company')
 
         # connect to Internal database
-        sample_db_uri = os.getenv('SAMPLE_DATABASE_URI')
+        sample_db_uri = os.getenv('NORTHWIND_DATABASE_URI')
         if not sample_db_uri:
             # if not exists use the same iatoolkit database
             sample_db_uri = os.getenv('DATABASE_URI')
@@ -133,10 +133,18 @@ class SampleCompany(BaseCompany):
         Genera las definiciones de esquema para todas las tablas del modelo.
         """
         model_tables = [
-            {'table_name': 'sample_customers', 'schema_name': 'customer'},
-            {'table_name': 'sample_products', 'schema_name': 'product'},
-            {'table_name': 'sample_orders', 'schema_name': 'order'},
-            {'table_name': 'sample_order_items', 'schema_name': 'order_item'},
+            {'table_name': 'products', 'schema_name': 'product'},
+            {'table_name': 'regions', 'schema_name': 'region'},
+            {'table_name': 'shippers', 'schema_name': 'shipper'},
+            {'table_name': 'suppliers', 'schema_name': 'supplier'},
+            {'table_name': 'categories', 'schema_name': 'category'},
+            {'table_name': 'customers', 'schema_name': 'customer' },
+            {'table_name': 'territories', 'schema_name': 'territory'},
+            {'table_name': 'employees', 'schema_name': 'employee'},
+            {'table_name': 'employee_territories', 'schema_name': 'employee_territory' },
+            {'table_name': 'orders', 'schema_name': 'order' },
+            {'table_name': 'orders_details', 'schema_name': 'order_detail'},
+
         ]
 
         db_context = ''
@@ -155,7 +163,7 @@ class SampleCompany(BaseCompany):
 
     def register_cli_commands(self, app):
 
-        @app.cli.command("populate-sample-db")
+        @app.cli.command("populate-northwind")
         def populate_sample_db():
             """📦 Crea y puebla la base de datos de sample_company."""
             if not self.sample_database:
@@ -167,7 +175,7 @@ class SampleCompany(BaseCompany):
                 click.echo(
                     "⚙️  Creando y poblando la base de datos, esto puede tardar unos momentos...")
                 self.sample_database.create_database()
-                self.sample_database.populate_database()
+                self.sample_database.populate_from_excel('companies/sample_company/sample_data/northwind.xlsx')
                 click.echo("✅ Base de datos de poblada exitosamente.")
             except Exception as e:
                 logging.exception(e)

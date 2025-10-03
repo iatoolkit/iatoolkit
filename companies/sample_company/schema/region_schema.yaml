@@ -1,0 +1,8 @@
+region:
+  description: "Tabla de Regiones: Define regiones geográficas, como 'Norteamérica' o 'Europa'."
+  RegionID:
+    description: "Identificador único para cada región. Es la clave primaria."
+    type: integer
+  RegionDescription:
+    description: "Nombre o descripción de la región."
+    type: string

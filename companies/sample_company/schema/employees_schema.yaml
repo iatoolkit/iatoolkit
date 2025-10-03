@@ -1,0 +1,29 @@
+employee:
+  description: "Tabla de Empleados: Contiene información sobre los empleados de la empresa."
+  EmployeeID:
+    description: "Identificador único para cada empleado. Es la clave primaria."
+    type: integer
+  LastName:
+    description: "Apellido del empleado."
+    type: string
+  FirstName:
+    description: "Nombre del empleado."
+    type: string
+  Title:
+    description: "Cargo o puesto del empleado."
+    type: string
+  BirthDate:
+    description: "Fecha de nacimiento del empleado."
+    type: date
+  HireDate:
+    description: "Fecha de contratación del empleado."
+    type: date
+  City:
+    description: "Ciudad de residencia del empleado."
+    type: string
+  Country:
+    description: "País de residencia del empleado."
+    type: string
+  ReportsTo:
+    description: "Identificador del empleado al que reporta directamente (su jefe). Es una clave foránea a esta misma tabla."
+    type: integer
