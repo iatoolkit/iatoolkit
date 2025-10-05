@@ -80,7 +80,6 @@ class ProfileService:
             "id": user.id,
             "email": user.email,
             "user_fullname": f'{user.first_name} {user.last_name}',
-            "super_user": user.super_user,
             "company_id": company.id,
             "company": company.name,
             "company_short_name": company.short_name,
@@ -98,7 +97,6 @@ class ProfileService:
                email: str,
                first_name: str,
                last_name: str,
-               rut: str,
                password: str,
                confirm_password: str,
                verification_url: str) -> dict:
@@ -110,7 +108,6 @@ class ProfileService:
                 return {"error": f"la empresa {company_short_name} no existe"}
 
             # normalize  format's
-            rut = rut.lower().replace(" ", "")
             email = email.lower()
 
             # check if user exists
@@ -119,9 +116,6 @@ class ProfileService:
                 # validate password
                 if not self.bcrypt.check_password_hash(existing_user.password, password):
                     return {"error": "La contraseña es incorrecta. No se puede agregar a la nueva empresa."}
-
-                if rut != existing_user.rut:
-                    return {"error": "El RUT ingresado no corresponde al email existente."}
 
                 # check if register
                 if company in existing_user.companies:
@@ -145,7 +139,6 @@ class ProfileService:
 
             # create the new user
             new_user = User(email=email,
-                            rut=rut,
                             password=hashed_password,
                             first_name=first_name.lower(),
                             last_name=last_name.lower(),

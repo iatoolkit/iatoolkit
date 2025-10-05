@@ -202,7 +202,6 @@ class Dispatcher:
             "id": raw_data.get("id", 0),
             "user_email": raw_data.get("email", ""),
             "user_fullname": raw_data.get("user_fullname", ""),
-            "super_user": raw_data.get("super_user", False),
             "company_id": raw_data.get("company_id", 0),
             "company_name": raw_data.get("company", ""),
             "company_short_name": raw_data.get("company_short_name", ""),

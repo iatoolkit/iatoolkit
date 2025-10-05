@@ -32,7 +32,7 @@ class TestProfileService:
             query_service=self.query_service,
             mail_app=self.mail_app)
 
-        self.mock_user = User(email='test@opensoft.cl', rut='8424195-4',
+        self.mock_user = User(email='test@opensoft.cl',
                             first_name='fernando', last_name='libe',
                             password=generate_password_hash("password").decode("utf-8"), verified=True)
 
@@ -119,7 +119,7 @@ class TestProfileService:
 
         response = self.service.signup(
             self.mock_company.short_name,
-            email='test@email.com', rut='1-9',
+            email='test@email.com',
             first_name='Test', last_name='User',
             password="password", confirm_password="password",
             verification_url='http://verification'
@@ -133,7 +133,7 @@ class TestProfileService:
 
         response = self.service.signup(
             self.mock_company.short_name,
-            email='test@email.com', rut='1-9',
+            email='test@email.com',
             first_name='Test', last_name='User',
             password="invalid_password", confirm_password="password",
             verification_url='http://verification'
@@ -141,25 +141,13 @@ class TestProfileService:
 
         assert "contraseña es incorrecta" in response['error']
 
-    def test_signup_when_user_exist_and_invalid_rut(self):
-        self.repo.get_user_by_email.return_value = self.mock_user
-
-        response = self.service.signup(
-            self.mock_company.short_name,
-            email='test@email.com', rut='1-9',
-            first_name='Test', last_name='User',
-            password="password", confirm_password="password",
-            verification_url='http://verification'
-        )
-
-        assert "RUT ingresado no corresponde" in response['error']
 
     def test_signup_when_user_exist_and_already_register(self):
         self.repo.get_user_by_email.return_value = self.mock_user
 
         response = self.service.signup(
             self.mock_company.short_name,
-            email='test@email.com', rut='8424195-4',
+            email='test@email.com',
             first_name='Test', last_name='User',
             password="password", confirm_password="password",
             verification_url='http://verification'
@@ -173,7 +161,7 @@ class TestProfileService:
 
         response = self.service.signup(
             self.mock_company.short_name,
-            email='test@email.com', rut='8424195-4',
+            email='test@email.com',
             first_name='Test', last_name='User',
             password="password", confirm_password="password",
             verification_url='http://verification'
@@ -184,11 +172,10 @@ class TestProfileService:
 
     def test_signup_when_passwords_different(self):
         self.repo.get_user_by_email.return_value = None
-        self.repo.get_user_by_rut.return_value = None
 
         response = self.service.signup(
             self.mock_company.short_name,
-            email='test@email.com', rut='1-9',
+            email='test@email.com',
             first_name='Test', last_name='User',
             password="Password1", confirm_password="Password2$1",
             verification_url='http://verification'
@@ -198,11 +185,10 @@ class TestProfileService:
 
     def test_signup_when_passwords_incorrect2(self):
         self.repo.get_user_by_email.return_value = None
-        self.repo.get_user_by_rut.return_value = None
 
         response = self.service.signup(
             self.mock_company.short_name,
-            email='test@email.com', rut='1-9',
+            email='test@email.com',
             first_name='Test', last_name='User',
             password="Password", confirm_password="Password",
             verification_url='http://verification'
@@ -212,11 +198,10 @@ class TestProfileService:
 
     def test_signup_when_passwords_incorrect3(self):
         self.repo.get_user_by_email.return_value = None
-        self.repo.get_user_by_rut.return_value = None
 
         response = self.service.signup(
             self.mock_company.short_name,
-            email='test@email.com', rut='1-9',
+            email='test@email.com',
             first_name='Test', last_name='User',
             password="Passw1", confirm_password="Passw1",
             verification_url='http://verification'
@@ -226,11 +211,10 @@ class TestProfileService:
 
     def test_signup_when_passwords_incorrect4(self):
         self.repo.get_user_by_email.return_value = None
-        self.repo.get_user_by_rut.return_value = None
 
         response = self.service.signup(
             self.mock_company.short_name,
-            email='test@email.com', rut='1-9',
+            email='test@email.com',
             first_name='Test', last_name='User',
             password="password123", confirm_password="password123",
             verification_url='http://verification'
@@ -240,11 +224,10 @@ class TestProfileService:
 
     def test_signup_when_passwords_incorrect5(self):
         self.repo.get_user_by_email.return_value = None
-        self.repo.get_user_by_rut.return_value = None
 
         response = self.service.signup(
             self.mock_company.short_name,
-            email='test@email.com', rut='1-9',
+            email='test@email.com',
             first_name='Test', last_name='User',
             password="Password123", confirm_password="Password123",
             verification_url='http://verification'
@@ -254,12 +237,11 @@ class TestProfileService:
 
     def test_signup_when_ok(self):
         self.repo.get_user_by_email.return_value = None
-        self.repo.get_user_by_rut.return_value = None
         self.mail_app.send_email.return_value = True
 
         response = self.service.signup(
             self.mock_company.short_name,
-            email='test@email.com', rut='1-9',
+            email='test@email.com',
             first_name='Test', last_name='User',
             password="Password$1", confirm_password="Password$1",
             verification_url='http://verification'
@@ -272,7 +254,7 @@ class TestProfileService:
         self.repo.get_user_by_email.side_effect = Exception('an error')
         response = self.service.signup(
             self.mock_company.short_name,
-            email='test@email.com', rut='1-9',
+            email='test@email.com',
             first_name='Test', last_name='User',
             password="password", confirm_password="password",
             verification_url='http://verification'

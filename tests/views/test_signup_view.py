@@ -81,7 +81,6 @@ class TestSignupView:
                                         "first_name": "Juan",
                                         "last_name": "Perez",
                                         "email": "test@email.com",
-                                        "rut": "12345678-9",
                                         "password": "password123",
                                         "confirm_password": "password123"
                                     },
@@ -104,7 +103,6 @@ class TestSignupView:
                                         "first_name": "Juan",
                                         "last_name": "Perez",
                                         "email": "juan@email.com",
-                                        "rut": "12345678-9",
                                         "password": "password123",
                                         "confirm_password": "password123"
                                     },
@@ -128,7 +126,6 @@ class TestSignupView:
                                         "first_name": "Juan",
                                         "last_name": "Perez",
                                         "email": "juan@email.com",
-                                        "rut": "12345678-9",
                                         "password": "password123",
                                         "confirm_password": "password123"
                                     },

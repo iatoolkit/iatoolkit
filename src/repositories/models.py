@@ -100,7 +100,6 @@ class User(Base):
 
     id = Column(Integer, primary_key=True)
     email = Column(String(80), unique=True, nullable=False)
-    rut= Column(String(20), unique=True, nullable=True)
     first_name = Column(String(50), nullable=False)
     last_name = Column(String(50), nullable=False)
     created_at = Column(DateTime, default=datetime.now)
@@ -108,7 +107,6 @@ class User(Base):
     verified = Column(Boolean, nullable=False, default=False)
     verification_url = Column(String, nullable=True)
     temp_code = Column(String, nullable=True)
-    super_user = Column(Boolean, nullable=True, default=False)
 
     companies = relationship(
         "Company",
@@ -123,12 +121,10 @@ class User(Base):
         return {
             'id': self.id,
             'email': self.email,
-            'rut': self.rut,
             'first_name': self.first_name,
             'last_name': self.last_name,
             'created_at': str(self.created_at),
             'verified': self.verified,
-            'super_user': self.super_user,
             'companies': [company.to_dict() for company in self.companies]
         }
 

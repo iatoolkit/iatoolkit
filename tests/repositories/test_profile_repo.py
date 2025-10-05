@@ -19,7 +19,7 @@ class TestProfileRepo:
         self.user = User(email='fernando@opensoft.cl',
                          first_name='Fernando',
                          last_name='Libedinsky',
-                         rut='2978637-2', password='123')
+                         password='123')
 
         self.company = Company(name='opensoft', short_name='open')
 
@@ -39,11 +39,6 @@ class TestProfileRepo:
     def test_get_user_by_email_when_success(self):
         self.session.add(self.user)
         result = self.repo.get_user_by_email('fernando@opensoft.cl')
-        assert result == self.user
-
-    def test_get_user_by_rut_when_success(self):
-        self.session.add(self.user)
-        result = self.repo.get_user_by_rut('2978637-2')
         assert result == self.user
 
     def test_create_user_when_ok(self):

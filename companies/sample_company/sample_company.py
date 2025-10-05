@@ -102,6 +102,8 @@ class SampleCompany(BaseCompany):
         return {}
 
     def get_metadata_from_filename(self, filename: str) -> dict:
+        if filename.startswith('contract_'):
+            return {'type': 'employee_contract'}
         return {}
 
     def handle_request(self, action: str, **kwargs) -> str:
@@ -119,7 +121,6 @@ class SampleCompany(BaseCompany):
             "id": user_identifier,
             "user_email": 'sample@sample_company.com',
             "user_fullname": 'Sample User',
-            "super_user": False,
             "company_id": self.company.id,
             "company_name": self.company.name,
             "company_short_name": self.company.short_name,
@@ -162,13 +163,13 @@ class SampleCompany(BaseCompany):
                 )
                 db_context += table_definition
             except RuntimeError as e:
-                print(f"Advertencia al generar esquema para {table['table_name']}: {e}")
+                logging.warning(f"Advertencia al generar esquema para {table['table_name']}: {e}")
 
         return db_context
 
     def register_cli_commands(self, app):
 
-        @app.cli.command("populate-northwind")
+        @app.cli.command("populate-database")
         def populate_sample_db():
             """📦 Crea y puebla la base de datos de sample_company."""
             if not self.sample_database:
@@ -198,20 +199,25 @@ class SampleCompany(BaseCompany):
 
             load_documents_service = IAToolkit.get_instance().get_injector().get(LoadDocumentsService)
 
+            # documents are loaded from 2 different folders
+            # as a sample, only add metadata 'type' for one of them: supplier_manual
+            # for the other one, we will add metadata from the filename in get_metadata_from_filename method
+            # metadata es optional always
             types_to_load = [
                 {'type': 'supplier_manual', 'folder': 'supplier_manuals'},
-                {'type': 'employee_contract', 'folder': 'employee_contracts'}
+                {'folder': 'employee_contracts'}
                 ]
 
             for doc in types_to_load:
                 connector_config['path'] = f"companies/sample_company/sample_data/{doc['folder']}"
                 try:
+                    predefined_metadata = {'type': doc['type']} if 'type' in doc else {}
                     result = load_documents_service.load_company_files(
                         company=self.company,
                         connector_config=connector_config,
-                        predefined_metadata={'type': doc['type']},
+                        predefined_metadata=predefined_metadata,
                         filters={"filename_contains": ".pdf"})
-                    click.echo(f'folder {doc["folder"]},  {result} dodumentos procesados exitosamente.')
+                    click.echo(f'folder {doc["folder"]}:  {result} dodumentos procesados exitosamente.')
                 except Exception as e:
                     logging.exception(e)
                     click.echo(f"Error: {str(e)}")

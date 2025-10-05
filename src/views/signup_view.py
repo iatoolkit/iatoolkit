@@ -42,7 +42,6 @@ class SignupView(MethodView):
             first_name = request.form.get('first_name')
             last_name = request.form.get('last_name')
             email = request.form.get('email')
-            rut = request.form.get('rut')
             password = request.form.get('password')
             confirm_password = request.form.get('confirm_password')
 
@@ -55,7 +54,6 @@ class SignupView(MethodView):
             response = self.profile_service.signup(
                 company_short_name=company_short_name,
                 email=email,
-                rut=rut,
                 first_name=first_name, last_name=last_name,
                 password=password, confirm_password=confirm_password,
                 verification_url=verification_url)
@@ -69,7 +67,6 @@ class SignupView(MethodView):
                                            "first_name": first_name,
                                            "last_name": last_name,
                                            "email": email,
-                                           "rut": rut,
                                             "password": password,
                                             "confirm_password": confirm_password
                                        },

@@ -29,7 +29,6 @@ def register_views(injector, app):
     from views.chat_view import ChatView
     from views.login_view import LoginView
     from views.external_chat_login_view import ExternalChatLoginView
-    from views.select_company_view import SelectCompanyView
     from views.signup_view import SignupView
     from views.verify_user_view import VerifyAccountView
     from views.forgot_password_view import ForgotPasswordView
@@ -59,7 +58,6 @@ def register_views(injector, app):
     app.add_url_rule('/<company_short_name>/verify/<token>', view_func=VerifyAccountView.as_view('verify_account'))
     app.add_url_rule('/<company_short_name>/forgot-password', view_func=ForgotPasswordView.as_view('forgot_password'))
     app.add_url_rule('/<company_short_name>/change-password/<token>', view_func=ChangePasswordView.as_view('change_password'))
-    app.add_url_rule('/<company_short_name>/select_company', view_func=SelectCompanyView.as_view('select_company'))
 
     # this are backend endpoints mainly
     app.add_url_rule('/<company_short_name>/llm_query', view_func=LLMQueryView.as_view('llm_query'))

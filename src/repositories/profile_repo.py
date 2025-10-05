@@ -22,9 +22,6 @@ class ProfileRepo:
         user = self.session.query(User).filter_by(email=email).first()
         return user
 
-    def get_user_by_rut(self, rut: str):
-        return self.session.query(User).filter_by(rut=rut).first()
-
     def create_user(self, new_user: User):
         self.session.add(new_user)
         self.session.commit()

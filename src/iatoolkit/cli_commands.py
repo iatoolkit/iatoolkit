@@ -40,7 +40,7 @@ def register_core_commands(app):
                 click.echo("👉 Asegúrate de que el nombre de la compañía es correcto y está registrada.")
             else:
                 click.echo("✅ ¡Configuración lista! Agrega esta variable a tu entorno:")
-                click.echo(f"IATOOLKIT_API_KEY={result['api-key']}")
+                click.echo(f"IATOOLKIT_API_KEY='{result['api-key']}'")
         except Exception as e:
             logging.exception(e)
             click.echo(f"❌ Ocurrió un error inesperado durante la configuración: {e}")

@@ -140,7 +140,7 @@ class TestQueryService:
 
     def test_llm_query_with_prompt_name_merges_data_correctly(self):
         """Tests that session data is merged with request data, with the latter taking priority."""
-        request_client_data = {'rut': '1-9', 'user_name': 'request_user'}
+        request_client_data = {'user_name': 'request_user'}
         external_user_id = 'ext_user_2'
 
         self.service.llm_query(
@@ -158,7 +158,6 @@ class TestQueryService:
             'data': {
                 'user_role': 'leader',  # From session
                 'user_name': 'request_user',  # From request (overwrites session)
-                'rut': '1-9',  # From request
                 'user_id': external_user_id  # Added by the service
             }
         }
