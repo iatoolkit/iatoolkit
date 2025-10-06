@@ -22,13 +22,7 @@
     word-wrap: break-word;
     margin-bottom: 10px;
 }
-/* Estilos para alinear los iconos en una fila junto al boton enviar y el input*/
-.input-row {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 10px;
-}
+
 .input-container {
     flex: 1;
     display: flex;
@@ -313,6 +307,76 @@
     background-color: #c82333; /* Color al pasar el mouse */
 }
 
+/* 1. La caja principal que envuelve toda el área de entrada */
+.input-area {
+    background-color: #f8f9fa;
+    padding: 10px;
+    border-radius: 10px;
+    box-shadow: 0 -2px 5px rgba(0,0,0,0.05);
+}
+
+/* 2. La barra "cápsula" que envuelve el texto y los iconos */
+.chat-input-bar {
+    background-color: #ffffff;
+    border: 1px solid #dee2e6;
+    border-radius: 1.5rem;
+    padding: 0.25rem 0.5rem;
+    transition: all 0.2s ease-in-out;
+}
+
+/* 3. Efecto de foco para toda la barra */
+.chat-input-bar:focus-within {
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+/* 4. El textarea "invisible" en el centro */
+.chat-textarea {
+    flex-grow: 1;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    resize: none;
+    max-height: 150px;
+    min-height: 38px;
+}
+
+/* 5. Estilo UNIFICADO para todos los iconos de acción secundarios */
+.action-icon-style i {
+    color: #6c757d;       /* Color gris estándar DIRECTAMENTE al icono */
+    font-size: 1.5rem;      /* Tamaño uniforme */
+    vertical-align: middle;
+    transition: color 0.2s ease-in-out;
+}
+.action-icon-style:hover i {
+    color: #343a40; /* El color del icono cambia en hover */
+}
+/* Aplica también a los iconos de la barra de entrada */
+.chat-input-bar .d-flex a i {
+    font-size: 1.5rem;
+    vertical-align: middle;
+    color: #6c757d;
+    transition: color 0.2s ease-in-out;
+}
+.chat-input-bar .d-flex a:hover i {
+    color: #343a40;
+}
+
+
+/* 6. Anulación de color y tamaño para el botón de ENVIAR */
+.send-button-icon i {
+    color: #0d6efd !important; /* Azul (importante para anular) */
+    font-size: 1.7rem !important; /* Ligeramente más grande para mayor énfasis */
+}
+.send-button-icon:hover i {
+    color: #0b5ed7 !important; /* Azul más oscuro en hover */
+}
+
+/* 7. Estilo para el botón de enviar cuando está deshabilitado */
+.send-button-icon.disabled {
+    opacity: 0.4;
+    pointer-events: none; /* Lo hace no-clicable */
+}
 
 @media (max-width: 768px) {
     #chat-container {
@@ -331,14 +395,6 @@
 #chat-container {
     background-color: #fff; /* Fondo blanco para el contenedor del chat */
     box-shadow: 0 0 10px rgba(0,0,0,0.1); /* Sombra sutil */
-}
-
-/* Estilos para el input de texto y botones */
-.input-row {
-    background-color: #f8f9fa; /* Fondo ligeramente diferente para la fila de entrada */
-    padding: 10px;
-    border-radius: 10px;
-    box-shadow: 0 -2px 5px rgba(0,0,0,0.05); /* Sombra superior */
 }
 
 #question {
@@ -674,51 +730,9 @@
 .btn-form-floating-height {
     height: calc(3.5rem + 2px) !important;
 }
-/* 1. La barra principal que contiene todo */
-.chat-input-bar {
-    background-color: #f8f9fa; /* Fondo gris claro */
-    border: 1px solid #dee2e6; /* Borde sutil */
-    border-radius: 2rem;       /* Bordes muy redondeados para efecto cápsula */
-    padding: 0.25rem;            /* Pequeño padding para que los elementos no toquen los bordes */
-    transition: all 0.2s ease-in-out;
-}
 
-/* Efecto de foco para toda la barra */
-.chat-input-bar:focus-within {
-    border-color: #86b7fe;
-    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
-}
 
-/* 2. El textarea central "invisible" */
-.chat-textarea {
-    flex-grow: 1; /* Ocupa todo el espacio disponible */
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-    resize: none;
-    max-height: 150px; /* Limita cuánto puede crecer verticalmente */
-    min-height: 38px;  /* Altura mínima inicial */
-}
-
-/* 3. Estilo general para los enlaces dentro de la barra */
-.chat-input-bar a {
-    color: #6c757d; /* Color gris estándar */
-    text-decoration: none;
-    /* El tamaño de fuente ya no se define aquí */
-}
-
-.chat-input-bar a:hover {
-    color: #343a40; /* Gris más oscuro al pasar el mouse */
-}
-
-/* --- NUEVA REGLA UNIFICADORA --- */
-/* 4. Se aplica a TODOS los iconos <i> dentro de la barra */
-.chat-input-bar i {
-    font-size: 1.5rem; /* Tamaño de icono uniforme para todos */
-    vertical-align: middle; /* Ayuda a una mejor alineación vertical */
-}
-
-/* 5. Estilo específico para el botón de Enviar */
+/* Estilo específico para el botón de Enviar */
 .send-button-icon i {
     color: #0d6efd; /* Azul de Bootstrap */
 }

@@ -6,32 +6,33 @@
 <!-- Sección de encabezado con el usuario conectado -->
 <div class="company-section d-flex justify-content-between align-items-center">
     <!-- Izquierda: Datos del usuario -->
-    <div class="d-flex align-items-center">
-        <span class="text-muted small fw-bold">
-            {{ company_short_name }} - {{ external_user_id or user.email }}
-        </span>
-        <span class="text-muted small mx-2">|</span>
-        <span class="text-muted" style="font-size: 0.75rem;">
-            Powered by <strong>IAToolkit</strong>
-        </span>
-    </div>
+    <span class="text-muted small fw-bold">
+        {{ company_short_name }} - {{ external_user_id or user.email }}
+    </span>
 
     <!-- Derecha: Grupo de iconos de acción -->
     <div class="d-flex align-items-center">
+        <!-- "Powered by"  -->
+        <span class="text-muted" style="font-size: 0.75rem;">
+            Powered by <strong>IAToolkit</strong>
+        </span>
+
         <!-- Icono de Historial -->
-        <a href="javascript:void(0);" id="history-button" class="fs-4 ms-3" title="Historial con mis consultas">
-            <i class="bi bi-clock-history text-success"></i>
+        <a href="javascript:void(0);" id="history-button"
+           class="ms-3 action-icon-style" title="Historial con mis consultas">
+            <i class="bi bi-clock-history"></i>
         </a>
 
         <!-- Icono de Feedback -->
-        <a href="javascript:void(0);" id="send-feedback-button" class="fs-4 ms-3" title="Tu feedback es muy importante">
-            <i class="bi bi-emoji-smile" style="color: #532323;"></i>
+        <a href="javascript:void(0);" id="send-feedback-button"
+           class="ms-3 action-icon-style" title="Tu feedback es muy importante">
+            <i class="bi bi-emoji-smile"></i>
         </a>
 
         <!-- Icono de cerrar sesión -->
         {% if user.email %}
             <a href="{{ url_for('logout', company_short_name=company_short_name) }}"
-                 class="fs-4 ms-3" title="Cerrar sesión">
+                 class="ms-3 action-icon-style" title="Cerrar sesión">
                 <i class="bi bi-box-arrow-right"></i>
             </a>
         {% endif %}
@@ -123,12 +124,14 @@
         <!-- Botón de Enviar a la derecha -->
         <div class="d-flex align-items-center">
             <div id="send-button-container">
-                <a href="javascript:void(0);" id="send-button" class="p-2 send-button-icon" title="Enviar">
+                <a href="javascript:void(0);" id="send-button"
+                   class="p-2 send-button-icon" title="Enviar">
                     <i class="bi bi-arrow-up-circle-fill"></i>
                 </a>
             </div>
             <div id="stop-button-container" style="display: none;">
-                <a href="javascript:void(0);" id="stop-button" class="p-2 text-danger" title="Detener">
+                <a href="javascript:void(0);" id="stop-button"
+                   class="p-2 text-danger" title="Detener">
                     <i class="bi bi-stop-circle-fill"></i>
                 </a>
             </div>
