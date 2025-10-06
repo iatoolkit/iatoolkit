@@ -517,7 +517,7 @@
 .dropdown-menu-soft .dropdown-item:hover,
 .dropdown-menu-soft .dropdown-item:focus {
     color: #ffffff;                       /* Nuevo color de texto: blanco */
-    background-color: #0a5833;           /* Nuevo color de fondo: verde oscuro */
+    background-color: #495057;           /* Nuevo color de fondo: verde oscuro */
     padding-left: 1.5rem;                /* Mantenemos el efecto de indentación */
     transition: all 0.15s ease-in-out;   /* Mantenemos la transición suave */
 }
@@ -539,50 +539,10 @@
 }
 
 
-.form-control-soft, #agent-select-button {
-    background-color: #f8f9fa; /* Un fondo gris muy sutil */
-    border: 1px solid #dee2e6; /* Borde gris claro */
-    box-shadow: none; /* Quitamos cualquier sombra inicial */
-    font-size: 16px;
-    padding: 12px 15px;
-    /* Transición suave para cuando el usuario haga foco */
-    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
-}
-
-.form-control-soft:focus, #agent-select-button.show {
-    border-color: #86b7fe; /* Borde azul de Bootstrap para indicar foco */
-    background-color: #ffffff; /* Fondo cambia a blanco */
-    outline: 0;
-    /* Sombra de resplandor azul, el estándar de Bootstrap 5 */
-    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
-}
-
-/* El botón del dropdown necesita su propio estado de foco cuando se abre */
-#agent-select-button:focus, #agent-select-button:active {
-    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25) !important;
-}
-
 /* Estilo para el texto de placeholder */
 .form-control-soft::placeholder {
     color: #6c757d; /* Color de texto gris estándar */
     opacity: 1;
-}
-
-/* Aseguramos que el botón del dropdown se alinee correctamente en altura */
-#agent-select-button {
-    height: calc(1.5em + 1.5rem + 2px); /* Mantenemos consistencia en altura */
-    line-height: 1.5;
-}
-
-/* Estilo para el botón del dropdown DESPUÉS de que se ha seleccionado un ítem */
-#agent-select-button.item-selected {
-    background-color: #e9f3ed !important;             /* Fondo verde muy pálido */
-    border-color: #198754 !important;                 /* Borde en verde 'success' */
-    border-width: 2px !important;                     /* Borde más grueso para que resalte */
-    color: #0a5833 !important;                       /* Texto en verde oscuro para contraste */
-    font-weight: 500 !important;                      /* Fuente un poco más gruesa */
-    box-shadow: 0 1px 4px rgba(25, 135, 84, 0.4) !important; /* Sombra sutil */
-    transition: all 0.2s ease-in-out;
 }
 
 #clear-selection-button {

@@ -1,4 +1,10 @@
-Eres un analista  de ventas y quiero un análisis completo de nuestro negocio.
+
+Contexto: El usuario quiere un análisis completo de las ventas realizadas
+entre dos fechas dadas.
+
+Parámetros:
+	•	Fecha inicio → {{fecha_inicio}}
+	•	Fecha fin → {{fecha_fin}}
 
 ### **Estructura HTML de Salida OBLIGATORIA**
 - **Contenedor de Secciones:** envuelve TODAS las secciones en
@@ -7,14 +13,14 @@ un `<div class="ficha-categorias">`.
 envuelta en su propio `<div class="categoria">`.
 
 ### **Sección : clientes mas importantes**
-dame una tabla con los 5 clientes mas importantes por volumen de compra el año
-2024.columnas: nombre cliente, volumen de compra, ingresos
+dame una tabla con los 5 clientes mas importantes por volumen de compra.
+columnas: nombre cliente, volumen de compra, ingresos
 
 ### **Sección : productos mas rentables**
-Dame una tabla con  los 10 productos mas rentables el año 2024.
+Dame una tabla con  los 10 productos mas rentables.
 columnas: nombre producto, precio, cantidad vendida, ingresos
 
 ### **Sección : empleados mas importantes**
-Dame una tabla con los top 3 de empleados que mas han vendido el año 2024.
+Dame una tabla con los top 3 de empleados que mas han vendido.
 columnas: nombre empleado, cantidad de ventas, ingresos
 

@@ -73,8 +73,14 @@
                                 {% for category_group in prompts.message %}
                                     <li><h6 class="dropdown-header">{{ category_group.category_name }}</h6></li>
                                     {% for prompt in category_group.prompts %}
-                                        <li><a class="dropdown-item" href="#" data-value="{{ prompt.prompt }}">{{ prompt.description }}</a></li>
-                                    {% endfor %}
+                                        <li>
+                                            <a class="dropdown-item" href="#"
+                                               data-prompt-name="{{ prompt.prompt }}"
+                                               data-prompt-description="{{ prompt.description }}"
+                                               data-custom-fields='{{ prompt.custom_fields | tojson  }}'>
+                                                {{ prompt.description }}
+                                            </a>
+                                        </li>                                    {% endfor %}
                                     {% if not loop.last %}<li><hr class="dropdown-divider"></li>{% endif %}
                                 {% endfor %}
                                 {% endif %}
@@ -85,17 +91,10 @@
                     <input type="hidden" id="prompt-select-value" name="prompt_select_value">
                     <input type="hidden" id="prompt-select-description" name="prompt-select-description">
                 </div>
-                {% if company_ui_config and company_ui_config.enabled %}
-                <div class="col-md">
-                    <div class="position-relative">
-                        <div class="form-floating">
-                            <input type="text" id="{{ company_ui_config.id }}" class="form-control form-control-soft specific-data-input" placeholder="{{ company_ui_config.placeholder }}">
-                            <label for="{{ company_ui_config.id }}">{{ company_ui_config.label }}</label>
-                        </div>
-                        <button type="button" id="clear-{{ company_ui_config.id }}-button" class="btn clear-specific-data-button" style="display: none;"><i class="bi bi-x-circle-fill"></i></button>
-                    </div>
+                <!-- Contenedor donde JavaScript inyectará los inputs dinámicos -->
+                <div id="dynamic-inputs-container" class="col-md">
+                    <!-- aca se renderizarán los customs_fields del prompt seleccionado -->
                 </div>
-                {% endif %}
             </div>
         </div>
     </div>
@@ -150,7 +149,7 @@
     window.companyShortName = "{{ company_short_name }}";
     window.iatoolkit_base_url = "{{ iatoolkit_base_url }}";
     window.externalUserId = "{{ external_user_id }}";
-    window.company_ui_config = {{ company_ui_config | tojson }};
+    window.availablePrompts = {{ prompts.message | tojson }};
 
     {% if auth_method == 'jwt' and session_jwt %}
         // Store session JWT if it exists, defined in the same global scope

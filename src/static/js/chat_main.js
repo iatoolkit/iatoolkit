@@ -2,152 +2,171 @@
 let currentAbortController = null;
 let isRequestInProgress = false;
 
-// Global variable for company-specific UI config
-let specificDataConfig;
-
+let selectedPrompt = null; // Will hold a lightweight prompt object
 
 $(document).ready(function () {
-
-    // Get company-specific UI configuration from the window object
-    specificDataConfig = window.company_ui_config;
-
     // --- MAIN EVENT HANDLERS ---
     $('#send-button').on('click', handleChatMessage);
     $('#stop-button').on('click', abortCurrentRequest);
 
+// --- PROMPT ASSISTANT FUNCTIONALITY ---
+    $('.input-area').on('click', '.dropdown-menu a.dropdown-item', function (event) {
+        event.preventDefault();
+        const promptData = $(this).data();
+
+        const promptObject = {
+            prompt: promptData.promptName,
+            description: promptData.promptDescription,
+            custom_fields: typeof promptData.customFields === 'string' ? JSON.parse(promptData.customFields) : promptData.customFields
+        };
+
+        selectPrompt(promptObject);
+    });
+
+    // Handles the 'clear' button for the prompt selector
+    $('#clear-selection-button').on('click', function() {
+        resetPromptSelection();
+        updateSendButtonState();
+    });
 
     // --- TEXTAREA FUNCTIONALITY ---
     const questionTextarea = $('#question');
 
-    // Handle Enter key press for sending message
+    // Handles Enter key press to send a message
     questionTextarea.on('keypress', function (event) {
         if (event.key === 'Enter' && !event.shiftKey) {
-            event.preventDefault(); // Prevent new line on Enter
+            event.preventDefault();
             handleChatMessage();
         }
     });
 
-    // Auto-resize textarea and manage send button state on input
+    // Handles auto-resizing and enables the send button on input
     questionTextarea.on('input', function () {
         autoResizeTextarea(this);
+        // If the user types, it overrides any prompt selection
+        if (selectedPrompt) {
+            resetPromptSelection();
+        }
         updateSendButtonState();
     });
 
-
-    // --- PROMPT ASSISTANT FUNCTIONALITY ---
-    // This listener is now attached to '.input-area' which is the correct parent container
-    $('.input-area').on('click', '.dropdown-menu a.dropdown-item', function (event) {
-        event.preventDefault();
-        const selectedPrompt = $(this).data('value');
-        const selectedDescription = $(this).text().trim();
-
-        $('#prompt-select-button').text(selectedDescription).addClass('item-selected');
-        $('#prompt-select-value').val(selectedPrompt);
-        $('#prompt-select-description').val(selectedDescription);
-        $('#clear-selection-button').show();
-
-        // Enable the send button as a prompt has been selected
-        updateSendButtonState();
-    });
-
-    // Handle the clear button for the prompt selector
-    $('#clear-selection-button').on('click', function() {
-        resetPromptSelect();
-        // Update send button state, disabling it if necessary
-        updateSendButtonState();
-    });
-
-
-    // --- COMPANY-SPECIFIC DATA INPUT FUNCTIONALITY (if enabled) ---
-    if (specificDataConfig && specificDataConfig.enabled) {
-        const specificInput = $('#' + specificDataConfig.id);
-        const clearSpecificInputButton = $('#clear-' + specificDataConfig.id + '-button');
-
-        specificInput.on('input', function () {
-            if ($(this).val().trim() !== '') {
-                $(this).addClass('has-content');
-                clearSpecificInputButton.show();
-            } else {
-                $(this).removeClass('has-content');
-                clearSpecificInputButton.hide();
-            }
-        });
-
-        clearSpecificInputButton.on('click', resetSpecificDataInput);
-    }
-
-    // Set initial state for the send button (it should be disabled)
+    // Set the initial disabled state of the send button
     updateSendButtonState();
 });
+
+
+/**
+ * Handles the selection of a prompt from the dropdown.
+ * @param {object} prompt The prompt object read from data attributes.
+ */
+function selectPrompt(prompt) {
+    selectedPrompt = prompt;
+
+    // Update the dropdown button to show the selected prompt's description
+    $('#prompt-select-button').text(prompt.description).addClass('item-selected');
+    $('#clear-selection-button').show();
+
+    // Clear the main textarea, as we are now in "prompt mode"
+    $('#question').val('');
+    autoResizeTextarea($('#question')[0]); // Reset height after clearing
+
+    // Store values in hidden fields for backward compatibility or other uses
+    $('#prompt-select-value').val(prompt.prompt);
+    $('#prompt-select-description').val(prompt.description);
+
+    // Render the dynamic input fields required by the selected prompt
+    renderDynamicInputs(prompt.custom_fields || []);
+    updateSendButtonState();
+}
+
+/**
+ * Resets the prompt selection and clears associated UI elements.
+ */
+function resetPromptSelection() {
+    selectedPrompt = null;
+
+    $('#prompt-select-button').text('Prompts disponibles ....').removeClass('item-selected');
+    $('#clear-selection-button').hide();
+    $('#prompt-select-value').val('');
+    $('#prompt-select-description').val('');
+
+    // Clear any dynamically generated input fields
+    $('#dynamic-inputs-container').empty();
+}
+
+/**
+ * Renders the custom input fields for the selected prompt.
+ * @param {Array<object>} fields The array of custom field configurations.
+ */
+function renderDynamicInputs(fields) {
+    const container = $('#dynamic-inputs-container');
+    container.empty();
+
+    const row = $('<div class="row g-2"></div>');
+    fields.forEach(field => {
+        const colDiv = $('<div class="col-md"></div>');
+        const formFloating = $('<div class="form-floating"></div>');
+        const input = $(`<input type="${field.type || 'text'}" class="form-control form-control-soft" id="${field.id}" placeholder="${field.placeholder}">`);
+        const label = $(`<label for="${field.id}">${field.label}</label>`);
+
+        formFloating.append(input, label);
+        colDiv.append(formFloating);
+        row.append(colDiv);
+    });
+
+    container.append(row);
+}
 
 
 /**
  * Main function to handle sending a chat message.
  */
 const handleChatMessage = async function () {
-    // Abort if a request is already in progress
-    if (isRequestInProgress) {
-        abortCurrentRequest();
-        return;
-    }
+    if (isRequestInProgress || $('#send-button').hasClass('disabled')) return;
 
     const question = $('#question').val().trim();
-    const selectedPrompt = $('#prompt-select-value').val();
-    const selectedDescription = $('#prompt-select-description').val();
-    let specificDataValue = '';
+    const promptName = selectedPrompt ? selectedPrompt.prompt : null;
 
-    // Prevent sending if both inputs are empty (button should be disabled anyway)
-    if (!question && !selectedPrompt) {
-        return;
+    let displayMessage = question;
+    let isEditable = true;
+    const clientData = {};
+
+    if (selectedPrompt) {
+        displayMessage = selectedPrompt.description;
+        isEditable = false; // Prompts are not editable
+
+        (selectedPrompt.custom_fields || []).forEach(field => {
+            const value = $('#' + field.id).val().trim();
+            if (value) {
+                clientData[field.data_key] = value;
+            }
+        });
+
+        // Append the collected parameter values to the display message
+        const paramsString = Object.values(clientData).join(', ');
+        if (paramsString) {
+            displayMessage += `: ${paramsString}`;
+        }
     }
 
-    // Get value from company-specific field if it exists
-    if (specificDataConfig && specificDataConfig.enabled) {
-        specificDataValue = $('#' + specificDataConfig.id).val().trim();
-    }
+    // Si no hay pregunta libre Y no se ha seleccionado un prompt, no hacer nada.
+    if (!displayMessage) return;
 
-    // Determine what to display in the user's message bubble
-    const displayMessage = question || selectedDescription;
-    displayUserMessage(displayMessage, selectedDescription, specificDataValue, selectedPrompt);
-
+    displayUserMessage(displayMessage, isEditable, question);
     showSpinner();
     toggleSendStopButtons(true);
 
-    // Reset all UI elements to their initial state
-    $('#question').val('');
-    autoResizeTextarea($('#question')[0]); // Reset textarea height
-    resetPromptSelect();
-    if (specificDataConfig && specificDataConfig.enabled) {
-        resetSpecificDataInput();
-    }
-
-    // Close the prompt assistant collapse area
-    const promptCollapseEl = document.getElementById('prompt-assistant-collapse');
-    const promptCollapse = bootstrap.Collapse.getInstance(promptCollapseEl);
-    if (promptCollapse) {
-        promptCollapse.hide();
-    }
+    resetAllInputs();
 
     const files = window.filePond.getFiles();
     const filesBase64 = await Promise.all(files.map(fileItem => toBase64(fileItem.file)));
 
     // Prepare data payload
-    const client_data = {
-        prompt_name: selectedPrompt,
-        question: question,
-    };
-    if (specificDataConfig && specificDataConfig.enabled && specificDataValue) {
-        client_data[specificDataConfig.data_key] = specificDataValue;
-    }
-
     const data = {
         question: question,
-        prompt_name: selectedPrompt,
-        client_data: client_data,
-        files: filesBase64.map(fileData => ({
-            filename: fileData.name,
-            content: fileData.base64
-        })),
+        prompt_name: promptName,
+        client_data: clientData,
+        files: filesBase64.map(f => ({ filename: f.name, content: f.base64 })),
         external_user_id: window.externalUserId
     };
 
@@ -157,38 +176,32 @@ const handleChatMessage = async function () {
             const answerSection = $('<div>').addClass('answer-section llm-output').append(responseData.answer);
             displayBotMessage(answerSection);
         }
-        // Example for other use cases like document classification
-        if (responseData && responseData.aditional_data && 'classify_documents' in responseData.aditional_data && responseData.aditional_data.classify_documents.length > 0) {
-             display_document_validation(responseData.aditional_data.classify_documents);
-        }
     } catch (error) {
         console.error("Error in handleChatMessage:", error);
-        if (error.name === 'AbortError') {
-            const message = window.isManualAbort ? 'Request cancelled by user' : 'Request timed out. Please try again.';
-            const alertClass = window.isManualAbort ? 'alert-warning' : 'alert-danger';
-            const errorDiv = $('<div>').addClass(`error-section alert ${alertClass}`).append(message);
-            displayBotMessage(errorDiv);
-            window.isManualAbort = false; // Reset flag
-        } else {
-            const commError = $('<div>').addClass('error-section alert alert-danger').append(`Connection error: ${error.message}`);
-            displayBotMessage(commError);
-        }
+        // Implement error display logic as needed
     } finally {
         hideSpinner();
         toggleSendStopButtons(false);
-        updateSendButtonState(); // Re-evaluate send button state
+        updateSendButtonState();
         window.filePond.removeFiles();
     }
 };
 
-
 /**
- * Auto-resizes the textarea to fit its content.
- * @param {HTMLElement} element The textarea element.
+ * Resets all inputs to their initial state.
  */
-function autoResizeTextarea(element) {
-    element.style.height = 'auto'; // Temporarily shrink to re-calculate scroll height
-    element.style.height = (element.scrollHeight) + 'px';
+function resetAllInputs() {
+    resetPromptSelection();
+    $('#question').val('');
+    autoResizeTextarea($('#question')[0]);
+
+    const promptCollapseEl = document.getElementById('prompt-assistant-collapse');
+    const promptCollapse = bootstrap.Collapse.getInstance(promptCollapseEl);
+    if (promptCollapse) {
+        promptCollapse.hide();
+    }
+
+    updateSendButtonState();
 }
 
 /**
@@ -197,16 +210,22 @@ function autoResizeTextarea(element) {
  */
 function updateSendButtonState() {
     const question = $('#question').val().trim();
-    const selectedPrompt = $('#prompt-select-value').val();
-    const sendButton = $('#send-button');
+    const isPromptSelected = selectedPrompt !== null;
 
-    if (question || selectedPrompt) {
-        sendButton.removeClass('disabled');
+    if (isPromptSelected || question) {
+        $('#send-button').removeClass('disabled');
     } else {
-        sendButton.addClass('disabled');
+        $('#send-button').addClass('disabled');
     }
 }
 
+/**
+ * Auto-resizes the textarea to fit its content.
+ */
+function autoResizeTextarea(element) {
+    element.style.height = 'auto';
+    element.style.height = (element.scrollHeight) + 'px';
+}
 
 /**
  * Toggles the main action button between 'Send' and 'Stop'.
@@ -291,36 +310,27 @@ const callLLMAPI = async function(apiPath, data, method, timeoutMs = 500000) {
 
 /**
  * Displays the user's message in the chat container.
+ * @param {string} message - The full message string to display.
+ * @param {boolean} isEditable - Determines if the edit icon should be shown.
+ * @param {string} originalQuestion - The original text to put back in the textarea for editing.
  */
-const displayUserMessage = function(question, selectedDescription, specificDataValue, selectedPrompt) {
+const displayUserMessage = function(message, isEditable, originalQuestion) {
     const chatContainer = $('#chat-container');
     const userMessage = $('<div>').addClass('message shadow-sm');
-    let messageText;
-    let isEditable = true;
-
-    if (specificDataValue && question && !selectedPrompt) {
-        messageText = $('<span>').text(`${specificDataValue}: ${question}`);
-    } else if (specificDataValue && !question && selectedPrompt) {
-        messageText = $('<span>').text(`${specificDataValue}: ${selectedDescription}`);
-        isEditable = false;
-    } else if (!specificDataValue && selectedPrompt) {
-        messageText = $('<span>').text(`${selectedDescription}`);
-        isEditable = false;
-    } else {
-        messageText = $('<span>').text(question);
-    }
+    const messageText = $('<span>').text(message);
 
     userMessage.append(messageText);
 
-    if (isEditable && question) {
+    if (isEditable) {
         const editIcon = $('<i>').addClass('bi bi-pencil-fill edit-icon').attr('title', 'Edit query').on('click', function () {
-            $('#question').val(question).focus();
+            $('#question').val(originalQuestion).focus();
             autoResizeTextarea($('#question')[0]);
             updateSendButtonState();
         });
         userMessage.append(editIcon);
     }
     chatContainer.append(userMessage);
+    chatContainer.scrollTop(chatContainer[0].scrollHeight);
 };
 
 /**

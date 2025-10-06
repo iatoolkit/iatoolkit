@@ -22,7 +22,7 @@ class DocumentService:
         try:
             if filename.lower().endswith('.docx'):
                 return self.read_docx(file_content)
-            elif filename.lower().endswith('.txt'):
+            elif filename.lower().endswith('.txt') or filename.lower().endswith('.md'):
                 if isinstance(file_content, bytes):
                     try:
                         # decode using UTF-8

@@ -49,11 +49,6 @@ class BaseCompany(ABC):
         """
         pass
 
-    def get_ui_component_config(self)-> dict:
-        """
-        optional method for a company definition of it's UI config
-        """
-        pass
 
     def unsupported_operation(self, tag):
         raise NotImplementedError(f"La operación '{tag}' no está soportada por esta empresa.")

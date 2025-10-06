@@ -216,19 +216,6 @@ class Dispatcher:
 
         return normalized_user
 
-    def get_ui_component_config(self, company_name: str) -> dict:
-        if company_name not in self.company_instances:
-            raise IAToolkitException(IAToolkitException.ErrorType.EXTERNAL_SOURCE_ERROR,
-                               f"Empresa no configurada: {company_name}")
-
-        company_instance = self.company_instances[company_name]
-        try:
-            return company_instance.get_ui_component_config()
-        except Exception as e:
-            logging.exception(e)
-            raise IAToolkitException(IAToolkitException.ErrorType.EXTERNAL_SOURCE_ERROR,
-                               f"Error en get_ui_component_config de {company_name}: {str(e)}") from e
-
     def get_metadata_from_filename(self, company_name: str, filename: str) -> dict:
         if company_name not in self.company_instances:
             raise IAToolkitException(IAToolkitException.ErrorType.EXTERNAL_SOURCE_ERROR,

@@ -30,8 +30,6 @@ class MockSampleCompany(BaseCompany):
 
     def get_metadata_from_filename(self, filename: str) -> dict: return {}
 
-    def get_ui_component_config(self) -> dict: return {}
-
 
 class TestDispatcher:
     @pytest.fixture(autouse=True)
@@ -61,7 +59,6 @@ class TestDispatcher:
         self.mock_sample_company_instance.start_execution = MagicMock(return_value=True)
         self.mock_sample_company_instance.get_user_info = MagicMock(return_value={"email": "test@user.com"})
         self.mock_sample_company_instance.get_metadata_from_filename = MagicMock(return_value={"meta": "data"})
-        self.mock_sample_company_instance.get_ui_component_config = MagicMock(return_value={"enable": True})
 
         # Register the mock company class
         register_company("sample", MockSampleCompany)
@@ -177,14 +174,6 @@ class TestDispatcher:
             self.dispatcher.get_metadata_from_filename("sample", "test.txt")
         assert "Error en get_metadata_from_filename de sample" in str(excinfo.value)
 
-    def test_get_ui_component_config_ok(self):
-        expected_config = {"enable": True}
-        self.mock_sample_company_instance.get_ui_component_config.return_value = expected_config
-
-        result = self.dispatcher.get_ui_component_config("sample")
-
-        self.mock_sample_company_instance.get_ui_component_config.assert_called_once()
-        assert result == expected_config
 
     def test_get_user_info_external_user(self):
         """Tests get_user_info for an external user."""

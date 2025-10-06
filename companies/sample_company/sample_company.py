@@ -73,11 +73,42 @@ class SampleCompany(BaseCompany):
             prompt_list = [
                 {
                     'name': 'analisis_ventas',
-                    'description': 'Analisis de ventas y productos',
+                    'description': 'Analisis de ventas',
                     'category': c_general,
-                    'order': 1
+                    'order': 1,
+                    'custom_fields': [
+                        {
+                            "id": "sales_id_input_from",
+                            "label": "Fecha desde",
+                            "placeholder": "desde ...",
+                            "type": "date",
+                            "data_key": "fecha_inicio"
+                        },
+                        {
+                            "id": "sales_id_input_to",
+                            "label": "Fecha hasta",
+                            "placeholder": "hasta...",
+                            "type": "date",
+                            "data_key": "fecha_fin"
+                        }
+                    ]
+                },
+                {
+                    'name': 'supplier_report',
+                    'description': 'Análisis de proveedores',
+                    'category': c_general,
+                    'order': 2,
+                    'custom_fields': [
+                        {
+                            "id": "supplier_id_input",
+                            "label": "Identificador del Proveedor",
+                            "placeholder": "Ingrese nombre del proveedor...",
+                            "type": "text",
+                            "data_key": "supplier_id"
+                        }
+                    ]
                 }
-                ]
+            ]
 
             # create the company prompts
             for prt in prompt_list:
@@ -87,7 +118,8 @@ class SampleCompany(BaseCompany):
                     order=prt['order'],
                     company=self.company,
                     category=prt['category'],
-                    active=prt.get('active', True)
+                    active=prt.get('active', True),
+                    custom_fields=prt.get('custom_fields', [])
                 )
 
     # Return a global context used by this company: business description, schemas, database models
@@ -128,11 +160,6 @@ class SampleCompany(BaseCompany):
             "extras": {}
         }
         return user_data
-
-    def get_ui_component_config(self)-> dict:
-        return {
-            "enabled": False
-        }
 
     def get_schema_definitions(self, db_manager: DatabaseManager) -> str:
         """

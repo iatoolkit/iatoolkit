@@ -302,6 +302,7 @@ class Prompt(Base):
     order = Column(Integer, nullable=False, default=0)  # Nuevo campo para el orden
     category_id = Column(Integer, ForeignKey('iat_prompt_categories.id'), nullable=True)
     parameters = Column(JSON, nullable=True, default={})
+    custom_fields = Column(JSON, nullable=False, default=[])
 
     created_at = Column(DateTime, default=datetime.now)
 

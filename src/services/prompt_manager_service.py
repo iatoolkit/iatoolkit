@@ -29,6 +29,7 @@ class PromptService:
                       category: PromptCategory = None,
                       active: bool = True,
                       is_system_prompt: bool = False,
+                      custom_fields: list = [],
                       params: dict = {}
                       ):
 
@@ -54,6 +55,7 @@ class PromptService:
                 active=active,
                 filename=prompt_filename,
                 is_system_prompt=is_system_prompt,
+                custom_fields=custom_fields,
                 parameters=params
             )
 
@@ -160,7 +162,12 @@ class PromptService:
                     'category_name': cat_name,
                     'category_order': cat_order,
                     'prompts': [
-                        {'prompt': p.name, 'description': p.description, 'order': p.order}
+                        {
+                            'prompt': p.name,
+                            'description': p.description,
+                            'custom_fields': p.custom_fields,
+                            'order': p.order
+                        }
                         for p in prompts
                     ]
                 })

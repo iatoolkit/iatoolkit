@@ -8,7 +8,6 @@ from services.prompt_manager_service import PromptService
 from services.jwt_service import JWTService  # <-- Importar JWTService
 from common.auth import IAuthentication
 from repositories.models import Company
-from services.dispatcher_service import Dispatcher
 
 
 # --- Constantes para los Tests ---
@@ -32,7 +31,6 @@ class TestExternalChatLoginView:
         self.mock_prompt_service = MagicMock(spec=PromptService)
         self.mock_iauthentication = MagicMock(spec=IAuthentication)
         self.mock_jwt_service = MagicMock(spec=JWTService)
-        self.dispatcher = MagicMock(spec=Dispatcher)
 
         # Configurar el mock de la compañía que se devolverá
         self.mock_company = Company(id=1, name="Test Company", short_name=MOCK_COMPANY_SHORT_NAME)
@@ -43,7 +41,6 @@ class TestExternalChatLoginView:
             'external_chat_login',
             profile_service=self.mock_profile_service,
             query_service=self.mock_query_service,
-            dispatcher=self.dispatcher,
             prompt_service=self.mock_prompt_service,
             iauthentication=self.mock_iauthentication,
             jwt_service=self.mock_jwt_service  # <-- 2. Inyectar el mock de JWTService

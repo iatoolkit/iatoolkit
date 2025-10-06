@@ -13,21 +13,18 @@ from services.profile_service import ProfileService
 from services.query_service import QueryService
 from services.prompt_manager_service import PromptService
 from services.jwt_service import JWTService
-from services.dispatcher_service import Dispatcher
 
 class ExternalChatLoginView(MethodView):
     @inject
     def __init__(self,
                  profile_service: ProfileService,
                  query_service: QueryService,
-                 dispatcher: Dispatcher,
                  prompt_service: PromptService,
                  iauthentication: IAuthentication,
                  jwt_service: JWTService
                  ):
         self.profile_service = profile_service
         self.query_service = query_service
-        self.dispatcher = dispatcher
         self.prompt_service = prompt_service
         self.iauthentication = iauthentication
         self.jwt_service = jwt_service
@@ -70,9 +67,6 @@ class ExternalChatLoginView(MethodView):
             # 3. get the prompt list from backend
             prompts = self.prompt_service.get_user_prompts(company_short_name)
 
-            # 4. get the company UI configuration
-            company_ui_config = self.dispatcher.get_ui_component_config(company_short_name)
-
             # 4. render the chat page with the company/user information.
             user_agent = request.user_agent
             is_mobile = user_agent.platform in ["android", "iphone", "ipad"] or "mobile" in user_agent.string.lower()
@@ -86,8 +80,7 @@ class ExternalChatLoginView(MethodView):
                                         session_jwt=token,  # pass the token to the front-end
                                         iatoolkit_base_url=os.getenv('IATOOLKIT_BASE_URL'),
                                         prompts=prompts,
-                                        external_login=True,
-                                        company_ui_config=company_ui_config)
+                                        external_login=True)
             return chat_html, 200
 
         except Exception as e:

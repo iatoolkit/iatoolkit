@@ -10,7 +10,6 @@ from injector import inject
 import os
 from common.auth import IAuthentication
 from services.prompt_manager_service import PromptService
-from services.dispatcher_service import Dispatcher
 
 
 class ChatView(MethodView):
@@ -18,10 +17,8 @@ class ChatView(MethodView):
     def __init__(self,
                  iauthentication: IAuthentication,
                  prompt_service: PromptService,
-                 dispatcher: Dispatcher,
                  profile_service: ProfileService):
         self.iauthentication = iauthentication
-        self.dispatcher = dispatcher
         self.profile_service = profile_service
         self.prompt_service = prompt_service
 
@@ -43,9 +40,6 @@ class ChatView(MethodView):
         # 2. get the company prompts
         prompts = self.prompt_service.get_user_prompts(company_short_name)
 
-        # 3. get the company UI configuration
-        company_ui_config = self.dispatcher.get_ui_component_config(company_short_name)
-
         return render_template("chat.html",
                                company=company,
                                company_short_name=company_short_name,
@@ -53,6 +47,5 @@ class ChatView(MethodView):
                                alert_message=alert_message,
                                alert_icon='success' if alert_message else None,
                                iatoolkit_base_url=os.getenv('IATOOLKIT_BASE_URL', 'http://localhost:5000'),
-                               prompts=prompts,
-                               company_ui_config=company_ui_config
+                               prompts=prompts
                                )

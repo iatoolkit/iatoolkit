@@ -13,7 +13,6 @@ from common.session_manager import SessionManager
 from datetime import datetime, timezone
 from common.auth import IAuthentication
 from services.prompt_manager_service import PromptService
-from services.dispatcher_service import Dispatcher
 
 
 class TestChatView:
@@ -32,7 +31,6 @@ class TestChatView:
         self.profile_service = MagicMock(spec=ProfileService)
         self.iauthentication = MagicMock(spec=IAuthentication)
         self.prompt_service = MagicMock(spec=PromptService)
-        self.dispatcher = MagicMock(spec=Dispatcher)
 
         self.iauthentication.verify.return_value = {
             'success': True,
@@ -57,7 +55,6 @@ class TestChatView:
                                 profile_service=self.profile_service,
                                 iauthentication=self.iauthentication,
                                 prompt_service=self.prompt_service,
-                                dispatcher=self.dispatcher,
                                 )
         self.app.add_url_rule("/<company_short_name>/chat", view_func=view, methods=["GET"])
 
