@@ -210,14 +210,8 @@ class QueryService:
                     company=company,
                 )
 
-            # client profile
-            client_profile = ''
-            if final_client_data.get('client_identity'):
-                client_profile = f"cliente sobre el cual se esta consultando se identifica como ´client_identity´ y tiene el valor: {final_client_data.get('client_identity')}"
-
-
             # This is the final user-facing prompt for this specific turn
-            user_turn_prompt = f"{main_prompt}\n{client_profile}\n{files_context}"
+            user_turn_prompt = f"{main_prompt}\n{files_context}"
             if not prompt_name:
                 user_turn_prompt += f"\n### La pregunta que debes responder es: {question}"
             else:
