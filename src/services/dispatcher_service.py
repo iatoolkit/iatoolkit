@@ -5,7 +5,6 @@
 
 from common.exceptions import IAToolkitException
 from services.prompt_manager_service import PromptService
-from services.api_service import ApiService
 from repositories.llm_query_repo import LLMQueryRepo
 from repositories.models import Company, Function
 from services.excel_service import ExcelService
@@ -24,12 +23,10 @@ class Dispatcher:
                  prompt_service: PromptService,
                  llmquery_repo: LLMQueryRepo,
                  util: Utility,
-                 api_service: ApiService,
                  excel_service: ExcelService,
                  mail_service: MailService):
         self.prompt_service = prompt_service
         self.llmquery_repo = llmquery_repo
-        self.api_service = api_service
         self.util = util
         self.excel_service = excel_service
         self.mail_service = mail_service
@@ -42,7 +39,6 @@ class Dispatcher:
         self.tool_handlers = {
             "iat_generate_excel": self.excel_service.excel_generator,
             "iat_send_email": self.mail_service.send_mail,
-            "iat_api_call": self.api_service.call_api
         }
 
     @property
