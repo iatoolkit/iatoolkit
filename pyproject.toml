@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "iatoolkit"
-version = "0.7.5"
+version = "0.7.6"
 requires-python = ">=3.11"
 description = "IAToolkit"
 readme = "readme.md"
@@ -19,7 +19,7 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["iatoolkit*", "services*", "common*"]
+include = ["iatoolkit*", "services*", "common*", "repositories*", "infra*", "views*"]
 
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements.txt"] }
