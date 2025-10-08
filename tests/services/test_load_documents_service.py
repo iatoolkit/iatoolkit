@@ -4,7 +4,7 @@
 # IAToolkit is open source software.
 
 import pytest
-from unittest.mock import patch, MagicMock, ANY
+from unittest.mock import patch, MagicMock
 from services.load_documents_service import LoadDocumentsService
 from repositories.models import Company
 from common.exceptions import IAToolkitException

@@ -3,7 +3,7 @@
 #
 # IAToolkit is open source software.
 
-from flask import Blueprint, render_template, redirect, flash, url_for,send_from_directory, current_app
+from flask import render_template, redirect, flash, url_for,send_from_directory, current_app
 from common.session_manager import SessionManager
 from flask import jsonify
 from views.history_view import HistoryView

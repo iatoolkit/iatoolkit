@@ -17,7 +17,7 @@ from common.exceptions import IAToolkitException
 from injector import inject
 import base64
 import logging
-from typing import Optional, TYPE_CHECKING
+from typing import Optional
 import json
 import time
 import os

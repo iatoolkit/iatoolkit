@@ -11,7 +11,6 @@ from collections import defaultdict
 from repositories.models import Prompt, PromptCategory, Company
 import os
 from common.exceptions import IAToolkitException
-from pathlib import Path
 import importlib.resources
 
 

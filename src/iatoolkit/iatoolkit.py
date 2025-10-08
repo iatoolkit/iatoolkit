@@ -3,7 +3,7 @@
 #
 # IAToolkit is open source software.
 
-from flask import Flask, url_for, current_app
+from flask import Flask, url_for
 from flask_session import Session
 from flask_injector import FlaskInjector
 from flask_bcrypt import Bcrypt

@@ -12,7 +12,6 @@ from services.mail_service import MailService
 from common.session_manager import SessionManager
 from common.util import Utility
 from injector import inject
-from typing import Dict
 import logging
 import os
 

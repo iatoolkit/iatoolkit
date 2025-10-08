@@ -6,7 +6,6 @@
 import logging
 from typing import List
 from common.exceptions import IAToolkitException
-from repositories.profile_repo import ProfileRepo
 from injector import inject
 import os
 from jinja2 import Environment, FileSystemLoader
@@ -16,8 +15,6 @@ from decimal import Decimal
 import yaml
 from cryptography.fernet import Fernet
 import base64
-from typing import Tuple
-
 
 
 class Utility:

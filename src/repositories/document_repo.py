@@ -4,7 +4,6 @@
 # IAToolkit is open source software.
 
 from repositories.models import Document
-from repositories.models import Company
 from injector import inject
 from repositories.database_manager import DatabaseManager
 from common.exceptions import IAToolkitException

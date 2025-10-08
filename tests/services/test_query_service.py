@@ -6,7 +6,6 @@ from unittest.mock import MagicMock, patch
 import os
 import base64
 import json
-from injector import Injector
 
 from services.query_service import QueryService
 from services.prompt_manager_service import PromptService

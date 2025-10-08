@@ -3,13 +3,9 @@
 #
 # IAToolkit is open source software.
 
-import logging
-import requests
-from requests import RequestException
 from common.exceptions import IAToolkitException
 from injector import inject
 # call_service.py
-import logging
 import requests
 from typing import Optional, Dict, Any, Tuple, Union
 from requests import RequestException
