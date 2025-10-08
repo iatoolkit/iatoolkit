@@ -19,6 +19,8 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+exclude = ["iatoolkit.tests*", "app.py"]
+
 
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements.txt"] }
