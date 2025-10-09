@@ -3,7 +3,7 @@
 #
 # IAToolkit is open source software.
 
-from flask import render_template, redirect, flash, url_for,send_from_directory, current_app
+from flask import render_template, redirect, flash, url_for,send_from_directory, current_app, abort
 from iatoolkit.common.session_manager import SessionManager
 from flask import jsonify
 from iatoolkit.views.history_view import HistoryView
@@ -80,7 +80,22 @@ def register_views(injector, app):
 
     @app.route('/download/<path:filename>')
     def download_file(filename):
-        temp_dir = os.path.join(current_app.root_path, 'static', 'temp')
-        return send_from_directory(temp_dir, filename, as_attachment=True)
+        """
+        Esta vista sirve un archivo previamente generado desde el directorio
+        configurado en IATOOLKIT_DOWNLOAD_DIR.
+        """
+        # Valida que la configuración exista
+        if 'IATOOLKIT_DOWNLOAD_DIR' not in current_app.config:
+            abort(500, "Error de configuración: IATOOLKIT_DOWNLOAD_DIR no está definido.")
 
+        download_dir = current_app.config['IATOOLKIT_DOWNLOAD_DIR']
+
+        try:
+            return send_from_directory(
+                download_dir,
+                filename,
+                as_attachment=True  # Fuerza la descarga en lugar de la visualización
+            )
+        except FileNotFoundError:
+            abort(404)
 

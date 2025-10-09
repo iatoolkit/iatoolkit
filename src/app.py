@@ -18,6 +18,7 @@ def create_app():
     toolkit = IAToolkit()
     return toolkit.create_iatoolkit()
 
+
 if __name__ == "__main__":
     app = create_app()
     if app:

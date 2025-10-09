@@ -55,7 +55,13 @@ class ExcelService:
 
             # 3. create temporary name
             token = f"{uuid4()}.xlsx"
-            filepath = Path("static/temp") / token
+
+            # 4. check that download directory is configured
+            if 'IATOOLKIT_DOWNLOAD_DIR' not in current_app.config:
+                return 'no esta configurado el directorio temporal para guardar excels'
+
+            download_dir = current_app.config['IATOOLKIT_DOWNLOAD_DIR']
+            filepath = Path(download_dir) / token
             filepath.parent.mkdir(parents=True, exist_ok=True)
 
             # 4. save excel file in temporary directory

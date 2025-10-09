@@ -97,6 +97,9 @@ class IAToolkit:
         self._setup_cli_commands()
         self._setup_context_processors()
 
+        # Step 8: define the download_dir for excel's
+        self._setup_download_dir()
+
         try:
             self.version = _pkg_version("iatoolkit")
         except PackageNotFoundError:
@@ -403,6 +406,26 @@ class IAToolkit:
                 "Database manager no inicializado"
             )
         return self.db_manager
+
+    def _setup_download_dir(self):
+        # 1. set the default download directory
+        default_download_dir = os.path.join(self.app.instance_path, 'downloads')
+
+        # 3. if user specified one, use it
+        download_dir = self.app.config.get('IATOOLKIT_DOWNLOAD_DIR', default_download_dir)
+
+        # 3. save it in the app config
+        self.app.config['IATOOLKIT_DOWNLOAD_DIR'] = download_dir
+
+        # 4. make sure the directory exists
+        try:
+            os.makedirs(download_dir, exist_ok=True)
+        except OSError as e:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.CONFIG_ERROR,
+                "No se pudo crear el directorio de descarga. Verifique que el directorio existe y tenga permisos de escritura."
+            )
+        logging.info(f"✅ download dir created in: {download_dir}")
 
 
 def current_iatoolkit() -> IAToolkit:
