@@ -8,15 +8,14 @@
      style="{{ branding.header_style }}">
 
     <!-- Izquierda: Nombre de la Empresa -->
-    <span style="{{ branding.company_name_style }}">
+    <span style="{{ branding.primary_text_style }}">
         {{ branding.name }}
     </span>
 
-    <!-- Derecha: Grupo de iconos de acción -->
     <!-- Derecha: Grupo de información y acciones del usuario -->
     <div class="d-flex align-items-center">
         <!-- 1. ID de Usuario -->
-        <span class="small fw-semibold">
+        <span style="{{ branding.secondary_text_style }}">
             {{ external_user_id or user.email }}
         </span>
 
@@ -34,9 +33,10 @@
         </a>
 
         <!-- 4. Powered by (con mayor separación) -->
-        <span class="text-muted ms-4" style="font-size: 0.75rem;">
+        <span  class="text-muted ms-4" style="{{ branding.secondary_text_style }}">
             Powered by <strong>IAToolkit</strong>
         </span>
+
 
         <!-- 5. Icono de cerrar sesión (al final) -->
         {% if user.email %}

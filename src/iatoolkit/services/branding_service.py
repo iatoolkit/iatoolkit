@@ -20,9 +20,14 @@ class BrandingService:
             "header_background_color": "#FFFFFF",  # Fondo blanco por defecto
             "header_text_color": "#6C757D",  # Color de texto 'muted' de Bootstrap
 
-            # Estilos para el nombre de la compañía
-            "company_name_font_weight": "bold",  # Nombre en negrita por defecto
-            "company_name_font_size": "1rem",  # Tamaño de fuente estándar
+            # Estilos para el texto primario (ej. nombre de la compañía)
+            "primary_font_weight": "bold",
+            "primary_font_size": "1rem",
+
+            # Estilos para el texto secundario (ej. ID de usuario)
+            "secondary_font_weight": "600",  # Semibold
+            "secondary_font_size": "0.875rem"  # Equivale a la clase 'small' de Bootstrap
+
         }
 
     def get_company_branding(self, company: Company | None) -> dict:
@@ -48,13 +53,18 @@ class BrandingService:
             f"background-color: {final_branding_values['header_background_color']}; "
             f"color: {final_branding_values['header_text_color']};"
         )
-        company_name_style = (
-            f"font-weight: {final_branding_values['company_name_font_weight']}; "
-            f"font-size: {final_branding_values['company_name_font_size']};"
+        primary_text_style = (
+            f"font-weight: {final_branding_values['primary_font_weight']}; "
+            f"font-size: {final_branding_values['primary_font_size']};"
+        )
+        secondary_text_style = (
+            f"font-weight: {final_branding_values['secondary_font_weight']}; "
+            f"font-size: {final_branding_values['secondary_font_size']};"
         )
 
         return {
             "name": company.name if company else "IAToolkit",
             "header_style": header_style,
-            "company_name_style": company_name_style
+            "primary_text_style": primary_text_style,
+            "secondary_text_style": secondary_text_style
         }

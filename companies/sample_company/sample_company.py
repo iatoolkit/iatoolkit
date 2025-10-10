@@ -54,8 +54,10 @@ class SampleCompany(BaseCompany):
         sample_company_branding = {
             "header_background_color": "#EFF6FF",  # Un azul pastel muy claro
             "header_text_color": "#1E3A8A",  # Un azul oscuro y profesional
-            "company_name_font_weight": "600",  # Semibold, para un look refinado
-            "company_name_font_size": "1.1rem"  # Ligeramente más grande para jerarquía
+            "primary_font_weight": "600",  # Semibold, para un look refinado
+            "primary_font_size": "1.1rem"  # Ligeramente más grande para jerarquía
+
+            # for secondary text use the defaults
         }
 
         self.company = self._create_company(
