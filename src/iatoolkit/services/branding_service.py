@@ -65,6 +65,7 @@ class BrandingService:
         return {
             "name": company.name if company else "IAToolkit",
             "header_style": header_style,
+            "header_text_color": final_branding_values['header_text_color'],
             "primary_text_style": primary_text_style,
             "secondary_text_style": secondary_text_style
         }

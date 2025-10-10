@@ -60,6 +60,7 @@ class SampleCompany(BaseCompany):
             # for secondary text use the defaults
         }
 
+
         self.company = self._create_company(
             name='Sample Company',
             short_name='sample_company',

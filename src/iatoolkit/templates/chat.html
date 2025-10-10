@@ -24,24 +24,24 @@
 
         <!-- 3. Iconos de Acción -->
         <a href="javascript:void(0);" id="history-button"
-           class="action-icon-style" title="Historial con mis consultas" style="color: inherit;">
+           class="action-icon-style" title="Historial con mis consultas" style="color: {{ branding.header_text_color }};">
             <i class="bi bi-clock-history"></i>
         </a>
         <a href="javascript:void(0);" id="send-feedback-button"
-           class="ms-3 action-icon-style" title="Tu feedback es muy importante" style="color: inherit;">
+           class="ms-3 action-icon-style" title="Tu feedback es muy importante" style="color: {{ branding.header_text_color }};">
             <i class="bi bi-emoji-smile"></i>
         </a>
 
-        <!-- 4. Powered by (con mayor separación) -->
-        <span  class="text-muted ms-4" style="{{ branding.secondary_text_style }}">
-            Powered by <strong>IAToolkit</strong>
+        <!-- 4. Powered by (oculto en un tooltip) -->
+        <span class="ms-4" data-bs-toggle="tooltip" data-bs-placement="bottom" title="Powered by IAToolkit">
+            <i class="bi bi-info-circle" style="color: {{ branding.header_text_color }}; opacity: 0.7; font-size: 0.9rem;"></i>
         </span>
 
 
         <!-- 5. Icono de cerrar sesión (al final) -->
         {% if user.email %}
             <a href="{{ url_for('logout', company_short_name=company_short_name) }}"
-                 class="ms-3 action-icon-style" title="Cerrar sesión" style="color: inherit;">
+                 class="ms-3 action-icon-style" title="Cerrar sesión" style="color: {{ branding.header_text_color }} !important;">
                 <i class="bi bi-box-arrow-right"></i>
             </a>
         {% endif %}
@@ -185,6 +185,13 @@
                 });
             });
         }
+    });
+    document.addEventListener('DOMContentLoaded', function () {
+        // Inicializar todos los tooltips de la página
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl)
+        })
     });
 </script>
 {% endblock %}
