@@ -322,7 +322,7 @@ const displayUserMessage = function(message, isEditable, originalQuestion) {
     userMessage.append(messageText);
 
     if (isEditable) {
-        const editIcon = $('<i>').addClass('bi bi-pencil-fill edit-icon').attr('title', 'Edit query').on('click', function () {
+        const editIcon = $('<i>').addClass('p-2 bi bi-pencil-fill edit-icon').attr('title', 'Edit query').on('click', function () {
             $('#question').val(originalQuestion).focus();
             autoResizeTextarea($('#question')[0]);
             updateSendButtonState();

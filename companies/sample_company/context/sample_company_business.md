@@ -2,7 +2,7 @@
 
 ## 1. Introducción
 
-**Sample Company** es una empresa ficticia  creada como demostración para la plataforma **IAToolkit**. 
+**Sample Company** , tambien conocida como Sample, es una empresa ficticia  creada como demostración para la plataforma **IAToolkit**. 
 Su propósito principal es ilustrar cómo un asistente de IA puede conectarse a una base de datos externa 
 para responder preguntas de inteligencia de negocio (Business Intelligence) y realizar análisis de datos en tiempo real.
 

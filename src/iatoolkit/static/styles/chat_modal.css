@@ -2,10 +2,51 @@
 /* Estilos generales para modales */
 /* ######################################################### */
 
-/* Separación del icono y el título del modal */
-.icon-spaced {
-    margin-right: 10px;
+/* Estilos del header del modal con branding */
+.modal-header.branded {
+    background-color: var(--brand-modal-header-bg);
+    color: var(--brand-modal-header-text);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
 }
+.modal-header.branded .btn-close {
+    filter: invert(1) grayscale(100%) brightness(200%); /* Hace el botón de cerrar visible en fondos oscuros */
+}
+
+/* Estilos para botones con branding */
+.btn-branded-primary {
+    background-color: var(--brand-primary-color);
+    border-color: var(--brand-primary-color);
+    color: var(--brand-text-on-primary);
+}
+.btn-branded-primary:hover {
+    filter: brightness(90%);
+    color: var(--brand-text-on-primary);
+}
+
+.btn-branded-secondary {
+    background-color: var(--brand-secondary-color);
+    border-color: var(--brand-secondary-color);
+    color: var(--brand-text-on-secondary);
+}
+.btn-branded-secondary:hover {
+    filter: brightness(90%);
+    color: var(--brand-text-on-secondary);
+}
+
+/* Estilos para alertas informativas personalizadas */
+.alert-branded-info {
+    background-color: var(--brand-info-bg);
+    color: var(--brand-info-text);
+    border-color: var(--brand-info-border);
+}
+.alert-branded-info strong,
+.alert-branded-info .alert-link {
+    color: inherit;
+}
+.alert-branded-info .bi { /* Asegura que los iconos también tomen el color */
+    color: inherit;
+}
+
 
 /* Título del modal */
 .modal-title{
@@ -13,11 +54,6 @@
     font-weight: bold;
 }
 
-/* Texto del modal */
-.text-muted{
-    font-size:16px;
-    text-align: justify;
-}
 
 /* Estilos del header del modal*/
 .modal-header {
@@ -45,20 +81,17 @@
 /* Modal de historial */
 /* ######################################################### */
 
-/* Estilos cabeceras de tablas */
-.thead-dark th{
+/* Encabezado de tabla con branding */
+.thead-branded th {
+    background-color: var(--brand-primary-color);
+    color: var(--brand-text-on-primary);
     font-size: 16px;
     font-weight: bold;
 }
 
-/* Control de ancho de columnas en la tabla del historial */
-#history-content .table td:nth-child(1) {
-    width: 5%; /* Columna del número */
-}
 
-#history-content .table td:nth-child(2) {
-    width: 23%; /* Columna de la fecha */
-}
+#history-content .table td:nth-child(1) { width: 5%; }
+#history-content .table td:nth-child(2) { width: 23%; }
 
 #history-content .table td:nth-child(3) {
     width: auto; /* Columna de la consulta - ocupa el resto */
@@ -69,28 +102,6 @@
 /* ######################################################### */
 
 /* Contenedor de calificación del modal de feedback */
-.rating-container {
-    text-align: center;
-    margin: 10px 0 0 0;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    gap: 5px;
-    width: 100%;
-}
-
-/* Contenedor de estrellas del modal de feedback */
-.rating-stars-container{
-    text-align: center;
-    margin: 2px 0 0 0;
-    display: flex;
-    flex-direction: row;
-    justify-content: center;
-    align-items: center;
-    gap: 10px;
-    width: 100%;
-}
 
 /* Estilos de las estrellas del modal de feedback */
 .star {

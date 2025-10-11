@@ -41,7 +41,7 @@ $(document).ready(function () {
         } catch (error) {
             console.error("Error al cargar historial:", error);
             const errorHtml = `
-                <div class="alert alert-danger alert-dismissible show" role="alert">
+                <div class="alert alert-branded-danger alert-dismissible show" role="alert">
                     <strong>Error al cargar el historial:</strong> ${error.message}
                     <button type="button" class="close" data-dismiss="alert">
                         <span>&times;</span>

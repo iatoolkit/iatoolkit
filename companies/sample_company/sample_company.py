@@ -55,9 +55,13 @@ class SampleCompany(BaseCompany):
             "header_background_color": "#EFF6FF",  # Un azul pastel muy claro
             "header_text_color": "#1E3A8A",  # Un azul oscuro y profesional
             "primary_font_weight": "600",  # Semibold, para un look refinado
-            "primary_font_size": "1.1rem"  # Ligeramente más grande para jerarquía
+            "primary_font_size": "1.1rem",  # Ligeramente más grande para jerarquía
 
-            # for secondary text use the defaults
+            # for modals and buttons
+            "brand_primary_color": "#1E3A8A",  # Mismo azul oscuro del texto para consistencia
+            "brand_text_on_primary": "#FFFFFF",  # Texto blanco para el botón primario
+            "brand_secondary_color": "#6c757d",  # Un gris neutro y profesional para acciones secundarias
+            "brand_text_on_secondary": "#FFFFFF",  # Texto blanco para el botón secundario
         }
 
 

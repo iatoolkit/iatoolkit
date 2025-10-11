@@ -36,7 +36,7 @@ class HistoryService:
             history = self.llm_query_repo.get_history(company, user_identifier)
 
             if not history:
-                return {'error': 'No se pudo obtener el historial'}
+                return {'message': 'Historial vacio actualmente', 'history': []}
 
             history_list = [query.to_dict() for query in history]
 

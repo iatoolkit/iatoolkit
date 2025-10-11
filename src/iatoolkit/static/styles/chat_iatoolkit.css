@@ -4,6 +4,18 @@
     --bs-tooltip-opacity: 0.95; /* Ligeramente más opaco para mejor legibilidad */
 }
 
+.alert-branded-danger {
+    background-color: var(--brand-danger-bg);
+    color: var(--brand-danger-text);
+    border-color: var(--brand-danger-border);
+}
+/* Asegura que el texto fuerte y los enlaces dentro de la alerta también tomen el color correcto */
+.alert-branded-danger strong,
+.alert-branded-danger .alert-link {
+    color: inherit;
+}
+
+
 /* esta clase defines los atributos de cada bloque */
 .chat-block {
     padding: 1rem; /* Equivalente a p-3 de Bootstrap */
@@ -164,7 +176,7 @@
     background-color: #ffffff;
     border: 1px solid #dee2e6;
     border-radius: 1.5rem;
-    padding: 0.25rem 0.5rem;
+    padding: 0.1rem 0.5rem;
     transition: all 0.2s ease-in-out;
 }
 
@@ -178,6 +190,10 @@
     border-radius: 1.5rem;      /* Mismo radio que el chat-input-bar */
     border: 1px solid #dee2e6; /* Mismo borde que el chat-input-bar */
     box-shadow: none;           /* Eliminamos la sombra por defecto del card */
+}
+
+#prompt-assistant-collapse.show .card {
+    margin-bottom: 12px !important; /* Anula el mb-2 (8px) para añadir un poco más de espacio */
 }
 
 /* 4. El textarea "invisible" en el centro */
@@ -215,13 +231,13 @@
     color: #343a40;
 }
 
-/* 6. Anulación de color y tamaño para el botón de ENVIAR */
-.send-button-icon i {
-    color: #0d6efd !important; /* Azul (importante para anular) */
-    font-size: 1.7rem !important; /* Ligeramente más grande para mayor énfasis */
+/* 6. Anulación específica para el botón de ENVIAR usando su ID (Máxima Prioridad) */
+#send-button i {
+    color: var(--brand-send-button-color); /* Usa la variable de branding */
+    font-size: 1.7rem; /* Ligeramente más grande */
 }
-.send-button-icon:hover i {
-    color: #0b5ed7 !important; /* Azul más oscuro en hover */
+#send-button:hover i {
+    filter: brightness(85%); /* Efecto hover genérico que funciona con cualquier color */
 }
 
 /* 7. Estilo para el botón de enviar cuando está deshabilitado */
@@ -404,3 +420,5 @@
 .star.hover-active {
     color: #ffc107;
 }
+
+
