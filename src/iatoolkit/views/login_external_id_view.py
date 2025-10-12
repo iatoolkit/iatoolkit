@@ -19,8 +19,12 @@ class InitiateExternalChatView(MethodView):
     @inject
     def __init__(self,
                  iauthentication: IAuthentication,
+                 branding_service: BrandingService,
+                 profile_service: ProfileService
                  ):
         self.iauthentication = iauthentication
+        self.branding_service = branding_service
+        self.profile_service = profile_service
 
     def post(self, company_short_name: str):
         data = request.get_json()
@@ -28,6 +32,10 @@ class InitiateExternalChatView(MethodView):
             return jsonify({"error": "Falta external_user_id"}), 400
 
         external_user_id = data['external_user_id']
+
+        company = self.profile_service.get_company_by_short_name(company_short_name)
+        if not company:
+            return jsonify({"error": "Empresa no encontrada"}), 404
 
         # 1. verify access credentials quickly
         iaut = self.iauthentication.verify(
@@ -37,10 +45,15 @@ class InitiateExternalChatView(MethodView):
         if not iaut.get("success"):
             return jsonify(iaut), 401
 
-        # 2. Render the shell page, passing the final data URL and user id
+        # 2. Get branding data for the shell page
+        branding_data = self.branding_service.get_company_branding(company)
+
+
+        # 3. Render the shell page, passing the final data URL and user id
         return render_template("login_shell.html",
-                               data_source_url=url_for('external_chat_login', company_short_name=company_short_name),
-                               external_user_id=external_user_id
+                               data_source_url=url_for('external_login', company_short_name=company_short_name),
+                               external_user_id=external_user_id,
+                               branding=branding_data
                                )
 
 class ExternalChatLoginView(MethodView):

@@ -41,7 +41,7 @@ class TestExternalChatLoginView:
 
         # Registrar la vista en la app de Flask con TODAS las dependencias
         view_func = ExternalChatLoginView.as_view(
-            'external_chat_login',
+            'external_login',
             profile_service=self.mock_profile_service,
             query_service=self.mock_query_service,
             prompt_service=self.mock_prompt_service,

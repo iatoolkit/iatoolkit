@@ -13,7 +13,7 @@ from iatoolkit.services.branding_service import BrandingService
 from iatoolkit.services.query_service import QueryService
 import os
 from iatoolkit.common.session_manager import SessionManager
-
+from iatoolkit.services.branding_service import BrandingService
 
 class InitiateLoginView(MethodView):
     """
@@ -22,8 +22,11 @@ class InitiateLoginView(MethodView):
     and immediately returns the loading shell page.
     """
     @inject
-    def __init__(self, profile_service: ProfileService):
+    def __init__(self,
+                 profile_service: ProfileService,
+                 branding_service: BrandingService,):
         self.profile_service = profile_service
+        self.branding_service = branding_service
 
     def post(self, company_short_name: str):
         # get company info
@@ -35,7 +38,7 @@ class InitiateLoginView(MethodView):
         email = request.form.get('email')
         password = request.form.get('password')
 
-        # authenticate the user
+        # 1. authenticate the user
         response = self.profile_service.login(
             company_short_name=company_short_name,
             email=email,
@@ -53,13 +56,16 @@ class InitiateLoginView(MethodView):
                 },
                 alert_message=response["error"]), 400
 
+        # 2. Get branding data for the shell page
+        branding_data = self.branding_service.get_company_branding(company)
 
         # 3. Render the shell page, passing the URL for the heavy lifting
         # The shell's AJAX call will now be authenticated via the session cookie.
         return render_template(
             "login_shell.html",
             data_source_url=url_for('login', company_short_name=company_short_name),
-            external_user_id='' # Pass an empty string, the shell will handle it
+            external_user_id='',
+            branding=branding_data,
         )
 
 

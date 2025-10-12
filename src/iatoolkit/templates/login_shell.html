@@ -1,0 +1,173 @@
+<!-- templates/iatoolkit/shell.html -->
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Iniciando Maxxa IA...</title>
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+
+    <!-- Inyecta las variables CSS de la marca -->
+    {% if branding and branding.css_variables %}
+    <style>
+        {{ branding.css_variables|safe }}
+    </style>
+    {% endif %}
+
+    <style>
+        /* --- Estilos Generales --- */
+        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+
+        #loader-wrapper {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: #f4f7f6;
+            z-index: 1000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            padding: 20px;
+            box-sizing: border-box;
+            transition: opacity 0.5s ease-in-out;
+        }
+
+        /* --- Estilos de Branding --- */
+        #brand-header {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin: 0 0 30px 0; /* Aumentamos el margen inferior para dar espacio */
+            color: var(--brand-secondary-color, #06326B);
+        }
+        #brand-header .brand-name {
+            color: var(--brand-primary-color, #FF5100);
+        }
+
+
+        /* --- Estilos de la Tarjeta (Sin cambios) --- */
+        #card-container {
+            background-color: #fff; border-radius: 12px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+            padding: 30px; width: 90%; max-width: 450px; text-align: center; transition: opacity 0.3s ease-in-out;
+        }
+        #card-container .icon { font-size: 40px; color: var(--brand-primary-color, #FF5100); margin-bottom: 15px; }
+        #card-container h3 { font-size: 1.25rem; color: #333; margin-bottom: 10px; }
+        #card-container p { font-size: 0.95rem; color: #666; line-height: 1.5; min-height: 60px; }
+        .card-nav { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; }
+        .card-nav button { background-color: var(--brand-secondary-color, #06326B); border: none; color: var(--brand-text-on-secondary, #FFFFFF); border-radius: 50%; width: 40px; height: 40px; cursor: pointer; transition: opacity 0.2s; }
+        .card-nav button:hover { opacity: 0.85; }
+        #progress-dots { display: flex; gap: 8px; }
+        .dot { width: 10px; height: 10px; border-radius: 50%; background-color: #ddd; transition: background-color 0.3s; }
+        .dot.active { background-color: var(--brand-primary-color, #FF5100); }
+
+        /* --- ESTILOS MEJORADOS: SPINNER DE CARGA --- */
+        #loading-status { margin-top: 30px; display: flex; align-items: center; gap: 15px; }
+        .spinner {
+            width: 30px; height: 30px; border: 4px solid rgba(0, 0, 0, 0.1);
+            border-top-color: var(--brand-primary-color, #FF5100);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        #loading-status p { font-size: 1rem; font-weight: 500; color: #555; margin: 0; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* --- Iframe (Sin cambios) --- */
+        #content-container { width: 100%; height: 100%; }
+        iframe { width: 100%; height: 100%; border: none; }
+    </style>
+</head>
+<body>
+    <div id="loader-wrapper">
+
+        <h1 id="brand-header">
+            <span class="brand-name">Maxxa</span><span>IA</span>
+        </h1>
+
+        <!-- ELIMINADO: El subtítulo de carga que estaba aquí -->
+
+        <div id="card-container">
+            <div id="card-icon" class="icon"><i class="fas fa-lightbulb"></i></div>
+            <h3 id="card-title">Título de la Tarjeta</h3>
+            <p id="card-text">Descripción de la tarjeta de capacitación.</p>
+            <div class="card-nav">
+                <button id="prev-card" aria-label="Anterior"><i class="fas fa-chevron-left"></i></button>
+                <div id="progress-dots"></div>
+                <button id="next-card" aria-label="Siguiente"><i class="fas fa-chevron-right"></i></button>
+            </div>
+        </div>
+
+        <!-- MEJORADO: Texto de estado ahora junto al spinner -->
+        <div id="loading-status">
+            <div class="spinner"></div>
+            <p>Inicializando el contexto de Maxxa para la IA...</p>
+        </div>
+
+    </div>
+
+    <div id="content-container"></div>
+
+    <script>
+        $(function() {
+            const cardsData = [
+                { icon: 'fas fa-users', title: 'Clientes',
+                    text: 'Conozco en detalle a los clientes de Maxxa: antiguedad, contactos, apoderados, historial de operaciones.<br><br><strong>Ejemplo:</strong> cuantos clientes nuevos de garantia se incorporaron a mi cartera este año?' },
+                { icon: 'fas fa-cubes', title: 'Productos',
+                    text: 'Productos contratados por los clientes: garantias, credito en cuotas, software.<br><br><strong>Ejemplo:</strong> Cuantos clientes de software tengo en cartera?' },
+                { icon: 'fas fa-exchange-alt', title: 'Operaciones',
+                    text: 'Operaciones de garantia y créditos: tasas, comisiones, acredores, fondos, cobranza, etc.<br><br><strong>Ejemplo:</strong> Dame una tabla con los clientes de mi cartera han emitido mas de 20 garantias este año? columnas: rut, nombre, #garantias, monto, comisión' },
+                { icon: 'fas fa-landmark', title: 'Chilecompra',
+                    text: 'Historial completo de la participacion en chilecompra de un cliente. <br><br><strong>Ejemplo:</strong> Que porcentaje de garantias FC adjudicadas en los últimos 12 meses por el cliente 1234567-8 las compro en Maxxa.' },
+                { icon: 'fas fa-comments', title: 'Equipos Comerciales',
+                    text: 'Conozco los equipos comerciales de crédito y garantia. <br><br><strong>Ejemplo:</strong> dime las 10 licitaciones mas grandes que han ganado clientes de mi cartera este año.' },
+                { icon: 'fas fa-cogs', title: 'Personaliza tus Prompts',
+                    text: 'Utiliza la varita magica y podras explorar los prompts predefinidos que he preparado para ti.' },
+                { icon: 'fas fa-table', title: 'Tablas y Excel',
+                    text: 'Puedes pedirme la respuesta en formato de tablas o excel. <br><br><strong>Ejemplo:</strong> dame una tabla con los 10 certificados mas grande este año, columnas: rut, cliente, fecha, monto, tasa, comision, acreedor...' },
+                { icon: 'fas fa-shield-alt', title: 'Seguridad y Confidencialidad',
+                    text: 'Toda tu información es procesada de forma segura y confidencial dentro de nuestro entorno protegido.' }
+            ];
+            let currentCardIndex = 0, autoRotateInterval;
+            const $cardContainer = $('#card-container'), $cardIcon = $('#card-icon'), $cardTitle = $('#card-title'), $cardText = $('#card-text'), $progressDots = $('#progress-dots');
+            function displayCard(index) {
+                $cardContainer.css('opacity', 0);
+                setTimeout(() => {
+                    const card = cardsData[index];
+                    $cardIcon.html(`<i class="${card.icon}"></i>`);
+                    $cardTitle.text(card.title);
+                    $cardText.html(card.text);
+                    $progressDots.find('.dot').removeClass('active').eq(index).addClass('active');
+                    $cardContainer.css('opacity', 1);
+                }, 300);
+            }
+            function startAutoRotate() { autoRotateInterval = setInterval(() => $('#next-card').click(), 5000); }
+            cardsData.forEach(() => $progressDots.append('<div class="dot"></div>'));
+            displayCard(currentCardIndex);
+            startAutoRotate();
+            $('#next-card').on('click', function() {
+                currentCardIndex = (currentCardIndex + 1) % cardsData.length;
+                displayCard(currentCardIndex);
+                clearInterval(autoRotateInterval); startAutoRotate();
+            });
+            $('#prev-card').on('click', function() {
+                currentCardIndex = (currentCardIndex - 1 + cardsData.length) % cardsData.length;
+                displayCard(currentCardIndex);
+                clearInterval(autoRotateInterval); startAutoRotate();
+            });
+                        const proxyUrl = '{{ data_source_url }}', externalUserId = '{{ external_user_id }}';
+            const $loader = $('#loader-wrapper'), $container = $('#content-container');
+            $.ajax({
+                url: proxyUrl, method: 'POST', contentType: 'application/json',
+                data: JSON.stringify({ external_user_id: externalUserId }), dataType: 'html'
+            }).done(function(repairedHtml) {
+                clearInterval(autoRotateInterval); // Detenemos las animaciones
+                // Reemplazamos el documento actual por el nuevo HTML del chat
+                document.open();
+                document.write(repairedHtml);
+                document.close();
+            }).fail(function(jqXHR) {
+                clearInterval(autoRotateInterval);
+                let errorMessage = (jqXHR.responseJSON && jqXHR.responseJSON.error) ? jqXHR.responseJSON.error : `Error: ${jqXHR.status} ${jqXHR.statusText}`;
+                $loader.html(`<p><strong>Error:</strong> ${errorMessage}</p>`);
+            });
+        });
+    </script>
+</body>
+</html>

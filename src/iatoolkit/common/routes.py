@@ -27,7 +27,7 @@ def register_views(injector, app):
     from iatoolkit.views.tasks_review_view import TaskReviewView
     from iatoolkit.views.home_view import HomeView
     from iatoolkit.views.login_view import LoginView, InitiateLoginView
-    from iatoolkit.views.external_chat_login_view import InitiateExternalChatView, ExternalChatLoginView
+    from iatoolkit.views.login_external_id_view import InitiateExternalChatView, ExternalChatLoginView
     from iatoolkit.views.signup_view import SignupView
     from iatoolkit.views.verify_user_view import VerifyAccountView
     from iatoolkit.views.forgot_password_view import ForgotPasswordView
@@ -36,17 +36,14 @@ def register_views(injector, app):
     from iatoolkit.views.user_feedback_view import UserFeedbackView
     from iatoolkit.views.prompt_view import PromptView
     from iatoolkit.views.chat_token_request_view import ChatTokenRequestView
-    from iatoolkit.views.external_login_view import ExternalLoginView
     from iatoolkit.views.download_file_view import DownloadFileView
 
     app.add_url_rule('/', view_func=HomeView.as_view('home'))
 
     # front if the company internal portal
-    app.add_url_rule('/<company_short_name>/chat_login', view_func=ExternalChatLoginView.as_view('external_chat_login'))
-    app.add_url_rule('/<company_short_name>/external_login/<external_user_id>',
-                     view_func=ExternalLoginView.as_view('external_login'))
+    app.add_url_rule('/<company_short_name>/external_login', view_func=ExternalChatLoginView.as_view('external_login'))
     app.add_url_rule('/<company_short_name>/initiate_external_chat',
-                         view_func=InitiateExternalChatView.as_view('initiate_chat_login'))
+                         view_func=InitiateExternalChatView.as_view('initiate_external_chat'))
 
     app.add_url_rule('/auth/chat_token', view_func=ChatTokenRequestView.as_view('chat-token'))
 
