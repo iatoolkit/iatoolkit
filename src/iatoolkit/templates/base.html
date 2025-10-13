@@ -9,9 +9,9 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons/font/bootstrap-icons.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/filepond/dist/filepond.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles/chat_iatoolkit.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles/chat_modal.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles/llm_output.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles/chat_iatoolkit.css', _external=True) }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles/chat_modal.css',  _external=True) }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles/llm_output.css', _external=True) }}">
 </head>
 <body class="d-flex flex-column p-3" style="min-height: 100vh;">
     <main class="d-flex flex-column flex-grow-1">

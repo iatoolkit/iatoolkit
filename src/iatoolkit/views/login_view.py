@@ -63,7 +63,9 @@ class InitiateLoginView(MethodView):
         # The shell's AJAX call will now be authenticated via the session cookie.
         return render_template(
             "login_shell.html",
-            data_source_url=url_for('login', company_short_name=company_short_name),
+            data_source_url=url_for('login',
+                        company_short_name=company_short_name,
+                        _external=True),
             external_user_id='',
             branding=branding_data,
         )

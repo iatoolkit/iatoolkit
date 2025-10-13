@@ -151,23 +151,35 @@
                 displayCard(currentCardIndex);
                 clearInterval(autoRotateInterval); startAutoRotate();
             });
-                        const proxyUrl = '{{ data_source_url }}', externalUserId = '{{ external_user_id }}';
-            const $loader = $('#loader-wrapper'), $container = $('#content-container');
-            $.ajax({
-                url: proxyUrl, method: 'POST', contentType: 'application/json',
-                data: JSON.stringify({ external_user_id: externalUserId }), dataType: 'html'
-            }).done(function(repairedHtml) {
-                clearInterval(autoRotateInterval); // Detenemos las animaciones
-                // Reemplazamos el documento actual por el nuevo HTML del chat
-                document.open();
-                document.write(repairedHtml);
-                document.close();
-            }).fail(function(jqXHR) {
-                clearInterval(autoRotateInterval);
-                let errorMessage = (jqXHR.responseJSON && jqXHR.responseJSON.error) ? jqXHR.responseJSON.error : `Error: ${jqXHR.status} ${jqXHR.statusText}`;
-                $loader.html(`<p><strong>Error:</strong> ${errorMessage}</p>`);
-            });
-        });
+
+                    const $loader = $('#loader-wrapper');
+        const $container = $('#content-container');
+
+        // URL para el iframe, pasada desde la vista InitiateExternalChatView
+        const iframeSrc = "{{ iframe_src_url }}";
+
+        // Creamos el elemento iframe
+        const iframe = document.createElement('iframe');
+        iframe.src = iframeSrc;
+
+        // Estilos para que ocupe toda la pantalla
+        iframe.style.width = '100%';
+        iframe.style.height = '100%';
+        iframe.style.border = 'none';
+        iframe.style.display = 'none'; // Empezamos oculto
+
+        // Evento que se dispara cuando el iframe ha terminado de cargar su contenido
+        iframe.onload = function() {
+            // Mostramos el iframe
+            iframe.style.display = 'block';
+            // Ocultamos la animación de carga con una transición suave
+            $loader.css('opacity', 0);
+            setTimeout(() => $loader.hide(), 500); // Lo eliminamos del DOM después de la transición
+        };
+
+        // Añadimos el iframe al contenedor en el DOM
+        $container.append(iframe);
+    });
     </script>
 </body>
 </html>

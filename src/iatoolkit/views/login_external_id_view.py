@@ -48,11 +48,15 @@ class InitiateExternalChatView(MethodView):
         # 2. Get branding data for the shell page
         branding_data = self.branding_service.get_company_branding(company)
 
+        # Generamos la URL para el SRC del iframe, añadiendo el usuario como un query parameter.
+        target_url = url_for('external_login',  # Apunta a la vista del chat
+                             company_short_name=company_short_name,
+                             external_user_id=external_user_id,  # Se añadirá como ?external_user_id=...
+                             _external=True)
 
-        # 3. Render the shell page, passing the final data URL and user id
+        # Renderizamos el shell para un iframe.
         return render_template("login_shell.html",
-                               data_source_url=url_for('external_login', company_short_name=company_short_name),
-                               external_user_id=external_user_id,
+                               iframe_src_url=target_url,  # Le cambiamos el nombre para más claridad
                                branding=branding_data
                                )
 
@@ -73,15 +77,15 @@ class ExternalChatLoginView(MethodView):
         self.jwt_service = jwt_service
         self.branding_service = branding_service
 
-    def post(self, company_short_name: str):
-        data = request.get_json()
-        if not data or 'external_user_id' not in data:
-            return jsonify({"error": "Falta external_user_id"}), 400
-
-        external_user_id = data['external_user_id']
+    def get(self, company_short_name: str):
+        # Leemos el user_id desde los parámetros de la URL (?external_user_id=...)
+        external_user_id = request.args.get('external_user_id')
+        if not external_user_id:
+            return "Falta el parámetro external_user_id en la URL", 400
 
         company = self.profile_service.get_company_by_short_name(company_short_name)
         if not company:
+            logging.error(f'Company {company_short_name} not found')
             return jsonify({"error": "Empresa no encontrada"}), 404
 
         try:
@@ -109,16 +113,15 @@ class ExternalChatLoginView(MethodView):
             branding_data = self.branding_service.get_company_branding(company)
 
             # 5. render the chat page with the company/user information.
-            chat_html = render_template("chat.html",
+            return render_template("chat.html",
                                         company_short_name=company_short_name,
-                                        auth_method='jwt',  # login method is JWT
-                                        session_jwt=token,  # pass the token to the front-end
+                                        auth_method='jwt',
+                                        session_jwt=token,
                                         external_user_id=external_user_id,
                                         branding=branding_data,
                                         prompts=prompts,
                                         iatoolkit_base_url=os.getenv('IATOOLKIT_BASE_URL'),
-                                        )
-            return chat_html, 200
+                                        ), 200
 
         except Exception as e:
             logging.exception(f"Error al inicializar el chat para {company_short_name}/{external_user_id}: {e}")

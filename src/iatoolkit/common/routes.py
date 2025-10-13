@@ -40,14 +40,15 @@ def register_views(injector, app):
 
     app.add_url_rule('/', view_func=HomeView.as_view('home'))
 
-    # front if the company internal portal
-    app.add_url_rule('/<company_short_name>/external_login', view_func=ExternalChatLoginView.as_view('external_login'))
+    # login for external portals
     app.add_url_rule('/<company_short_name>/initiate_external_chat',
                          view_func=InitiateExternalChatView.as_view('initiate_external_chat'))
+    app.add_url_rule('/<company_short_name>/external_login',
+                     view_func=ExternalChatLoginView.as_view('external_login'))
+    app.add_url_rule('/auth/chat_token',
+                     view_func=ChatTokenRequestView.as_view('chat-token'))
 
-    app.add_url_rule('/auth/chat_token', view_func=ChatTokenRequestView.as_view('chat-token'))
-
-    # main pages for the iatoolkit frontend
+    # login for the iatoolkit integrated frontend
     app.add_url_rule('/<company_short_name>/login', view_func=LoginView.as_view('login'))
     app.add_url_rule('/<company_short_name>/initiate_login', view_func=InitiateLoginView.as_view('initiate_login'))
 

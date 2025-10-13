@@ -44,7 +44,7 @@
 
         <!-- Icono de cerrar sesión (al final) -->
         {% if user_email %}
-            <a href="{{ url_for('logout', company_short_name=company_short_name) }}"
+            <a href="{{ url_for('logout', company_short_name=company_short_name, _external=True) }}"
                  class="ms-3 action-icon-style" title="Cerrar sesión" style="color: {{ branding.header_text_color }} !important;">
                 <i class="bi bi-box-arrow-right"></i>
             </a>
@@ -173,10 +173,10 @@
 </script>
 
 <!-- Carga de los scripts JS externos después de definir las variables globales -->
-<script src="{{ url_for('static', filename='js/chat_filepond.js') }}"></script>
-<script src="{{ url_for('static', filename='js/chat_history.js') }}"></script>
-<script src="{{ url_for('static', filename='js/chat_feedback.js') }}"></script>
-<script src="{{ url_for('static', filename='js/chat_main.js') }}"></script>
+<script src="{{ url_for('static', filename='js/chat_filepond.js', _external=True) }}"></script>
+<script src="{{ url_for('static', filename='js/chat_history.js', _external=True) }}"></script>
+<script src="{{ url_for('static', filename='js/chat_feedback.js', _external=True) }}"></script>
+<script src="{{ url_for('static', filename='js/chat_main.js', _external=True) }}"></script>
 
 <script>
     document.addEventListener('DOMContentLoaded', function() {

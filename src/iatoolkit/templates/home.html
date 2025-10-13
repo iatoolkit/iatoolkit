@@ -156,11 +156,6 @@
               return;
           }
 
-          const $button = $(this);
-          const $spinner = $button.find('.spinner-border');
-          $button.prop('disabled', true);
-          $spinner.removeClass('d-none');
-
           fetch(`/${selectedCompany}/initiate_external_chat`, {
               method: 'POST',
               headers: {
@@ -188,10 +183,6 @@
           .catch(error => {
               Swal.fire({ icon: 'error', title: 'Error de Inicio de Sesión', text: error.message });
           })
-          .finally(() => {
-              $button.prop('disabled', false);
-              $spinner.addClass('d-none');
-          });
 
        });
   });

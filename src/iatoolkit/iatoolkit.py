@@ -144,8 +144,13 @@ class IAToolkit:
         is_https = self._get_config_value('USE_HTTPS', 'false').lower() == 'true'
         is_dev = self._get_config_value('FLASK_ENV') == 'development'
 
+        # get the iatoolkit domain
+        parsed_url = urlparse(os.getenv('IATOOLKIT_BASE_URL'))
+        domain = parsed_url.netloc
+
         self.app.config.update({
             'VERSION': self.version,
+            'SERVER_NAME': domain,
             'SECRET_KEY': self._get_config_value('FLASK_SECRET_KEY', 'iatoolkit-default-secret'),
             'SESSION_COOKIE_SAMESITE': "None" if is_https else "Lax",
             'SESSION_COOKIE_SECURE': is_https,
@@ -155,6 +160,9 @@ class IAToolkit:
             'JWT_ALGORITHM': 'HS256',
             'JWT_EXPIRATION_SECONDS_CHAT': int(self._get_config_value('JWT_EXPIRATION_SECONDS_CHAT', 3600))
         })
+
+        if parsed_url.scheme == 'https':
+            self.app.config['PREFERRED_URL_SCHEME'] = 'https'
 
         # Configuración para tokenizers en desarrollo
         if is_dev:
