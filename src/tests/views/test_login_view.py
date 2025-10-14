@@ -38,7 +38,7 @@ class TestInitiateLoginView:
 
         self.test_company = Company(id=1, name="Empresa de Prueba", short_name=MOCK_COMPANY_SHORT_NAME)
         self.mock_profile_service.get_company_by_short_name.return_value = self.test_company
-        self.mock_branding_service.get_company_branding.return_value = {"css_variables": ":root{}"}
+        self.mock_branding_service.get_company_branding.return_value = {"css_variables": ":root{}", "name": "Test"}
 
         # Registrar la vista a probar
         initiate_view = InitiateLoginView.as_view("initiate_login",
@@ -47,14 +47,14 @@ class TestInitiateLoginView:
                                                   onboarding_service=self.mock_onboarding_service)
         self.app.add_url_rule(f"/<company_short_name>/initiate_login", view_func=initiate_view, methods=["POST"])
 
-        # Registrar un endpoint falso para que url_for('login') funcione,
+        # Registrar un endpoint falso para que url_for('login') funcione
         @self.app.route("/<company_short_name>/login", endpoint='login')
         def dummy_login(company_short_name): return "OK"
 
     @patch("iatoolkit.views.login_view.render_template")
     def test_successful_initiation_returns_shell(self, mock_render_template):
         """Prueba que un login exitoso en initiate_login devuelve la página shell."""
-        # Arrange: Simular una respuesta de login exitosa
+        # Arrange
         self.mock_profile_service.login.return_value = {'success': True, 'user': User(id=1)}
         self.mock_onboarding_service.get_onboarding_cards.return_value = [{'title': 'Test Card'}]
         mock_render_template.return_value = "<html>Shell Page</html>"
@@ -72,8 +72,8 @@ class TestInitiateLoginView:
         # Verificar que se renderizó la plantilla correcta con los datos correctos
         mock_render_template.assert_called_once()
         call_args, call_kwargs = mock_render_template.call_args
-        assert call_args[0] == "login_shell.html"
-        assert 'data_source_url' in call_kwargs
+        assert call_args[0] == "onboarding_shell.html"
+        assert 'iframe_src_url' in call_kwargs
         assert 'branding' in call_kwargs
         assert 'onboarding_cards' in call_kwargs
         assert call_kwargs['onboarding_cards'] == [{'title': 'Test Card'}]
@@ -81,7 +81,7 @@ class TestInitiateLoginView:
     @patch("iatoolkit.views.login_view.render_template")
     def test_failed_initiation_renders_login_again(self, mock_render_template):
         """Prueba que un login fallido en initiate_login vuelve a renderizar la página de login con un error."""
-        # Arrange: Simular una respuesta de login fallida
+        # Arrange
         self.mock_profile_service.login.return_value = {'success': False, 'error': 'Credenciales inválidas'}
         mock_render_template.return_value = "<html>Login con Error</html>"
 
@@ -101,7 +101,7 @@ class TestInitiateLoginView:
 
 
 class TestLoginView:
-    """Pruebas para la vista de carga pesada (LoginView), que ahora depende de una sesión."""
+    """Pruebas para la vista de carga pesada (LoginView), que ahora responde a GET."""
 
     @pytest.fixture(autouse=True)
     def setup(self):
@@ -110,7 +110,6 @@ class TestLoginView:
         self.app.testing = True
         self.client = self.app.test_client()
 
-        # Mocks para TODAS las dependencias de LoginView
         self.mock_profile_service = MagicMock(spec=ProfileService)
         self.mock_query_service = MagicMock(spec=QueryService)
         self.mock_prompt_service = MagicMock(spec=PromptService)
@@ -119,33 +118,34 @@ class TestLoginView:
         self.test_company = Company(id=1, name="Empresa de Prueba", short_name=MOCK_COMPANY_SHORT_NAME)
         self.mock_profile_service.get_company_by_short_name.return_value = self.test_company
 
-        # Registrar la vista a probar
         view = LoginView.as_view("login",
                                  profile_service=self.mock_profile_service,
                                  query_service=self.mock_query_service,
                                  prompt_service=self.mock_prompt_service,
                                  branding_service=self.mock_branding_service)
+        # La vista ahora responde a GET y POST
         self.app.add_url_rule("/<company_short_name>/login", view_func=view, methods=["GET", "POST"])
+
+        # Endpoint falso para probar la redirección
+        @self.app.route("/<company_short_name>/home", endpoint='home')
+        def dummy_home(company_short_name): return "Home Page"
 
     @patch("iatoolkit.views.login_view.render_template")
     @patch("iatoolkit.views.login_view.SessionManager")
-    def test_post_successful_with_session(self, mock_session_manager, mock_render_template):
-        """Prueba que el POST a login (heavy-lifting) funciona cuando hay una sesión."""
-        # Arrange: Simular lo que SessionManager devolvería
+    def test_get_successful_with_session(self, mock_session_manager, mock_render_template):
+        """Prueba que el GET a login (heavy-lifting) funciona cuando hay una sesión."""
+        # Arrange
         mock_session_manager.get.side_effect = lambda key: {
             'user_id': 123,
             'user': {'email': MOCK_USER_EMAIL},
-            'company_short_name': MOCK_COMPANY_SHORT_NAME
         }.get(key)
-
         mock_render_template.return_value = "<html>Chat Page</html>"
 
         # Act
-        response = self.client.post(f"/{MOCK_COMPANY_SHORT_NAME}/login")
+        response = self.client.get(f"/{MOCK_COMPANY_SHORT_NAME}/login")
 
         # Assert
         assert response.status_code == 200
-        # Verificar que se llamó a la lógica de negocio pesada
         self.mock_query_service.llm_init_context.assert_called_once_with(
             company_short_name=MOCK_COMPANY_SHORT_NAME,
             local_user_id=123
@@ -153,33 +153,20 @@ class TestLoginView:
         self.mock_prompt_service.get_user_prompts.assert_called_once()
         self.mock_branding_service.get_company_branding.assert_called_once()
 
-        # Verificar que se renderizó la plantilla final del chat
         mock_render_template.assert_called_once()
         call_args, call_kwargs = mock_render_template.call_args
         assert call_args[0] == "chat.html"
         assert call_kwargs['user_email'] == MOCK_USER_EMAIL
 
-    @patch("iatoolkit.views.login_view.render_template")
     @patch("iatoolkit.views.login_view.SessionManager")
-    def test_post_fails_without_session(self, mock_session_manager, mock_render_template):
-        """Prueba que el POST a login falla si no hay sesión, devolviendo un error."""
-        # Arrange: Simular que SessionManager no devuelve nada
+    def test_get_fails_without_session_redirects(self, mock_session_manager):
+        """Prueba que un GET a login sin sesión redirige al home."""
+        # Arrange
         mock_session_manager.get.return_value = None
 
-        # Act: Llamar al endpoint
-        response = self.client.post(f"/{MOCK_COMPANY_SHORT_NAME}/login")
-
-        # Assert: La vista debería fallar porque la sesión está vacía.
-        assert response.status_code == 404
-
-    @patch("iatoolkit.views.login_view.render_template")
-    def test_get_login_page_still_works(self, mock_render_template):
-        """Prueba que el GET a /login sigue renderizando la página de login."""
-        mock_render_template.return_value = "<html>Login Page</html>"
+        # Act
         response = self.client.get(f"/{MOCK_COMPANY_SHORT_NAME}/login")
-        assert response.status_code == 200
-        mock_render_template.assert_called_once_with(
-            "login.html",
-            company=self.test_company,
-            company_short_name=MOCK_COMPANY_SHORT_NAME
-        )
+
+        # Assert
+        assert response.status_code == 302  # 302 es el código para redirección
+        assert response.location.endswith(f"/{MOCK_COMPANY_SHORT_NAME}/home")

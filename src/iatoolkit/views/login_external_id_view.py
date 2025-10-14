@@ -15,6 +15,7 @@ from iatoolkit.services.prompt_manager_service import PromptService
 from iatoolkit.services.jwt_service import JWTService
 from iatoolkit.services.branding_service import BrandingService
 from iatoolkit.services.onboarding_service import OnboardingService
+from iatoolkit.common.session_manager import SessionManager
 
 
 class InitiateExternalChatView(MethodView):
@@ -49,18 +50,21 @@ class InitiateExternalChatView(MethodView):
         if not iaut.get("success"):
             return jsonify(iaut), 401
 
-        # 2. Get branding and onboarding data for the shell page
+        # 2. Authentication successful, create a temporary server-side session using SessionManager
+        SessionManager.set('external_user_id', external_user_id)
+        SessionManager.set('is_external_auth_complete', True)
+
+        # 3. Get branding and onboarding data for the shell page
         branding_data = self.branding_service.get_company_branding(company)
         onboarding_cards = self.onboarding_service.get_onboarding_cards(company)
 
-        # Generamos la URL para el SRC del iframe, añadiendo el usuario como un query parameter.
+        # 4. Generate the URL for the iframe's SRC.
         target_url = url_for('external_login',  # Apunta a la vista del chat
                              company_short_name=company_short_name,
-                             external_user_id=external_user_id,  # Se añadirá como ?external_user_id=...
                              _external=True)
 
-        # Renderizamos el shell para un iframe.
-        return render_template("login_shell.html",
+        # 5. Render the shell.
+        return render_template("onboarding_shell.html",
                                iframe_src_url=target_url,  # Le cambiamos el nombre para más claridad
                                branding=branding_data,
                                onboarding_cards=onboarding_cards
@@ -84,10 +88,16 @@ class ExternalChatLoginView(MethodView):
         self.branding_service = branding_service
 
     def get(self, company_short_name: str):
-        # Leemos el user_id desde los parámetros de la URL (?external_user_id=...)
-        external_user_id = request.args.get('external_user_id')
+        # 1. Check for the temporary session flag and get user ID from SessionManager
+        if not SessionManager.get('is_external_auth_complete'):
+            return "Acceso no autorizado.", 401
+
+        external_user_id = SessionManager.get('external_user_id')
         if not external_user_id:
-            return "Falta el parámetro external_user_id en la URL", 400
+            return "Falta el ID de usuario en la sesión.", 400
+
+        # Clear the temporary session flag to prevent reuse
+        SessionManager.set('is_external_auth_complete', None)
 
         company = self.profile_service.get_company_by_short_name(company_short_name)
         if not company:
@@ -96,7 +106,7 @@ class ExternalChatLoginView(MethodView):
 
         try:
 
-            # 1. generate a new JWT, our secure access token.
+            # 2. generate a new JWT, our secure access token.
             token = self.jwt_service.generate_chat_jwt(
                 company_id=company.id,
                 company_short_name=company.short_name,
@@ -106,19 +116,19 @@ class ExternalChatLoginView(MethodView):
             if not token:
                 raise Exception("No se pudo generar el token de sesión (JWT).")
 
-            # 2. init the company/user LLM context.
+            # 3. init the company/user LLM context.
             self.query_service.llm_init_context(
                 company_short_name=company_short_name,
                 external_user_id=external_user_id
             )
 
-            # 3. get the prompt list from backend
+            # 5. get the prompt list from backend
             prompts = self.prompt_service.get_user_prompts(company_short_name)
 
-            # 4. get the branding data
+            # 5. get the branding data
             branding_data = self.branding_service.get_company_branding(company)
 
-            # 5. render the chat page with the company/user information.
+            # 6. render the chat page with the company/user information.
             return render_template("chat.html",
                                         company_short_name=company_short_name,
                                         auth_method='jwt',

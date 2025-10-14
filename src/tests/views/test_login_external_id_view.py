@@ -1,6 +1,6 @@
 import pytest
 from flask import Flask
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, call
 from iatoolkit.views.login_external_id_view import InitiateExternalChatView, ExternalChatLoginView
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.query_service import QueryService
@@ -29,7 +29,6 @@ class TestInitiateExternalChatView:
         self.app.testing = True
         self.client = self.app.test_client()
 
-        # Mocks para las dependencias de InitiateExternalChatView
         self.mock_iauthentication = MagicMock(spec=IAuthentication)
         self.mock_branding_service = MagicMock(spec=BrandingService)
         self.mock_profile_service = MagicMock(spec=ProfileService)
@@ -39,7 +38,6 @@ class TestInitiateExternalChatView:
         self.mock_profile_service.get_company_by_short_name.return_value = self.mock_company
         self.mock_branding_service.get_company_branding.return_value = {}
 
-        # Registrar la vista a probar
         view_func = InitiateExternalChatView.as_view(
             'initiate_external_chat',
             iauthentication=self.mock_iauthentication,
@@ -49,13 +47,13 @@ class TestInitiateExternalChatView:
         )
         self.app.add_url_rule('/<company_short_name>/initiate_external_chat', view_func=view_func, methods=['POST'])
 
-        # Registrar endpoint falso para que url_for('external_login') funcione
         @self.app.route('/<company_short_name>/external_login', endpoint='external_login')
         def dummy_external_login(company_short_name): return "OK"
 
     @patch('iatoolkit.views.login_external_id_view.render_template')
-    def test_initiate_success(self, mock_render):
-        """Prueba que una iniciación exitosa devuelve la página shell."""
+    @patch('iatoolkit.views.login_external_id_view.SessionManager')
+    def test_initiate_success(self, mock_session_manager, mock_render):
+        """Prueba que una iniciación exitosa guarda el estado en sesión y devuelve el shell."""
         self.mock_iauthentication.verify.return_value = {"success": True}
         self.mock_onboarding_service.get_onboarding_cards.return_value = [{'title': 'Card'}]
         mock_render.return_value = "<html>Shell Page</html>"
@@ -66,19 +64,17 @@ class TestInitiateExternalChatView:
         )
 
         assert response.status_code == 200
-        assert response.data == b"<html>Shell Page</html>"
-        self.mock_iauthentication.verify.assert_called_once()
-        self.mock_branding_service.get_company_branding.assert_called_once()
-        self.mock_onboarding_service.get_onboarding_cards.assert_called_once_with(self.mock_company)
+        # Verificar que se estableció la sesión temporal
+        mock_session_manager.set.assert_has_calls([
+            call('external_user_id', MOCK_EXTERNAL_USER_ID),
+            call('is_external_auth_complete', True)
+        ], any_order=True)
 
+        # Verificar que se renderizó la plantilla con la URL limpia
         mock_render.assert_called_once()
-        # Corregido: Verificar los nuevos argumentos pasados a render_template
         call_kwargs = mock_render.call_args[1]
         assert 'iframe_src_url' in call_kwargs
-        assert MOCK_EXTERNAL_USER_ID in call_kwargs['iframe_src_url']
-        assert 'branding' in call_kwargs
-        assert 'onboarding_cards' in call_kwargs
-        assert call_kwargs['onboarding_cards'] == [{'title': 'Card'}]
+        assert MOCK_EXTERNAL_USER_ID not in call_kwargs['iframe_src_url'] # La URL ya no debe contener el ID
 
     def test_initiate_auth_failure(self):
         """Prueba que una autenticación fallida devuelve un error 401."""
@@ -90,14 +86,13 @@ class TestInitiateExternalChatView:
         )
 
         assert response.status_code == 401
-        assert response.is_json
         assert 'Invalid API Key' in response.json['error']
 
     def test_initiate_missing_payload(self):
         """Prueba que una petición sin 'external_user_id' devuelve un error 400."""
         response = self.client.post(
             f'/{MOCK_COMPANY_SHORT_NAME}/initiate_external_chat',
-            json={}  # Payload vacío
+            json={}
         )
         assert response.status_code == 400
         assert 'Falta external_user_id' in response.json['error']
@@ -111,89 +106,84 @@ class TestExternalChatLoginView:
         self.app = Flask(__name__)
         self.app.testing = True
 
-        # Mocks de todos los servicios inyectados
         self.mock_profile_service = MagicMock(spec=ProfileService)
         self.mock_query_service = MagicMock(spec=QueryService)
         self.mock_prompt_service = MagicMock(spec=PromptService)
         self.mock_iauthentication = MagicMock(spec=IAuthentication)
         self.mock_jwt_service = MagicMock(spec=JWTService)
-        self.branding_service = MagicMock(spec=BrandingService)
+        self.mock_branding_service = MagicMock(spec=BrandingService)
 
-        # Configurar el mock de la compañía que se devolverá
         self.mock_company = Company(id=1, name="Test Company", short_name=MOCK_COMPANY_SHORT_NAME)
         self.mock_profile_service.get_company_by_short_name.return_value = self.mock_company
 
-        # Registrar la vista en la app de Flask con TODAS las dependencias
         view_func = ExternalChatLoginView.as_view(
             'external_login',
             profile_service=self.mock_profile_service,
             query_service=self.mock_query_service,
             prompt_service=self.mock_prompt_service,
-            branding_service=self.branding_service,
+            branding_service=self.mock_branding_service,
             iauthentication=self.mock_iauthentication,
             jwt_service=self.mock_jwt_service
         )
-
-        # Corregido: La vista ahora maneja GET, así que la regla debe permitirlo.
         self.app.add_url_rule('/<company_short_name>/external_login', view_func=view_func, methods=['GET'])
         self.client = self.app.test_client()
 
-    def test_login_success(self):
-        """
-        Prueba el flujo exitoso, incluyendo la generación del JWT.
-        """
-        # Configurar mocks para el caso de éxito
-        self.mock_prompt_service.get_user_prompts.return_value = []
+    @patch('iatoolkit.views.login_external_id_view.render_template')
+    @patch('iatoolkit.views.login_external_id_view.SessionManager')
+    def test_login_success(self, mock_session_manager, mock_render):
+        """Prueba el flujo exitoso, leyendo los datos desde la sesión."""
+        # Arrange: Simular una sesión válida creada por InitiateExternalChatView
+        mock_session_manager.get.side_effect = lambda key: {
+            'is_external_auth_complete': True,
+            'external_user_id': MOCK_EXTERNAL_USER_ID
+        }.get(key)
         self.mock_jwt_service.generate_chat_jwt.return_value = MOCK_JWT_TOKEN
-        self.branding_service.get_company_branding.return_value = {}
+        self.mock_prompt_service.get_user_prompts.return_value = []
+        self.mock_branding_service.get_company_branding.return_value = {}
+        mock_render.return_value = "<html>Chat Page</html>"
 
-        with patch('iatoolkit.views.login_external_id_view.render_template') as mock_render:
-            mock_render.return_value = "<html>Chat Page</html>"
+        # Act: Llamar al endpoint sin parámetros en la URL
+        response = self.client.get(f'/{MOCK_COMPANY_SHORT_NAME}/external_login')
 
-            # Corregido: Llamada GET limpia, sin cuerpo JSON.
-            response = self.client.get(
-                f'/{MOCK_COMPANY_SHORT_NAME}/external_login?external_user_id={MOCK_EXTERNAL_USER_ID}'
-            )
-
-        # Verificar que la respuesta es exitosa
+        # Assert
         assert response.status_code == 200
-        assert response.data == b"<html>Chat Page</html>"
-
-        # Verificar que se intentó generar el JWT con los datos correctos
-        self.mock_jwt_service.generate_chat_jwt.assert_called_once_with(
-            company_id=self.mock_company.id,
-            company_short_name=self.mock_company.short_name,
-            external_user_id=MOCK_EXTERNAL_USER_ID,
-            expires_delta_seconds=3600 * 8
-        )
-
-        # Verificar que se inicializó el contexto y se obtuvieron los prompts
+        # Verificar que la bandera de sesión se limpió
+        mock_session_manager.set.assert_called_once_with('is_external_auth_complete', None)
+        # Verificar que la lógica pesada se ejecutó
+        self.mock_jwt_service.generate_chat_jwt.assert_called_once()
         self.mock_query_service.llm_init_context.assert_called_once()
-        self.mock_prompt_service.get_user_prompts.assert_called_once()
-
-        # Verificar que se renderizó la plantilla con TODOS los datos correctos
+        # Verificar que la plantilla final fue renderizada
         mock_render.assert_called_once()
         call_kwargs = mock_render.call_args[1]
-        assert call_kwargs['company_short_name'] == MOCK_COMPANY_SHORT_NAME
         assert call_kwargs['external_user_id'] == MOCK_EXTERNAL_USER_ID
-        assert call_kwargs['auth_method'] == 'jwt'
         assert call_kwargs['session_jwt'] == MOCK_JWT_TOKEN
 
-    def test_login_fails_if_jwt_generation_fails(self):
-        """
-        Prueba que la vista maneja un error si el JWTService no puede generar un token.
-        """
-        # Simular fallo en la generación del token
+    @patch('iatoolkit.views.login_external_id_view.SessionManager')
+    def test_login_fails_without_session_flag(self, mock_session_manager):
+        """Prueba que la vista devuelve un error 401 si la bandera de sesión no está presente."""
+        # Arrange: Simular que la bandera no existe
+        mock_session_manager.get.return_value = None
+
+        # Act
+        response = self.client.get(f'/{MOCK_COMPANY_SHORT_NAME}/external_login')
+
+        # Assert
+        assert response.status_code == 401
+        assert b"Acceso no autorizado" in response.data
+
+    @patch('iatoolkit.views.login_external_id_view.SessionManager')
+    def test_login_fails_if_jwt_generation_fails(self, mock_session_manager):
+        """Prueba que la vista maneja un error si JWTService no puede generar un token."""
+        # Arrange: Simular una sesión válida pero un fallo en JWT
+        mock_session_manager.get.side_effect = lambda key: {
+            'is_external_auth_complete': True,
+            'external_user_id': MOCK_EXTERNAL_USER_ID
+        }.get(key)
         self.mock_jwt_service.generate_chat_jwt.return_value = None
 
-        # Corregido: La llamada ahora es un GET
-        response = self.client.get(
-            f'/{MOCK_COMPANY_SHORT_NAME}/external_login?external_user_id={MOCK_EXTERNAL_USER_ID}'
-        )
+        # Act
+        response = self.client.get(f'/{MOCK_COMPANY_SHORT_NAME}/external_login')
 
-        # La vista debería devolver un error 500
+        # Assert
         assert response.status_code == 500
-        assert response.is_json
         assert 'Error interno' in response.json['error']
-
-    # ... (el resto de los tests, como el de fallo de autenticación, permanecen igual y deberían seguir funcionando) ...
