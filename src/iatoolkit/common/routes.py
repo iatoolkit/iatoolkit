@@ -73,7 +73,7 @@ def register_views(injector, app):
         view_func=lambda: render_template('about.html'))
 
     app.add_url_rule('/version', 'version',
-                     lambda: jsonify({"version": app.config['VERSION']}))
+                     lambda: jsonify({"iatoolkit_version": current_app.config.get('VERSION', 'N/A')}))
 
     app.add_url_rule('/<company_short_name>/<external_user_id>/download-file/<path:filename>',
                      view_func=DownloadFileView.as_view('download-file'))

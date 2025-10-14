@@ -100,10 +100,7 @@ class IAToolkit:
         # Step 8: define the download_dir for excel's
         self._setup_download_dir()
 
-        try:
-            self.version = _pkg_version("iatoolkit")
-        except PackageNotFoundError:
-            pass
+
 
         logging.info(f"🎉 IAToolkit v{self.version} inicializado correctamente")
         self._initialized = True
@@ -147,6 +144,11 @@ class IAToolkit:
         # get the iatoolkit domain
         parsed_url = urlparse(os.getenv('IATOOLKIT_BASE_URL'))
         domain = parsed_url.netloc
+
+        try:
+            self.version = _pkg_version("iatoolkit")
+        except PackageNotFoundError:
+            pass
 
         self.app.config.update({
             'VERSION': self.version,
