@@ -314,9 +314,21 @@ const callLLMAPI = async function(apiPath, data, method, timeoutMs = 500000) {
         clearTimeout(timeoutId);
 
         if (!response.ok) {
-            const errorData = await response.json();
-            const endpointError = $('<div>').addClass('error-section').append(`<p>${errorData.error_message || 'Unknown server error'}</p>`);
-            displayBotMessage(endpointError);
+            try {
+                // Intentamos leer el error como JSON, que es el formato esperado de nuestra API.
+                const errorData = await response.json();
+                const errorMessage = errorData.error_message || 'Error desconocido del servidor.';
+                const errorIcon = '<i class="bi bi-exclamation-triangle"></i>';
+                const endpointError = $('<div>').addClass('error-section').html(errorIcon + `<p>${errorMessage}</p>`);
+                displayBotMessage(endpointError);
+            } catch (e) {
+                // Si response.json() falla, es porque el cuerpo no era JSON (ej. un 502 con HTML).
+                // Mostramos un error genérico y más claro para el usuario.
+                const errorMessage = `Error de comunicación con el servidor (${response.status}). Por favor, intente de nuevo más tarde.`;
+                const errorIcon = '<i class="bi bi-exclamation-triangle"></i>';
+                const infrastructureError = $('<div>').addClass('error-section').html(errorIcon + `<p>${errorMessage}</p>`);
+                displayBotMessage(infrastructureError);
+            }
             return null;
         }
         return await response.json();
@@ -325,7 +337,9 @@ const callLLMAPI = async function(apiPath, data, method, timeoutMs = 500000) {
         if (error.name === 'AbortError') {
             throw error; // Re-throw to be handled by handleChatMessage
         } else {
-            const commError = $('<div>').addClass('error-section').append(`<p>Connection error: ${error.message}</p>`);
+            const friendlyMessage = "Ocurrió un error de red. Por favor, inténtalo de nuevo en unos momentos.";
+            const errorIcon = '<i class="bi bi-exclamation-triangle"></i>';
+            const commError = $('<div>').addClass('error-section').html(errorIcon + `<p>${friendlyMessage}</p>`);
             displayBotMessage(commError);
         }
         return null;

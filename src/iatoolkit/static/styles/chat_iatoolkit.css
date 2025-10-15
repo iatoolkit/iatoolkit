@@ -123,32 +123,31 @@
     word-wrap: break-word;
     padding-top: 0.5em;
 }
-
 .error-section {
     align-self: flex-start;
     max-width: 75%;
-    min-width: fit-content;
-    width: fit-content;
-    margin-top: 10px;
+    min-width: 250px;
+
+    color: var(--brand-danger-text, #842029); /* Color de texto de error de la marca */
+    background-color: var(--brand-danger-bg, #f8d7da); /* Fondo de error de la marca */
+    border: 1px solid var(--brand-danger-border, #f5c2c7); /* Borde de error de la marca */
+    font-style: italic;
+    font-size: 0.9rem;
     display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    background-color: #fff0f0;
-    color: #5c0f0f;
-    border: 1px solid #ffcccc;
-    padding: 12px 18px;
-    border-radius: 0 12px 12px 12px;
-    font-family: Arial, sans-serif;
-    font-size: 15px;
-    line-height: 1.5;
-    word-wrap: break-word;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    align-items: center;
+    justify-content: start;
+    margin: 10px 0;
+    padding: 10px 15px; /* Un poco más de padding lateral */
+    opacity: 0.9;
+    border-radius: 8px; /* Bordes redondeados */
+    word-wrap: break-word; /* Asegura que el texto no se desborde */
 }
 
 .error-section i {
-    color: #d32f2f;
-    font-size: 1.2em;
-    padding-top: 2px;
+    color: var(--brand-danger-color, #dc3545); /* Color del icono, el rojo principal */
+    font-size: 1.2rem; /* Tamaño del icono */
+    margin-right: 10px; /* Espacio entre el icono y el texto */
+    flex-shrink: 0; /* Evita que el icono se encoja */
 }
 
 #question {
