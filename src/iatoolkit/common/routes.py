@@ -20,6 +20,7 @@ def logout(company_short_name: str):
 def register_views(injector, app):
 
     from iatoolkit.views.index_view import IndexView
+    from iatoolkit.views.init_context_view import InitContextView
     from iatoolkit.views.llmquery_view import LLMQueryView
     from iatoolkit.views.tasks_view import TaskView
     from iatoolkit.views.tasks_review_view import TaskReviewView
@@ -38,13 +39,12 @@ def register_views(injector, app):
 
     # landing page
     app.add_url_rule('/<company_short_name>', view_func=IndexView.as_view('index'))
-
-    # login testing /login_testing
-    app.add_url_rule('/login_testing', view_func=HomeView.as_view('home'))
+    app.add_url_rule('/<company_short_name>/initiate_external_chat',
+                     view_func=InitContextView.as_view('initiate_external_chat'))
 
     # login for external portals
-    app.add_url_rule('/<company_short_name>/initiate_external_chat',
-                         view_func=InitiateExternalChatView.as_view('initiate_external_chat'))
+    app.add_url_rule('/<company_short_name>/<external_user_id>/init-context',
+                         view_func=InitContextView.as_view('init-context'))
     app.add_url_rule('/<company_short_name>/external_login',
                      view_func=ExternalChatLoginView.as_view('external_login'))
     app.add_url_rule('/auth/chat_token',
@@ -69,6 +69,9 @@ def register_views(injector, app):
     app.add_url_rule('/tasks', view_func=TaskView.as_view('tasks'))
     app.add_url_rule('/tasks/review/<int:task_id>', view_func=TaskReviewView.as_view('tasks-review'))
     app.add_url_rule('/load', view_func=FileStoreView.as_view('load'))
+
+    # login testing /login_testing
+    app.add_url_rule('/login_testing', view_func=HomeView.as_view('home'))
 
     app.add_url_rule(
         '/about',  # URL de la ruta
