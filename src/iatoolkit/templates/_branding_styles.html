@@ -1,0 +1,30 @@
+<style>
+    {{ branding.css_variables | safe }}
+
+    /* Clases de botón reutilizables basadas en el branding */
+    .btn-branded-primary {
+        background-color: var(--brand-primary-color);
+        color: var(--brand-text-on-primary);
+        border-color: var(--brand-primary-color);
+        transition: all 0.2s ease-in-out;
+    }
+    .btn-branded-primary:hover {
+        background-color: #e9ecef;
+        color: var(--brand-primary-color);
+        border-color: var(--brand-primary-color);
+    }
+    .btn-branded-secondary {
+        background-color: var(--brand-secondary-color);
+        color: var(--brand-text-on-secondary);
+        border-color: var(--brand-secondary-color);
+        transition: all 0.2s ease-in-out;
+    }
+    .btn-branded-secondary:hover {
+        background-color: #e9ecef;
+        color: var(--brand-secondary-color);
+        border-color: var(--brand-secondary-color);
+    }
+    .form-title {
+        color: var(--brand-primary-color);
+    }
+</style>

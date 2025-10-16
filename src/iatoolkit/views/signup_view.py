@@ -4,18 +4,20 @@
 # IAToolkit is open source software.
 
 from flask.views import MethodView
-from flask import render_template
+from flask import render_template, request, url_for, session, redirect
 from iatoolkit.services.profile_service import ProfileService
+from iatoolkit.services.branding_service import BrandingService # 1. Importar BrandingService
 from injector import inject
 from itsdangerous import URLSafeTimedSerializer
-from flask import url_for, request
 import os
 
 
 class SignupView(MethodView):
     @inject
-    def __init__(self, profile_service: ProfileService):
+    def __init__(self, profile_service: ProfileService,
+                 branding_service: BrandingService):
         self.profile_service = profile_service
+        self.branding_service = branding_service # 3. Guardar la instancia
         self.serializer = URLSafeTimedSerializer(os.getenv("USER_VERIF_KEY"))
 
 
@@ -25,12 +27,13 @@ class SignupView(MethodView):
         if not company:
             return render_template('error.html', message="Empresa no encontrada"), 404
 
-        user_agent = request.user_agent
-        is_mobile = user_agent.platform in ["android", "iphone", "ipad"] or "mobile" in user_agent.string.lower()
+        # Obtener los datos de branding
+        branding_data = self.branding_service.get_company_branding(company)
+
         return render_template('signup.html',
                                company=company,
                                company_short_name=company_short_name,
-                               is_mobile=is_mobile)
+                               branding=branding_data)
 
     def post(self, company_short_name: str):
         # get company info
@@ -59,26 +62,28 @@ class SignupView(MethodView):
                 verification_url=verification_url)
 
             if "error" in response:
+                branding_data = self.branding_service.get_company_branding(company)
                 return render_template(
-                'signup.html',
-                                    company=company,
-                                    company_short_name=company_short_name,
-                                    form_data={
-                                           "first_name": first_name,
-                                           "last_name": last_name,
-                                           "email": email,
-                                            "password": password,
-                                            "confirm_password": confirm_password
-                                       },
-                                    alert_message=response["error"]), 400
+                    'signup.html',
+                    company=company,
+                    company_short_name=company_short_name,
+                    branding=branding_data,
+                    form_data={
+                        "first_name": first_name,
+                        "last_name": last_name,
+                        "email": email,
+                        "password": password,
+                        "confirm_password": confirm_password
+                    },
+                    alert_message=response["error"]), 400
 
-            # all is OK
-            return render_template(
-                'login.html',
-                            company=company,
-                            company_short_name=company_short_name,
-                                   alert_icon='success',
-                                   alert_message=response["message"]), 200
+            # Guardamos el mensaje de éxito en la sesión
+            session['alert_message'] = response["message"]
+            session['alert_icon'] = 'success'
+
+            # Redirigimos al usuario a la página de login
+            return redirect(url_for('index', company_short_name=company_short_name))
+
         except Exception as e:
             return render_template("error.html",
                                    company=company,

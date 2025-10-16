@@ -22,6 +22,7 @@ def logout(company_short_name: str):
 # this function register all the views
 def register_views(injector, app):
 
+    from iatoolkit.views.index_view import IndexView
     from iatoolkit.views.llmquery_view import LLMQueryView
     from iatoolkit.views.tasks_view import TaskView
     from iatoolkit.views.tasks_review_view import TaskReviewView
@@ -38,7 +39,11 @@ def register_views(injector, app):
     from iatoolkit.views.chat_token_request_view import ChatTokenRequestView
     from iatoolkit.views.download_file_view import DownloadFileView
 
-    app.add_url_rule('/', view_func=HomeView.as_view('home'))
+    # landing page
+    app.add_url_rule('/<company_short_name>', view_func=IndexView.as_view('index'))
+
+    # login testing /login_testing
+    app.add_url_rule('/login_testing', view_func=HomeView.as_view('home'))
 
     # login for external portals
     app.add_url_rule('/<company_short_name>/initiate_external_chat',
@@ -98,4 +103,10 @@ def register_views(injector, app):
             )
         except FileNotFoundError:
             abort(404)
+
+    # Redirección opcional: hacer que la raíz '/' vaya a la landing de sample_company
+    @app.route('/')
+    def root_redirect():
+        return redirect(url_for('index', company_short_name='sample_company'))
+
 

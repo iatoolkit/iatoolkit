@@ -4,16 +4,19 @@
 # IAToolkit is open source software.
 
 from flask.views import MethodView
-from flask import render_template, request, url_for
+from flask import render_template, request, url_for, flash, redirect, session
 from injector import inject
 from iatoolkit.services.profile_service import ProfileService
+from iatoolkit.services.branding_service import BrandingService
 from itsdangerous import URLSafeTimedSerializer
 import os
 
 class ForgotPasswordView(MethodView):
     @inject
-    def __init__(self, profile_service: ProfileService):
+    def __init__(self, profile_service: ProfileService,
+                 branding_service: BrandingService):
         self.profile_service = profile_service
+        self.branding_service = branding_service # 3. Guardar la instancia
         self.serializer = URLSafeTimedSerializer(os.getenv("PASS_RESET_KEY"))
 
     def get(self, company_short_name: str):
@@ -22,9 +25,11 @@ class ForgotPasswordView(MethodView):
         if not company:
             return render_template('error.html', message="Empresa no encontrada"), 404
 
+        branding_data = self.branding_service.get_company_branding(company)
         return render_template('forgot_password.html',
                                company=company,
-                               company_short_name=company_short_name
+                               company_short_name=company_short_name,
+                               branding=branding_data
                                )
 
     def post(self, company_short_name: str):
@@ -43,19 +48,20 @@ class ForgotPasswordView(MethodView):
 
             response = self.profile_service.forgot_password(email=email, reset_url=reset_url)
             if "error" in response:
+                branding_data = self.branding_service.get_company_branding(company)
                 return render_template(
                     'forgot_password.html',
                     company=company,
                     company_short_name=company_short_name,
-                    form_data={"email": email },
+                    branding=branding_data,
+                    form_data={"email": email},
                     alert_message=response["error"]), 400
 
+            # Guardamos el mensaje y el icono en la sesión manualmente
+            session['alert_message'] = "Si tu correo está registrado, recibirás un enlace para restablecer tu contraseña."
+            session['alert_icon'] = "success"
+            return redirect(url_for('index', company_short_name=company_short_name))
 
-            return render_template('login.html',
-                                   company=company,
-                                   company_short_name=company_short_name,
-                                   alert_icon='success',
-                                   alert_message="Hemos enviado un enlace a tu correo para restablecer la contraseña.")
         except Exception as e:
             return render_template("error.html",
                                    company=company,

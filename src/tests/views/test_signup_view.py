@@ -7,6 +7,7 @@ import pytest
 from flask import Flask
 from unittest.mock import MagicMock, patch
 from iatoolkit.services.profile_service import ProfileService
+from iatoolkit.services.branding_service import BrandingService
 from iatoolkit.views.signup_view import SignupView
 from iatoolkit.repositories.models import Company
 
@@ -26,6 +27,7 @@ class TestSignupView:
         self.app = self.create_app()
         self.client = self.app.test_client()
         self.profile_service = MagicMock(spec=ProfileService)
+        self.branding_service = MagicMock(spec=BrandingService)
         self.test_company = Company(
             id=1,
             name="Empresa de Prueba",
@@ -34,7 +36,9 @@ class TestSignupView:
         self.profile_service.get_company_by_short_name.return_value = self.test_company
 
         # Registrar la vista
-        view = SignupView.as_view("signup", profile_service=self.profile_service)
+        view = SignupView.as_view("signup",
+                                  profile_service=self.profile_service,
+                                  branding_service=self.branding_service,)
         self.app.add_url_rule("/<company_short_name>/signup", view_func=view, methods=["GET", "POST"])
 
     @patch("iatoolkit.views.signup_view.render_template")

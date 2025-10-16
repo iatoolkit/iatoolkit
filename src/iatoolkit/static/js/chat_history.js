@@ -12,7 +12,7 @@ $(document).ready(function () {
         const queryText = $(this).data('query');
 
         // Copiar el texto al textarea del chat
-        if (queryText) { // Buena práctica: Asegurarse de que el dato no es indefinido
+        if (queryText) {
             $('#question').val(queryText);
             autoResizeTextarea($('#question')[0]);
             $('#send-button').removeClass('disabled');
@@ -92,7 +92,7 @@ $(document).ready(function () {
             }
         });
 
-        // Poblar tabla con un método más seguro
+        // Poblar la tabla
         filteredHistory.forEach((item, index) => {
             const icon = $('<i>').addClass('bi bi-pencil-fill');
 
@@ -100,23 +100,21 @@ $(document).ready(function () {
                 .attr('href', 'javascript:void(0);')
                 .addClass('copy-query-icon')
                 .attr('title', 'Copiar consulta al chat')
-                .data('query', item.query) // Usar .data() es más seguro que un atributo de string
+                .data('query', item.query)
                 .append(icon);
 
             const row = $('<tr>').append(
                 $('<td>').text(index + 1),
                 $('<td>').addClass('date-cell').text(formatDate(item.created_at)),
-                $('<td>').text(item.query), // Usar .text() para evitar inyección de HTML
+                $('<td>').text(item.query),
                 $('<td>').addClass('text-center').append(link)
             );
 
             historyTableBody.append(row);
         });
-
-        // El event handler ya no se adjunta aquí.
     }
 
-    // Función para formatear fecha (sin cambios)
+    // Función para formatear fecha
     function formatDate(dateString) {
         const date = new Date(dateString);
 

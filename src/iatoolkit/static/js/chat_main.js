@@ -403,7 +403,7 @@ const showSpinner = function () {
             <div class="spinner-border text-primary" role="status" style="width: 1.5rem; height: 1.5rem; margin-right: 15px;">
                 <span class="${accessibilityClass}">Loading...</span>
             </div>
-            <span style="font-weight: bold; font-size: 15px;">Loading...</span>
+            <span style="font-weight: bold; font-size: 15px;">Cargando...</span>
         </div>
     `);
     $('#chat-container').append(spinner).scrollTop($('#chat-container')[0].scrollHeight);

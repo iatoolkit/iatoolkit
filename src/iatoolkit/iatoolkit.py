@@ -153,7 +153,6 @@ class IAToolkit:
         except PackageNotFoundError:
             pass
 
-        self.app.wsgi_app = ProxyFix(self.app.wsgi_app, x_proto=1)
 
         self.app.config.update({
             'VERSION': self.version,
@@ -170,6 +169,9 @@ class IAToolkit:
 
         if parsed_url.scheme == 'https':
             self.app.config['PREFERRED_URL_SCHEME'] = 'https'
+
+        # 2. ProxyFix para no tener problemas con iframes y rutas
+        self.app.wsgi_app = ProxyFix(self.app.wsgi_app, x_proto=1)
 
         # Configuración para tokenizers en desarrollo
         if is_dev:
@@ -379,6 +381,7 @@ class IAToolkit:
                 'app_name': 'IAToolkit',
                 'user': SessionManager.get('user'),
                 'user_company': SessionManager.get('company_short_name'),
+                'iatoolkit_base_url': os.environ.get('IATOOLKIT_BASE_URL', ''),
             }
 
     def _get_default_static_folder(self) -> str:

@@ -71,6 +71,14 @@ class BrandingService:
         if company and company.branding:
             final_branding_values.update(company.branding)
 
+        # Función para convertir HEX a RGB
+        def hex_to_rgb(hex_color):
+            hex_color = hex_color.lstrip('#')
+            return tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+
+        primary_rgb = hex_to_rgb(final_branding_values['brand_primary_color'])
+        secondary_rgb = hex_to_rgb(final_branding_values['brand_secondary_color'])
+
         # --- CONSTRUCCIÓN DE ESTILOS Y VARIABLES CSS ---
         header_style = (
             f"background-color: {final_branding_values['header_background_color']}; "
@@ -95,6 +103,8 @@ class BrandingService:
             :root {{
                 --brand-primary-color: {final_branding_values['brand_primary_color']};
                 --brand-secondary-color: {final_branding_values['brand_secondary_color']};
+                --brand-primary-color-rgb: {', '.join(map(str, primary_rgb))};
+                --brand-secondary-color-rgb: {', '.join(map(str, secondary_rgb))};
                 --brand-text-on-primary: {final_branding_values['brand_text_on_primary']};
                 --brand-text-on-secondary: {final_branding_values['brand_text_on_secondary']};
                 --brand-modal-header-bg: {final_branding_values['header_background_color']};

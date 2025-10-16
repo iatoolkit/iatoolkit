@@ -1,78 +1,74 @@
 {% extends "base.html" %}
 
-{% block title %}Registro de Usuario{% endblock %}
+{% block title %}Registro de Usuario - {{ company.name }}{% endblock %}
 
 {% block content %}
+    <!-- 1. Incluimos los estilos de branding reutilizables -->
+    {% include '_branding_styles.html' %}
 
+    <!-- Enlazamos la hoja de estilos de la landing page para reutilizar estilos -->
+    <link rel="stylesheet" href="{{ iatoolkit_base_url }}/static/styles/landing_page.css">
 
-<div class="d-flex align-items-center p-3 border-bottom border-light-subtle">
-    <div class="col-11 col-md-8 col-lg-5 p-3">
-            <h4 class="text-muted fw-semibold mb-2 text-start">Crea tu cuenta</h4>
-            <p class="text-muted mb-3 text-start" style="text-align: justify;">
-                    Regístrate para acceder a todas las funcionalidades de nuestra plataforma.
-                </p>
-            <form action="{{ url_for('signup', company_short_name=company_short_name) }}" method="post" >
-            <div class="mb-3 ">
-                <label for="email" class="form-label text-secondary">Correo Electrónico</label>
-                <input type="email" autocomplete="off" id="email" name="email"
-                       class="form-control" required
-                       value="{{ form_data.email if form_data else '' }}">
+    <!-- 2. Incluimos la barra de navegación reutilizable -->
+    {% include '_navbar.html' %}
+
+    <!-- 3. Sección contenedora para centrar el contenido -->
+    <section class="hero-section">
+        <div class="container">
+            <div class="row justify-content-center">
+                <!-- Se ha reducido el ancho de la columna a lg-6 y md-8 -->
+                <div class="col-lg-6 col-md-8">
+                    <div class="border rounded p-4 p-md-5 shadow-sm bg-light">
+                        <h4 class="form-title fw-bold mb-3 text-center">Crea tu cuenta en {{ company.name }}</h4>
+                        <form action="{{ url_for('signup', company_short_name=company_short_name) }}" method="post">
+                            <div class="mb-3">
+                                <label for="email" class="form-label text-secondary">Correo Electrónico</label>
+                                <input type="email" autocomplete="off" id="email" name="email"
+                                       class="form-control" required
+                                       value="{{ form_data.email if form_data else '' }}">
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="first_name" class="form-label text-secondary">Nombre</label>
+                                    <input type="text" id="first_name" name="first_name"
+                                           class="form-control" required
+                                           value="{{ form_data.first_name if form_data else '' }}">
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="last_name" class="form-label text-secondary">Apellido</label>
+                                    <input type="text" id="last_name" name="last_name"
+                                           class="form-control" required
+                                           value="{{ form_data.last_name if form_data else '' }}">
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="password" class="form-label text-secondary">Contraseña</label>
+                                <input type="password" id="password" name="password" class="form-control" required>
+                                <!-- Bloque de ayuda para la contraseña mejorado -->
+                                <div class="d-flex align-items-start text-muted mt-2" style="font-size: 0.8rem;">
+                                    <i class="bi bi-info-circle me-2" style="font-size: 0.9rem; line-height: 1.4;"></i>
+                                    <span>Debe contener al menos 8 caracteres, mayúscula, minúscula, número y un carácter especial.</span>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="confirm_password" class="form-label text-secondary">Confirmar Contraseña</label>
+                                <input type="password" id="confirm_password" name="confirm_password" class="form-control" required>
+                            </div>
+
+                            <!-- Botón actualizado con la clase de branding -->
+                            <button type="submit" class="btn btn-branded-primary w-100 fw-bold py-2 mt-3">Registrarse</button>
+                        </form>
+                        <!-- Nota de privacidad -->
+                        <p class="text-muted small mb-0 text-center mt-4">
+                            🔒 Valoramos tu privacidad. Tus datos se usarán exclusivamente para el funcionamiento de la plataforma.
+                        </p>
+                    </div>
+                </div>
             </div>
-
-    {% if is_mobile %}
-        <!-- En móvil, cada input ocupa una fila -->
-        <div class="mb-3">
-            <label for="first_name" class="form-label text-secondary">Nombre</label>
-            <input type="text" id="first_name" name="first_name"
-                   class="form-control" required
-                   value="{{ form_data.first_name if form_data else '' }}">
         </div>
-        <div class="mb-3">
-            <label for="last_name" class="form-label text-secondary">Apellido</label>
-            <input type="text" id="last_name" name="last_name"
-                   class="form-control" required
-                   value="{{ form_data.last_name if form_data else '' }}">
-        </div>
-    {% else %}
-            <div class="row">
-        <!-- En escritorio, los inputs están en la misma fila -->
-        <div class="col-md-6 mb-3">
-            <label for="first_name" class="form-label text-secondary">Nombre</label>
-            <input type="text" id="first_name" name="first_name"
-                   class="form-control" required
-                   value="{{ form_data.first_name if form_data else '' }}">
-        </div>
-        <div class="col-md-6 mb-3">
-            <label for="last_name" class="form-label text-secondary">Apellido</label>
-            <input type="text" id="last_name" name="last_name"
-                   class="form-control" required
-                   value="{{ form_data.last_name if form_data else '' }}">
-        </div>
-    </div>
+    </section>
 
-    {% endif %}
-
-            <div class="mb-3">
-                <label for="password" class="form-label text-secondary">Contraseña</label>
-                <input type="password" id="password" name="password" class="form-control" required>
-                <small class="form-text text-muted">
-                        La contraseña debe contener al menos 8 caracteres, una letra mayúscula, una letra minúscula, un número y un carácter especial.
-                </small>
-
-            </div>
-            <div class="mb-3">
-                <label for="confirm_password" class="form-label text-secondary">Confirmar Contraseña</label>
-                <input type="password" id="confirm_password" name="confirm_password" class="form-control" required>
-            </div>
-            <button type="submit" class="btn btn-primary w-100">Registrarse</button>
-        </form>
-        <!-- Nota sobre privacidad -->
-        <p class="text-muted small mb-0 text-start mt-3" style="text-align: justify;">
-        🔒 Valoramos tu privacidad. Tus datos serán utilizados exclusivamente para brindarte una mejor experiencia
-        y no serán compartidos con terceros sin tu consentimiento. Para más información, consulta nuestra
-        <a href="#" class="text-decoration-none fw-semibold">Política de Privacidad</a>.
-        </p>
-    </p>
-    </div>
-</div>
 {% endblock %}

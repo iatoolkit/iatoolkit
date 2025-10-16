@@ -185,6 +185,11 @@
     box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
 }
 
+/* Aplica el color secundario de la marca al icono de ver archivos */
+#view-files-button i {
+    color: var(--brand-secondary-color, #6c757d);
+}
+
 /* Estilo para mensajes sutiles del sistema (ej. abortado) */
 .system-message {
     color: var(--brand-secondary-color, #6c757d); /* Usa el color secundario o un gris por defecto */
