@@ -82,7 +82,7 @@ class TestInitiateLoginView:
     def test_failed_initiation_renders_login_again(self, mock_render_template):
         """Prueba que un login fallido en initiate_login vuelve a renderizar la página de login con un error."""
         # Arrange
-        self.mock_profile_service.login.return_value = {'success': False, 'error': 'Credenciales inválidas'}
+        self.mock_profile_service.login.return_value = {'success': False, 'message': 'Credenciales inválidas'}
         mock_render_template.return_value = "<html>Login con Error</html>"
 
         # Act
