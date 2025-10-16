@@ -4,7 +4,7 @@
 # IAToolkit is open source software.
 
 from flask.views import MethodView
-from flask import render_template, request, url_for, flash, redirect, session
+from flask import render_template, request, url_for, redirect, session
 from injector import inject
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.branding_service import BrandingService

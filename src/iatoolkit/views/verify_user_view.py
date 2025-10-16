@@ -4,7 +4,7 @@
 # IAToolkit is open source software.
 
 from flask.views import MethodView
-from flask import render_template
+from flask import render_template, url_for, redirect, session
 from iatoolkit.services.profile_service import ProfileService
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired
 from injector import inject
@@ -43,11 +43,11 @@ class VerifyAccountView(MethodView):
                     token=token,
                     alert_message=response["error"]), 400
 
-            return render_template('login.html',
-                                   company=company,
-                                   company_short_name=company_short_name,
-                                   alert_icon='success',
-                                   alert_message=response['message'])
+            # Guardamos el mensaje y el icono en la sesión manualmente
+            session['alert_message'] = response['message']
+            session['alert_icon'] = "success"
+            return redirect(url_for('index', company_short_name=company_short_name))
+
         except Exception as e:
             return render_template("error.html",
                                    company=company,
