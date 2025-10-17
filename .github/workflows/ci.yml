@@ -1,4 +1,4 @@
-name: CI - Python Tests
+name: IAToolkit Tests
 
 on:
   push:
