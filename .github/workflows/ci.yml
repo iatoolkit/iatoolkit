@@ -2,8 +2,14 @@ name: CI - Python Tests
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
+      - develop
+      - 'feature/**'
+      - 'fix/**'
+      - 'chore/**'
   pull_request:
+    types: [opened, synchronize, reopened]
     branches: [ main ]
 
 jobs:
@@ -17,7 +23,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'   # o la versión que uses
+          python-version: '3.12'   # o la versión que uses
 
       - name: Install dependencies
         run: |
