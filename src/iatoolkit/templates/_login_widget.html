@@ -1,8 +1,7 @@
 <!-- templates/_login_widget.html -->
 <div class="border rounded p-4 shadow-sm bg-light">
-    <!-- 1. Nuevo Encabezado de Marketing -->
+    <!-- 1. Encabezado de Marketing -->
     <div class="text-center mb-4">
-        <!-- Párrafo modificado con nuevo texto y nueva clase CSS -->
         <p class="text-muted widget-intro-text">
             Explora IAToolkit con una empresa de ejemplo.
             Regístrate para vivir la experiencia completa de un usuario real que consulta a la plataforma.
@@ -14,11 +13,11 @@
           action="{{ url_for('chat', company_short_name=company_short_name) }}"
           method="post">
       <div class="mb-3">
-        <label for="email" class="form-label d-block text-muted">Correo Electrónico</label>
+        <label for="email" class="form-label d-block">Correo Electrónico</label>
         <input type="email" id="email" name="email" class="form-control" required>
       </div>
       <div class="mb-3">
-        <label for="password" class="form-label d-block text-muted">Contraseña</label>
+        <label for="password" class="form-label d-block">Contraseña</label>
         <input type="password" id="password" name="password"
                class="form-control" required>
       </div>
