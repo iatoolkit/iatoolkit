@@ -1,14 +1,9 @@
     <!--
-    Thank you for your contribution! Please provide a clear description of your changes.
+    Gracias por tu contribución con IAToolkit. 
+    Recuerda que antes de enviar el PR debes verificar los tests.
+    Dame una descripción clara y concisa de tu pull request.
     -->
 
     ### Description
-    A clear and concise description of what this pull request does.
+    Aca escribes tu descripción del PR.
 
-    ### Related Issue
-    <!-- Link to the issue that this PR addresses, e.g., "Fixes #123" -->
-
-    ### Checklist
-    - [ ] I have added tests that prove my fix is effective or that my feature works.
-    - [ ] I have read the `CONTRIBUTING.md` file.
-    - [ ] My code follows the project's style guidelines.
