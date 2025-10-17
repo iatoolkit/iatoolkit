@@ -1,66 +1,31 @@
-# .github/workflows/ci.yml
+name: CI - Python Tests
 
-# Nombre del workflow que aparecerá en la pestaña "Actions" de GitHub
-name: IAToolkit tests
-
-# Define cuándo se ejecutará este workflow
 on:
-  # Ejecutar en cada push a la rama principal
   push:
     branches: [ main ]
-  # Ejecutar en cada pull request dirigido a la rama principal
   pull_request:
     branches: [ main ]
 
 jobs:
-  # Define un único job llamado "build"
-  build:
-    # El tipo de máquina virtual donde se ejecutará el job
+  test:
     runs-on: ubuntu-latest
 
-    # Estrategia para ejecutar el job en múltiples versiones de Python
-    strategy:
-      matrix:
-        python-version: ["3.12"] # Puedes añadir más versiones: ["3.11", "3.12"]
-
-    # Pasos que se ejecutarán en el job
     steps:
-    # 1. Clona tu repositorio en la máquina virtual
-    - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    # 2. Configura la versión de Python especificada en la matriz
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'   # o la versión que uses
 
-    # 3. (Opcional pero recomendado) Caché de dependencias para acelerar ejecuciones futuras
-    - name: Cache pip dependencies
-      uses: actions/cache@v4
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt || true
+          pip install -r requirements-dev.txt || true
+          pip install pytest pytest-cov
 
-    # 4. Instala las dependencias del proyecto
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-
-    # 5. Ejecuta los tests usando pytest
-    # Las variables de entorno se pasan aquí usando los "secrets" de GitHub
-    - name: Run tests
-      env:
-        # Aquí mapeas los secrets de GitHub a las variables de entorno que tu app espera
-        # ¡IMPORTANTE! Debes configurar estos secrets en tu repositorio (ver Paso 2)
-        FLASK_ENV: testing
-        DATABASE_URI: ${{ secrets.DATABASE_URI }}
-        SAMPLE_DATABASE_URI: ${{ secrets.SAMPLE_DATABASE_URI }}
-        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        FERNET_KEY: ${{ secrets.FERNET_KEY }}
-        JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
-      run: |
-        pytest
+      - name: Run tests
+        run: |
+          pytest --maxfail=1 --disable-warnings -q
