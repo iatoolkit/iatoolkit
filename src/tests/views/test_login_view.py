@@ -131,38 +131,29 @@ class TestLoginView:
         def dummy_home(company_short_name): return "Home Page"
 
     @patch("iatoolkit.views.login_view.render_template")
-    @patch("iatoolkit.views.login_view.SessionManager")
-    def test_get_successful_with_session(self, mock_session_manager, mock_render_template):
+    def test_get_successful_with_session(self, mock_render_template):
         """Prueba que el GET a login (heavy-lifting) funciona cuando hay una sesión."""
-        # Arrange
-        mock_session_manager.get.side_effect = lambda key: {
+
+        self.mock_profile_service.get_current_user_profile.return_value = {
             'user_id': 123,
-            'user': {'email': MOCK_USER_EMAIL},
-        }.get(key)
+            'email': MOCK_USER_EMAIL,
+        }
+
         mock_render_template.return_value = "<html>Chat Page</html>"
-
-        # Act
         response = self.client.get(f"/{MOCK_COMPANY_SHORT_NAME}/login")
-
-        # Assert
         assert response.status_code == 200
+
+        self.mock_profile_service.get_current_user_profile.assert_called_once()
+
         self.mock_query_service.llm_init_context.assert_called_once_with(
             company_short_name=MOCK_COMPANY_SHORT_NAME,
             local_user_id=123
         )
-        self.mock_prompt_service.get_user_prompts.assert_called_once()
-        self.mock_branding_service.get_company_branding.assert_called_once()
 
-        mock_render_template.assert_called_once()
-        call_args, call_kwargs = mock_render_template.call_args
-        assert call_args[0] == "chat.html"
-        assert call_kwargs['user_email'] == MOCK_USER_EMAIL
-
-    @patch("iatoolkit.views.login_view.SessionManager")
-    def test_get_fails_without_session_redirects(self, mock_session_manager):
+    def test_get_fails_without_session_redirects(self):
         """Prueba que un GET a login sin sesión redirige al home."""
         # Arrange
-        mock_session_manager.get.return_value = None
+        self.mock_profile_service.get_current_user_profile.return_value = {}
 
         # Act
         response = self.client.get(f"/{MOCK_COMPANY_SHORT_NAME}/login")

@@ -50,6 +50,24 @@ class RedisSessionManager:
         return result
 
     @classmethod
+    def hset(cls, key: str, field: str, value: str):
+        """
+        Establece un campo en un Hash de Redis.
+        """
+        client = cls._get_client()
+        return client.hset(key, field, value)
+
+    @classmethod
+    def hget(cls, key: str, field: str):
+        """
+        Obtiene el valor de un campo de un Hash de Redis.
+        Devuelve None si la clave o el campo no existen.
+        """
+        client = cls._get_client()
+        return client.hget(key, field)
+
+
+    @classmethod
     def remove(cls, key: str):
         client = cls._get_client()
         result = client.delete(key)

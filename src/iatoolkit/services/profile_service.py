@@ -8,6 +8,7 @@ from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.repositories.models import User, Company, ApiKey
 from flask_bcrypt import check_password_hash
 from iatoolkit.common.session_manager import SessionManager
+from iatoolkit.services.user_session_context_service import UserSessionContextService
 from flask_bcrypt import Bcrypt
 from iatoolkit.infra.mail_app import MailApp
 import random
@@ -16,7 +17,6 @@ import re
 import secrets
 import string
 from datetime import datetime, timezone
-from iatoolkit.services.user_session_context_service import UserSessionContextService
 
 
 class ProfileService:
@@ -63,26 +63,60 @@ class ProfileService:
 
 
     def set_user_session(self, user: User, company: Company):
-        SessionManager.set('user_id', user.id)
-        SessionManager.set('company_id', company.id)
-        SessionManager.set('company_short_name', company.short_name)
 
-        # save user data into session manager
-        user_data = {
+        # define the user data dictionary here
+        user_profile = {
             "id": user.id,
+            "user_id": user.id,
             "email": user.email,
             "user_fullname": f'{user.first_name} {user.last_name}',
             "company_id": company.id,
             "company": company.name,
             "company_short_name": company.short_name,
-            "user_is_local": True,       # origin of data
-            "extras": {}                 # company specific data
+            "user_is_local": True,
+            "last_activity": datetime.now(timezone.utc).timestamp(),
+            "extras": {}
         }
-        SessionManager.set('user', user_data)
+
+        # save the user_profile in the persistent context
+        self.session_context.save_profile_data(company.short_name, str(user.id), user_profile)
+
+        # this should be deleted
+        SessionManager.set('user', user_profile)
 
         # save time session was activated (in timestamp format)
         SessionManager.set('last_activity', datetime.now(timezone.utc).timestamp())
 
+        # save minimum identifiers in the Flask session for identify the user on every request
+        SessionManager.set('user_id', user.id)
+        SessionManager.set('company_short_name', company.short_name)
+        SessionManager.set('company_id', company.id)
+
+
+    def get_current_user_profile(self) -> dict:
+        """
+        Devuelve el perfil del usuario para la solicitud actual, sin importar si es una sesión
+        antigua (solo en Flask Session) o nueva (en Redis Hash).
+        """
+        user_id = SessionManager.get('user_id')
+        company_short_name = SessionManager.get('company_short_name')
+
+        if not user_id or not company_short_name:
+            return {}       # No hay sesión activa
+
+        # Prioridad 1: Leer del nuevo sistema unificado
+        profile = self.session_context.get_profile_data(company_short_name, str(user_id))
+        if profile:
+            return profile
+
+        # Prioridad 2 (Fallback): Es una sesión antigua, leer de Flask Session
+        legacy_profile = SessionManager.get('user', {})
+        if legacy_profile:
+            # Auto-migración: Guardar en el nuevo sistema para la próxima vez
+            self.session_context.save_profile_data(company_short_name, str(user_id), legacy_profile)
+            return legacy_profile
+
+        return {}
 
     def signup(self,
                company_short_name: str,
@@ -239,6 +273,9 @@ class ProfileService:
 
     def get_company_by_short_name(self, short_name: str) -> Company:
         return self.profile_repo.get_company_by_short_name(short_name)
+
+    def get_active_api_key_entry(self, api_key_value: str) -> ApiKey | None:
+        return self.profile_repo.get_active_api_key_entry(api_key_value)
 
     def new_api_key(self, company_short_name: str):
         company = self.get_company_by_short_name(company_short_name)

@@ -5,12 +5,12 @@
 
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.prompt_manager_service import PromptService
+from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 
 from iatoolkit.repositories.models import Company, Function
 from iatoolkit.services.excel_service import ExcelService
 from iatoolkit.services.mail_service import MailService
-from iatoolkit.common.session_manager import SessionManager
 from iatoolkit.common.util import Utility
 from injector import inject
 import logging
@@ -21,11 +21,13 @@ class Dispatcher:
     @inject
     def __init__(self,
                  prompt_service: PromptService,
+                 profile_service: ProfileService,
                  llmquery_repo: LLMQueryRepo,
                  util: Utility,
                  excel_service: ExcelService,
                  mail_service: MailService):
         self.prompt_service = prompt_service
+        self.profile_service = profile_service
         self.llmquery_repo = llmquery_repo
         self.util = util
         self.excel_service = excel_service
@@ -179,7 +181,7 @@ class Dispatcher:
         raw_user_data = {}
         if is_local_user:
             # source 1: local user login into IAToolkit
-            raw_user_data = SessionManager.get('user', {})
+            raw_user_data = self.profile_service.get_current_user_profile()
         else:
             # source 2: external company user
             company_instance = self.company_instances[company_name]

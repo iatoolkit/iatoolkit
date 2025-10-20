@@ -89,7 +89,7 @@ class QueryService:
 
         # save the user information in the session context
         # it's needed for the jinja predefined prompts (filtering)
-        self.session_context.save_user_session_data(company_short_name, user_identifier, user_profile)
+        self.session_context.save_profile_data(company_short_name, user_identifier, user_profile)
 
         # render the iatoolkit main system prompt with the company/user information
         system_prompt_template = self.prompt_service.get_system_prompt()
@@ -200,8 +200,8 @@ class QueryService:
                 # check the length of the context_history and remove old messages
                 self._trim_context_history(context_history)
 
-            # get the user data from the session context
-            user_info_from_session = self.session_context.get_user_session_data(company.short_name, user_identifier)
+            # get the user profile data from the session context
+            user_info_from_session = self.session_context.get_profile_data(company.short_name, user_identifier)
 
             # Combinar datos: los datos de la tarea/request tienen prioridad sobre los de la sesión
             final_client_data = (user_info_from_session or {}).copy()

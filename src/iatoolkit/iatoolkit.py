@@ -369,6 +369,7 @@ class IAToolkit:
         @self.app.context_processor
         def inject_globals():
             from iatoolkit.common.session_manager import SessionManager
+
             return {
                 'url_for': url_for,
                 'iatoolkit_version': self.version,

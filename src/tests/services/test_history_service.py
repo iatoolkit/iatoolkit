@@ -19,8 +19,10 @@ class TestHistoryService:
     def setup(self):
         self.llm_query_repo = MagicMock(spec=LLMQueryRepo)
         self.profile_repo = MagicMock(spec=ProfileRepo)
+        self.util = MagicMock(spec=Utility)
+
         # Usamos la clase Utility real para asegurar que la lógica de resolución de ID es correcta
-        self.util = Utility()
+        # self.util = Utility(self.profile_service)
         self.history_service = HistoryService(
             llm_query_repo=self.llm_query_repo,
             profile_repo=self.profile_repo,
@@ -31,6 +33,8 @@ class TestHistoryService:
         self.mock_company.id = 1
         self.mock_company.name = 'Test Company'
         self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+
+        self.util.resolve_user_identifier.return_value = ('test_user', True)
 
     def test_get_history_company_not_found(self):
         """Prueba que el servicio devuelve un error si la empresa no se encuentra."""
@@ -62,6 +66,7 @@ class TestHistoryService:
     def test_get_history_success_with_external_user_id(self):
         """Prueba la recuperación exitosa del historial usando un external_user_id."""
         user_identifier = 'external_user_123'
+        self.util.resolve_user_identifier.return_value = (user_identifier, True)
 
         mock_query1 = MagicMock(spec=LLMQuery)
         mock_query1.to_dict.return_value = {'id': 1, 'query': 'q1', 'answer': 'a1', 'created_at': 't1'}
@@ -84,6 +89,7 @@ class TestHistoryService:
     def test_get_history_success_with_local_user_id_and_external_id_takes_precedence(self):
         """Prueba que external_user_id tiene prioridad sobre local_user_id."""
         external_user_identifier = 'external_user_abc'
+        self.util.resolve_user_identifier.return_value = (external_user_identifier, True)
 
         mock_query = MagicMock(spec=LLMQuery)
         mock_query.to_dict.return_value = {'id': 1}
@@ -96,30 +102,32 @@ class TestHistoryService:
         )
 
         assert 'history' in result
+
         # El user_identifier resuelto debe ser el ID externo.
         self.llm_query_repo.get_history.assert_called_once_with(self.mock_company, external_user_identifier)
 
     def test_get_history_success_with_local_user_id_only(self):
         local_id = 456
-        resolved_user_identifier = 'fl@gmail.com'
+        # Este es el identificador que el mock DEBE devolver y la aserción DEBE comprobar.
+        resolved_user_identifier = str(local_id)
+        self.util.resolve_user_identifier.return_value = (resolved_user_identifier, False)
 
-        with patch('iatoolkit.common.session_manager.session', new={}) as fake_session:
-            SessionManager.set('user', {'id': local_id, 'email': resolved_user_identifier})
+        mock_query = MagicMock(spec=LLMQuery)
+        mock_query.to_dict.return_value = {'id': 1, 'query': 'q1'}
+        self.llm_query_repo.get_history.return_value = [mock_query]
 
-            mock_query = MagicMock(spec=LLMQuery)
-            mock_query.to_dict.return_value = {'id': 1, 'query': 'q1'}
-            self.llm_query_repo.get_history.return_value = [mock_query]
-
-            result = self.history_service.get_history(
-                company_short_name='test_company',
-                local_user_id=local_id
-            )
+        result = self.history_service.get_history(
+            company_short_name='test_company',
+            local_user_id=local_id
+        )
 
         assert result['message'] == 'Historial obtenido correctamente'
         self.llm_query_repo.get_history.assert_called_once_with(self.mock_company, resolved_user_identifier)
 
     def test_get_history_fails_when_no_user_identifier_is_provided(self):
         """Prueba que falla si no se proporciona ningún identificador de usuario."""
+        self.util.resolve_user_identifier.return_value = ('', False)
+
         result = self.history_service.get_history(company_short_name='test_company')
 
         assert result == {'error': 'No se pudo resolver el identificador del usuario'}

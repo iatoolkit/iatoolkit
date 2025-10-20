@@ -49,7 +49,7 @@ class TestQueryService:
 
         # Default mock session data
         self.session_context.get_last_response_id.return_value = 'prev_response_id'
-        self.session_context.get_user_session_data.return_value = {'user_role': 'leader', 'user_name': 'session_user'}
+        self.session_context.get_profile_data.return_value = {'user_role': 'leader', 'user_name': 'session_user'}
 
         # Default mock LLM response
         self.mock_llm_response = {"valid_response": True, "answer": "LLM test response",
@@ -182,7 +182,7 @@ class TestQueryService:
             company_short_name='test_co', user_identifier='ext_user_123'
         )
         # Se guarda user session data (ya ocurre antes del guard en tu versión final)
-        self.session_context.save_user_session_data.assert_called_with(
+        self.session_context.save_profile_data.assert_called_with(
             'test_co', 'ext_user_123', self.dispatcher.get_user_info.return_value
         )
         self.llm_client_mock.set_company_context.assert_called_once()

@@ -6,7 +6,6 @@
 from unittest.mock import MagicMock, patch
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.profile_service import ProfileService
-from iatoolkit.services.query_service import QueryService
 from iatoolkit.services.user_session_context_service import UserSessionContextService
 from flask_bcrypt import generate_password_hash
 from iatoolkit.repositories.models import User, Company

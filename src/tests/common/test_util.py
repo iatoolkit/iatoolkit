@@ -6,6 +6,7 @@
 import pytest
 from unittest.mock import MagicMock, patch, mock_open
 from iatoolkit.common.exceptions import IAToolkitException
+from iatoolkit.services.profile_service import ProfileService
 import os
 from iatoolkit.common.util import Utility
 from datetime import datetime, date
@@ -18,7 +19,9 @@ ACTUAL_FERNET_KEY_FOR_ENV = Fernet.generate_key().decode('utf-8')
 
 class TestUtil:
     def setup_method(self):
-        self.util = Utility()
+        self.mock_profile = MagicMock(ProfileService)
+        self.util = Utility(profile_service=self.mock_profile)
+
 
     @patch("jinja2.Environment.get_template")
     def test_util_when_jinja_error(self, mock_get_template):
@@ -152,11 +155,12 @@ class TestUtil:
 
             # test file was open
             mock_file.assert_called_once_with("company_content.md", 'r', encoding='utf-8')
+
     def test_encrypt_decrypt_key_successful(self):
         """Testa encriptación y desencriptación exitosa de una clave."""
         env_vars = {'FERNET_KEY': ACTUAL_FERNET_KEY_FOR_ENV}
         with patch.dict(os.environ, env_vars, clear=True):
-            util_with_key = Utility() # Nueva instancia que lee el FERNET_KEY mockeado
+            util_with_key = Utility(self.mock_profile) # Nueva instancia que lee el FERNET_KEY mockeado
             original_key = "mi_api_key_secreta_123_con_ñ_y_tildes_áéíóú"
             encrypted_key = util_with_key.encrypt_key(original_key)
 
@@ -169,7 +173,7 @@ class TestUtil:
 
     def test_encrypt_key_no_fernet_key_env(self):
         """Testa encrypt_key cuando FERNET_KEY no está en el entorno."""
-        util_no_env_key = Utility()
+        util_no_env_key = Utility(self.mock_profile)
         with pytest.raises(IAToolkitException) as excinfo:
             util_no_env_key.encrypt_key("testkey")
         assert excinfo.value.error_type == IAToolkitException.ErrorType.CRYPT_ERROR
@@ -179,7 +183,7 @@ class TestUtil:
         """Testa encrypt_key cuando la clave de entrada está vacía, pero FERNET_KEY es válida."""
         env_vars = {'FERNET_KEY': ACTUAL_FERNET_KEY_FOR_ENV}
         with patch.dict(os.environ, env_vars, clear=True):
-            util_with_key = Utility() # Nueva instancia con FERNET_KEY
+            util_with_key = Utility(self.mock_profile) # Nueva instancia con FERNET_KEY
             with pytest.raises(IAToolkitException) as excinfo_empty:
                 util_with_key.encrypt_key("")
         assert excinfo_empty.value.error_type == IAToolkitException.ErrorType.CRYPT_ERROR
@@ -192,11 +196,11 @@ class TestUtil:
         encrypted_key_valid = ""
         env_vars_for_encryption = {'FERNET_KEY': ACTUAL_FERNET_KEY_FOR_ENV}
         with patch.dict(os.environ, env_vars_for_encryption, clear=True):
-            temp_util = Utility()
+            temp_util = Utility(self.mock_profile)
             encrypted_key_valid = temp_util.encrypt_key("mi_api_key_secreta_123")
 
         # Ahora, probar la desencriptación sin FERNET_KEY
-        util_no_env_key = Utility()
+        util_no_env_key = Utility(self.mock_profile)
         with pytest.raises(IAToolkitException) as excinfo:
             util_no_env_key.decrypt_key(encrypted_key_valid)
         assert excinfo.value.error_type == IAToolkitException.ErrorType.CRYPT_ERROR
@@ -206,7 +210,7 @@ class TestUtil:
         """Testa decrypt_key cuando la clave encriptada de entrada está vacía o es None, pero FERNET_KEY es válida."""
         env_vars = {'FERNET_KEY': ACTUAL_FERNET_KEY_FOR_ENV}
         with patch.dict(os.environ, env_vars, clear=True):
-            util_with_key = Utility() # Nueva instancia con FERNET_KEY
+            util_with_key = Utility(self.mock_profile) # Nueva instancia con FERNET_KEY
             with pytest.raises(IAToolkitException) as excinfo_empty:
                 util_with_key.decrypt_key("")
             assert excinfo_empty.value.error_type == IAToolkitException.ErrorType.CRYPT_ERROR
@@ -222,7 +226,7 @@ class TestUtil:
         invalid_env_fernet_key = "clave_no_valida_para_fernet"
         env_vars = {'FERNET_KEY': invalid_env_fernet_key}
         with patch.dict(os.environ, env_vars, clear=True):
-            util_invalid_env_key = Utility()
+            util_invalid_env_key = Utility(self.mock_profile)
             with pytest.raises(IAToolkitException) as excinfo:
                 util_invalid_env_key.encrypt_key("testkey")
         assert excinfo.value.error_type == IAToolkitException.ErrorType.CRYPT_ERROR
@@ -239,14 +243,14 @@ class TestUtil:
         encrypted_key_valid = ""
         valid_env_vars = {'FERNET_KEY': ACTUAL_FERNET_KEY_FOR_ENV}
         with patch.dict(os.environ, valid_env_vars, clear=True):
-            temp_util_for_encrypt = Utility()
+            temp_util_for_encrypt = Utility(self.mock_profile)
             encrypted_key_valid = temp_util_for_encrypt.encrypt_key("some_secret_data")
 
         # Ahora intentar desencriptar con una FERNET_KEY inválida en el entorno
         invalid_env_fernet_key = "clave_no_valida_para_fernet"
         invalid_env_vars = {'FERNET_KEY': invalid_env_fernet_key, 'PROMPTS_DIR': './prompts'}
         with patch.dict(os.environ, invalid_env_vars, clear=True):
-            util_invalid_env_key = Utility()
+            util_invalid_env_key = Utility(self.mock_profile)
             with pytest.raises(IAToolkitException) as excinfo:
                 util_invalid_env_key.decrypt_key(encrypted_key_valid)
         assert excinfo.value.error_type == IAToolkitException.ErrorType.CRYPT_ERROR

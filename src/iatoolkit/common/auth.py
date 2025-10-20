@@ -7,7 +7,7 @@ from flask import redirect, url_for
 from iatoolkit.common.session_manager import SessionManager
 from datetime import datetime, timezone
 from injector import inject
-from iatoolkit.repositories.profile_repo import ProfileRepo
+from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.jwt_service import JWTService
 import logging
 from flask import request
@@ -19,9 +19,9 @@ class IAuthentication:
     @inject
 
     def __init__(self,
-                 profile_repo: ProfileRepo,
+                 profile_service: ProfileService,
                  jwt_service: JWTService):
-        self.profile_repo = profile_repo
+        self.profile_service = profile_service
         self.jwt_service = jwt_service
 
     def verify(self, company_short_name: str, body_external_user_id: str = None) -> dict:
@@ -68,7 +68,7 @@ class IAuthentication:
 
                 if not company_id or not local_user_id:
                     logging.error(
-                        f"Sesión válida para {company_short_name} pero falta company_id o user_id en SessionManager.")
+                        f"Sesión válida para {company_short_name} pero falta company_id o user_id en Session Manager.")
                     return {"error_message": "Fallo interno en la autenticación o no autenticado"}
 
         # last verification of authentication
@@ -105,7 +105,7 @@ class IAuthentication:
 
         # validate the api-key using ProfileRepo
         try:
-            api_key_entry = self.profile_repo.get_active_api_key_entry(api_key_value)
+            api_key_entry = self.profile_service.get_active_api_key_entry(api_key_value)
             if not api_key_entry:
                 logging.warning(f"Intento de acceso con API Key inválida o inactiva: {api_key_value[:5]}...")
                 return None, "API Key inválida o inactiva"
@@ -155,7 +155,7 @@ class IAuthentication:
         return company_id, external_user_id, None
 
     def check_if_user_is_logged_in(self, company_short_name: str):
-        if not SessionManager.get('user'):
+        if not SessionManager.get('user_id'):
             if company_short_name:
                 return redirect(url_for('login', company_short_name=company_short_name))
             else:

@@ -115,7 +115,6 @@ class SampleCompany(BaseCompany):
 
         return db_context
 
-
     def start_execution(self) -> dict:
         return {}
 
@@ -139,7 +138,6 @@ class SampleCompany(BaseCompany):
 
 
     def register_cli_commands(self, app):
-
         @app.cli.command("populate-database")
         def populate_sample_db():
             """📦 Crea y puebla la base de datos de sample_company."""

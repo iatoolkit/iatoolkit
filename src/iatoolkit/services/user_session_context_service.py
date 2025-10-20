@@ -6,110 +6,93 @@
 from iatoolkit.infra.redis_session_manager import RedisSessionManager
 from typing import List, Dict, Optional
 import json
+import logging
 
 
 class UserSessionContextService:
     """
-    Gestiona el contexto de la sesión del usuario, incluyendo el historial
-    de conversación con el LLM y datos de la sesión del usuario.
-
-    Usa RedisSessionManager para persistencia directa en Redis.
+    Gestiona el contexto de la sesión del usuario usando un único Hash de Redis por sesión.
+    Esto mejora la atomicidad y la eficiencia.
     """
 
-    def _get_context_version_key(self, company_short_name: str, user_identifier: str) -> Optional[str]:
+    def _get_session_key(self, company_short_name: str, user_identifier: str) -> Optional[str]:
+        """Devuelve la clave única de Redis para el Hash de sesión del usuario."""
         user_identifier = (user_identifier or "").strip()
-        if not user_identifier:
+        if not company_short_name or not user_identifier:
             return None
-        return f"context_version:{company_short_name}/{user_identifier}"
+        return f"session:{company_short_name}/{user_identifier}"
 
     def clear_all_context(self, company_short_name: str, user_identifier: str):
-        # clear all the context session for a user
-        self.clear_llm_history(company_short_name, user_identifier)
-        self.clear_user_session_data(company_short_name, user_identifier)
+        """Limpia todo el contexto de sesión para un usuario de forma atómica."""
+        session_key = self._get_session_key(company_short_name, user_identifier)
+        if session_key:
+            RedisSessionManager.remove(session_key)
 
-        # remove version of context
-        version_key = self._get_context_version_key(company_short_name, user_identifier)
-        if version_key:
-            RedisSessionManager.remove(version_key)
-
-
-    def _get_llm_history_key(self, company_short_name: str, user_identifier: str) -> str:
-        user_identifier = (user_identifier or "").strip()
-        if not user_identifier:
+    def get_last_response_id(self, company_short_name: str, user_identifier: str) -> Optional[str]:
+        session_key = self._get_session_key(company_short_name, user_identifier)
+        if not session_key:
             return None
-        return f"llm_history:{company_short_name}/{user_identifier}"
-
-    def _get_user_data_key(self, company_short_name: str, user_identifier: str) -> str:
-        user_identifier = (user_identifier or "").strip()
-        if not user_identifier:
-            return None
-        return f"user_data:{company_short_name}/{user_identifier}"
-
-    def clear_all_context(self, company_short_name: str, user_identifier: str):
-        """Limpia todo el contexto de sesión para un usuario."""
-        self.clear_llm_history(company_short_name, user_identifier)
-        self.clear_user_session_data(company_short_name, user_identifier)
-
-    def clear_llm_history(self, company_short_name: str, user_identifier: str):
-        history_key = self._get_llm_history_key(company_short_name, user_identifier)
-        if history_key:
-            RedisSessionManager.remove(history_key)
-
-    def get_last_response_id(self, company_short_name: str, user_identifier: str) -> str:
-        history_key = self._get_llm_history_key(company_short_name, user_identifier)
-        if not history_key:
-            return None
-
-        return RedisSessionManager.get(history_key, '')
+        # Suponiendo que RedisSessionManager tiene un método hget o similar
+        return RedisSessionManager.hget(session_key, 'last_response_id')
 
     def save_last_response_id(self, company_short_name: str, user_identifier: str, response_id: str):
-        user_identifier = (user_identifier or "").strip()
-        history_key = self._get_llm_history_key(company_short_name, user_identifier)
-        if not history_key or not user_identifier:
-            return
-
-        RedisSessionManager.set(history_key, response_id)
+        session_key = self._get_session_key(company_short_name, user_identifier)
+        if session_key:
+            RedisSessionManager.hset(session_key, 'last_response_id', response_id)
 
     def save_context_history(self, company_short_name: str, user_identifier: str, context_history: List[Dict]):
-        history_key = f"chat_history:{company_short_name}/{user_identifier}"
-        if not history_key:
-            return
-        RedisSessionManager.set(history_key, json.dumps(context_history))
+        session_key = self._get_session_key(company_short_name, user_identifier)
+        if session_key:
+            try:
+                history_json = json.dumps(context_history)
+                RedisSessionManager.hset(session_key, 'context_history', history_json)
+            except (TypeError, ValueError) as e:
+                logging.error(f"Error al serializar context_history para {session_key}: {e}")
 
     def get_context_history(self, company_short_name: str, user_identifier: str) -> Optional[List[Dict]]:
-        history_key = f"chat_history:{company_short_name}/{user_identifier}"
-        return RedisSessionManager.get_json(history_key, {})
+        session_key = self._get_session_key(company_short_name, user_identifier)
+        if not session_key:
+            return None
 
-    def save_user_session_data(self, company_short_name: str, user_identifier: str, data: dict):
-        """Guarda un diccionario de datos en la sesión del usuario."""
-        user_identifier = (user_identifier or "").strip()
-        data_key = self._get_user_data_key(company_short_name, user_identifier)
-        if data_key:
-            RedisSessionManager.set_json(data_key, data)
+        history_json = RedisSessionManager.hget(session_key, 'context_history')
+        if not history_json:
+            return []
 
-    def get_user_session_data(self, company_short_name: str, user_identifier: str) -> dict:
-        """Recupera el diccionario de datos de la sesión del usuario."""
-        data_key = self._get_user_data_key(company_short_name, user_identifier)
-        if not data_key:
+        try:
+            return json.loads(history_json)
+        except json.JSONDecodeError:
+            return []
+
+    def save_profile_data(self, company_short_name: str, user_identifier: str, data: dict):
+        session_key = self._get_session_key(company_short_name, user_identifier)
+        if session_key:
+            try:
+                data_json = json.dumps(data)
+                RedisSessionManager.hset(session_key, 'profile_data', data_json)
+            except (TypeError, ValueError) as e:
+                logging.error(f"Error al serializar profile_data para {session_key}: {e}")
+
+    def get_profile_data(self, company_short_name: str, user_identifier: str) -> dict:
+        session_key = self._get_session_key(company_short_name, user_identifier)
+        if not session_key:
             return {}
 
-        return RedisSessionManager.get_json(data_key, {})
+        data_json = RedisSessionManager.hget(session_key, 'profile_data')
+        if not data_json:
+            return {}
 
-    def clear_user_session_data(self, company_short_name: str, user_identifier: str):
-        """Limpia los datos de la sesión del usuario."""
-        data_key = self._get_user_data_key(company_short_name, user_identifier)
-        if data_key:
-            RedisSessionManager.remove(data_key)
+        try:
+            return json.loads(data_json)
+        except json.JSONDecodeError:
+            return {}
 
-    def save_context_version(self, company_short_name: str, user_identifier: str, version: str) -> None:
-        # save the hash version of the context for user/company
-        version_key = self._get_context_version_key(company_short_name, user_identifier)
-        if version_key:
-            RedisSessionManager.set(version_key, version)
+    def save_context_version(self, company_short_name: str, user_identifier: str, version: str):
+        session_key = self._get_session_key(company_short_name, user_identifier)
+        if session_key:
+            RedisSessionManager.hset(session_key, 'context_version', version)
 
     def get_context_version(self, company_short_name: str, user_identifier: str) -> Optional[str]:
-        # get the hash version of the context for user/company
-        version_key = self._get_context_version_key(company_short_name, user_identifier)
-        if not version_key:
+        session_key = self._get_session_key(company_short_name, user_identifier)
+        if not session_key:
             return None
-        return RedisSessionManager.get(version_key, None)
+        return RedisSessionManager.hget(session_key, 'context_version')

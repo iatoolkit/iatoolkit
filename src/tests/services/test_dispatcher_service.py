@@ -13,6 +13,7 @@ from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.repositories.models import Company, Function
 from iatoolkit.services.excel_service import ExcelService
 from iatoolkit.services.prompt_manager_service import PromptService
+from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.mail_service import MailService
 from iatoolkit.common.util import Utility
 
@@ -41,7 +42,8 @@ class TestDispatcher:
         registry.clear()
 
         # Mocks for services that are injected into the Dispatcher
-        self.mock_prompt_manager = MagicMock()
+        self.mock_prompt_manager = MagicMock(spec=PromptService)
+        self.profile_service = MagicMock(spec=ProfileService)
         self.mock_llm_query_repo = MagicMock(spec=LLMQueryRepo)
         self.excel_service = MagicMock(spec=ExcelService)
         self.mail_service = MagicMock(spec=MailService)
@@ -89,6 +91,7 @@ class TestDispatcher:
         # Initialize the Dispatcher within the patched context
         self.dispatcher = Dispatcher(
             prompt_service=self.mock_prompt_manager,
+            profile_service=self.profile_service,
             llmquery_repo=self.mock_llm_query_repo,
             util=self.util,
             excel_service=self.excel_service,
@@ -200,16 +203,14 @@ class TestDispatcher:
             self.dispatcher.get_user_info("sample", "ext_user_123", is_local_user=False)
         assert "Error en get_user_info de sample" in str(excinfo.value)
 
-    @patch('iatoolkit.services.dispatcher_service.SessionManager')
-    def test_get_user_info_local_user(self, mock_session_manager):
+    def test_get_user_info_local_user(self):
         """Tests get_user_info for a local user from session."""
         user_identifier = "local_user_1"
         session_data = {"email": "local@iatoolkit.com", "user_fullname": "Local User"}
-        mock_session_manager.get.return_value = session_data
+        self.profile_service.get_current_user_profile.return_value = session_data
 
         result = self.dispatcher.get_user_info("sample", user_identifier, is_local_user=True)
 
-        mock_session_manager.get.assert_called_once_with('user', {})
         self.mock_sample_company_instance.get_user_info.assert_not_called()
         assert result["user_email"] == "local@iatoolkit.com"
         assert result["user_fullname"] == "Local User"
@@ -258,6 +259,7 @@ class TestDispatcher:
         with patch('iatoolkit.iatoolkit.IAToolkit.get_instance', return_value=toolkit_mock):
             dispatcher = Dispatcher(
                 prompt_service=self.mock_prompt_manager,
+                profile_service=self.profile_service,
                 llmquery_repo=self.mock_llm_query_repo,
                 util=self.util,
                 excel_service=self.excel_service,

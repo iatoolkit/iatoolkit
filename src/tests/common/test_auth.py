@@ -8,7 +8,7 @@ from unittest.mock import patch, MagicMock
 from iatoolkit.common.auth import IAuthentication
 import pytest
 from datetime import datetime, timezone
-from iatoolkit.repositories.profile_repo import ProfileRepo
+from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.jwt_service import JWTService
 from werkzeug.exceptions import HTTPException
 
@@ -21,10 +21,10 @@ class TestAuth:
         self.app = Flask(__name__)
         self.app.config['TESTING'] = True
 
-        self.profile_repo = MagicMock(spec=ProfileRepo)
+        self.profile_service = MagicMock(spec=ProfileService)
         self.jwt_service = MagicMock(spec=JWTService)
         self.iauth_service = IAuthentication(
-            profile_repo=self.profile_repo,
+            profile_service=self.profile_service,
             jwt_service=self.jwt_service
         )
 
@@ -51,6 +51,7 @@ class TestAuth:
         with patch('iatoolkit.common.auth.SessionManager.get') as mock_get, \
              patch('iatoolkit.common.auth.SessionManager.set') as mock_set:
             mock_get.side_effect = lambda key, default=None: {
+                'user_id': 1,
                 'user': {'id': 1, 'username': 'test_user'},
                 'company_short_name': 'test_company',
                 'last_activity': CURRENT_TIME
@@ -73,6 +74,7 @@ class TestAuth:
         with patch('iatoolkit.common.auth.SessionManager.get') as mock_get, \
              patch('iatoolkit.common.auth.SessionManager.clear') as mock_clear:
             mock_get.side_effect = lambda key, default=None: {
+                'user_id': 1,
                 'user': {'id': 1, 'username': 'test_user'},
                 'company_short_name': 'test_company'
             }.get(key, default)
@@ -189,31 +191,31 @@ class TestAuth:
             mock_api_entry = MagicMock()
             mock_api_entry.company.short_name = 'test_company'
             mock_api_entry.company_id = 123
-            self.profile_repo.get_active_api_key_entry.return_value = mock_api_entry
+            self.profile_service.get_active_api_key_entry.return_value = mock_api_entry
 
             company_id, error = self.iauth_service._authenticate_via_api_key('test_company')
 
             assert company_id == 123
             assert error is None
-            self.profile_repo.get_active_api_key_entry.assert_called_once_with('valid_key')
+            self.profile_service.get_active_api_key_entry.assert_called_once_with('valid_key')
 
     def test_authenticate_via_api_key_no_header(self):
         with self.app.test_request_context(headers={}):
             company_id, error = self.iauth_service._authenticate_via_api_key('test_company')
             assert company_id is None
             assert error is None
-            self.profile_repo.get_active_api_key_entry.assert_not_called()
+            self.profile_service.get_active_api_key_entry.assert_not_called()
 
     def test_authenticate_via_api_key_wrong_scheme(self):
         with self.app.test_request_context(headers={'Authorization': 'Basic some_token'}):
             company_id, error = self.iauth_service._authenticate_via_api_key('test_company')
             assert company_id is None
             assert error is None
-            self.profile_repo.get_active_api_key_entry.assert_not_called()
+            self.profile_service.get_active_api_key_entry.assert_not_called()
 
     def test_authenticate_via_api_key_inactive_key(self):
         with self.app.test_request_context(headers={'Authorization': 'Bearer inactive_key'}):
-            self.profile_repo.get_active_api_key_entry.return_value = None
+            self.profile_service.get_active_api_key_entry.return_value = None
             company_id, error = self.iauth_service._authenticate_via_api_key('test_company')
             assert company_id is None
             assert error == "API Key inválida o inactiva"
@@ -222,7 +224,7 @@ class TestAuth:
         with self.app.test_request_context(headers={'Authorization': 'Bearer valid_key'}):
             mock_api_entry = MagicMock()
             mock_api_entry.company.short_name = 'other_company'
-            self.profile_repo.get_active_api_key_entry.return_value = mock_api_entry
+            self.profile_service.get_active_api_key_entry.return_value = mock_api_entry
 
             company_id, error = self.iauth_service._authenticate_via_api_key('test_company')
             assert company_id is None
@@ -230,7 +232,7 @@ class TestAuth:
 
     def test_authenticate_via_api_key_repo_exception(self):
         with self.app.test_request_context(headers={'Authorization': 'Bearer any_key'}):
-            self.profile_repo.get_active_api_key_entry.side_effect = Exception("DB error")
+            self.profile_service.get_active_api_key_entry.side_effect = Exception("DB error")
             company_id, error = self.iauth_service._authenticate_via_api_key('test_company')
             assert company_id is None
             assert error == "Error interno del servidor al validar API Key"
