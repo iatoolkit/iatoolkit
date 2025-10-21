@@ -8,7 +8,6 @@ from iatoolkit.repositories.document_repo import DocumentRepo
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.document_service import DocumentService
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
-
 from iatoolkit.repositories.models import Task
 from iatoolkit.services.dispatcher_service import Dispatcher
 from iatoolkit.services.prompt_manager_service import PromptService
@@ -56,27 +55,11 @@ class QueryService:
             raise IAToolkitException(IAToolkitException.ErrorType.API_KEY,
                                "La variable de entorno 'LLM_MODEL' no está configurada.")
 
-
-    def llm_init_context(self,
-                         company_short_name: str,
-                         external_user_id: str = None,
-                         local_user_id: int = 0,
-                         model: str = ''):
-        start_time = time.time()
-        if not model:
-            model = self.model
-
-        # Validate the user and company
-        user_identifier, is_local_user = self.util.resolve_user_identifier(external_user_id, local_user_id)
-        if not user_identifier:
-            raise IAToolkitException(IAToolkitException.ErrorType.INVALID_USER,
-                        "No se pudo resolver el identificador del usuario")
-
+    def _build_context_and_profile(self, company_short_name: str, user_identifier: str, is_local_user: bool) -> tuple:
+        # this method read the user/company context from the database and renders the system prompt
         company = self.profile_repo.get_company_by_short_name(company_short_name)
         if not company:
-            raise IAToolkitException(IAToolkitException.ErrorType.INVALID_NAME,
-                               f"Empresa no encontrada: {company_short_name}")
-
+            return None, None
 
         # get user specific context information.from
         # use dispatcher for reading user info from company db, include used logged in idenfier
@@ -86,10 +69,6 @@ class QueryService:
             is_local_user=is_local_user
         )
         user_profile['user_id'] = user_identifier
-
-        # save the user information in the session context
-        # it's needed for the jinja predefined prompts (filtering)
-        self.session_context.save_profile_data(company_short_name, user_identifier, user_profile)
 
         # render the iatoolkit main system prompt with the company/user information
         system_prompt_template = self.prompt_service.get_system_prompt()
@@ -107,56 +86,127 @@ class QueryService:
         # merge context: company + user
         final_system_context = f"{company_specific_context}\n{rendered_system_prompt}"
 
+        return final_system_context, user_profile
+
+    def prepare_context(self, company_short_name: str, external_user_id: str = None, local_user_id: int = 0) -> dict:
+        # prepare the context and decide if it needs to be rebuilt
+        # save the generated context in the session context for later use
+        user_identifier, is_local_user = self.util.resolve_user_identifier(external_user_id, local_user_id)
+        if not user_identifier:
+            # if not user_identifier, force the rebuild of the context
+            return {'rebuild_needed': True, 'error': 'Invalid user identifier'}
+
+        # create the company/user context and compute its version
+        final_system_context, user_profile = self._build_context_and_profile(
+            company_short_name, user_identifier, is_local_user)
+
+        # save the user information in the session context
+        # it's needed for the jinja predefined prompts (filtering)
+        self.session_context.save_profile_data(company_short_name, user_identifier, user_profile)
+
         # calculate the context version
         current_version = self._compute_context_version_from_string(final_system_context)
+
         try:
             prev_version = self.session_context.get_context_version(company_short_name, user_identifier)
         except Exception:
             prev_version = None
 
-        # if versions are the same, try to reutilize the context
-        if (prev_version and prev_version == current_version and
-                self._has_valid_cached_context(company_short_name,user_identifier)):
+        rebuild_is_needed = not (prev_version and prev_version == current_version and
+                                 self._has_valid_cached_context(company_short_name, user_identifier))
 
+        if rebuild_is_needed:
             logging.info(
-                f"Reutilizando contexto para {company_short_name}/{user_identifier} (version={current_version})")
+                f"Se necesita reconstrucción de contexto para {company_short_name}/{user_identifier}. Preparando...")
 
-            if self.util.is_openai_model(model):
-                existing_id = self.session_context.get_last_response_id(company_short_name, user_identifier)
-                return existing_id or "openai-context-reused"
-            elif self.util.is_gemini_model(model):
-                return "gemini-context-reused"
 
-        logging.info(f"Inicializando contexto para {company_short_name}/{user_identifier} con modelo {model}  ...")
+            # Guardar el contexto preparado y su versión para que `finalize_context_rebuild` los use.
+            self.session_context.save_prepared_context(company_short_name, user_identifier, final_system_context,
+                                                       current_version)
+
+        return {'rebuild_needed': rebuild_is_needed}
+
+    def finalize_context_rebuild(self, company_short_name: str, external_user_id: str = None, local_user_id: int = 0,
+                                 model: str = ''):
+        # end the initilization, if there is a prepare context send it to llm
+        if not model:
+            model = self.model
+        start_time = time.time()
+
+        user_identifier, _ = self.util.resolve_user_identifier(external_user_id, local_user_id)
+        company = self.profile_repo.get_company_by_short_name(company_short_name)
+
+        # --- Lógica de Bloqueo ---
+        lock_key = f"lock:context:{company_short_name}/{user_identifier}"
+        # Intentar adquirir el lock. Si no se puede, otro proceso está trabajando.
+        if not self.session_context.acquire_lock(lock_key, expire_seconds=60):
+            logging.warning(
+                f"Intento de reconstruir contexto para {user_identifier} mientras ya estaba en progreso. Se omite.")
+            return
+
+        # get (or delete) the prepared context and version from the session cache
+        prepared_context, version_to_save = self.session_context.get_and_clear_prepared_context(company_short_name,
+                                                                                                user_identifier)
+        if not prepared_context:
+            logging.info(
+                f"No se requiere reconstrucción de contexto para {company_short_name}/{user_identifier}. Finalización rápida.")
+            return
+
+        logging.info(f"Enviando contexto al LLM para {company_short_name}/{user_identifier}...")
         try:
-            # clean any previous context for company/user
-            self.session_context.clear_all_context(
-                company_short_name=company_short_name,
-                user_identifier=user_identifier
-            )
+            # Limpiar solo el historial de chat y el ID de respuesta anterior
+            self.session_context.clear_llm_history(company_short_name, user_identifier)
 
             if self.util.is_gemini_model(model):
-                # save the initial context as `context_history` (list of messages)
-                context_history = [{"role": "user", "content": final_system_context}]
+                context_history = [{"role": "user", "content": prepared_context}]
                 self.session_context.save_context_history(company_short_name, user_identifier, context_history)
-            elif self.util.is_openai_model(model):
-                # set the company/user context as the initial context for the LLM
-                response_id = self.llm_client.set_company_context(
-                    company=company,
-                    company_base_context=final_system_context,
-                    model=model
-                )
 
-                # save response_id in the session context
+            elif self.util.is_openai_model(model):
+                response_id = self.llm_client.set_company_context(
+                    company=company, company_base_context=prepared_context, model=model
+                )
                 self.session_context.save_last_response_id(company_short_name, user_identifier, response_id)
 
-            # save the context version in the session cache
-            self.session_context.save_context_version(company_short_name, user_identifier, current_version)
-            logging.info(f"Contexto inicial de company '{company_short_name}/{user_identifier}' ha sido establecido en {int(time.time() - start_time)} seg.")
+            if version_to_save:
+                self.session_context.save_context_version(company_short_name, user_identifier, version_to_save)
 
+            logging.info(
+                f"Contexto de {company_short_name}/{user_identifier} establecido en {int(time.time() - start_time)} seg.")
         except Exception as e:
-            logging.exception(f"Error al inicializar el contexto del LLM para {company_short_name}: {e}")
+            logging.exception(f"Error en finalize_context_rebuild para {company_short_name}: {e}")
             raise e
+        finally:
+            # --- Liberar el Bloqueo ---
+            self.session_context.release_lock(lock_key)
+
+
+    def _init_context_on_the_fly(self, company_short_name: str, external_user_id: str = None, local_user_id: int = 0) -> \
+    Optional[str]:
+        """
+        Intenta inicializar o reconstruir el contexto durante una llamada a llm_query.
+        ADVERTENCIA: Esta operación puede ser síncrona y durar hasta 30 segundos.
+        """
+        logging.warning(f"Contexto no encontrado para {company_short_name}. Iniciando reconstrucción 'on-the-fly'...")
+        user_identifier, _ = self.util.resolve_user_identifier(external_user_id, local_user_id)
+        lock_key = f"lock:context:{company_short_name}/{user_identifier}"
+
+        # Esperar si otro proceso ya está reconstruyendo
+        wait_time = 0
+        while self.session_context.is_locked(lock_key) and wait_time < 45:
+            logging.info(f"Contexto para {user_identifier} está siendo reconstruido por otro proceso. Esperando...")
+            time.sleep(2)
+            wait_time += 2
+
+        # 1. Preparar el contexto y ver si se necesita reconstrucción
+        prep_result = self.prepare_context(company_short_name, external_user_id, local_user_id)
+
+        # 2. Si la preparación indica que se necesita un rebuild, lo finalizamos.
+        if prep_result.get('rebuild_needed'):
+            self.finalize_context_rebuild(company_short_name, external_user_id, local_user_id)
+
+        # 3. Después de una posible reconstrucción, el ID de respuesta ya debería estar en la sesión.
+        user_identifier, _ = self.util.resolve_user_identifier(external_user_id, local_user_id)
+        return self.session_context.get_last_response_id(company_short_name, user_identifier)
 
     def llm_query(self,
                   company_short_name: str,
@@ -191,7 +241,7 @@ class QueryService:
                 previous_response_id = self.session_context.get_last_response_id(company.short_name, user_identifier)
                 if not previous_response_id:
                     # try to initialize the company/user context
-                    previous_response_id = self.llm_init_context(company.short_name, external_user_id, local_user_id)
+                    previous_response_id = self._init_context_on_the_fly(company.short_name, external_user_id, local_user_id)
                     if not previous_response_id:
                         return {'error': True,
                                 "error_message": f"FATAL: No se encontró 'previous_response_id' para '{company.short_name}/{user_identifier}'. La conversación no puede continuar."

@@ -5,7 +5,6 @@
 
 from flask import session
 
-
 class SessionManager:
     @staticmethod
     def set(key, value):

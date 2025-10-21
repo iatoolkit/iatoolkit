@@ -38,6 +38,13 @@
            class="action-icon-style" title="Historial con mis consultas" style="color: {{ branding.header_text_color }};">
             <i class="bi bi-clock-history"></i>
         </a>
+        <a href="javascript:void(0);"
+           id="force-reload-button"
+           class="ms-3 action-icon-style"
+           title="Forzar Recarga de Contexto"
+           style="color: {{ branding.header_text_color }};">
+            <i class="bi bi-arrow-clockwise"></i>
+        </a>
         <a href="javascript:void(0);" id="send-feedback-button"
            class="ms-3 action-icon-style" title="Tu feedback es muy importante" style="color: {{ branding.header_text_color }};">
             <i class="bi bi-emoji-smile"></i>
@@ -180,8 +187,12 @@
 <script src="{{ url_for('static', filename='js/chat_feedback.js', _external=True) }}"></script>
 <script src="{{ url_for('static', filename='js/chat_main.js', _external=True) }}"></script>
 
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/toastr.min.js"></script>
+
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('DOMContentLoaded', function () {
         const promptCollapse = document.getElementById('prompt-assistant-collapse');
         if (promptCollapse) {
             promptCollapse.addEventListener('shown.bs.collapse', function () {
@@ -193,6 +204,7 @@
             });
         }
     });
+
     document.addEventListener('DOMContentLoaded', function () {
         // Inicializar todos los tooltips de la página
         var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
@@ -200,5 +212,59 @@
             return new bootstrap.Tooltip(tooltipTriggerEl)
         })
     });
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const reloadButton = document.getElementById('force-reload-button');
+        if (!reloadButton) return;
+
+        const originalIconClass = 'bi bi-arrow-clockwise';
+        const spinnerIconClass = 'spinner-border spinner-border-sm';
+
+        reloadButton.addEventListener('click', function(event) {
+            event.preventDefault();
+
+            // 1. Deshabilitar y mostrar spinner
+            reloadButton.style.pointerEvents = 'none';
+            const icon = reloadButton.querySelector('i');
+            icon.className = spinnerIconClass;
+            toastr.info('Iniciando recarga de contexto en segundo plano...');
+
+            // 2. Construir la URL dinámicamente
+            const company = window.companyShortName;
+            const params = new URLSearchParams(); // Ya no necesita source=webapp
+
+            if (window.externalUserId) {
+                params.append('external_user_id', window.externalUserId);
+            }
+
+            const reloadUrl = `/${company}/init-context?${params.toString()}`;
+
+            // 3. Hacer la llamada AJAX "fire and forget"
+            fetch(reloadUrl, { method: 'GET' })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`El servidor respondió con estado: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    if (data.status === 'OK') {
+                        toastr.success('El contexto ha sido recargado exitosamente.');
+                    } else {
+                        toastr.error(data.error_message || 'Error al recargar el contexto.');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error durante la recarga del contexto:', error);
+                    toastr.error('Error de red al intentar recargar el contexto.');
+                })
+                .finally(() => {
+                    // 4. Restaurar el botón sin importar el resultado
+                    reloadButton.style.pointerEvents = 'auto';
+                    icon.className = originalIconClass;
+                });
+        });
+    });
+
 </script>
 {% endblock %}

@@ -40,7 +40,7 @@ def register_views(injector, app):
     app.add_url_rule('/<company_short_name>', view_func=IndexView.as_view('index'))
 
     # init (reset) the company context (with api-key)
-    app.add_url_rule('/<company_short_name>/<external_user_id>/init-context',
+    app.add_url_rule('/<company_short_name>//init-context',
                          view_func=InitContextView.as_view('init-context'))
 
     # this functions are for login external users (with api-key)

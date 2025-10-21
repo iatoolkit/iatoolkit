@@ -9,7 +9,7 @@
         <p class="mt-3 text-muted">
             {{ message }}
         </p>
-        <a href="{{ url_for('home') }}" class="btn btn-primary mt-4">Volver al Inicio</a>
+        <a href="{{ url_for('index', company_short_name=company_short_name) }}" class="btn btn-primary mt-4">Volver al Inicio</a>
     </div>
 </div>
 {% endblock %}

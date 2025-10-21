@@ -15,11 +15,15 @@ class TestUserSessionContextService(unittest.TestCase):
         # La clave única para el Hash de sesión
         self.session_key = f"session:{self.company_short_name}/{self.user_identifier}"
 
-        # Patchear RedisSessionManager para aislar el servicio
+        # Patchear RedisSessionManager para aislar el servicio, añadiendo los nuevos métodos al spec
         self.redis_patcher = patch("iatoolkit.services.user_session_context_service.RedisSessionManager", spec=True)
         self.mock_redis_manager = self.redis_patcher.start()
+
+        # Añadir explícitamente los métodos de Hash y Pipeline al mock para que `spec=True` no falle
         self.mock_redis_manager.hget = MagicMock()
         self.mock_redis_manager.hset = MagicMock()
+        self.mock_redis_manager.hdel = MagicMock()
+        self.mock_redis_manager.pipeline = MagicMock()
 
     def tearDown(self):
         """Limpia los patches después de cada test."""
@@ -38,15 +42,15 @@ class TestUserSessionContextService(unittest.TestCase):
         self.mock_redis_manager.hget.assert_called_once_with(self.session_key, 'last_response_id')
         self.assertEqual(result, "resp_abc")
 
-    def test_save_user_session_data(self):
-        """Prueba que los datos de sesión se guardan como JSON en el campo 'user_data'."""
+    def test_save_profile_data(self):
+        """Prueba que los datos de perfil se guardan como JSON en el campo 'profile_data'."""
         data = {"role": "admin", "theme": "dark"}
         expected_json = json.dumps(data)
         self.service.save_profile_data(self.company_short_name, self.user_identifier, data)
         self.mock_redis_manager.hset.assert_called_once_with(self.session_key, 'profile_data', expected_json)
 
     def test_get_profile_data(self):
-        """Prueba que los datos de sesión se leen y deserializan desde el campo 'user_data'."""
+        """Prueba que los datos de perfil se leen y deserializan desde el campo 'profile_data'."""
         expected_data = {"role": "admin", "theme": "dark"}
         self.mock_redis_manager.hget.return_value = json.dumps(expected_data)
         result = self.service.get_profile_data(self.company_short_name, self.user_identifier)
@@ -86,6 +90,45 @@ class TestUserSessionContextService(unittest.TestCase):
         self.service.clear_all_context(self.company_short_name, self.user_identifier)
         self.mock_redis_manager.remove.assert_called_once_with(self.session_key)
 
+    def test_clear_llm_history(self):
+        """Prueba que se eliminan solo los campos del historial del LLM."""
+        self.service.clear_llm_history(self.company_short_name, self.user_identifier)
+        self.mock_redis_manager.hdel.assert_called_once_with(self.session_key, 'last_response_id', 'context_history')
+
+    def test_save_prepared_context(self):
+        """Prueba que el contexto preparado y su versión se guardan correctamente."""
+        context_str = "Este es el contexto preparado"
+        version_str = "v_prep_1"
+        self.service.save_prepared_context(self.company_short_name, self.user_identifier, context_str, version_str)
+
+        # Verificar que se llamó a hset para ambos campos
+        self.mock_redis_manager.hset.assert_any_call(self.session_key, 'prepared_context', context_str)
+        self.mock_redis_manager.hset.assert_any_call(self.session_key, 'prepared_context_version', version_str)
+        self.assertEqual(self.mock_redis_manager.hset.call_count, 2)
+
+    def test_get_and_clear_prepared_context(self):
+        """Prueba que se obtiene y limpia el contexto preparado de forma atómica usando una pipeline."""
+        # Configurar el mock de la pipeline
+        mock_pipe = MagicMock()
+        self.mock_redis_manager.pipeline.return_value = mock_pipe
+
+        # El resultado de pipe.execute() será una lista con los resultados de cada comando en la pipeline
+        mock_pipe.execute.return_value = ["contexto_preparado", "v_prep_1"]
+
+        # Act
+        context, version = self.service.get_and_clear_prepared_context(self.company_short_name, self.user_identifier)
+
+        # Assert
+        self.assertEqual(context, "contexto_preparado")
+        self.assertEqual(version, "v_prep_1")
+
+        # Verificar que la pipeline se usó correctamente
+        self.mock_redis_manager.pipeline.assert_called_once()
+        mock_pipe.hget.assert_any_call(self.session_key, 'prepared_context')
+        mock_pipe.hget.assert_any_call(self.session_key, 'prepared_context_version')
+        mock_pipe.hdel.assert_called_once_with(self.session_key, 'prepared_context', 'prepared_context_version')
+        mock_pipe.execute.assert_called_once()
+
     def test_methods_do_nothing_with_invalid_identifiers(self):
         """
         Prueba que ningún método interactúa con Redis si el company o user_identifier son inválidos.
@@ -99,13 +142,19 @@ class TestUserSessionContextService(unittest.TestCase):
                 self.service.save_profile_data(self.company_short_name, user_id, {"data": "value"})
                 self.service.save_context_version(self.company_short_name, user_id, "v1")
                 self.service.save_context_history(self.company_short_name, user_id, [])
+                self.service.save_prepared_context(self.company_short_name, user_id, "ctx", "v1")
                 self.service.clear_all_context(self.company_short_name, user_id)
+                self.service.clear_llm_history(self.company_short_name, user_id)
 
                 # Probar métodos de lectura
                 self.assertIsNone(self.service.get_last_response_id(self.company_short_name, user_id))
                 self.assertEqual(self.service.get_profile_data(self.company_short_name, user_id), {})
+                self.assertEqual(self.service.get_and_clear_prepared_context(self.company_short_name, user_id),
+                                 (None, None))
 
         # Verificar que NUNCA se llamó a los métodos de Redis
         self.mock_redis_manager.hset.assert_not_called()
         self.mock_redis_manager.hget.assert_not_called()
         self.mock_redis_manager.remove.assert_not_called()
+        self.mock_redis_manager.hdel.assert_not_called()
+        self.mock_redis_manager.pipeline.assert_not_called()

@@ -37,9 +37,14 @@ class RedisSessionManager:
         return cls._client
 
     @classmethod
-    def set(cls, key: str, value: str, ex: int = None):
+    def set(cls, key: str, value: str, **kwargs):
+        """
+        Método set flexible que pasa argumentos opcionales (como ex, nx)
+        directamente al cliente de redis.
+        """
         client = cls._get_client()
-        result = client.set(key, value, ex=ex)
+        # Pasa todos los argumentos de palabra clave adicionales al cliente real
+        result = client.set(key, value, **kwargs)
         return result
 
     @classmethod
@@ -66,12 +71,35 @@ class RedisSessionManager:
         client = cls._get_client()
         return client.hget(key, field)
 
+    @classmethod
+    def hdel(cls, key: str, *fields):
+        """
+        Elimina uno o más campos de un Hash de Redis.
+        """
+        client = cls._get_client()
+        return client.hdel(key, *fields)
+
+    @classmethod
+    def pipeline(cls):
+        """
+        Inicia una transacción (pipeline) de Redis.
+        """
+        client = cls._get_client()
+        return client.pipeline()
+
 
     @classmethod
     def remove(cls, key: str):
         client = cls._get_client()
         result = client.delete(key)
         return result
+
+    @classmethod
+    def exists(cls, key: str) -> bool:
+        """Verifica si una clave existe en Redis."""
+        client = cls._get_client()
+        # El comando EXISTS de Redis devuelve un entero (0 o 1). Lo convertimos a booleano.
+        return bool(client.exists(key))
 
     @classmethod
     def set_json(cls, key: str, value: dict, ex: int = None):

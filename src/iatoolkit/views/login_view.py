@@ -13,70 +13,96 @@ import os
 from iatoolkit.services.branding_service import BrandingService
 from iatoolkit.services.onboarding_service import OnboardingService
 
+
 class InitiateLoginView(MethodView):
     """
-    Handles the initial, fast part of the standard login process.
-    Authenticates user credentials, sets up the server-side session,
-    and immediately returns the loading shell page.
+    Handles the initial, fast part of the login process.
+    Authenticates, decides the login path (fast or slow), and renders
+    either the chat page directly or the loading shell.
     """
+
     @inject
     def __init__(self,
                  profile_service: ProfileService,
                  branding_service: BrandingService,
-                 onboarding_service: OnboardingService):
+                 onboarding_service: OnboardingService,
+                 query_service: QueryService,
+                 prompt_service: PromptService):
         self.profile_service = profile_service
         self.branding_service = branding_service
         self.onboarding_service = onboarding_service
-
+        self.query_service = query_service
+        self.prompt_service = prompt_service
 
     def post(self, company_short_name: str):
-        # get company info
         company = self.profile_service.get_company_by_short_name(company_short_name)
         if not company:
-            return render_template('error.html',
-                                   message="Empresa no encontrada"), 404
+            return render_template('error.html', message="Empresa no encontrada"), 404
 
         email = request.form.get('email')
         password = request.form.get('password')
 
-        # 1. authenticate the user
-        response = self.profile_service.login(
+        # 1. Autenticar al usuario
+        auth_response = self.profile_service.login(
             company_short_name=company_short_name,
             email=email,
             password=password
         )
 
-        if not response['success']:
+        if not auth_response['success']:
             return render_template(
-                'login.html',
-                company_short_name=company_short_name,
-                company=company,
-                form_data={
-                    "email": email,
-                    "password": password,
-                },
-                alert_message=response["message"]), 400
+                'login.html', company_short_name=company_short_name, company=company,
+                form_data={"email": email}, alert_message=auth_response["message"]
+            ), 400
 
-        # 2. Get branding and onboarding data for the shell page
-        branding_data = self.branding_service.get_company_branding(company)
-        onboarding_cards = self.onboarding_service.get_onboarding_cards(company)
+        user_id = auth_response['user'].id
 
-        target_url = url_for('login',
-                        company_short_name=company_short_name,
-                        _external=True)
-
-        # 3. Render the shell page, passing the URL for the heavy lifting
-        # The shell's AJAX call will now be authenticated via the session cookie.
-        return render_template(
-            "onboarding_shell.html",
-            iframe_src_url=target_url,
-            external_user_id='',
-            branding=branding_data,
-            onboarding_cards=onboarding_cards
+        # 2. PREPARAR y DECIDIR: Llamar a prepare_context para determinar el camino.
+        prep_result = self.query_service.prepare_context(
+            company_short_name=company_short_name, local_user_id=user_id
         )
+
+        if prep_result.get('rebuild_needed'):
+            # --- CAMINO LENTO: Se necesita reconstrucción ---
+            # Mostramos el shell, que llamará a LoginView para el trabajo pesado.
+            branding_data = self.branding_service.get_company_branding(company)
+            onboarding_cards = self.onboarding_service.get_onboarding_cards(company)
+            target_url = url_for('login', company_short_name=company_short_name, _external=True)
+
+            return render_template(
+                "onboarding_shell.html",
+                iframe_src_url=target_url,
+                external_user_id='',
+                branding=branding_data,
+                onboarding_cards=onboarding_cards
+            )
+        else:
+            # --- CAMINO RÁPIDO: El contexto ya está en caché ---
+            # Renderizamos el chat directamente.
+            try:
+                prompts = self.prompt_service.get_user_prompts(company_short_name)
+                branding_data = self.branding_service.get_company_branding(company)
+
+                return render_template("chat.html",
+                                       company_short_name=company_short_name,
+                                       auth_method="Session",
+                                       session_jwt=None,
+                                       user_email=email,
+                                       branding=branding_data,
+                                       prompts=prompts,
+                                       iatoolkit_base_url=os.getenv('IATOOLKIT_BASE_URL'),
+                                       ), 200
+            except Exception as e:
+                return render_template("error.html", company=company, company_short_name=company_short_name,
+                                       message=f"Error inesperado en el camino rápido: {str(e)}"), 500
 
 
 class LoginView(MethodView):
+    """
+    Handles the heavy-lifting part of the login, ONLY triggered by the iframe
+    in the slow path (when context rebuild is needed).
+    """
+
     @inject
     def __init__(self,
                  profile_service: ProfileService,
@@ -90,41 +116,34 @@ class LoginView(MethodView):
 
     def get(self, company_short_name: str):
         """
-        Handles the heavy-lifting part of the login, triggered by the iframe.
-        The user is already authenticated via the session cookie.
+        Handles the finalization of the context rebuild.
         """
-        # 1. Retrieve user and company info from the session.
         user_profile = self.profile_service.get_current_user_profile()
-        user_id = user_profile.get('user_id')
+        user_id = user_profile.get('id')
         if not user_id:
-            # This can happen if the session expires or is invalid.
-            # Redirecting to home is a safe fallback.
-            return redirect(url_for('home', company_short_name=company_short_name))
+            # Si la sesión expira en medio del proceso, redirigir al login
+            return redirect(url_for('login_page', company_short_name=company_short_name))
 
-        user_email = user_profile.get('email')
         company = self.profile_service.get_company_by_short_name(company_short_name)
         if not company:
             return render_template('error.html', message="Empresa no encontrada"), 404
 
         try:
-            # 2. Init the company/user LLM context (the long-running task).
-            self.query_service.llm_init_context(
+            # 1. Ejecutar la finalización (la operación potencialmente LENTA de 30s)
+            self.query_service.finalize_context_rebuild(
                 company_short_name=company_short_name,
                 local_user_id=user_id
             )
 
-            # 3. Get the prompt list from backend.
+            # 2. Obtener datos y renderizar el chat
             prompts = self.prompt_service.get_user_prompts(company_short_name)
-
-            # 4. Get the branding data.
             branding_data = self.branding_service.get_company_branding(company)
 
-            # 5. Render the final chat page.
             return render_template("chat.html",
                                    company_short_name=company_short_name,
                                    auth_method="Session",
-                                   session_jwt=None,  # No JWT in this flow
-                                   user_email=user_email,
+                                   session_jwt=None,
+                                   user_email=user_profile.get('email'),
                                    branding=branding_data,
                                    prompts=prompts,
                                    iatoolkit_base_url=os.getenv('IATOOLKIT_BASE_URL'),
@@ -134,4 +153,4 @@ class LoginView(MethodView):
             return render_template("error.html",
                                    company=company,
                                    company_short_name=company_short_name,
-                                   message="Ha ocurrido un error inesperado."), 500
+                                   message=f"Ha ocurrido un error inesperado durante la carga del contexto: {str(e)}"), 500

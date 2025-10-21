@@ -1,20 +1,22 @@
-# test_init_context_view.py
-
 import pytest
 from flask import Flask
 from unittest.mock import MagicMock, patch
 from iatoolkit.views.init_context_view import InitContextView
 from iatoolkit.services.query_service import QueryService
-from iatoolkit.services.user_session_context_service import UserSessionContextService
+from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.common.auth import IAuthentication
+from iatoolkit.services.user_session_context_service import UserSessionContextService
 
 # --- Constantes para los Tests ---
 MOCK_COMPANY_SHORT_NAME = "test-comp"
 MOCK_EXTERNAL_USER_ID = "ext-user-123"
+MOCK_LOCAL_USER_ID = 456
 
 
 class TestInitContextView:
-    """Pruebas para la vista InitContextView."""
+    """
+    Pruebas para la vista InitContextView, que fuerza la reconstrucción del contexto.
+    """
 
     @pytest.fixture(autouse=True)
     def setup_method(self):
@@ -26,71 +28,115 @@ class TestInitContextView:
         # Mocks para los servicios inyectados
         self.mock_iauthentication = MagicMock(spec=IAuthentication)
         self.mock_query_service = MagicMock(spec=QueryService)
-        self.mock_user_session_context_service = MagicMock(spec=UserSessionContextService)
+        self.mock_profile_service = MagicMock(spec=ProfileService)
 
-        # Registrar la vista con los servicios mockeados
+        # --- CORRECCIÓN: Crear un mock para session_context y adjuntarlo a query_service ---
+        self.mock_session_context = MagicMock(spec=UserSessionContextService)
+        self.mock_query_service.session_context = self.mock_session_context
+
+        # Configuración común de mocks
+        self.mock_iauthentication.verify.return_value = {"success": True}
+
+        # Registrar la vista con las dependencias correctas
         view_func = InitContextView.as_view(
             'init_context',
             iauthentication=self.mock_iauthentication,
             query_service=self.mock_query_service,
-            user_session_context_service=self.mock_user_session_context_service
+            profile_service=self.mock_profile_service
         )
-        self.app.add_url_rule('/<company_short_name>/context/init/<external_user_id>', view_func=view_func, methods=['GET'])
+        self.app.add_url_rule('/<company_short_name>/init-context', view_func=view_func, methods=['GET'])
 
-    def test_init_context_success(self):
+    def test_rebuild_for_local_user_from_webapp(self):
         """
-        Prueba el flujo exitoso: la autenticación es correcta y el contexto se inicializa.
+        Prueba el flujo de un usuario LOCAL logueado que hace clic en el botón de recarga.
         """
-        # Arrange: Configurar mocks para un flujo exitoso
-        self.mock_iauthentication.verify.return_value = {"success": True}
+        # Arrange
+        self.mock_profile_service.get_current_user_profile.return_value = {'id': MOCK_LOCAL_USER_ID}
 
-        # Act: Realizar la petición GET al endpoint
-        response = self.client.get(f'/{MOCK_COMPANY_SHORT_NAME}/context/init/{MOCK_EXTERNAL_USER_ID}')
+        with patch('iatoolkit.views.init_context_view.render_template') as mock_render:
+            mock_render.return_value = "<html>Success Page</html>"
 
-        # Assert: Verificar el resultado
+            # Act
+            response = self.client.get(f'/{MOCK_COMPANY_SHORT_NAME}/init-context?source=webapp')
+
+        # Assert
+        assert response.status_code == 200
+        self.mock_iauthentication.verify.assert_not_called()
+
+        # --- CORRECCIÓN: La aserción ahora apunta al mock correcto ---
+        self.mock_query_service.session_context.clear_all_context.assert_called_once_with(MOCK_COMPANY_SHORT_NAME,
+                                                                                          str(MOCK_LOCAL_USER_ID))
+
+        self.mock_query_service.prepare_context.assert_called_once_with(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            external_user_id=None,
+            local_user_id=MOCK_LOCAL_USER_ID
+        )
+        self.mock_query_service.finalize_context_rebuild.assert_called_once_with(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            external_user_id=None,
+            local_user_id=MOCK_LOCAL_USER_ID
+        )
+        mock_render.assert_called_once_with('context_reloaded.html',
+                                            message="El contexto ha sido recargado exitosamente.")
+
+    def test_rebuild_for_external_user_from_webapp(self):
+        """
+        Prueba el flujo de un usuario EXTERNO logueado que hace clic en el botón de recarga.
+        """
+        # Arrange
+        self.mock_profile_service.get_current_user_profile.return_value = {}
+
+        with patch('iatoolkit.views.init_context_view.render_template') as mock_render:
+            mock_render.return_value = "<html>Success Page</html>"
+
+            # Act
+            response = self.client.get(
+                f'/{MOCK_COMPANY_SHORT_NAME}/init-context?source=webapp&external_user_id={MOCK_EXTERNAL_USER_ID}')
+
+        # Assert
+        assert response.status_code == 200
+        self.mock_query_service.session_context.clear_all_context.assert_called_once_with(MOCK_COMPANY_SHORT_NAME,
+                                                                                          MOCK_EXTERNAL_USER_ID)
+        self.mock_query_service.prepare_context.assert_called_once_with(
+            company_short_name=MOCK_COMPANY_SHORT_NAME, external_user_id=MOCK_EXTERNAL_USER_ID, local_user_id=None
+        )
+        self.mock_query_service.finalize_context_rebuild.assert_called_once_with(
+            company_short_name=MOCK_COMPANY_SHORT_NAME, external_user_id=MOCK_EXTERNAL_USER_ID, local_user_id=None
+        )
+        mock_render.assert_called_once_with('context_reloaded.html',
+                                            message="El contexto ha sido recargado exitosamente.")
+
+    def test_rebuild_for_external_user_from_api(self):
+        """
+        Prueba el flujo de una llamada de API pura para un usuario externo.
+        """
+        # Arrange
+        self.mock_profile_service.get_current_user_profile.return_value = {}
+
+        # Act
+        response = self.client.get(f'/{MOCK_COMPANY_SHORT_NAME}/init-context?external_user_id={MOCK_EXTERNAL_USER_ID}')
+
+        # Assert
         assert response.status_code == 200
         assert response.json == {'status': 'OK'}
+        self.mock_iauthentication.verify.assert_called_once_with(MOCK_COMPANY_SHORT_NAME)
+        self.mock_query_service.session_context.clear_all_context.assert_called_once_with(MOCK_COMPANY_SHORT_NAME,
+                                                                                          MOCK_EXTERNAL_USER_ID)
+        self.mock_query_service.prepare_context.assert_called_once()
+        self.mock_query_service.finalize_context_rebuild.assert_called_once()
 
-        # Verificar que los servicios fueron llamados correctamente
-        self.mock_iauthentication.verify.assert_called_once_with(MOCK_COMPANY_SHORT_NAME, MOCK_EXTERNAL_USER_ID)
-        self.mock_query_service.llm_init_context.assert_called_once_with(
-            company_short_name=MOCK_COMPANY_SHORT_NAME,
-            external_user_id=MOCK_EXTERNAL_USER_ID
-        )
-
-    def test_init_context_auth_failure(self):
+    def test_rebuild_fails_if_no_user_identified(self):
         """
-        Prueba el flujo de fallo de autenticación: la vista debe devolver 401.
+        Prueba que la vista devuelve un error 400 si no se puede identificar al usuario.
         """
-        # Arrange: Configurar el mock de autenticación para que falle
-        auth_error = {"success": False, "error": "Credenciales inválidas"}
-        self.mock_iauthentication.verify.return_value = auth_error
+        # Arrange
+        self.mock_profile_service.get_current_user_profile.return_value = {}
 
-        # Act: Realizar la petición GET
-        response = self.client.get(f'/{MOCK_COMPANY_SHORT_NAME}/context/init/{MOCK_EXTERNAL_USER_ID}')
+        # Act
+        response = self.client.get(f'/{MOCK_COMPANY_SHORT_NAME}/init-context')
 
-        # Assert: Verificar la respuesta de error y que el servicio principal no se llamó
-        assert response.status_code == 401
-        assert response.json == auth_error
-        self.mock_query_service.llm_init_context.assert_not_called()
-
-    def test_init_context_unexpected_error(self):
-        """
-        Prueba el manejo de un error inesperado en el servicio subyacente.
-        """
-        # Arrange: La autenticación es exitosa, pero el servicio de query falla
-        self.mock_iauthentication.verify.return_value = {"success": True}
-        error_message = "Error de conexión con la base de datos"
-        self.mock_query_service.llm_init_context.side_effect = Exception(error_message)
-
-        # Act: Realizar la petición GET
-        response = self.client.get(f'/{MOCK_COMPANY_SHORT_NAME}/context/init/{MOCK_EXTERNAL_USER_ID}')
-
-        # Assert: Verificar que se devuelve un error 500 con el mensaje correcto
-        assert response.status_code == 500
-        assert "error_message" in response.json
-        assert response.json["error_message"] == error_message
-
-        # Verificar que ambos servicios fueron intentados
-        self.mock_iauthentication.verify.assert_called_once()
-        self.mock_query_service.llm_init_context.assert_called_once()
+        # Assert
+        assert response.status_code == 400
+        assert "No se pudo identificar al usuario" in response.json['error']
+        self.mock_query_service.prepare_context.assert_not_called()
