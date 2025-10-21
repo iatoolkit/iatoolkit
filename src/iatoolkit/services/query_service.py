@@ -131,29 +131,34 @@ class QueryService:
         # end the initilization, if there is a prepare context send it to llm
         if not model:
             model = self.model
-        start_time = time.time()
 
         user_identifier, _ = self.util.resolve_user_identifier(external_user_id, local_user_id)
-        company = self.profile_repo.get_company_by_short_name(company_short_name)
+        if not user_identifier:
+            logging.error("No se pudo resolver el identificador de usuario en finalize_context_rebuild.")
+            return
+
 
         # --- Lógica de Bloqueo ---
         lock_key = f"lock:context:{company_short_name}/{user_identifier}"
-        # Intentar adquirir el lock. Si no se puede, otro proceso está trabajando.
         if not self.session_context.acquire_lock(lock_key, expire_seconds=60):
             logging.warning(
                 f"Intento de reconstruir contexto para {user_identifier} mientras ya estaba en progreso. Se omite.")
             return
 
-        # get (or delete) the prepared context and version from the session cache
-        prepared_context, version_to_save = self.session_context.get_and_clear_prepared_context(company_short_name,
-                                                                                                user_identifier)
-        if not prepared_context:
-            logging.info(
-                f"No se requiere reconstrucción de contexto para {company_short_name}/{user_identifier}. Finalización rápida.")
-            return
-
-        logging.info(f"Enviando contexto al LLM para {company_short_name}/{user_identifier}...")
         try:
+            start_time = time.time()
+            company = self.profile_repo.get_company_by_short_name(company_short_name)
+
+            # get the prepared context and version from the session cache
+            prepared_context, version_to_save = self.session_context.get_and_clear_prepared_context(company_short_name,
+                                                                                                    user_identifier)
+            if not prepared_context:
+                logging.info(
+                    f"No se requiere reconstrucción de contexto para {company_short_name}/{user_identifier}. Finalización rápida.")
+                return
+
+            logging.info(f"Enviando contexto al LLM para {company_short_name}/{user_identifier}...")
+
             # Limpiar solo el historial de chat y el ID de respuesta anterior
             self.session_context.clear_llm_history(company_short_name, user_identifier)
 

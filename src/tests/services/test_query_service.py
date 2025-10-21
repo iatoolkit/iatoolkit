@@ -58,6 +58,10 @@ class TestQueryService:
         self.llm_client_mock.invoke.return_value = self.mock_llm_response
         self.session_context.get_profile_data.return_value = self.mock_user_profile
 
+        # not gemini
+        self.utility.is_gemini_model.return_value = False
+        self.utility.is_openai_model.return_value = True
+
         with patch.dict(os.environ, {"LLM_MODEL": "gpt-test"}):
             self.service = QueryService(
                 llm_client=self.llm_client_mock, document_service=self.document_service,
