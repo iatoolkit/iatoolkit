@@ -28,7 +28,7 @@ class TestPromptView:
         self.iauthentication = MagicMock(spec=AuthService)
 
         # Default to successful authentication
-        self.iauthentication.verify.return_value = {'success': True}
+        self.iauthentication.verify.return_value = {'success': True, 'user_identifier': 'test_user_id',}
 
         # Register the view with mocked dependencies
         prompt_view = PromptView.as_view("prompt",
@@ -61,7 +61,7 @@ class TestPromptView:
 
         assert response.status_code == 402
         assert response.json['error_message'] == 'Company not configured for prompts'
-        self.iauthentication.verify.assert_called_once_with('test_company')
+        self.iauthentication.verify.assert_called_once_with()
         self.prompt_service.get_user_prompts.assert_called_once_with('test_company')
 
     def test_get_when_service_raises_exception(self):
@@ -87,7 +87,7 @@ class TestPromptView:
 
         assert response.status_code == 200
         assert response.json == mock_response
-        self.iauthentication.verify.assert_called_once_with('test_company')
+        self.iauthentication.verify.assert_called_once_with()
         self.prompt_service.get_user_prompts.assert_called_once_with('test_company')
 
     def test_get_success_with_empty_list(self):
@@ -107,5 +107,5 @@ class TestPromptView:
         company_name = 'another-company'
         self.client.get(f'/{company_name}/prompts')
 
-        self.iauthentication.verify.assert_called_once_with(company_name)
+        self.iauthentication.verify.assert_called_once_with()
         self.prompt_service.get_user_prompts.assert_called_once_with(company_name)

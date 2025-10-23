@@ -39,7 +39,7 @@ class TestLoginFlow:
         self.test_company = Company(id=1, name="Test Company", short_name=MOCK_COMPANY_SHORT_NAME)
         self.test_user = User(id=MOCK_USER_ID, email=MOCK_USER_EMAIL)
         self.mock_profile_service.get_company_by_short_name.return_value = self.test_company
-        self.mock_profile_service.login.return_value = {'success': True, 'user': self.test_user}
+        self.mock_profile_service.login.return_value = {'success': True, 'user_identifier': self.test_user.email}
         self.mock_profile_service.get_current_session_info.return_value = {
             'user_identifier': str(MOCK_USER_ID),
             'profile': {'id': MOCK_USER_ID, 'email': MOCK_USER_EMAIL, 'user_is_local': True}
@@ -82,7 +82,7 @@ class TestLoginFlow:
         assert response.status_code == 200
         self.mock_profile_service.login.assert_called_once()
         self.mock_query_service.prepare_context.assert_called_once_with(company_short_name=MOCK_COMPANY_SHORT_NAME,
-                                                                        user_identifier=str(MOCK_USER_ID))
+                                                                        user_identifier=self.test_user.email)
         mock_render_template.assert_called_once()
         assert mock_render_template.call_args[0][0] == "chat.html"
         self.mock_query_service.finalize_context_rebuild.assert_not_called()

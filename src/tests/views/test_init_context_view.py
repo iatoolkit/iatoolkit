@@ -76,7 +76,10 @@ class TestInitContextApiView:
         """
         # Arrange
         # AuthService finds no session, but authenticates the API Key successfully.
-        self.mock_auth_service.verify.return_value = {"success": True}
+        self.mock_auth_service.verify.return_value = \
+            {"success": True,
+             "company_short_name": MOCK_COMPANY_SHORT_NAME,
+             "user_identifier": MOCK_EXTERNAL_USER_ID}
 
         # Act
         response = self.client.post(

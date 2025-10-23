@@ -210,12 +210,11 @@ class QueryService:
                 self._trim_context_history(context_history)
 
             # get the user profile data from the session context
-            user_info_from_session = self.session_context.get_profile_data(company.short_name, user_identifier)
+            user_profile = self.profile_service.get_profile_by_identifier(company.short_name, user_identifier)
 
-            # Combinar datos: los datos de la tarea/request tienen prioridad sobre los de la sesión
-            final_client_data = (user_info_from_session or {}).copy()
+            # combine client_data with user_profile
+            final_client_data = (user_profile or {}).copy()
             final_client_data.update(client_data)
-            final_client_data['user_id'] = user_identifier
 
             # Load attached files into the context
             files_context = self.load_files_for_context(files)

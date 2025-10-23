@@ -365,8 +365,8 @@ class IAToolkit:
                 'url_for': url_for,
                 'iatoolkit_version': self.version,
                 'app_name': 'IAToolkit',
-                'user': SessionManager.get('user'),
-                'user_company': SessionManager.get('company_short_name'),
+                'user_identifier': SessionManager.get('user_identifier'),
+                'company_short_name': SessionManager.get('company_short_name'),
                 'iatoolkit_base_url': os.environ.get('IATOOLKIT_BASE_URL', ''),
             }
 

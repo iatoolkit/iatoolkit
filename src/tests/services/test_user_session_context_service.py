@@ -85,11 +85,6 @@ class TestUserSessionContextService(unittest.TestCase):
         self.mock_redis_manager.hget.assert_called_once_with(self.session_key, 'context_version')
         self.assertEqual(result, "v1.2.3")
 
-    def test_clear_all_context(self):
-        """Prueba que se elimina la clave de sesión completa de forma atómica."""
-        self.service.clear_all_context(self.company_short_name, self.user_identifier)
-        self.mock_redis_manager.remove.assert_called_once_with(self.session_key)
-
     def test_clear_llm_history(self):
         """Prueba que se eliminan solo los campos del historial del LLM."""
         self.service.clear_llm_history(self.company_short_name, self.user_identifier)

@@ -48,7 +48,7 @@ class TestProfileService:
         assert response['success'] is True
         self.mock_dispatcher.get_user_info.assert_not_called()
         self.mock_session_context.save_profile_data.assert_called_once()
-        mock_session_manager.set.assert_any_call('user_identifier', str(self.mock_user.id))
+        mock_session_manager.set.assert_any_call('user_identifier', str(self.mock_user.email))
         mock_session_manager.set.assert_any_call('company_short_name', self.mock_company.short_name)
 
     def test_create_external_user_session_creates_web_session(self, mock_session_manager):
@@ -86,9 +86,9 @@ class TestProfileService:
         """
         response = self.service.login(self.mock_company.short_name, 'test@email.com', 'password')
 
-        mock_session_manager.set.assert_any_call('user_identifier', str(self.mock_user.id))
+        mock_session_manager.set.assert_any_call('user_identifier', str(self.mock_user.email))
         self.mock_session_context.save_profile_data.assert_called_once()
-        assert response['success'] and response['user'] == self.mock_user
+        assert response['success'] and response['user_identifier'] == self.mock_user.email
 
     def test_signup_when_user_exist_and_already_register(self, mock_session_manager):
         """This test now correctly receives the mock argument and passes."""

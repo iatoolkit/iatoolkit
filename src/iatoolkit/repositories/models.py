@@ -265,8 +265,7 @@ class UserFeedback(Base):
     id = Column(Integer, primary_key=True)
     company_id = Column(Integer, ForeignKey('iat_companies.id',
                                             ondelete='CASCADE'), nullable=False)
-    local_user_id = Column(Integer, default=0, nullable=True)
-    external_user_id = Column(String(128), default='', nullable=True)
+    user_identifier = Column(String(128), default='', nullable=True)
     message = Column(Text, nullable=False)
     rating = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=datetime.now)

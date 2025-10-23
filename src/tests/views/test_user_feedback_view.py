@@ -27,8 +27,8 @@ class TestUserFeedbackView:
 
         self.iauthentication.verify.return_value = {
             'success': True,
-            'company_id': 101,
-            'external_user_id': 'test_user_id'
+            'company_short_name': 'a_company',
+            'user_identifier': 'test_user_123'
         }
 
         # register the view
@@ -139,8 +139,7 @@ class TestUserFeedbackView:
 
         test_data = {
             'message': 'test feedback message',
-            'external_user_id': 'test_user_123',
-            'local_user_id': 456,
+            'user_identifier': 'test_user_123',
             'space': 'spaces/custom-space',
             'type': 'CUSTOM_TYPE',
             'rating': 4
@@ -154,32 +153,11 @@ class TestUserFeedbackView:
         self.feedback_service.new_feedback.assert_called_once_with(
             company_short_name='my_company',
             message='test feedback message',
-            external_user_id='test_user_123',
-            local_user_id=456,
+            user_identifier='test_user_123',
             space='spaces/custom-space',
             type='CUSTOM_TYPE',
             rating=4
         )
-
-    def test_post_with_optional_local_user_id(self):
-        """Test that local_user_id is optional and defaults to 0"""
-        self.feedback_service.new_feedback.return_value = {'message': "Feedback guardado correctamente"}
-
-        test_data = {
-            'message': 'test feedback message',
-            'external_user_id': 'test_user_123',
-            'space': 'spaces/test',
-            'type': 'MESSAGE_TRIGGER',
-            'rating': 2
-        }
-
-        response = self.client.post('/my_company/feedback', json=test_data)
-
-        assert response.status_code == 200
-
-        # Verify service was called with default local_user_id
-        call_args = self.feedback_service.new_feedback.call_args[1]
-        assert call_args['local_user_id'] == 0
 
     def test_post_with_different_rating_values(self):
         """Test that different rating values are accepted"""

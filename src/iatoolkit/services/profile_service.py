@@ -13,11 +13,9 @@ from iatoolkit.services.user_session_context_service import UserSessionContextSe
 from flask_bcrypt import Bcrypt
 from iatoolkit.infra.mail_app import MailApp
 import random
-import logging
 import re
 import secrets
 import string
-from datetime import datetime, timezone
 from iatoolkit.services.dispatcher_service import Dispatcher
 
 
@@ -59,21 +57,20 @@ class ProfileService:
                         "message": "Tu cuenta no ha sido verificada. Por favor, revisa tu correo."}
 
             # 1. Build the local user profile dictionary here.
+            # the user_profile variables are used on the LLM templates also (see in query_main.prompt)
+            user_identifier = user.email             # no longer de ID
             user_profile = {
-                "id": user.id,
-                "user_id": str(user.id),
-                "email": user.email,
+                "id": user_identifier,
+                "user_email": user.email,
                 "user_fullname": f'{user.first_name} {user.last_name}',
-                "company_id": company.id,
-                "company": company.name,
-                "company_short_name": company.short_name,
                 "user_is_local": True,
                 "extras": {}
             }
 
             # 2. Call the session creation helper with the pre-built profile.
-            self.create_web_session(company, str(user.id), user_profile)
-            return {'success': True, "user": user, "message": "Login exitoso"}
+            # user_identifier = str(user.id)
+            self.create_web_session(company, user_identifier, user_profile)
+            return {'success': True, "user_identifier": user_identifier, "message": "Login exitoso"}
         except Exception as e:
             return {'success': False, "message": str(e)}
 
@@ -86,7 +83,7 @@ class ProfileService:
             company_name=company.short_name,
             user_identifier=external_user_id
         )
-        user_profile['user_id'] = external_user_id
+
         # 2. Call the session creation helper.
         self.create_web_session(company, external_user_id, user_profile)
 
@@ -94,8 +91,16 @@ class ProfileService:
         """
         Private helper: Takes a pre-built profile, saves it to Redis, and sets the Flask cookie.
         """
-        user_profile['last_activity'] = datetime.now(timezone.utc).timestamp()
+        user_profile['company_short_name'] = company.short_name
+        user_profile['user_identifier'] = user_identifier
+        user_profile['user_id'] = user_identifier
+        user_profile['company_id'] = company.id
+        user_profile['company'] = company.name
+
+        # user_profile['last_activity'] = datetime.now(timezone.utc).timestamp()
         self.session_context.save_profile_data(company.short_name, user_identifier, user_profile)
+
+        # save this values into Flask session cookie
         SessionManager.set('user_identifier', user_identifier)
         SessionManager.set('company_short_name', company.short_name)
 
@@ -105,7 +110,6 @@ class ProfileService:
          This is the standard way to access user data for web requests.
          """
         # 1. Get identifiers from the simple Flask session cookie.
-        # BUG FIX: Read 'user_identifier' to match what is written by _create_unified_session.
         user_identifier = SessionManager.get('user_identifier')
         company_short_name = SessionManager.get('company_short_name')
 

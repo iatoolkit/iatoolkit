@@ -23,10 +23,14 @@ class UserSessionContextService:
         return f"session:{company_short_name}/{user_identifier}"
 
     def clear_all_context(self, company_short_name: str, user_identifier: str):
-        """Limpia todo el contexto de sesión para un usuario de forma atómica."""
+        """Limpia el contexto de sesión para un usuario de forma atómica."""
         session_key = self._get_session_key(company_short_name, user_identifier)
         if session_key:
-            RedisSessionManager.remove(session_key)
+            # RedisSessionManager.remove(session_key)
+            # 'profile_data' should not be deleted
+            RedisSessionManager.hdel(session_key, 'context_version')
+            RedisSessionManager.hdel(session_key, 'context_history')
+            RedisSessionManager.hdel(session_key, 'last_response_id')
 
     def clear_llm_history(self, company_short_name: str, user_identifier: str):
         """Limpia solo los campos relacionados con el historial del LLM (ID y chat)."""

@@ -58,11 +58,11 @@ class InitiateLoginView(MethodView):
                 alert_message=auth_response["message"]
             ), 400
 
-        user_id = auth_response['user'].id
+        user_identifier = auth_response['user_identifier']
 
         # 2. PREPARE and DECIDE: Call prepare_context to determine the path.
         prep_result = self.query_service.prepare_context(
-            company_short_name=company_short_name, user_identifier=str(user_id)
+            company_short_name=company_short_name, user_identifier=user_identifier
         )
 
         if prep_result.get('rebuild_needed'):
@@ -83,14 +83,15 @@ class InitiateLoginView(MethodView):
             # --- FAST PATH: Context is already cached ---
             # Render chat.html directly.
             try:
+                session_info = self.profile_service.get_current_session_info()
+                user_profile = session_info.get('profile', {})
+
                 prompts = self.prompt_service.get_user_prompts(company_short_name)
                 branding_data = self.branding_service.get_company_branding(company)
 
                 return render_template("chat.html",
-                                       company_short_name=company_short_name,
-                                       auth_method="Session",
-                                       session_jwt=None,
-                                       user_email=email,
+                                       user_is_local=user_profile.get('user_is_local'),
+                                       user_email=user_profile.get('user_email'),
                                        branding=branding_data,
                                        prompts=prompts,
                                        iatoolkit_base_url=os.getenv('IATOOLKIT_BASE_URL'),
@@ -145,11 +146,8 @@ class LoginView(MethodView):
 
             # 4. Render the final chat page.
             return render_template("chat.html",
-                                   company_short_name=company_short_name,
-                                   auth_method="Session",
-                                   session_jwt=None,
-                                   user_email=user_profile.get('email', user_identifier),
-                                   external_user_id=user_identifier if not user_profile.get('user_is_local') else '',
+                                   user_is_local=user_profile.get('user_is_local'),
+                                   user_email=user_profile.get('user_email'),
                                    branding=branding_data,
                                    prompts=prompts,
                                    iatoolkit_base_url=os.getenv('IATOOLKIT_BASE_URL'),

@@ -25,9 +25,13 @@ class UserFeedbackView(MethodView):
             return jsonify({"error_message": "Cuerpo de la solicitud JSON inválido o faltante"}), 400
 
         # get access credentials
-        iaut = self.iauthentication.verify(company_short_name, data.get("external_user_id"))
+        iaut = self.iauthentication.verify()
         if not iaut.get("success"):
             return jsonify(iaut), 401
+
+        user_identifier = iaut.get('user_identifier')
+        if not user_identifier:
+            return jsonify({"error": "Could not identify user from session or payload"}), 400
 
         message = data.get("message")
         if not message:
@@ -52,8 +56,7 @@ class UserFeedbackView(MethodView):
             response = self.user_feedback_service.new_feedback(
                 company_short_name=company_short_name,
                 message=message,
-                external_user_id=external_user_id,
-                local_user_id=local_user_id,
+                user_identifier=user_identifier,
                 space=space,
                 type=type,
                 rating=rating

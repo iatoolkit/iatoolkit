@@ -23,7 +23,7 @@ class TestLLMQueryApiView:
         self.mock_profile = MagicMock(spec=ProfileService)
 
         # Common successful auth mock
-        self.mock_auth.verify.return_value = {"success": True}
+        self.mock_auth.verify.return_value = {"success": True, 'user_identifier': MOCK_EXTERNAL_USER_ID}
         self.mock_profile.get_company_by_short_name.return_value = Company(id=1, short_name=MOCK_COMPANY_SHORT_NAME)
 
         view = LLMQueryApiView.as_view(
@@ -103,6 +103,8 @@ class TestLLMQueryApiView:
     def test_api_query_fails_if_no_external_user_id(self):
         """Tests that the view returns a 400 if external_user_id is missing."""
         # Act
+        self.mock_auth.verify.return_value = {"success": True}
+
         response = self.client.post(f'/api/{MOCK_COMPANY_SHORT_NAME}/query', json={"question": "some question"})
 
         # Assert

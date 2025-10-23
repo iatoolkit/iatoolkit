@@ -128,10 +128,6 @@ class SampleCompany(BaseCompany):
             "id": user_identifier,
             "user_email": 'sample@sample_company.com',
             "user_fullname": 'Sample User',
-            "company_id": self.company.id,
-            "company_name": self.company.name,
-            "company_short_name": self.company.short_name,
-            "is_local": False,
             "extras": {}
         }
         return user_data

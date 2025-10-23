@@ -133,7 +133,7 @@ class TestProfileRepo:
     def test_save_feedback_when_ok(self):
         company = self.repo.create_company(Company(name='my_company', short_name='my_company'))
         feedback = UserFeedback(company_id=company.id,
-                                external_user_id='flibe',
+                                user_identifier='flibe',
                                 message='feedback message',
                                 rating=4)
         new_feed = self.repo.save_feedback(feedback)

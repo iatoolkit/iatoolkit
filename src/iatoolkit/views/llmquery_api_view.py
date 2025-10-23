@@ -23,14 +23,14 @@ class LLMQueryApiView(MethodView):
         if not auth_result.get("success"):
             return jsonify({"error": auth_result.get("error_message")}), auth_result.get("status_code", 401)
 
+        # 2. Get the user identifier from the payload.
+        user_identifier = auth_result.get('user_identifier')
+        if not user_identifier:
+            return jsonify({"error": "Payload must include 'external_user_id'"}), 400
+
         data = request.get_json()
         if not data:
             return jsonify({"error": "Invalid JSON body"}), 400
-
-        # 2. Get the user identifier from the payload.
-        user_identifier = data.get('external_user_id')
-        if not user_identifier:
-            return jsonify({"error": "Payload must include 'external_user_id'"}), 400
 
         # 3. Ensure session state exists for this API user (lazy creation).
         profile = self.profile_service.get_profile_by_identifier(company_short_name, user_identifier)

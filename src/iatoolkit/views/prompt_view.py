@@ -21,7 +21,7 @@ class PromptView(MethodView):
 
     def get(self, company_short_name):
         # get access credentials
-        iaut = self.iauthentication.verify(company_short_name)
+        iaut = self.iauthentication.verify()
         if not iaut.get("success"):
             return jsonify(iaut), 401
 

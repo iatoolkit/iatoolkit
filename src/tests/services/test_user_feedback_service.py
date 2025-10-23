@@ -28,7 +28,7 @@ class TestUserFeedbackService:
         self.user_feedback = UserFeedback(
                     company_id=self.company.id,
                     message='feedback message for testing',
-                    external_user_id='flibedinsky',
+                    user_identifier='flibedinsky',
                     rating=4)
 
         # Mock successful Google Chat response
@@ -42,7 +42,7 @@ class TestUserFeedbackService:
         response = self.service.new_feedback(
                         company_short_name='my_company',
                         message='feedback message for testing',
-                        external_user_id='flibedinsky',
+                        user_identifier='flibedinsky',
                         space='spaces/test-space',
                         type='MESSAGE_TRIGGER',
                         rating=3
@@ -55,7 +55,7 @@ class TestUserFeedbackService:
         response = self.service.new_feedback(
                         company_short_name='my_company',
                         message='feedback message for testing',
-                        external_user_id='flibedinsky',
+                        user_identifier='flibedinsky',
                         space='spaces/test-space',
                         type='MESSAGE_TRIGGER',
                         rating=5
@@ -68,7 +68,7 @@ class TestUserFeedbackService:
         response = self.service.new_feedback(
                         company_short_name='my_company',
                         message='feedback message for testing',
-                        external_user_id='flibedinsky',
+                        user_identifier='flibedinsky',
                         space='spaces/test-space',
                         type='MESSAGE_TRIGGER',
                         rating=2
@@ -81,7 +81,7 @@ class TestUserFeedbackService:
         response = self.service.new_feedback(
                         company_short_name='my_company',
                         message='feedback message for testing',
-                        external_user_id='flibedinsky',
+                        user_identifier='flibedinsky',
                         space='spaces/test-space',
                         type='MESSAGE_TRIGGER',
                         rating=4
@@ -97,7 +97,7 @@ class TestUserFeedbackService:
         response = self.service.new_feedback(
             company_short_name='my_company',
             message='feedback message for testing',
-            external_user_id='flibedinsky',
+            user_identifier='flibedinsky',
             space='spaces/AAQAupQldd4',
             type='MESSAGE_TRIGGER',
             rating=5
@@ -131,7 +131,7 @@ class TestUserFeedbackService:
         response = self.service.new_feedback(
             company_short_name='my_company',
             message='feedback message for testing',
-            external_user_id='flibedinsky',
+            user_identifier='flibedinsky',
             space='spaces/AAQAupQldd4',
             type='MESSAGE_TRIGGER',
             rating=1
@@ -153,7 +153,7 @@ class TestUserFeedbackService:
         response = self.service.new_feedback(
             company_short_name='my_company',
             message='feedback message for testing',
-            external_user_id='flibedinsky',
+            user_identifier='flibedinsky',
             space='spaces/AAQAupQldd4',
             type='MESSAGE_TRIGGER',
             rating=3
@@ -179,7 +179,7 @@ class TestUserFeedbackService:
         response = self.service.new_feedback(
             company_short_name='my_company',
             message='feedback message for testing',
-            external_user_id='flibedinsky',
+            user_identifier='flibedinsky',
             space='spaces/AAQAupQldd4',
             type='MESSAGE_TRIGGER',
             rating=4
@@ -198,7 +198,7 @@ class TestUserFeedbackService:
         self.service.new_feedback(
             company_short_name='test_company',
             message='Test feedback message',
-            external_user_id='user123',
+            user_identifier='user123',
             space='spaces/test-space',
             type='MESSAGE_TRIGGER',
             rating=5
@@ -206,45 +206,6 @@ class TestUserFeedbackService:
 
         call_args = self.google_chat_app.send_message.call_args[1]['message_data']
         expected_message = "*Nuevo feedback de test_company*:\n*Usuario:* user123\n*Mensaje:* Test feedback message\n*Calificación:* 5"
-        assert call_args['message']['text'] == expected_message
-        assert call_args['type'] == 'MESSAGE_TRIGGER'
-        assert call_args['space']['name'] == 'spaces/test-space'
-
-    def test_feedback_message_format_with_local_user_id(self):
-        """Test the format of the Google Chat message with local_user_id"""
-        self.profile_repo.save_feedback.return_value = UserFeedback
-
-        self.service.new_feedback(
-            company_short_name='test_company',
-            message='Test feedback message',
-            local_user_id=456,
-            space='spaces/test-space',
-            type='MESSAGE_TRIGGER',
-            rating=2
-        )
-
-        call_args = self.google_chat_app.send_message.call_args[1]['message_data']
-        expected_message = "*Nuevo feedback de test_company*:\n*Usuario:* 456\n*Mensaje:* Test feedback message\n*Calificación:* 2"
-        assert call_args['message']['text'] == expected_message
-        assert call_args['type'] == 'MESSAGE_TRIGGER'
-        assert call_args['space']['name'] == 'spaces/test-space'
-
-    def test_feedback_message_format_with_both_user_ids(self):
-        """Test that external_user_id takes precedence over local_user_id"""
-        self.profile_repo.save_feedback.return_value = UserFeedback
-
-        self.service.new_feedback(
-            company_short_name='test_company',
-            message='Test feedback message',
-            external_user_id='user123',
-            local_user_id=456,
-            space='spaces/test-space',
-            type='MESSAGE_TRIGGER',
-            rating=4
-        )
-
-        call_args = self.google_chat_app.send_message.call_args[1]['message_data']
-        expected_message = "*Nuevo feedback de test_company*:\n*Usuario:* user123\n*Mensaje:* Test feedback message\n*Calificación:* 4"
         assert call_args['message']['text'] == expected_message
         assert call_args['type'] == 'MESSAGE_TRIGGER'
         assert call_args['space']['name'] == 'spaces/test-space'
@@ -270,7 +231,7 @@ class TestUserFeedbackService:
         self.service.new_feedback(
             company_short_name='test_company',
             message='Test feedback message',
-            external_user_id='user123',
+            user_identifier='user123',
             space='spaces/test-space',
             type='MESSAGE_TRIGGER',
             rating=3
@@ -286,7 +247,7 @@ class TestUserFeedbackService:
         self.service.new_feedback(
             company_short_name='test_company',
             message='Test feedback message',
-            external_user_id='user123',
+            user_identifier='user123',
             space='spaces/custom-space-id',
             type='CUSTOM_TYPE',
             rating=1
@@ -305,7 +266,7 @@ class TestUserFeedbackService:
         self.service.new_feedback(
             company_short_name='test_company',
             message='Test feedback message',
-            external_user_id='user123',
+            user_identifier='user123',
             space='spaces/test-space',
             type='MESSAGE_TRIGGER',
             rating=5
@@ -320,7 +281,7 @@ class TestUserFeedbackService:
         # Verify the rating was set correctly
         assert saved_feedback.rating == 5
         assert saved_feedback.message == 'Test feedback message'
-        assert saved_feedback.external_user_id == 'user123'
+        assert saved_feedback.user_identifier == 'user123'
         assert saved_feedback.company_id == self.company.id
 
     def test_feedback_with_different_rating_values(self):
@@ -331,7 +292,7 @@ class TestUserFeedbackService:
         response1 = self.service.new_feedback(
             company_short_name='test_company',
             message='Test feedback message',
-            external_user_id='user123',
+            user_identifier='user123',
             space='spaces/test-space',
             type='MESSAGE_TRIGGER',
             rating=1
@@ -342,7 +303,7 @@ class TestUserFeedbackService:
         response2 = self.service.new_feedback(
             company_short_name='test_company',
             message='Test feedback message',
-            external_user_id='user123',
+            user_identifier='user123',
             space='spaces/test-space',
             type='MESSAGE_TRIGGER',
             rating=5
@@ -364,7 +325,7 @@ class TestUserFeedbackService:
         self.service.new_feedback(
             company_short_name='test_company',
             message='Test feedback message',
-            external_user_id='user123',
+            user_identifier='user123',
             space='spaces/test-space',
             type='MESSAGE_TRIGGER',
             rating=4

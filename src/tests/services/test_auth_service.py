@@ -54,19 +54,19 @@ class TestAuthService:
 
         # A valid API key is found
         mock_company = Company(id=1, short_name="apico")
-        mock_api_key_entry = ApiKey(key="valid-api-key", company=mock_company)
+        mock_api_key_entry = ApiKey(key="valid-api-key")
+        mock_api_key_entry.company = mock_company
         self.mock_profile_service.get_active_api_key_entry.return_value = mock_api_key_entry
 
         # Act
         # We must wrap the call in a request context to simulate the headers
-        with self.app.test_request_context(headers={'X-Api-Key': 'valid-api-key'}):
+        with self.app.test_request_context(headers={'Authorization': 'Bearer valid-api-key'}):
             result = self.service.verify()
 
         # Assert
         assert result['success'] is True
         assert result['company_short_name'] == "apico"
-        # The verify method's job is to validate the key, not find the user ID.
-        assert 'user_identifier' not in result
+        assert result['user_identifier'] == ""
         self.mock_profile_service.get_active_api_key_entry.assert_called_once_with("valid-api-key")
 
     def test_verify_fails_with_invalid_api_key(self):
@@ -78,13 +78,13 @@ class TestAuthService:
         self.mock_profile_service.get_active_api_key_entry.return_value = None  # Key not found
 
         # Act
-        with self.app.test_request_context(headers={'X-Api-Key': 'invalid-api-key'}):
+        with self.app.test_request_context(headers={'Authorization': 'Bearer valid-api-key'}):
             result = self.service.verify()
 
         # Assert
         assert result['success'] is False
         assert result['status_code'] == 401
-        assert "Invalid or inactive API Key" in result['error_message']
+        assert "Invalid or inactive API Key" in result['error']
 
     def test_verify_fails_with_no_credentials(self):
         """
@@ -100,4 +100,4 @@ class TestAuthService:
         # Assert
         assert result['success'] is False
         assert result['status_code'] == 401
-        assert "No session cookie or API Key provided" in result['error_message']
+        assert "No session cookie or API Key provided" in result['error']

@@ -44,7 +44,7 @@ class InitiateExternalChatView(MethodView):
 
         external_user_id = data['external_user_id']
         if not external_user_id:
-            return jsonify({"error": "missin external_user_id"}), 404
+            return jsonify({"error": "missing external_user_id"}), 404
 
         # 1. Authenticate the API call.
         iaut = self.iauthentication.verify()
@@ -74,11 +74,16 @@ class InitiateExternalChatView(MethodView):
         else:
             # fast path, the context is already on the cache, render the chat directly
             try:
+                session_info = self.profile_service.get_current_session_info()
+                user_profile = session_info.get('profile', {})
+
                 prompts = self.prompt_service.get_user_prompts(company_short_name)
                 branding_data = self.branding_service.get_company_branding(company)
 
                 return render_template("chat.html",
                                        company_short_name=company_short_name,
+                                       user_is_local=user_profile.get('user_is_local'),
+                                       user_email=user_profile.get('user_email'),
                                        branding=branding_data,
                                        prompts=prompts,
                                        iatoolkit_base_url=os.getenv('IATOOLKIT_BASE_URL'),

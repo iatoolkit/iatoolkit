@@ -43,7 +43,7 @@ class FileStoreApiView(MethodView):
                 return jsonify({"error": f"La empresa {company_short_name} no existe"}), 400
 
             # get access credentials
-            iaut = self.iauthentication.verify(company_short_name, requested_name)
+            iaut = self.iauthentication.verify()
             if not iaut.get("success"):
                 return jsonify(iaut), 401
 

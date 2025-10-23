@@ -6,6 +6,7 @@
 from flask import request
 from injector import inject
 from iatoolkit.services.profile_service import ProfileService
+from flask import request
 
 
 class AuthService:
@@ -38,27 +39,36 @@ class AuthService:
             # User is authenticated via a web session cookie.
             return {
                 "success": True,
-                "user_identifier": session_info['user_identifier'],
-                "company_short_name": session_info['company_short_name']
+                "company_short_name": session_info['company_short_name'],
+                "user_identifier": session_info['user_identifier']
             }
 
         # --- Priority 2: Check for a valid API Key in headers ---
-        api_key = request.headers.get('X-Api-Key')
+        api_key = None
+        auth = request.headers.get('Authorization', '')
+        if isinstance(auth, str) and auth.lower().startswith('bearer '):
+            api_key =  auth.split(' ', 1)[1].strip()
+
         if api_key:
             api_key_entry = self.profile_service.get_active_api_key_entry(api_key)
             if not api_key_entry:
-                return {"success": False, "error_message": "Invalid or inactive API Key", "status_code": 401}
+                return {"success": False, "error": "Invalid or inactive API Key", "status_code": 401}
+
+            # obtain the company from the api_key_entry
+            company = api_key_entry.company
 
             # For API calls, the external_user_id must be provided in the request.
-            # This check is now the responsibility of the API endpoint view itself.
-            company = api_key_entry.company
+            user_identifier = ''
+            if request.is_json:
+                data = request.get_json() or {}
+                user_identifier = data.get('external_user_id', '')
+
             return {
                 "success": True,
-                # For API calls, the user_identifier is not known at this stage,
-                # but we know the company. The view will extract the user ID.
-                "company_short_name": company.short_name
+                "company_short_name": company.short_name,
+                "user_identifier": user_identifier
             }
 
         # --- Failure: No valid credentials found ---
-        return {"success": False, "error_message": "Authentication required. No session cookie or API Key provided.",
+        return {"success": False, "error": "Authentication required. No session cookie or API Key provided.",
                 "status_code": 401}

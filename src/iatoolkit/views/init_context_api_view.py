@@ -3,7 +3,7 @@ from injector import inject
 from iatoolkit.services.query_service import QueryService
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.auth_service import AuthService
-from flask import jsonify, request, render_template
+from flask import jsonify, request
 import logging
 
 
@@ -34,13 +34,6 @@ class InitContextApiView(MethodView):
             return jsonify({"error": auth_result.get("error_message")}), auth_result.get("status_code", 401)
 
         user_identifier = auth_result.get('user_identifier')
-
-        # If it was an API call, the user_identifier must be in the body.
-        # If it was a web call, `user_identifier` will already be set from the session.
-        if not user_identifier and request.is_json:
-            data = request.get_json() or {}
-            user_identifier = data.get('external_user_id')
-
         if not user_identifier:
             return jsonify({"error": "Could not identify user from session or payload"}), 400
 
