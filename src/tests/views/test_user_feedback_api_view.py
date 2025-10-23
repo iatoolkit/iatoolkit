@@ -45,7 +45,7 @@ class TestUserFeedbackView:
         response = self.client.post(self.url,
                                     json={})
 
-        assert response.status_code == 400
+        assert response.status_code == 402
         self.feedback_service.new_feedback.assert_not_called()
 
     def test_post_when_auth_error(self):
