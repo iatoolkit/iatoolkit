@@ -32,7 +32,8 @@ class TestLLMQueryApiView:
             query_service=self.mock_query,
             profile_service=self.mock_profile
         )
-        self.app.add_url_rule('/api/<company_short_name>/query', view_func=view, methods=['POST'])
+        self.app.add_url_rule('/<company_short_name>/api/query', view_func=view, methods=['POST'])
+        self.url = f'/{MOCK_COMPANY_SHORT_NAME}/api/query'
 
     def test_api_query_for_first_time_user(self):
         """
@@ -43,7 +44,7 @@ class TestLLMQueryApiView:
         self.mock_query.llm_query.return_value = {"answer": "Welcome, new user!"}
 
         # Act
-        response = self.client.post(f'/api/{MOCK_COMPANY_SHORT_NAME}/query',
+        response = self.client.post(self.url,
                                     json={"external_user_id": MOCK_EXTERNAL_USER_ID, "question": "First time"})
 
         # Assert
@@ -70,7 +71,7 @@ class TestLLMQueryApiView:
         self.mock_query.llm_query.return_value = {"answer": "Welcome back!"}
 
         # Act
-        response = self.client.post(f'/api/{MOCK_COMPANY_SHORT_NAME}/query',
+        response = self.client.post(self.url,
                                     json={"external_user_id": MOCK_EXTERNAL_USER_ID})
 
         # Assert
@@ -93,20 +94,20 @@ class TestLLMQueryApiView:
         self.mock_auth.verify.return_value = {"success": False, "error_message": "Invalid API Key", "status_code": 401}
 
         # Act
-        response = self.client.post(f'/api/{MOCK_COMPANY_SHORT_NAME}/query', json={"external_user_id": "any"})
+        response = self.client.post(self.url, json={"user_identifier": "any"})
 
         # Assert
         assert response.status_code == 401
         assert "Invalid API Key" in response.json['error']
         self.mock_query.llm_query.assert_not_called()
 
-    def test_api_query_fails_if_no_external_user_id(self):
-        """Tests that the view returns a 400 if external_user_id is missing."""
+    def test_api_query_fails_if_no_user_identifier(self):
+        """Tests that the view returns a 400 if user_identifier is missing."""
         # Act
         self.mock_auth.verify.return_value = {"success": True}
 
-        response = self.client.post(f'/api/{MOCK_COMPANY_SHORT_NAME}/query', json={"question": "some question"})
+        response = self.client.post(self.url, json={"question": "some question"})
 
         # Assert
         assert response.status_code == 400
-        assert "Payload must include 'external_user_id'" in response.json['error']
+        assert "Payload must include 'user_identifier'" in response.json['error']

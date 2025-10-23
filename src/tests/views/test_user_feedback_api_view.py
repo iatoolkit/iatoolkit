@@ -6,7 +6,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 from flask import Flask
-from iatoolkit.views.user_feedback_view import UserFeedbackView
+from iatoolkit.views.user_feedback_api_view import UserFeedbackApiView
 from iatoolkit.services.user_feedback_service import UserFeedbackService
 from iatoolkit.services.auth_service import AuthService
 
@@ -32,16 +32,17 @@ class TestUserFeedbackView:
         }
 
         # register the view
-        self.feedback_view = UserFeedbackView.as_view("feedback",
+        self.feedback_view = UserFeedbackApiView.as_view("feedback",
                                           user_feedback_service=self.feedback_service,
                                             iauthentication=self.iauthentication)
-        self.app.add_url_rule('/<company_short_name>/feedback',
+        self.app.add_url_rule('/<company_short_name>/api/feedback',
                               view_func=self.feedback_view,
                               methods=["POST"])
+        self.url = '/my_company/api/feedback'
 
 
     def test_post_when_missing_data(self):
-        response = self.client.post('/my_company/feedback',
+        response = self.client.post(self.url,
                                     json={})
 
         assert response.status_code == 400
@@ -49,53 +50,57 @@ class TestUserFeedbackView:
 
     def test_post_when_auth_error(self):
         self.iauthentication.verify.return_value = {'error_message': 'error in authentication'}
-        response = self.client.post('/my_company/feedback',
-                                    json={'external_user_id': 'flibe'})
+        response = self.client.post(self.url,
+                                    json={})
 
         assert response.status_code == 401
         assert response.json["error_message"] == 'error in authentication'
 
+    def test_post_when_empty_body(self):
+        response = self.client.post(self.url,
+                                    json={})
+
+        assert response.status_code == 402
+        self.feedback_service.new_feedback.assert_not_called()
+
     def test_post_when_missing_message(self):
-        response = self.client.post('/my_company/feedback',
-                                    json={'external_user_id': 'flibe'})
+        response = self.client.post(self.url,
+                                    json={'space': 'spaces/test'})
 
         assert response.status_code == 400
         assert response.json["error_message"] == 'Falta el mensaje de feedback'
         self.feedback_service.new_feedback.assert_not_called()
 
     def test_post_when_missing_space(self):
-        response = self.client.post('/my_company/feedback',
-                                    json={'external_user_id': 'flibe', 'message': 'test message'})
+        response = self.client.post(self.url,
+                                    json={'message': 'test message'})
 
         assert response.status_code == 400
         assert response.json["error_message"] == 'Falta el espacio de Google Chat'
         self.feedback_service.new_feedback.assert_not_called()
 
     def test_post_when_missing_type(self):
-        response = self.client.post('/my_company/feedback',
-                                    json={'external_user_id': 'flibe', 'message': 'test message', 'space': 'spaces/test'})
+        response = self.client.post(self.url,
+                                    json={'message': 'test message', 'space': 'spaces/test'})
 
         assert response.status_code == 400
         assert response.json["error_message"] == 'Falta el tipo de feedback'
         self.feedback_service.new_feedback.assert_not_called()
 
     def test_post_when_missing_rating(self):
-        response = self.client.post('/my_company/feedback',
-                                    json={'external_user_id': 'flibe', 'message': 'test message', 'space': 'spaces/test', 'type': 'MESSAGE_TRIGGER'})
+        response = self.client.post(self.url,
+                                    json={'message': 'test message', 'space': 'spaces/test', 'type': 'MESSAGE_TRIGGER'})
 
         assert response.status_code == 400
         assert response.json["error_message"] == 'Falta la calificación'
         self.feedback_service.new_feedback.assert_not_called()
 
-    @patch("iatoolkit.views.user_feedback_view.render_template")
-    def test_post_when_exception(self, mock_render_template):
-        mock_render_template.return_value = "<html><body></body></html>"
+    def test_post_when_exception(self):
         self.feedback_service.new_feedback.side_effect = Exception('error')
 
-        response = self.client.post('/my_company/feedback',
+        response = self.client.post(self.url,
                                     json={
                                         'message': 'feedback message', 
-                                        'external_user_id': 'flibe',
                                         'space': 'spaces/test',
                                         'type': 'MESSAGE_TRIGGER',
                                         'rating': 4
@@ -106,10 +111,9 @@ class TestUserFeedbackView:
     def test_post_when_service_error(self):
         self.feedback_service.new_feedback.return_value = {'error': 'an error'}
 
-        response = self.client.post('/my_company/feedback',
+        response = self.client.post(self.url,
                                     json={
                                         'message': 'feedback message', 
-                                        'external_user_id': 'flibe',
                                         'space': 'spaces/test',
                                         'type': 'MESSAGE_TRIGGER',
                                         'rating': 3
@@ -121,10 +125,9 @@ class TestUserFeedbackView:
     def test_post_when_ok(self):
         self.feedback_service.new_feedback.return_value = {'message': "Feedback guardado correctamente"}
 
-        response = self.client.post('/my_company/feedback',
+        response = self.client.post(self.url,
                                     json={
                                         'message': 'feedback message', 
-                                        'external_user_id': 'flibe',
                                         'space': 'spaces/test',
                                         'type': 'MESSAGE_TRIGGER',
                                         'rating': 5
@@ -139,13 +142,12 @@ class TestUserFeedbackView:
 
         test_data = {
             'message': 'test feedback message',
-            'user_identifier': 'test_user_123',
             'space': 'spaces/custom-space',
             'type': 'CUSTOM_TYPE',
             'rating': 4
         }
 
-        response = self.client.post('/my_company/feedback', json=test_data)
+        response = self.client.post(self.url, json=test_data)
 
         assert response.status_code == 200
 
@@ -164,10 +166,9 @@ class TestUserFeedbackView:
         self.feedback_service.new_feedback.return_value = {'message': "Feedback guardado correctamente"}
 
         # Test with rating 1
-        response1 = self.client.post('/my_company/feedback',
+        response1 = self.client.post(self.url,
                                     json={
                                         'message': 'feedback message', 
-                                        'external_user_id': 'flibe',
                                         'space': 'spaces/test',
                                         'type': 'MESSAGE_TRIGGER',
                                         'rating': 1
@@ -175,10 +176,9 @@ class TestUserFeedbackView:
         assert response1.status_code == 200
 
         # Test with rating 5
-        response2 = self.client.post('/my_company/feedback',
+        response2 = self.client.post(self.url,
                                     json={
                                         'message': 'feedback message', 
-                                        'external_user_id': 'flibe',
                                         'space': 'spaces/test',
                                         'type': 'MESSAGE_TRIGGER',
                                         'rating': 5

@@ -75,7 +75,6 @@ class InitiateLoginView(MethodView):
             return render_template(
                 "onboarding_shell.html",
                 iframe_src_url=target_url,
-                external_user_id='',
                 branding=branding_data,
                 onboarding_cards=onboarding_cards
             )

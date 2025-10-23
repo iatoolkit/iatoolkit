@@ -55,12 +55,6 @@ class TestQueryService:
                 session_context=self.mock_session_context
             )
 
-        # --- Configuración común de mocks ---
-        def mock_resolver(external_user_id=None, local_user_id=0):
-            if external_user_id: return (external_user_id, False)
-            if local_user_id: return (str(local_user_id), True)
-            return (None, False)
-
 
         self.mock_company = Company(id=1, short_name=MOCK_COMPANY_SHORT_NAME)
         self.mock_profile_repo.get_company_by_short_name.return_value = self.mock_company

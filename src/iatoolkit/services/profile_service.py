@@ -84,8 +84,11 @@ class ProfileService:
             user_identifier=external_user_id
         )
 
-        # 2. Call the session creation helper.
-        self.create_web_session(company, external_user_id, user_profile)
+        # 2. Call the session creation helper with external_user_id as user_identifier
+        self.create_web_session(
+            company=company,
+            user_identifier=external_user_id,
+            user_profile=user_profile)
 
     def create_web_session(self, company: Company, user_identifier: str, user_profile: dict):
         """

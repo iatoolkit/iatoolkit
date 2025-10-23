@@ -3,7 +3,7 @@
 #
 # IAToolkit is open source software.
 
-from flask import request, jsonify, render_template
+from flask import request, jsonify
 from flask.views import MethodView
 from iatoolkit.services.user_feedback_service import UserFeedbackService
 from iatoolkit.services.auth_service import AuthService
@@ -11,7 +11,7 @@ from injector import inject
 import logging
 
 
-class UserFeedbackView(MethodView):
+class UserFeedbackApiView(MethodView):
     @inject
     def __init__(self,
                  iauthentication: AuthService,
@@ -20,10 +20,6 @@ class UserFeedbackView(MethodView):
         self.user_feedback_service = user_feedback_service
 
     def post(self, company_short_name):
-        data = request.get_json()
-        if not data:
-            return jsonify({"error_message": "Cuerpo de la solicitud JSON inválido o faltante"}), 400
-
         # get access credentials
         iaut = self.iauthentication.verify()
         if not iaut.get("success"):
@@ -32,6 +28,10 @@ class UserFeedbackView(MethodView):
         user_identifier = iaut.get('user_identifier')
         if not user_identifier:
             return jsonify({"error": "Could not identify user from session or payload"}), 400
+
+        data = request.get_json()
+        if not data:
+            return jsonify({"error_message": "Cuerpo de la solicitud JSON inválido o faltante"}), 402
 
         message = data.get("message")
         if not message:
@@ -48,9 +48,6 @@ class UserFeedbackView(MethodView):
         rating = data.get("rating")
         if not rating:
             return jsonify({"error_message": "Falta la calificación"}), 400
-
-        external_user_id = data.get("external_user_id")
-        local_user_id = data.get("local_user_id", 0)
 
         try:
             response = self.user_feedback_service.new_feedback(
@@ -69,9 +66,6 @@ class UserFeedbackView(MethodView):
         except Exception as e:
             logging.exception(
                 f"Error inesperado al procesar feedback para company {company_short_name}: {e}")
-            if local_user_id:
-                return render_template("error.html",
-                                       message="Ha ocurrido un error inesperado."), 500
-            else:
-                return jsonify({"error_message": str(e)}), 500
+
+            return jsonify({"error_message": str(e)}), 500
 

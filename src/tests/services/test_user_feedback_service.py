@@ -192,7 +192,7 @@ class TestUserFeedbackService:
         assert 'Feedback guardado correctamente' == response['message']
 
     def test_feedback_message_format_with_external_user_id(self):
-        """Test the format of the Google Chat message with external_user_id"""
+        """Test the format of the Google Chat message """
         self.profile_repo.save_feedback.return_value = UserFeedback
 
         self.service.new_feedback(

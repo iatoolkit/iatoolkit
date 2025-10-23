@@ -26,7 +26,7 @@ class LLMQueryApiView(MethodView):
         # 2. Get the user identifier from the payload.
         user_identifier = auth_result.get('user_identifier')
         if not user_identifier:
-            return jsonify({"error": "Payload must include 'external_user_id'"}), 400
+            return jsonify({"error": "Payload must include 'user_identifier'"}), 400
 
         data = request.get_json()
         if not data:

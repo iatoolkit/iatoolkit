@@ -11,7 +11,7 @@ from injector import inject
 import logging
 
 
-class PromptView(MethodView):
+class PromptApiView(MethodView):
     @inject
     def __init__(self,
                  iauthentication: AuthService,

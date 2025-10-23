@@ -2,7 +2,7 @@
 import pytest
 from flask import Flask
 from unittest.mock import MagicMock
-from iatoolkit.views.history_view import HistoryView
+from iatoolkit.views.history_api_view import HistoryApiView
 from iatoolkit.services.history_service import HistoryService
 from iatoolkit.services.profile_service import ProfileService
 
@@ -19,18 +19,19 @@ class TestHistoryView:
         self.app = Flask(__name__)
         self.app.testing = True
         self.client = self.app.test_client()
+        self.url = f'/{MOCK_COMPANY_SHORT_NAME}/api/history'
 
         # Mocks para los servicios inyectados
         self.mock_profile_service = MagicMock(spec=ProfileService)
         self.mock_history_service = MagicMock(spec=HistoryService)
 
         # Registrar la vista con las dependencias correctas
-        view_func = HistoryView.as_view(
+        view_func = HistoryApiView.as_view(
             'history',
             profile_service=self.mock_profile_service,
             history_service=self.mock_history_service
         )
-        self.app.add_url_rule('/<company_short_name>/history', view_func=view_func, methods=['POST'])
+        self.app.add_url_rule('/<company_short_name>/api/history', view_func=view_func, methods=['POST'])
 
     def test_get_history_success(self):
         """
@@ -49,7 +50,7 @@ class TestHistoryView:
         self.mock_history_service.get_history.return_value = mock_history_response
 
         # Act
-        response = self.client.post(f'/{MOCK_COMPANY_SHORT_NAME}/history')
+        response = self.client.post(self.url)
 
         # Assert
         assert response.status_code == 200
@@ -71,7 +72,7 @@ class TestHistoryView:
         self.mock_profile_service.get_current_session_info.return_value = {}
 
         # Act
-        response = self.client.post(f'/{MOCK_COMPANY_SHORT_NAME}/history')
+        response = self.client.post(self.url)
 
         # Assert
         assert response.status_code == 401
@@ -91,7 +92,7 @@ class TestHistoryView:
         }
 
         # Act
-        response = self.client.post(f'/{MOCK_COMPANY_SHORT_NAME}/history')
+        response = self.client.post(self.url)
 
         # Assert
         assert response.status_code == 400
@@ -109,7 +110,7 @@ class TestHistoryView:
         self.mock_history_service.get_history.side_effect = Exception("A critical error occurred")
 
         # Act
-        response = self.client.post(f'/{MOCK_COMPANY_SHORT_NAME}/history')
+        response = self.client.post(self.url)
 
         # Assert
         assert response.status_code == 500

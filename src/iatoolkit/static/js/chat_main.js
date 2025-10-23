@@ -173,7 +173,7 @@ const handleChatMessage = async function () {
             prompt_name: promptName,
             client_data: clientData,
             files: filesBase64.map(f => ({ filename: f.name, content: f.base64 })),
-            external_user_id: window.externalUserId
+            user_identifier: window.user_identifier
         };
 
         const responseData = await callLLMAPI("/llm_query", data, "POST");

@@ -98,7 +98,7 @@ $(document).ready(function () {
 const sendFeedback = async function(message) {
     const activeStars = $('.star.active').length;
     const data = {
-        "external_user_id": window.externalUserId,
+        "user_identifier": window.user_identifier,
         "message": message,
         "rating": activeStars,
         "space": "spaces/AAQAupQldd4", // Este valor podría necesitar ser dinámico

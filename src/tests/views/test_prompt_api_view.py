@@ -6,7 +6,7 @@
 import pytest
 from unittest.mock import MagicMock
 from flask import Flask
-from iatoolkit.views.prompt_view import PromptView
+from iatoolkit.views.prompt_api_view import PromptApiView
 from iatoolkit.services.prompt_manager_service import PromptService
 from iatoolkit.services.auth_service import AuthService
 
@@ -26,15 +26,16 @@ class TestPromptView:
         self.client = self.app.test_client()
         self.prompt_service = MagicMock(spec=PromptService)
         self.iauthentication = MagicMock(spec=AuthService)
+        self.url = '/test_company/api/prompts'
 
         # Default to successful authentication
         self.iauthentication.verify.return_value = {'success': True, 'user_identifier': 'test_user_id',}
 
         # Register the view with mocked dependencies
-        prompt_view = PromptView.as_view("prompt",
+        prompt_view = PromptApiView.as_view("prompt",
                                          iauthentication=self.iauthentication,
                                          prompt_service=self.prompt_service)
-        self.app.add_url_rule('/<company_short_name>/prompts',
+        self.app.add_url_rule('/<company_short_name>/api/prompts',
                               view_func=prompt_view,
                               methods=["GET"])
 
@@ -45,7 +46,7 @@ class TestPromptView:
             'error_message': 'Authentication token is invalid'
         }
 
-        response = self.client.get('/test_company/prompts')
+        response = self.client.get(self.url)
 
         assert response.status_code == 401
         assert response.json['error_message'] == 'Authentication token is invalid'
@@ -57,7 +58,7 @@ class TestPromptView:
             'error': 'Company not configured for prompts'
         }
 
-        response = self.client.get('/test_company/prompts')
+        response = self.client.get(self.url)
 
         assert response.status_code == 402
         assert response.json['error_message'] == 'Company not configured for prompts'
@@ -68,7 +69,7 @@ class TestPromptView:
         """Test response when the prompt service raises an unhandled exception."""
         self.prompt_service.get_user_prompts.side_effect = Exception('Unexpected database error')
 
-        response = self.client.get('/test_company/prompts')
+        response = self.client.get(self.url)
 
         assert response.status_code == 500
         assert response.json['error_message'] == 'Unexpected database error'
@@ -83,7 +84,7 @@ class TestPromptView:
         }
         self.prompt_service.get_user_prompts.return_value = mock_response
 
-        response = self.client.get('/test_company/prompts')
+        response = self.client.get(self.url)
 
         assert response.status_code == 200
         assert response.json == mock_response
@@ -95,7 +96,7 @@ class TestPromptView:
         mock_response = {'message': []}
         self.prompt_service.get_user_prompts.return_value = mock_response
 
-        response = self.client.get('/test_company/prompts')
+        response = self.client.get(self.url)
 
         assert response.status_code == 200
         assert response.json == mock_response
@@ -105,7 +106,7 @@ class TestPromptView:
         self.prompt_service.get_user_prompts.return_value = {'message': []}
 
         company_name = 'another-company'
-        self.client.get(f'/{company_name}/prompts')
+        self.client.get(f'/{company_name}/api/prompts')
 
         self.iauthentication.verify.assert_called_once_with()
         self.prompt_service.get_user_prompts.assert_called_once_with(company_name)

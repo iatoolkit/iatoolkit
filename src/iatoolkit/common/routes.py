@@ -6,7 +6,7 @@
 from flask import render_template, redirect, flash, url_for,send_from_directory, current_app, abort
 from iatoolkit.common.session_manager import SessionManager
 from flask import jsonify
-from iatoolkit.views.history_view import HistoryView
+from iatoolkit.views.history_api_view import HistoryApiView
 import os
 
 
@@ -33,8 +33,8 @@ def register_views(injector, app):
     from iatoolkit.views.forgot_password_view import ForgotPasswordView
     from iatoolkit.views.change_password_view import ChangePasswordView
     from iatoolkit.views.file_store_api_view import FileStoreApiView
-    from iatoolkit.views.user_feedback_view import UserFeedbackView
-    from iatoolkit.views.prompt_view import PromptView
+    from iatoolkit.views.user_feedback_api_view import UserFeedbackApiView
+    from iatoolkit.views.prompt_api_view import PromptApiView
     from iatoolkit.views.chat_token_request_view import ChatTokenRequestView
 
     # iatoolkit home page
@@ -73,14 +73,14 @@ def register_views(injector, app):
     # this is the same function as above, but with api-key
     app.add_url_rule('/<company_short_name>/api/llm_query', view_func=LLMQueryApiView.as_view('llm_query_api'))
 
-    # chat buttons are here
+    # chat buttons are here on
 
     # open the promt directory
-    app.add_url_rule('/<company_short_name>/prompts', view_func=PromptView.as_view('prompt'))
+    app.add_url_rule('/<company_short_name>/api/prompts', view_func=PromptApiView.as_view('prompt'))
 
     # feedback and history
-    app.add_url_rule('/<company_short_name>/feedback', view_func=UserFeedbackView.as_view('feedback'))
-    app.add_url_rule('/<company_short_name>/history', view_func=HistoryView.as_view('history'))
+    app.add_url_rule('/<company_short_name>/api/feedback', view_func=UserFeedbackApiView.as_view('feedback'))
+    app.add_url_rule('/<company_short_name>/api/history', view_func=HistoryApiView.as_view('history'))
 
     # tasks management endpoints: create task, and review answer
     app.add_url_rule('/tasks', view_func=TaskView.as_view('tasks'))

@@ -11,7 +11,7 @@ from injector import inject
 import logging
 
 
-class HistoryView(MethodView):
+class HistoryApiView(MethodView):
     """
     Handles requests from the web UI to fetch a user's query history.
     Authentication is based on the active Flask session.

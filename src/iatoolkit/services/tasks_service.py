@@ -101,7 +101,7 @@ class TaskService:
         # call the IA
         response = self.query_service.llm_query(
             task=task,
-            local_user_id=0,
+            user_identifier='task-monitor',
             company_short_name=task.company.short_name,
             prompt_name=task.task_type.name,
             client_data=task.client_data,
