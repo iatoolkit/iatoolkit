@@ -26,8 +26,8 @@ def register_views(injector, app):
     from iatoolkit.views.tasks_view import TaskView
     from iatoolkit.views.tasks_review_view import TaskReviewView
     from iatoolkit.views.login_test_view import LoginTest
-    from iatoolkit.views.login_view import LoginView, InitiateLoginView
-    from iatoolkit.views.external_login_view import InitiateExternalChatView
+    from iatoolkit.views.login_view import LoginView, FinalizeContextView
+    from iatoolkit.views.external_login_view import ExternalLoginView
     from iatoolkit.views.signup_view import SignupView
     from iatoolkit.views.verify_user_view import VerifyAccountView
     from iatoolkit.views.forgot_password_view import ForgotPasswordView
@@ -46,8 +46,8 @@ def register_views(injector, app):
 
     # this functions are for login external users (with api-key)
     # only the first one should be used from an external app
-    app.add_url_rule('/<company_short_name>/initiate_external_chat',
-                     view_func=InitiateExternalChatView.as_view('initiate_external_chat'))
+    app.add_url_rule('/<company_short_name>/external_login',
+                     view_func=ExternalLoginView.as_view('external_login'))
 
     # this endpoint is for requesting a chat token for external users
     app.add_url_rule('/auth/chat_token',
@@ -55,8 +55,8 @@ def register_views(injector, app):
 
     # login for the iatoolkit integrated frontend
     # this is the main login endpoint for the frontend
-    app.add_url_rule('/<company_short_name>/chat', view_func=InitiateLoginView.as_view('chat'))
     app.add_url_rule('/<company_short_name>/login', view_func=LoginView.as_view('login'))
+    app.add_url_rule('/<company_short_name>/finalize_context_load', view_func=FinalizeContextView.as_view('finalize_context_load'))
 
     # register new user, account verification and forgot password
     app.add_url_rule('/<company_short_name>/signup',view_func=SignupView.as_view('signup'))

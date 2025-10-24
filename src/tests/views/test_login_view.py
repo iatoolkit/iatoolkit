@@ -1,122 +1,184 @@
-# test_login_view.py
+# tests/views/test_login_view.py
+# IAToolkit is open source software.
+
 import pytest
 from flask import Flask
 from unittest.mock import MagicMock, patch
-from iatoolkit.views.login_view import InitiateLoginView, LoginView
-from iatoolkit.services.profile_service import ProfileService
-from iatoolkit.services.query_service import QueryService
-from iatoolkit.services.prompt_manager_service import PromptService
-from iatoolkit.services.branding_service import BrandingService
-from iatoolkit.services.onboarding_service import OnboardingService
-from iatoolkit.repositories.models import Company, User
-
-# --- Constantes para los Tests ---
-MOCK_COMPANY_SHORT_NAME = "test_company"
-MOCK_USER_EMAIL = "test@email.com"
-MOCK_USER_PASSWORD = "password"
-MOCK_USER_ID = 1
+from iatoolkit.views.login_view import LoginView, FinalizeContextView
+from iatoolkit.views.base_login_view import BaseLoginView
 
 
-class TestLoginFlow:
-    """
-    Suite de tests unificada para el flujo de login local (user/pass).
-    """
+class TestLoginView:
+    """Test suite for LoginView and FinalizeContextView."""
 
     @pytest.fixture(autouse=True)
-    def setup_method(self):
+    def setup_method(self, monkeypatch):
+        """Centralized setup: app, client, and service mocks."""
+        # Flask app and client
         self.app = Flask(__name__)
-        self.app.testing = True
+        self.app.secret_key = "test-secret"
         self.client = self.app.test_client()
 
-        # Mocks para todos los servicios
-        self.mock_profile_service = MagicMock(spec=ProfileService)
-        self.mock_query_service = MagicMock(spec=QueryService)
-        self.mock_prompt_service = MagicMock(spec=PromptService)
-        self.mock_branding_service = MagicMock(spec=BrandingService)
-        self.mock_onboarding_service = MagicMock(spec=OnboardingService)
+        # Service mocks
+        self.profile_service = MagicMock()
+        self.query_service = MagicMock()
+        self.branding_service = MagicMock()
+        self.onboarding_service = MagicMock()
+        self.prompt_service = MagicMock()
 
-        # Configuración común de mocks
-        self.test_company = Company(id=1, name="Test Company", short_name=MOCK_COMPANY_SHORT_NAME)
-        self.test_user = User(id=MOCK_USER_ID, email=MOCK_USER_EMAIL)
-        self.mock_profile_service.get_company_by_short_name.return_value = self.test_company
-        self.mock_profile_service.login.return_value = {'success': True, 'user_identifier': self.test_user.email}
-        self.mock_profile_service.get_current_session_info.return_value = {
-            'user_identifier': str(MOCK_USER_ID),
-            'profile': {'id': MOCK_USER_ID, 'email': MOCK_USER_EMAIL, 'user_is_local': True}
+        # Patch BaseLoginView.__init__ to inject mocks before as_view is called
+        original_base_init = BaseLoginView.__init__
+
+        def patched_base_init(instance, **kwargs):
+            """Call original __init__ with mocked services."""
+            return original_base_init(
+                instance,
+                profile_service=self.profile_service,
+                branding_service=self.branding_service,
+                prompt_service=self.prompt_service,
+                onboarding_service=self.onboarding_service,
+                query_service=self.query_service,
+            )
+
+        monkeypatch.setattr(BaseLoginView, "__init__", patched_base_init)
+
+        # Patch FinalizeContextView.__init__ to inject mocks before as_view is called
+        original_finalize_init = FinalizeContextView.__init__
+
+        def patched_finalize_init(instance, **kwargs):
+            """Call original __init__ with mocked services."""
+            return original_finalize_init(
+                instance,
+                profile_service=self.profile_service,
+                query_service=self.query_service,
+                prompt_service=self.prompt_service,
+                branding_service=self.branding_service,
+            )
+
+        monkeypatch.setattr(FinalizeContextView, "__init__", patched_finalize_init)
+
+        # Register endpoints after patching constructors
+        self.app.add_url_rule(
+            "/<company_short_name>/login",
+            view_func=LoginView.as_view("login_post"),
+            methods=["POST"],
+        )
+        self.app.add_url_rule(
+            "/<company_short_name>/login",
+            view_func=FinalizeContextView.as_view("login"),
+            methods=["GET"],
+        )
+
+        # Minimal endpoint used by FinalizeContextView redirect
+        @self.app.route("/<company_short_name>/login_page", endpoint="login_page")
+        def login_page(company_short_name):
+            return "Login Page", 200
+
+        # Common test values
+        self.company_short_name = "acme"
+        self.email = "user@example.com"
+        self.password = "secret"
+        self.user_identifier = "user-123"
+
+        # Company lookup returns a dummy object (truthy) by default
+        self.profile_service.get_company_by_short_name.return_value = MagicMock()
+
+    def test_login_failure_renders_index_with_400(self):
+        """When login fails, it should render index.html with 400."""
+        self.profile_service.login.return_value = {
+            "success": False,
+            "message": "Invalid credentials",
         }
-        self.mock_branding_service.get_company_branding.return_value = {}
 
-        # Registrar ambas vistas con sus dependencias
-        initiate_view = InitiateLoginView.as_view(
-            "initiate_login",
-            profile_service=self.mock_profile_service,
-            branding_service=self.mock_branding_service,
-            onboarding_service=self.mock_onboarding_service,
-            query_service=self.mock_query_service,
-            prompt_service=self.mock_prompt_service
+        with patch("iatoolkit.views.login_view.render_template") as mock_rt:
+            mock_rt.return_value = "<html>index</html>"
+            resp = self.client.post(
+                f"/{self.company_short_name}/login",
+                data={"email": self.email, "password": self.password},
+            )
+
+        assert resp.status_code == 400
+        self.profile_service.login.assert_called_once_with(
+            company_short_name=self.company_short_name,
+            email=self.email,
+            password=self.password,
         )
-        finalize_view = LoginView.as_view(
-            "login",
-            profile_service=self.mock_profile_service,
-            query_service=self.mock_query_service,
-            prompt_service=self.mock_prompt_service,
-            branding_service=self.mock_branding_service
+        mock_rt.assert_called_once()
+        # Ensure template and context
+        assert mock_rt.call_args[0][0] == "index.html"
+        ctx = mock_rt.call_args[1]
+        assert ctx["company_short_name"] == self.company_short_name
+        assert "alert_message" in ctx
+
+    def test_login_success_delegates_to_base_handler(self, monkeypatch):
+        """When login succeeds, it should delegate to BaseLoginView._handle_login_path."""
+        self.profile_service.login.return_value = {
+            "success": True,
+            "user_identifier": self.user_identifier,
+        }
+
+        # Patch the base handler to a predictable response
+        def fake_handle(instance, csn, uid, company):
+            return "OK", 200
+
+        monkeypatch.setattr(BaseLoginView, "_handle_login_path", fake_handle, raising=True)
+
+        resp = self.client.post(
+            f"/{self.company_short_name}/login",
+            data={"email": self.email, "password": self.password},
         )
-        self.app.add_url_rule("/<company_short_name>/initiate_login", view_func=initiate_view, methods=["POST"])
-        self.app.add_url_rule("/<company_short_name>/login", view_func=finalize_view, methods=["GET"])
 
-        @self.app.route("/<company_short_name>/login_page", endpoint='login_page')
-        def dummy_login_page(company_short_name): return "Login Page"
+        assert resp.status_code == 200
+        assert resp.data == b"OK"
 
-    @patch("iatoolkit.views.login_view.render_template")
-    def test_initiate_login_fast_path(self, mock_render_template):
-        """
-        Prueba el CAMINO RÁPIDO: si prepare_context no necesita reconstruir, renderiza chat.html directamente.
-        """
-        self.mock_query_service.prepare_context.return_value = {'rebuild_needed': False}
-        mock_render_template.return_value = "OK"
+    def test_finalize_success_renders_chat(self):
+        """FinalizeContextView should finalize context and render chat on success."""
+        self.profile_service.get_current_session_info.return_value = {
+            "user_identifier": self.user_identifier
+        }
+        self.prompt_service.get_user_prompts.return_value = [{"id": "p1"}]
+        self.branding_service.get_company_branding.return_value = {"logo": "x.png"}
 
-        response = self.client.post(f"/{MOCK_COMPANY_SHORT_NAME}/initiate_login",
-                                    data={"email": MOCK_USER_EMAIL, "password": MOCK_USER_PASSWORD})
+        with patch("iatoolkit.views.login_view.render_template") as mock_rt:
+            mock_rt.return_value = "CHAT", 200
+            resp = self.client.get(f"/{self.company_short_name}/login")
 
-        assert response.status_code == 200
-        self.mock_profile_service.login.assert_called_once()
-        self.mock_query_service.prepare_context.assert_called_once_with(company_short_name=MOCK_COMPANY_SHORT_NAME,
-                                                                        user_identifier=self.test_user.email)
-        mock_render_template.assert_called_once()
-        assert mock_render_template.call_args[0][0] == "chat.html"
-        self.mock_query_service.finalize_context_rebuild.assert_not_called()
-
-    @patch("iatoolkit.views.login_view.render_template")
-    def test_initiate_login_slow_path(self, mock_render_template):
-        """
-        Prueba el CAMINO LENTO: si prepare_context necesita reconstruir, renderiza onboarding_shell.html.
-        """
-        self.mock_query_service.prepare_context.return_value = {'rebuild_needed': True}
-        mock_render_template.return_value = "OK"
-
-        response = self.client.post(f"/{MOCK_COMPANY_SHORT_NAME}/initiate_login",
-                                    data={"email": MOCK_USER_EMAIL, "password": MOCK_USER_PASSWORD})
-
-        assert response.status_code == 200
-        self.mock_query_service.prepare_context.assert_called_once()
-        mock_render_template.assert_called_once()
-        assert mock_render_template.call_args[0][0] == "onboarding_shell.html"
-
-    @patch("iatoolkit.views.login_view.render_template")
-    def test_finalize_login_view(self, mock_render_template):
-        """
-        Prueba LoginView (trabajador pesado), asegurando que finaliza la reconstrucción.
-        """
-        mock_render_template.return_value = "OK"
-
-        response = self.client.get(f"/{MOCK_COMPANY_SHORT_NAME}/login")
-
-        assert response.status_code == 200
-        self.mock_profile_service.get_current_session_info.assert_called_once()
-        self.mock_query_service.finalize_context_rebuild.assert_called_once_with(
-            company_short_name=MOCK_COMPANY_SHORT_NAME,
-            user_identifier=str(MOCK_USER_ID)
+        assert resp.status_code == 200
+        assert resp.data == b"CHAT"
+        self.query_service.finalize_context_rebuild.assert_called_once_with(
+            company_short_name=self.company_short_name,
+            user_identifier=self.user_identifier,
         )
-        mock_render_template.assert_called_once()
-        assert mock_render_template.call_args[0][0] == "chat.html"
+        self.prompt_service.get_user_prompts.assert_called_once_with(self.company_short_name)
+        self.branding_service.get_company_branding.assert_called_once()
+
+        # Ensure chat.html is rendered with expected context
+        mock_rt.assert_called_once()
+        assert mock_rt.call_args[0][0] == "chat.html"
+        ctx = mock_rt.call_args[1]
+        assert ctx["branding"] == {"logo": "x.png"}
+        assert ctx["prompts"] == [{"id": "p1"}]
+
+    def test_finalize_redirects_when_no_user_in_session(self):
+        """If there is no user in session, it should redirect to login_page."""
+        self.profile_service.get_current_session_info.return_value = {}
+
+        resp = self.client.get(f"/{self.company_short_name}/login")
+
+        assert resp.status_code == 302
+        assert resp.headers["Location"].endswith(f"/{self.company_short_name}/login_page")
+
+    def test_finalize_exception_renders_error_with_500(self):
+        """If finalize fails, it should render error.html with 500."""
+        self.profile_service.get_current_session_info.return_value = {
+            "user_identifier": self.user_identifier
+        }
+        self.query_service.finalize_context_rebuild.side_effect = Exception("boom")
+
+        with patch("iatoolkit.views.login_view.render_template") as mock_rt:
+            mock_rt.return_value = "<html>error</html>"
+            resp = self.client.get(f"/{self.company_short_name}/login")
+
+        assert resp.status_code == 500
+        mock_rt.assert_called_once()
+        assert mock_rt.call_args[0][0] == "error.html"

@@ -360,6 +360,10 @@ class IAToolkit:
         @self.app.context_processor
         def inject_globals():
             from iatoolkit.common.session_manager import SessionManager
+            from iatoolkit.services.profile_service import ProfileService
+
+            profile_service = self._injector.get(ProfileService)
+            user_profile = profile_service.get_current_session_info().get('profile', {})
 
             return {
                 'url_for': url_for,
@@ -367,6 +371,8 @@ class IAToolkit:
                 'app_name': 'IAToolkit',
                 'user_identifier': SessionManager.get('user_identifier'),
                 'company_short_name': SessionManager.get('company_short_name'),
+                'user_is_local': user_profile.get('user_is_local'),
+                'user_email': user_profile.get('user_email'),
                 'iatoolkit_base_url': os.environ.get('IATOOLKIT_BASE_URL', ''),
             }
 

@@ -72,7 +72,7 @@
 
           // Actualizar action del formulario "Iniciar Sesión"
           if (selectedCompany && selectedCompany.trim() !== '') {
-              const loginAction = '/' + selectedCompany + '/chat';
+              const loginAction = '/' + selectedCompany + '/external_login';
               $('#login-form').attr('action', loginAction); // Actualizamos la URL del form
           } else {
               $('#login-form').attr('action', '#'); // URL genérica si no hay selección
@@ -116,7 +116,7 @@
               return;
           }
 
-          fetch(`/${selectedCompany}/initiate_external_chat`, {
+          fetch(`/${selectedCompany}/external_login`, {
               method: 'POST',
               headers: {
                   'Content-Type': 'application/json',
