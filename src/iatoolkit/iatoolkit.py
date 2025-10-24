@@ -294,7 +294,6 @@ class IAToolkit:
         from iatoolkit.services.jwt_service import JWTService
         from iatoolkit.services.dispatcher_service import Dispatcher
         from iatoolkit.services.branding_service import BrandingService
-        from iatoolkit.services.chat_page_render_service import ChatPageRenderService
 
         binder.bind(QueryService, to=QueryService)
         binder.bind(TaskService, to=TaskService)
@@ -308,7 +307,6 @@ class IAToolkit:
         binder.bind(JWTService, to=JWTService)
         binder.bind(Dispatcher, to=Dispatcher)
         binder.bind(BrandingService, to=BrandingService)
-        binder.bind(ChatPageRenderService, to=ChatPageRenderService)
 
     def _bind_infrastructure(self, binder: Binder):
         from iatoolkit.infra.llm_client import llmClient
@@ -362,6 +360,10 @@ class IAToolkit:
         @self.app.context_processor
         def inject_globals():
             from iatoolkit.common.session_manager import SessionManager
+            from iatoolkit.services.profile_service import ProfileService
+
+            profile_service = self._injector.get(ProfileService)
+            user_profile = profile_service.get_current_session_info().get('profile', {})
 
             return {
                 'url_for': url_for,
@@ -369,6 +371,8 @@ class IAToolkit:
                 'app_name': 'IAToolkit',
                 'user_identifier': SessionManager.get('user_identifier'),
                 'company_short_name': SessionManager.get('company_short_name'),
+                'user_is_local': user_profile.get('user_is_local'),
+                'user_email': user_profile.get('user_email'),
                 'iatoolkit_base_url': os.environ.get('IATOOLKIT_BASE_URL', ''),
             }
 

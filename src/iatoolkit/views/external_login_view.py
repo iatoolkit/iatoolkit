@@ -9,13 +9,13 @@ from flask import request, jsonify
 from injector import inject
 from iatoolkit.services.auth_service import AuthService
 from iatoolkit.views.base_login_view import BaseLoginView
+
 # Importar los servicios que necesita la clase base
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.branding_service import BrandingService
 from iatoolkit.services.onboarding_service import OnboardingService
 from iatoolkit.services.query_service import QueryService
-from iatoolkit.services.chat_page_render_service import ChatPageRenderService
-
+from iatoolkit.services.prompt_manager_service import PromptService
 
 class ExternalLoginView(BaseLoginView):
     """
@@ -27,16 +27,16 @@ class ExternalLoginView(BaseLoginView):
                  iauthentication: AuthService,
                  profile_service: ProfileService,
                  branding_service: BrandingService,
+                 prompt_service: PromptService,
                  onboarding_service: OnboardingService,
-                 query_service: QueryService,
-                 chat_page_render_service: ChatPageRenderService):
+                 query_service: QueryService):
         # Pass the dependencies for the base class to its __init__
         super().__init__(
             profile_service=profile_service,
             branding_service=branding_service,
             onboarding_service=onboarding_service,
             query_service=query_service,
-            chat_page_render_service=chat_page_render_service
+            prompt_service=prompt_service
         )
         # Handle the dependency specific to this child class
         self.iauthentication = iauthentication

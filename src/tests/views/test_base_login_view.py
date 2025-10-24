@@ -1,7 +1,4 @@
 # tests/views/test_base_login_view.py
-# Copyright (c) 2024 Fernando Libedinsky
-# Product: IAToolkit
-#
 # IAToolkit is open source software.
 
 import pytest
@@ -25,92 +22,104 @@ class TestBaseLoginView:
         self.mock_services = {
             "profile_service": MagicMock(),
             "branding_service": MagicMock(),
+            "prompt_service": MagicMock(),
             "onboarding_service": MagicMock(),
             "query_service": MagicMock(),
-            "chat_page_render_service": MagicMock(),
         }
         self.view_instance = BaseLoginView(**self.mock_services)
 
+        # Common company double
+        self.mock_company = MagicMock()
+
     def test_handle_login_path_slow_path(self):
         """
-        Tests the 'slow path' where a context rebuild is needed.
-        It should render the onboarding_shell.html template.
+        Slow path: when rebuild is needed, it should render onboarding_shell.html
+        with iframe_src_url, branding, and onboarding_cards.
         """
-        # --- Arrange ---
-        # Simulate that a rebuild is needed
-        self.mock_services["query_service"].prepare_context.return_value = {'rebuild_needed': True}
+        # Arrange
+        self.mock_services["query_service"].prepare_context.return_value = {
+            "rebuild_needed": True
+        }
+        self.mock_services["branding_service"].get_company_branding.return_value = {
+            "logo": "logo.png"
+        }
+        self.mock_services["onboarding_service"].get_onboarding_cards.return_value = [
+            {"title": "Card 1"}
+        ]
 
-        # Mock company object and service returns
-        mock_company = MagicMock()
-        self.mock_services["branding_service"].get_company_branding.return_value = {"logo": "logo.png"}
-        self.mock_services["onboarding_service"].get_onboarding_cards.return_value = [{"title": "Card 1"}]
-
-        # We need a Flask app context to use url_for and render_template
+        # Flask app context required for url_for and render_template
         app = Flask(__name__)
-        app.add_url_rule(f'/<company_short_name>/chat', endpoint='chat')
+        # Register route to satisfy url_for('chat', ...)
+        app.add_url_rule("/<company_short_name>/finalize_context_load", endpoint="finalize_context_load")
 
-        # --- Act ---
         with app.test_request_context():
-            # Patch render_template to capture its call without executing it
-            with patch('iatoolkit.views.base_login_view.render_template') as mock_render_template:
-                self.view_instance._handle_login_path(COMPANY_SHORT_NAME, USER_IDENTIFIER, mock_company)
+            with patch("iatoolkit.views.base_login_view.render_template") as mock_rt:
+                _ = self.view_instance._handle_login_path(
+                    COMPANY_SHORT_NAME, USER_IDENTIFIER, self.mock_company
+                )
 
-        # --- Assert ---
-        # 1. Verify that prepare_context was called correctly.
+        # Assert: prepare_context called with expected params
         self.mock_services["query_service"].prepare_context.assert_called_once_with(
-            company_short_name=COMPANY_SHORT_NAME,
-            user_identifier=USER_IDENTIFIER
+            company_short_name=COMPANY_SHORT_NAME, user_identifier=USER_IDENTIFIER
         )
-
-        # 2. Verify that services for the slow path were called.
-        self.mock_services["branding_service"].get_company_branding.assert_called_once_with(mock_company)
-        self.mock_services["onboarding_service"].get_onboarding_cards.assert_called_once_with(mock_company)
-
-        # 3. Verify that the fast path service was NOT called.
-        self.mock_services["chat_page_render_service"].render_chat_page.assert_not_called()
-
-        # 4. Verify that the correct template was rendered with the correct context.
-        mock_render_template.assert_called_once()
-        template_name = mock_render_template.call_args[0][0]
-        context = mock_render_template.call_args[1]
-
+        # Branding and onboarding used in slow path
+        self.mock_services["branding_service"].get_company_branding.assert_called_once_with(
+            self.mock_company
+        )
+        self.mock_services["onboarding_service"].get_onboarding_cards.assert_called_once_with(
+            self.mock_company
+        )
+        # Template and context
+        mock_rt.assert_called_once()
+        template_name = mock_rt.call_args[0][0]
+        ctx = mock_rt.call_args[1]
         assert template_name == "onboarding_shell.html"
-        assert "iframe_src_url" in context
-        assert context["branding"] == {"logo": "logo.png"}
-        assert context["onboarding_cards"] == [{"title": "Card 1"}]
+        assert "iframe_src_url" in ctx
+        assert ctx["branding"] == {"logo": "logo.png"}
+        assert ctx["onboarding_cards"] == [{"title": "Card 1"}]
 
     def test_handle_login_path_fast_path(self):
         """
-        Tests the 'fast path' where the context is already cached.
-        It should call the ChatPageRenderService to render the chat page.
+        Fast path: when rebuild is NOT needed, it should render chat.html
+        with branding and prompts.
         """
-        # --- Arrange ---
-        # Simulate that a rebuild is NOT needed
-        self.mock_services["query_service"].prepare_context.return_value = {'rebuild_needed': False}
+        # Arrange
+        self.mock_services["query_service"].prepare_context.return_value = {
+            "rebuild_needed": False
+        }
+        self.mock_services["branding_service"].get_company_branding.return_value = {
+            "theme": "dark"
+        }
+        self.mock_services["prompt_service"].get_user_prompts.return_value = [
+            {"id": "p1"}
+        ]
 
-        # Mock company object and the expected return from the render service
-        mock_company = MagicMock()
-        expected_render_result = "<html>Chat Page</html>"
-        self.mock_services["chat_page_render_service"].render_chat_page.return_value = expected_render_result
+        # Flask app context required for render_template (no url_for used here)
+        app = Flask(__name__)
+        with app.test_request_context():
+            with patch("iatoolkit.views.base_login_view.render_template") as mock_rt:
+                mock_rt.return_value = "<html>chat</html>"
+                result = self.view_instance._handle_login_path(
+                    COMPANY_SHORT_NAME, USER_IDENTIFIER, self.mock_company
+                )
 
-        # --- Act ---
-        result = self.view_instance._handle_login_path(COMPANY_SHORT_NAME, USER_IDENTIFIER, mock_company)
-
-        # --- Assert ---
-        # 1. Verify that prepare_context was called correctly.
+        # Assert: prepare_context called with expected params
         self.mock_services["query_service"].prepare_context.assert_called_once_with(
-            company_short_name=COMPANY_SHORT_NAME,
-            user_identifier=USER_IDENTIFIER
+            company_short_name=COMPANY_SHORT_NAME, user_identifier=USER_IDENTIFIER
+        )
+        # Branding and prompts used in fast path
+        self.mock_services["branding_service"].get_company_branding.assert_called_once_with(
+            self.mock_company
+        )
+        self.mock_services["prompt_service"].get_user_prompts.assert_called_once_with(
+            COMPANY_SHORT_NAME
         )
 
-        # 2. Verify that the fast path service WAS called.
-        self.mock_services["chat_page_render_service"].render_chat_page.assert_called_once_with(
-            COMPANY_SHORT_NAME, mock_company
-        )
-
-        # 3. Verify that services for the slow path were NOT called.
-        self.mock_services["branding_service"].get_company_branding.assert_not_called()
-        self.mock_services["onboarding_service"].get_onboarding_cards.assert_not_called()
-
-        # 4. Verify that the result is what the render service returned.
-        assert result == expected_render_result
+        # Template and context
+        assert result == "<html>chat</html>"
+        mock_rt.assert_called_once()
+        template_name = mock_rt.call_args[0][0]
+        ctx = mock_rt.call_args[1]
+        assert template_name == "chat.html"
+        assert ctx["branding"] == {"theme": "dark"}
+        assert ctx["prompts"] == [{"id": "p1"}]

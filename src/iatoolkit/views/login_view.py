@@ -8,8 +8,9 @@ from flask import request, redirect, render_template, url_for
 from injector import inject
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.query_service import QueryService
+from iatoolkit.services.prompt_manager_service import PromptService
+from iatoolkit.services.branding_service import BrandingService
 from iatoolkit.views.base_login_view import BaseLoginView
-from iatoolkit.services.chat_page_render_service import ChatPageRenderService
 
 
 class LoginView(BaseLoginView):
@@ -34,10 +35,13 @@ class LoginView(BaseLoginView):
         )
 
         if not auth_response['success']:
+            branding_data = self.branding_service.get_company_branding(company)
+
             return render_template(
                 'index.html',
                 company_short_name=company_short_name,
                 company=company,
+                branding=branding_data,
                 form_data={"email": email},
                 alert_message=auth_response["message"]
             ), 400
@@ -62,10 +66,13 @@ class FinalizeContextView(MethodView):
     def __init__(self,
                  profile_service: ProfileService,
                  query_service: QueryService,
-                 chat_page_render_service: ChatPageRenderService):
+                 prompt_service: PromptService,
+                 branding_service: BrandingService
+                 ):
         self.profile_service = profile_service
         self.query_service = query_service
-        self.render_service = chat_page_render_service
+        self.prompt_service = prompt_service
+        self.branding_service = branding_service
 
     def get(self, company_short_name: str):
         # 1. Use the centralized method to get session info.
@@ -87,8 +94,15 @@ class FinalizeContextView(MethodView):
                 user_identifier=user_identifier
             )
 
-            # 3. Use the centralized service to render the chat page.
-            return self.render_service.render_chat_page(company_short_name, company)
+            # 3. render the chat page.
+            prompts = self.prompt_service.get_user_prompts(company_short_name)
+            branding_data = self.branding_service.get_company_branding(company)
+
+            return render_template(
+                "chat.html",
+                branding=branding_data,
+                prompts=prompts,
+            )
 
         except Exception as e:
             return render_template("error.html",

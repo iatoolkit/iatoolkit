@@ -11,7 +11,7 @@ from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.query_service import QueryService
 from iatoolkit.services.branding_service import BrandingService
 from iatoolkit.services.onboarding_service import OnboardingService
-from iatoolkit.services.chat_page_render_service import ChatPageRenderService
+from iatoolkit.services.prompt_manager_service import PromptService
 
 
 class BaseLoginView(MethodView):
@@ -23,14 +23,14 @@ class BaseLoginView(MethodView):
     def __init__(self,
                  profile_service: ProfileService,
                  branding_service: BrandingService,
+                 prompt_service: PromptService,
                  onboarding_service: OnboardingService,
-                 query_service: QueryService,
-                 chat_page_render_service: ChatPageRenderService):
+                 query_service: QueryService):
         self.profile_service = profile_service
         self.branding_service = branding_service
+        self.prompt_service = prompt_service
         self.onboarding_service = onboarding_service
         self.query_service = query_service
-        self.render_service = chat_page_render_service
 
     def _handle_login_path(self, company_short_name: str, user_identifier: str, company):
         """
@@ -40,11 +40,12 @@ class BaseLoginView(MethodView):
             company_short_name=company_short_name, user_identifier=user_identifier
         )
 
+        branding_data = self.branding_service.get_company_branding(company)
+
         if prep_result.get('rebuild_needed'):
             # --- SLOW PATH: Render the loading shell ---
-            branding_data = self.branding_service.get_company_branding(company)
             onboarding_cards = self.onboarding_service.get_onboarding_cards(company)
-            target_url = url_for('chat', company_short_name=company_short_name, _external=True)
+            target_url = url_for('finalize_context_load', company_short_name=company_short_name, _external=True)
 
             return render_template(
                 "onboarding_shell.html",
@@ -54,4 +55,9 @@ class BaseLoginView(MethodView):
             )
         else:
             # --- FAST PATH: Render the chat page directly ---
-            return self.render_service.render_chat_page(company_short_name, company)
+            prompts = self.prompt_service.get_user_prompts(company_short_name)
+            return render_template(
+                "chat.html",
+                branding=branding_data,
+                prompts=prompts,
+            )

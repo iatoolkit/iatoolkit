@@ -1,5 +1,4 @@
 # tests/views/test_login_view.py
-# Copyright (c) 2024
 # IAToolkit is open source software.
 
 import pytest
@@ -23,9 +22,9 @@ class TestLoginView:
         # Service mocks
         self.profile_service = MagicMock()
         self.query_service = MagicMock()
-        self.chat_render_service = MagicMock()
         self.branding_service = MagicMock()
         self.onboarding_service = MagicMock()
+        self.prompt_service = MagicMock()
 
         # Patch BaseLoginView.__init__ to inject mocks before as_view is called
         original_base_init = BaseLoginView.__init__
@@ -36,9 +35,9 @@ class TestLoginView:
                 instance,
                 profile_service=self.profile_service,
                 branding_service=self.branding_service,
+                prompt_service=self.prompt_service,
                 onboarding_service=self.onboarding_service,
                 query_service=self.query_service,
-                chat_page_render_service=self.chat_render_service,
             )
 
         monkeypatch.setattr(BaseLoginView, "__init__", patched_base_init)
@@ -52,7 +51,8 @@ class TestLoginView:
                 instance,
                 profile_service=self.profile_service,
                 query_service=self.query_service,
-                chat_page_render_service=self.chat_render_service,
+                prompt_service=self.prompt_service,
+                branding_service=self.branding_service,
             )
 
         monkeypatch.setattr(FinalizeContextView, "__init__", patched_finalize_init)
@@ -121,9 +121,7 @@ class TestLoginView:
         def fake_handle(instance, csn, uid, company):
             return "OK", 200
 
-        monkeypatch.setattr(
-            BaseLoginView, "_handle_login_path", fake_handle, raising=True
-        )
+        monkeypatch.setattr(BaseLoginView, "_handle_login_path", fake_handle, raising=True)
 
         resp = self.client.post(
             f"/{self.company_short_name}/login",
@@ -134,13 +132,16 @@ class TestLoginView:
         assert resp.data == b"OK"
 
     def test_finalize_success_renders_chat(self):
-        """FinalizeContextView should finalize and render chat on success."""
+        """FinalizeContextView should finalize context and render chat on success."""
         self.profile_service.get_current_session_info.return_value = {
             "user_identifier": self.user_identifier
         }
-        self.chat_render_service.render_chat_page.return_value = ("CHAT", 200)
+        self.prompt_service.get_user_prompts.return_value = [{"id": "p1"}]
+        self.branding_service.get_company_branding.return_value = {"logo": "x.png"}
 
-        resp = self.client.get(f"/{self.company_short_name}/login")
+        with patch("iatoolkit.views.login_view.render_template") as mock_rt:
+            mock_rt.return_value = "CHAT", 200
+            resp = self.client.get(f"/{self.company_short_name}/login")
 
         assert resp.status_code == 200
         assert resp.data == b"CHAT"
@@ -148,7 +149,15 @@ class TestLoginView:
             company_short_name=self.company_short_name,
             user_identifier=self.user_identifier,
         )
-        self.chat_render_service.render_chat_page.assert_called_once()
+        self.prompt_service.get_user_prompts.assert_called_once_with(self.company_short_name)
+        self.branding_service.get_company_branding.assert_called_once()
+
+        # Ensure chat.html is rendered with expected context
+        mock_rt.assert_called_once()
+        assert mock_rt.call_args[0][0] == "chat.html"
+        ctx = mock_rt.call_args[1]
+        assert ctx["branding"] == {"logo": "x.png"}
+        assert ctx["prompts"] == [{"id": "p1"}]
 
     def test_finalize_redirects_when_no_user_in_session(self):
         """If there is no user in session, it should redirect to login_page."""
