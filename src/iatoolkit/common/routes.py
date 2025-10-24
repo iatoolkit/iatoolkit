@@ -56,7 +56,7 @@ def register_views(injector, app):
     # login for the iatoolkit integrated frontend
     # this is the main login endpoint for the frontend
     app.add_url_rule('/<company_short_name>/login', view_func=LoginView.as_view('login'))
-    app.add_url_rule('/<company_short_name>/chat', view_func=FinalizeContextView.as_view('chat'))
+    app.add_url_rule('/<company_short_name>/finalize_context_load', view_func=FinalizeContextView.as_view('finalize_context_load'))
 
     # register new user, account verification and forgot password
     app.add_url_rule('/<company_short_name>/signup',view_func=SignupView.as_view('signup'))
