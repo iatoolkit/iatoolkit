@@ -1,1 +1,1 @@
-web: export PYTHONPATH=./src && gunicorn app:app
+web: export PYTHONPATH=./src && gunicorn app:app --worker-class=gthread --workers=2 --threads=3 --timeout=60 --max-requests=800 --max-requests-jitter=200

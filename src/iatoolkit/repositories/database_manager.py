@@ -21,8 +21,20 @@ class DatabaseManager:
         :param echo: Si True, habilita logs de SQL.
         """
         self.url = make_url(database_url)
-        self._engine = create_engine(database_url, echo=False)
-        self.SessionFactory = sessionmaker(bind=self._engine)
+        self._engine = create_engine(
+            database_url,
+            echo=False,
+            pool_size=2,  # per worker
+            max_overflow=3,
+            pool_timeout=30,
+            pool_recycle=1800,
+            pool_pre_ping=True,
+            future=True,
+        )
+        self.SessionFactory = sessionmaker(bind=self._engine,
+                                           autoflush=False,
+                                           autocommit=False,
+                                           expire_on_commit=False)
         self.scoped_session = scoped_session(self.SessionFactory)
 
         # REGISTRAR pgvector para cada nueva conexión solo en postgres

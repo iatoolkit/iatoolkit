@@ -188,6 +188,15 @@ class IAToolkit:
         self.db_manager.create_all()
         logging.info("✅ Base de datos configurada correctamente")
 
+        @self.app.teardown_appcontext
+        def remove_session(exception=None):
+            """
+            Flask calls this after each request.
+            It ensures the SQLAlchemy session is properly closed
+            and the DB connection is returned to the pool.
+            """
+            self.db_manager.scoped_session.remove()
+
     def _setup_redis_sessions(self):
         redis_url = self._get_config_value('REDIS_URL')
         if not redis_url:
