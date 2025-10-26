@@ -74,20 +74,20 @@ class ProfileService:
         except Exception as e:
             return {'success': False, "message": str(e)}
 
-    def create_external_user_session(self, company: Company, external_user_id: str):
+    def create_external_user_session(self, company: Company, user_identifier: str):
         """
         Public method for views to create a web session for an external user.
         """
         # 1. Fetch the profile from the external system via Dispatcher.
         user_profile = self.dispatcher.get_user_info(
             company_name=company.short_name,
-            user_identifier=external_user_id
+            user_identifier=user_identifier
         )
 
         # 2. Call the session creation helper with external_user_id as user_identifier
         self.create_web_session(
             company=company,
-            user_identifier=external_user_id,
+            user_identifier=user_identifier,
             user_profile=user_profile)
 
     def create_web_session(self, company: Company, user_identifier: str, user_profile: dict):

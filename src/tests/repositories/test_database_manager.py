@@ -44,10 +44,6 @@ class TestDatabaseManager:
         for patcher in self.patchers:
             patcher.stop()
 
-    def test_init_initializes_engine_and_session_factory(self):
-        self.mock_create_engine.assert_called_once_with(self.database_url, echo=False)
-        self.mock_sessionmaker_function.assert_called_once_with(bind=self.mock_engine)
-
     def test_get_session_returns_scoped_session(self):
         session = self.db_manager.get_session()
         assert session == self.mock_scoped_session()

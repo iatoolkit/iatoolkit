@@ -37,7 +37,7 @@ class TestExternalLoginView:
         )
 
         self.company_short_name = "acme"
-        self.external_user_id = "ext-123"
+        self.user_identifier = "ext-123"
 
         # Defaults
         self.profile_service.get_company_by_short_name.return_value = MagicMock()
@@ -61,14 +61,14 @@ class TestExternalLoginView:
         self.profile_service.get_company_by_short_name.return_value = None
         resp = self.client.post(
             f"/{self.company_short_name}/external_login",
-            json={"external_user_id": self.external_user_id},
+            json={"user_identifier": self.user_identifier},
         )
         assert resp.status_code == 404
 
     def test_empty_external_user_id_returns_404(self):
         resp = self.client.post(
             f"/{self.company_short_name}/external_login",
-            json={"external_user_id": ""},
+            json={"user_identifier": ""},
         )
         assert resp.status_code == 404
 
@@ -76,7 +76,7 @@ class TestExternalLoginView:
         self.auth_service.verify.return_value = {"success": False, "error": "denied"}
         resp = self.client.post(
             f"/{self.company_short_name}/external_login",
-            json={"external_user_id": self.external_user_id},
+            json={"user_identifier": self.user_identifier},
         )
         assert resp.status_code == 401
         self.auth_service.verify.assert_called_once()
@@ -88,7 +88,7 @@ class TestExternalLoginView:
 
         resp = self.client.post(
             f"/{self.company_short_name}/external_login",
-            json={"external_user_id": self.external_user_id},
+            json={"user_identifier": self.user_identifier},
         )
 
         assert resp.status_code == 200
@@ -99,7 +99,7 @@ class TestExternalLoginView:
         with patch.object(BaseLoginView, "_handle_login_path", side_effect=Exception("boom")):
             resp = self.client.post(
                 f"/{self.company_short_name}/external_login",
-                json={"external_user_id": self.external_user_id},
+                json={"user_identifier": self.user_identifier},
             )
         assert resp.status_code == 500
         assert resp.is_json

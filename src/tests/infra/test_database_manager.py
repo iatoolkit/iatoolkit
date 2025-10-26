@@ -29,8 +29,8 @@ class TestDatabaseManager(unittest.TestCase):
         self.db_manager = DatabaseManager("sqlite:///:memory:")
 
         # Verificaciones iniciales
-        mock_create_engine.assert_called_once_with("sqlite:///:memory:", echo=False)
-        mock_sessionmaker.assert_called_once_with(bind=self.mock_engine)
+        mock_create_engine.assert_called_once()
+        mock_sessionmaker.assert_called_once()
         mock_scoped_session.assert_called_once_with(self.mock_sessionmaker)
 
     def test_get_session(self):

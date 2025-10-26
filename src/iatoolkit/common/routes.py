@@ -111,8 +111,8 @@ def register_views(injector, app):
         except FileNotFoundError:
             abort(404)
 
-    # login testing (old home page)
-    app.add_url_rule('/login_test/<company_short_name>/<external_user_id>',
+    # login testing
+    app.add_url_rule('/<company_short_name>/login_test',
                      view_func=LoginSimulationView.as_view('login_test'))
 
     app.add_url_rule(

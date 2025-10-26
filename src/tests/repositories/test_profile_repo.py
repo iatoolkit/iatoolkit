@@ -28,6 +28,7 @@ class TestProfileRepo:
 
     def test_get_user_by_id_when_success(self):
         self.session.add(self.user)
+        self.session.commit()
         result = self.repo.get_user_by_id(1)
         assert result == self.user
 
@@ -37,6 +38,7 @@ class TestProfileRepo:
 
     def test_get_user_by_email_when_success(self):
         self.session.add(self.user)
+        self.session.commit()
         result = self.repo.get_user_by_email('fernando@opensoft.cl')
         assert result == self.user
 
@@ -57,11 +59,13 @@ class TestProfileRepo:
 
     def test_verify_user_when_ok(self):
         self.session.add(self.user)
+        self.session.commit()
         user = self.repo.verify_user(self.user.email)
         assert user.verified == True
 
     def test_set_temp_code_when_ok(self):
         self.session.add(self.user)
+        self.session.commit()
         temp_code = 'CCGT'
         user = self.repo.set_temp_code(self.user.email,temp_code)
 
@@ -69,12 +73,14 @@ class TestProfileRepo:
 
     def test_reset_temp_code_when_ok(self):
         self.session.add(self.user)
+        self.session.commit()
         user = self.repo.reset_temp_code(self.user.email)
 
         assert user.temp_code == None
 
     def test_update_password_when_ok(self):
         self.session.add(self.user)
+        self.session.commit()
         hashed_password = 'ggdvXz'
         user = self.repo.update_password(self.user.email, hashed_password)
 
@@ -85,6 +91,7 @@ class TestProfileRepo:
 
     def test_get_company_when_ok(self):
         self.session.add(self.company)
+        self.session.commit()
         assert self.repo.get_company('opensoft') == self.company
         assert self.repo.get_company_by_short_name('open') == self.company
 
@@ -95,6 +102,7 @@ class TestProfileRepo:
 
     def test_get_company_by_id_when_success(self):
         self.session.add(self.company)
+        self.session.commit()
 
         result = self.repo.get_company_by_id(1)
         assert result == self.company
@@ -118,6 +126,7 @@ class TestProfileRepo:
 
     def test_create_company_when_company_exists(self):
         self.session.add(self.company)
+        self.session.commit()
 
         result = self.repo.create_company(Company(name='opensoft'))
 

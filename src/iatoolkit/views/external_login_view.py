@@ -43,16 +43,16 @@ class ExternalLoginView(BaseLoginView):
 
     def post(self, company_short_name: str):
         data = request.get_json()
-        if not data or 'external_user_id' not in data:
-            return jsonify({"error": "Falta external_user_id"}), 400
+        if not data or 'user_identifier' not in data:
+            return jsonify({"error": "Falta user_identifier"}), 400
 
         company = self.profile_service.get_company_by_short_name(company_short_name)
         if not company:
             return jsonify({"error": "Empresa no encontrada"}), 404
 
-        external_user_id = data['external_user_id']
-        if not external_user_id:
-            return jsonify({"error": "missing external_user_id"}), 404
+        user_identifier = data.get('user_identifier')
+        if not user_identifier:
+            return jsonify({"error": "missing user_identifier"}), 404
 
         # 1. Authenticate the API call.
         iaut = self.iauthentication.verify()
@@ -60,11 +60,11 @@ class ExternalLoginView(BaseLoginView):
             return jsonify(iaut), 401
 
         # 2. Create the external user session.
-        self.profile_service.create_external_user_session(company, external_user_id)
+        self.profile_service.create_external_user_session(company, user_identifier)
 
         # 3. Delegate the path decision to the centralized logic.
         try:
-            return self._handle_login_path(company_short_name, external_user_id, company)
+            return self._handle_login_path(company_short_name, user_identifier, company)
         except Exception as e:
-            logging.exception(f"Error processing external login path for {company_short_name}/{external_user_id}: {e}")
+            logging.exception(f"Error processing external login path for {company_short_name}/{user_identifier}: {e}")
             return jsonify({"error": f"Internal server error while starting chat. {str(e)}"}), 500

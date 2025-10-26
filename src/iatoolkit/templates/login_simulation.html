@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}Prueba de Login para {{ company_short_name }}{% endblock %}
+
+{% block content %}
+
+<div class="container-fluid">
+  <div class="row flex-fill mt-5 justify-content-center">
+    <!-- login desde sistema externo -->
+    <div class="col-12 col-lg-6">
+      <div class="border rounded p-4 p-md-5 shadow-sm bg-light">
+        {# El título ahora muestra dinámicamente el nombre de la empresa #}
+        <h3 class="text-muted fw-semibold text-start mb-3">
+          Login Externo para <span style="color:#0d6efd;">{{ company_short_name }}</span>
+        </h3>
+        <div class="text-center mb-4">
+          <p class="text-muted widget-intro-text">
+            Este formulario permite testear el acceso a IAToolkit desde un portal externo utilizando una api-key. El external user ID es el nombre del usuario ya autentificado en algún portal interno de la empresa.
+          </p>
+        </div>
+
+        {# El 'action' y 'method' son manejados por JS, pero el id es crucial #}
+        <form id="external-login">
+
+          <div class="mb-3">
+            <label for="external_user_id" class="form-label d-block">External user ID</label>
+            <input type="text" id="external_user_id" name="external_user_id" class="form-control" required>
+          </div>
+
+          <button type="submit" id="loginButton" class="btn btn-primary">
+            Iniciar Sesión
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const companyShortName = "{{ company_short_name }}";
+    const apiKey = "{{ api_key }}";
+    const loginForm = document.getElementById('external-login');
+    const userIdInput = document.getElementById('external_user_id');
+
+    loginForm.addEventListener('submit', function(event) {
+      event.preventDefault();
+      const userIdentifier = userIdInput.value.trim();
+      if (!userIdentifier) return;
+
+      // 1. Reemplazamos la página actual con un mensaje de carga.
+      document.body.innerHTML = '<div style="display:flex; align-items:center; justify-content:center; height:100vh; font-family:sans-serif;">Iniciando sesión, por favor espera...</div>';
+
+      const apiUrl = `/${companyShortName}/external_login`;
+
+      fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+            // Usamos 'userIdentifier' como el valor para el campo 'external_user_id'
+            user_identifier: userIdentifier
+        })
+      })
+      .then(async response => {
+          if (response.ok) {
+              return response.text();
+          } else {
+              const errorText = await response.text();
+              throw new Error(errorText || `Error ${response.status}`);
+          }
+      })
+      .then(htmlContent => {
+          // 2. Reemplazamos todo el documento con el nuevo HTML recibido.
+          // Esto asegura que todos los scripts y estilos del nuevo HTML se carguen correctamente.
+          document.open();
+          document.write(htmlContent);
+          document.close();
+      })
+      .catch(error => {
+          // Si hay un error, lo mostramos en la página.
+          document.body.innerHTML = `<div style="padding:20px; font-family:monospace; color:red;"><h2>Error</h2><pre>${error.message}</pre></div>`;
+      });
+    });
+  });
+</script>
+{% endblock %}

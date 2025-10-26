@@ -114,10 +114,6 @@ class QueryService:
                                  self._has_valid_cached_context(company_short_name, user_identifier))
 
         if rebuild_is_needed:
-            logging.info(
-                f"Se necesita reconstrucción de contexto para {company_short_name}/{user_identifier}. Preparando...")
-
-
             # Guardar el contexto preparado y su versión para que `finalize_context_rebuild` los use.
             self.session_context.save_prepared_context(company_short_name, user_identifier, final_system_context,
                                                        current_version)

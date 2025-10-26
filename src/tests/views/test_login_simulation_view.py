@@ -2,75 +2,60 @@ import pytest
 from flask import Flask
 from unittest.mock import MagicMock, patch
 import os
-import json
 
 from iatoolkit.views.login_simulation_view import LoginSimulationView
+from iatoolkit.services.profile_service import ProfileService
 
 
 class TestLoginSimulationView:
-    @staticmethod
-    def create_app():
-        """Configura una aplicación Flask mínima para las pruebas."""
-        app = Flask(__name__)
-        app.testing = True
-        # Registramos la vista con su nueva ruta y sin inyecciones, ya que no las necesita.
-        app.add_url_rule(
-            '/login_test/<company_short_name>/<external_user_id>',
-            view_func=LoginSimulationView.as_view('login_test')
-        )
-        return app
 
     @pytest.fixture(autouse=True)
-    def setup(self):
-        """Configura el cliente de pruebas antes de cada test."""
-        self.app = self.create_app()
+    def setup_method(self):
+        """Configura una aplicación Flask mínima y los mocks necesarios para cada prueba."""
+        self.app = Flask(__name__)
         self.client = self.app.test_client()
 
-    @patch("iatoolkit.views.login_simulation_view.requests.post")
+        # 1. Mock del servicio que la vista necesita
+        self.profile_service = MagicMock(spec=ProfileService)
+
+        # --- INICIO DE LA SOLUCIÓN ---
+        # 2. Creamos la función de la vista, inyectando nuestro mock directamente.
+        # El nombre del argumento (profile_service) debe coincidir con el del __init__ de la vista.
+        view_func = LoginSimulationView.as_view(
+            'login_simulation',
+            profile_service=self.profile_service
+        )
+
+        # 3. Registramos la vista ya configurada en la aplicación de prueba.
+        self.app.add_url_rule(
+            "/simulation/<string:company_short_name>",
+            view_func=view_func
+        )
+        # --- FIN DE LA SOLUCIÓN ---
+
+    @patch("iatoolkit.views.login_simulation_view.render_template")
     @patch.dict(os.environ, {"IATOOLKIT_API_KEY": "test-api-key"})
-    def test_get_simulates_server_to_server_call_and_proxies_response(self, mock_requests_post):
+    def test_get_renders_simulation_template_with_correct_context(self, mock_render_template):
         """
-        Prueba que la vista LoginTest simule la llamada S2S, envíe los datos correctos,
-        y reenvíe la respuesta (incluyendo cookies) al cliente final.
+        Prueba que una petición GET a la vista renderice la plantilla 'login_simulation.html'
+        con el company_short_name y la api_key correctos en el contexto.
         """
-        # 1. Configurar el Mock de la respuesta interna de 'requests.post'
-        # Esta es la respuesta que nuestra vista recibirá.
-        mock_internal_response = MagicMock()
-        mock_internal_response.status_code = 200
-        mock_internal_response.headers = {
-            'Content-Type': 'text/html; charset=utf-8',
-            'Set-Cookie': 'session=test-session-cookie; Path=/; HttpOnly'
-        }
-        # iter_content debe devolver un iterable (como una lista de bytes)
-        mock_internal_response.iter_content.return_value = [b'<html><body>Success</body></html>']
-        # raise_for_status no debe hacer nada si el status es 200
-        mock_internal_response.raise_for_status.return_value = None
-        mock_requests_post.return_value = mock_internal_response
+        # Configurar el mock para que devuelva un HTML simple
+        mock_render_template.return_value = "<html>Renderizado OK</html>"
 
-        # 2. Ejecutar la petición a nuestra vista de prueba
-        company = "acme"
-        user = "test-user"
-        response = self.client.get(f'/login_test/{company}/{user}')
+        company = "acme_corp"
 
-        # 3. Verificar la respuesta final que recibe el navegador
+        # Ejecutar la petición a la vista
+        response = self.client.get(f'/simulation/{company}')
+
+        # Verificar que la respuesta es exitosa
         assert response.status_code == 200
-        assert response.data == b'<html><body>Success</body></html>'
-        # La aserción más importante: la cookie debe haber sido reenviada
-        assert 'Set-Cookie' in response.headers
-        assert response.headers['Set-Cookie'] == 'session=test-session-cookie; Path=/; HttpOnly'
+        assert response.data == b"<html>Renderizado OK</html>"
 
-        # 4. Verificar que 'requests.post' fue llamado correctamente
-        expected_url = f'http://localhost/{company}/external_login'
-        expected_headers = {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer test-api-key'
-        }
-        expected_payload = {'external_user_id': user}
-
-        mock_requests_post.assert_called_once_with(
-            expected_url,
-            headers=expected_headers,
-            data=json.dumps(expected_payload),
-            timeout=120,
-            stream=True
+        # La aserción más importante: verificar que render_template fue llamado
+        # una vez y con los argumentos exactos que esperamos.
+        mock_render_template.assert_called_once_with(
+            'login_simulation.html',
+            company_short_name=company,
+            api_key='test-api-key'
         )
