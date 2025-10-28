@@ -41,4 +41,7 @@ class LLMQueryApiView(MethodView):
             client_data=data.get('client_data', {}),
             files=data.get('files', [])
         )
-        return jsonify(result)
+        if 'error' in result:
+            return jsonify(result), 400
+
+        return jsonify(result), 200

@@ -56,8 +56,8 @@ class InitContextApiView(MethodView):
             # logging.info(f"Context for {company_short_name}/{user_identifier} rebuilt successfully.")
 
             # 3. Respond with JSON, as this is an API endpoint.
-            return jsonify({'status': 'OK', 'message': 'Context has been reloaded successfully.'}), 200
+            return jsonify({'status': 'OK', 'message': 'El context se ha recargado con éxito.'}), 200
 
         except Exception as e:
-            logging.exception(f"Error forcing context rebuild for {user_identifier}: {e}")
+            logging.exception(f"Error durante la recarga de contexto {user_identifier}: {e}")
             return jsonify({"error_message": str(e)}), 500

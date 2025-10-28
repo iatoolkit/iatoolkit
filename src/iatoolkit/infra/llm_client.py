@@ -21,7 +21,7 @@ import tiktoken
 from typing import Dict, Optional, List
 from iatoolkit.services.dispatcher_service import Dispatcher
 
-CONTEXT_ERROR_MESSAGE = 'Tu consulta supera el límite de contexto, recarga la página para limpiarlo (esto demora un poco ...)'
+CONTEXT_ERROR_MESSAGE = 'Tu consulta supera el límite de contexto, utiliza el boton de recarga de contexto.'
 
 class llmClient:
     _llm_clients_cache = {}      # class attribute, for the clients cache
