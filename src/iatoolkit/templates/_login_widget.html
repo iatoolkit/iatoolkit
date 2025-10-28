@@ -15,7 +15,7 @@
       <div class="mb-3">
         <label for="email" class="form-label d-block">Correo Electrónico</label>
         <input type="email" id="email" name="email" class="form-control"
-               required value="{{ form_data.email or '' }}">
+               required value="{{ form_data.email if form_data is defined else '' }}">
       </div>
       <div class="mb-3">
         <label for="password" class="form-label d-block">Contraseña</label>
