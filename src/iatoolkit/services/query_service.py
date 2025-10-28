@@ -66,9 +66,6 @@ class QueryService:
 
         # Get the user profile from the single source of truth.
         user_profile = self.profile_service.get_profile_by_identifier(company_short_name, user_identifier)
-        if not user_profile:
-            # This might happen if a session exists for a user that was deleted.
-            return None, None
 
         # render the iatoolkit main system prompt with the company/user information
         system_prompt_template = self.prompt_service.get_system_prompt()

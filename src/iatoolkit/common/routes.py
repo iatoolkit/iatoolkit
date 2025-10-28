@@ -21,7 +21,6 @@ def register_views(injector, app):
 
     from iatoolkit.views.index_view import IndexView
     from iatoolkit.views.init_context_api_view import InitContextApiView
-    from iatoolkit.views.llmquery_web_view import LLMQueryWebView
     from iatoolkit.views.llmquery_api_view import LLMQueryApiView
     from iatoolkit.views.tasks_view import TaskView
     from iatoolkit.views.tasks_review_view import TaskReviewView
@@ -67,8 +66,8 @@ def register_views(injector, app):
                      view_func=ChatTokenRequestView.as_view('chat-token'))
 
     # init (reset) the company context (with api-key)
-    app.add_url_rule('/<company_short_name>/api/init_context_api',
-                     view_func=InitContextApiView.as_view('init_context_api'))
+    app.add_url_rule('/<company_short_name>/api/init-context',
+                     view_func=InitContextApiView.as_view('init-context'))
 
     # register new user, account verification and forgot password
     app.add_url_rule('/<company_short_name>/signup',view_func=SignupView.as_view('signup'))
@@ -80,12 +79,7 @@ def register_views(injector, app):
 
     # main chat query, used by the JS in the browser (with credentials)
     # can be used also for executing iatoolkit prompts
-    app.add_url_rule('/<company_short_name>/llm_query', view_func=LLMQueryWebView.as_view('llm_query_web'))
-
-    # this is the same function as above, but with api-key
     app.add_url_rule('/<company_short_name>/api/llm_query', view_func=LLMQueryApiView.as_view('llm_query_api'))
-
-    # chat buttons are here on
 
     # open the promt directory
     app.add_url_rule('/<company_short_name>/api/prompts', view_func=PromptApiView.as_view('prompt'))

@@ -23,7 +23,7 @@ class UserSessionContextService:
         return f"session:{company_short_name}/{user_identifier}"
 
     def clear_all_context(self, company_short_name: str, user_identifier: str):
-        """Limpia el contexto de sesión para un usuario de forma atómica."""
+        """Limpia el contexto del LLM en la sesión para un usuario de forma atómica."""
         session_key = self._get_session_key(company_short_name, user_identifier)
         if session_key:
             # RedisSessionManager.remove(session_key)

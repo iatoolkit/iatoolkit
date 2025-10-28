@@ -42,6 +42,7 @@ class InitContextApiView(MethodView):
             self.query_service.session_context.clear_all_context(company_short_name, user_identifier)
             logging.info(f"Context for {company_short_name}/{user_identifier} has been cleared.")
 
+            # LLM context is clean, now we can load it again
             self.query_service.prepare_context(
                 company_short_name=company_short_name,
                 user_identifier=user_identifier
@@ -52,7 +53,7 @@ class InitContextApiView(MethodView):
                 user_identifier=user_identifier
             )
 
-            logging.info(f"Context for {company_short_name}/{user_identifier} rebuilt successfully.")
+            # logging.info(f"Context for {company_short_name}/{user_identifier} rebuilt successfully.")
 
             # 3. Respond with JSON, as this is an API endpoint.
             return jsonify({'status': 'OK', 'message': 'Context has been reloaded successfully.'}), 200

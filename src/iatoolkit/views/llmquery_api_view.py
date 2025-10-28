@@ -32,12 +32,6 @@ class LLMQueryApiView(MethodView):
         if not data:
             return jsonify({"error": "Invalid JSON body"}), 400
 
-        # 3. Ensure session state exists for this API user (lazy creation).
-        profile = self.profile_service.get_profile_by_identifier(company_short_name, user_identifier)
-        if not profile:
-            company = self.profile_service.get_company_by_short_name(company_short_name)
-            self.profile_service.create_external_user_profile_context(company, user_identifier)
-
         # 4. Call the unified query service method.
         result = self.query_service.llm_query(
             company_short_name=company_short_name,

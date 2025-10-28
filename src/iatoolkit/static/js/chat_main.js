@@ -183,7 +183,7 @@ const handleChatMessage = async function () {
             user_identifier: window.user_identifier
         };
 
-        const responseData = await callToolkit("/llm_query", data, "POST");
+        const responseData = await callToolkit("/api/llm_query", data, "POST");
         if (responseData && responseData.answer) {
             const answerSection = $('<div>').addClass('answer-section llm-output').append(responseData.answer);
             displayBotMessage(answerSection);
