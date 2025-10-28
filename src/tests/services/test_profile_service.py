@@ -51,19 +51,19 @@ class TestProfileService:
         mock_session_manager.set.assert_any_call('user_identifier', str(self.mock_user.email))
         mock_session_manager.set.assert_any_call('company_short_name', self.mock_company.short_name)
 
-    def test_create_external_user_session_creates_web_session(self, mock_session_manager):
+    def test_create_external_user_session_creates_user_pcontext_profile(self, mock_session_manager):
         """Tests that create_external_user_session calls the dispatcher and creates a web session."""
         external_profile = {'name': 'External API User', 'roles': ['api']}
         self.mock_dispatcher.get_user_info.return_value = external_profile
 
-        self.service.create_external_user_session(self.mock_company, "ext-user-1")
+        self.service.create_external_user_profile_context(self.mock_company, "ext-user-1")
 
         self.mock_dispatcher.get_user_info.assert_called_once_with(
             company_name=self.mock_company.short_name, user_identifier="ext-user-1")
         self.mock_session_context.save_profile_data.assert_called_once_with(
             self.mock_company.short_name, "ext-user-1", external_profile
         )
-        mock_session_manager.set.assert_any_call('user_identifier', "ext-user-1")
+        mock_session_manager.set.assert_not_called()
 
     def test_get_current_session_info(self, mock_session_manager):
         """Tests get_current_session_info reads from Flask cookie and fetches from Redis."""

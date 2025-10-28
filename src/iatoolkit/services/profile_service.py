@@ -66,16 +66,18 @@ class ProfileService:
                 "extras": {}
             }
 
-            # 2. Call the session creation helper with the pre-built profile.
-            # user_identifier = str(user.id)
-            self.create_web_session(company, user_identifier, user_profile)
+            # 2. create user_profile in context
+            self.save_user_profile(company, user_identifier, user_profile)
+
+            # 3. create the web session
+            self.set_session_for_user(company.short_name, user_identifier)
             return {'success': True, "user_identifier": user_identifier, "message": "Login exitoso"}
         except Exception as e:
             return {'success': False, "message": str(e)}
 
-    def create_external_user_session(self, company: Company, user_identifier: str):
+    def create_external_user_profile_context(self, company: Company, user_identifier: str):
         """
-        Public method for views to create a web session for an external user.
+        Public method for views to create a user profile context for an external user.
         """
         # 1. Fetch the external user profile via Dispatcher.
         external_user_profile = self.dispatcher.get_user_info(
@@ -84,12 +86,12 @@ class ProfileService:
         )
 
         # 2. Call the session creation helper with external_user_id as user_identifier
-        self.create_web_session(
+        self.save_user_profile(
             company=company,
             user_identifier=user_identifier,
             user_profile=external_user_profile)
 
-    def create_web_session(self, company: Company, user_identifier: str, user_profile: dict):
+    def save_user_profile(self, company: Company, user_identifier: str, user_profile: dict):
         """
         Private helper: Takes a pre-built profile, saves it to Redis, and sets the Flask cookie.
         """
@@ -102,10 +104,8 @@ class ProfileService:
         # save user_profile in Redis session
         self.session_context.save_profile_data(company.short_name, user_identifier, user_profile)
 
-        # save a min Flask session cookie for this user
-        self.set_session_for_user(company.short_name, user_identifier)
-
     def set_session_for_user(self, company_short_name: str, user_identifier:str ):
+        # save a min Flask session cookie for this user
         SessionManager.set('company_short_name', company_short_name)
         SessionManager.set('user_identifier', user_identifier)
 

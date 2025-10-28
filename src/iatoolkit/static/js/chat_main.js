@@ -6,7 +6,7 @@ let selectedPrompt = null; // Will hold a lightweight prompt object
 
 $(document).ready(function () {
     // Gatilla el redeem sin esperar ni manejar respuesta aquí
-        if (window.redeemToken !== '') {
+        if (window.redeemToken) {
             const url = `/api/redeem_token`;
             // No await: dejamos que callToolkit maneje todo internamente
             callToolkit(url, {'token': window.redeemToken}, "POST").catch(() => {});

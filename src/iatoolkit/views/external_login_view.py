@@ -5,7 +5,7 @@
 
 import os
 import logging
-from flask import request, jsonify
+from flask import request, jsonify, url_for
 from injector import inject
 from iatoolkit.views.base_login_view import BaseLoginView
 
@@ -37,11 +37,27 @@ class ExternalLoginView(BaseLoginView):
             return jsonify(auth_response), 401
 
         # 2. Create the external user session.
-        self.profile_service.create_external_user_session(company, user_identifier)
+        self.profile_service.create_external_user_profile_context(company, user_identifier)
 
-        # 3. Delegate the path decision to the centralized logic.
+        # 3. create a redeem_token for create session at the end of the process
+        redeem_token = self.jwt_service.generate_chat_jwt(
+            company_short_name=company_short_name,
+            user_identifier=user_identifier,
+            expires_delta_seconds=300
+        )
+
+        if not redeem_token:
+            return jsonify({"error": "Error al generar el redeem_token para login externo."}), 403
+
+        # 4. define URL to call when slow path is finished
+        target_url = url_for('finalize_with_token',
+                             company_short_name=company_short_name,
+                             token=redeem_token,
+                             _external=True)
+
+        # 5. Delegate the path decision to the centralized logic.
         try:
-            return self._handle_login_path(company_short_name, user_identifier, company)
+            return self._handle_login_path(company, user_identifier, target_url, redeem_token)
         except Exception as e:
             logging.exception(f"Error processing external login path for {company_short_name}/{user_identifier}: {e}")
             return jsonify({"error": f"Internal server error while starting chat. {str(e)}"}), 500

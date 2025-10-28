@@ -5,20 +5,19 @@ import pytest
 from unittest.mock import MagicMock, patch
 from flask import Flask
 from iatoolkit.views.base_login_view import BaseLoginView
+from iatoolkit.repositories.models import Company  # Import Company for spec
 
 # Constants for test data
 COMPANY_SHORT_NAME = "test-co"
 USER_IDENTIFIER = "test-user@example.com"
+DUMMY_TARGET_URL = "/fake/target/url"
 
 
 class TestBaseLoginView:
     """Test suite for the BaseLoginView class."""
 
     def setup_method(self):
-        """
-        Set up a new view instance and fresh mocks before each test method runs.
-        This ensures test isolation.
-        """
+        """Set up a new view instance and fresh mocks before each test method runs."""
         self.mock_services = {
             "profile_service": MagicMock(),
             "branding_service": MagicMock(),
@@ -30,98 +29,93 @@ class TestBaseLoginView:
         }
         self.view_instance = BaseLoginView(**self.mock_services)
 
-        # Common company double
-        self.mock_company = MagicMock()
+        # Mock Company object with a short_name attribute
+        self.mock_company = MagicMock(spec=Company)
+        self.mock_company.short_name = COMPANY_SHORT_NAME
 
     def test_handle_login_path_slow_path(self):
-        """
-        Slow path: when rebuild is needed, it should render onboarding_shell.html
-        with iframe_src_url, branding, and onboarding_cards.
-        """
+        """Slow path: should render onboarding_shell.html with correct context."""
         # Arrange
-        self.mock_services["query_service"].prepare_context.return_value = {
-            "rebuild_needed": True
-        }
-        self.mock_services["branding_service"].get_company_branding.return_value = {
-            "logo": "logo.png"
-        }
-        self.mock_services["onboarding_service"].get_onboarding_cards.return_value = [
-            {"title": "Card 1"}
-        ]
+        self.mock_services["query_service"].prepare_context.return_value = {"rebuild_needed": True}
+        self.mock_services["branding_service"].get_company_branding.return_value = {"logo": "logo.png"}
+        self.mock_services["onboarding_service"].get_onboarding_cards.return_value = [{"title": "Card 1"}]
 
-        # Flask app context required for url_for and render_template
         app = Flask(__name__)
-        # Register route to satisfy url_for('chat', ...)
-        app.add_url_rule("/<company_short_name>/finalize_no_token", endpoint="finalize_no_token")
-
         with app.test_request_context():
             with patch("iatoolkit.views.base_login_view.render_template") as mock_rt:
+                # Act: Call with the new signature
                 _ = self.view_instance._handle_login_path(
-                    COMPANY_SHORT_NAME, USER_IDENTIFIER, self.mock_company
+                    company=self.mock_company,
+                    user_identifier=USER_IDENTIFIER,
+                    target_url=DUMMY_TARGET_URL
                 )
 
-        # Assert: prepare_context called with expected params
+        # Assert
         self.mock_services["query_service"].prepare_context.assert_called_once_with(
-            company_short_name=COMPANY_SHORT_NAME, user_identifier=USER_IDENTIFIER
+            company_short_name=self.mock_company.short_name, user_identifier=USER_IDENTIFIER
         )
-        # Branding and onboarding used in slow path
-        self.mock_services["branding_service"].get_company_branding.assert_called_once_with(
-            self.mock_company
-        )
-        self.mock_services["onboarding_service"].get_onboarding_cards.assert_called_once_with(
-            self.mock_company
-        )
-        # Template and context
+        self.mock_services["branding_service"].get_company_branding.assert_called_once_with(self.mock_company)
+        self.mock_services["onboarding_service"].get_onboarding_cards.assert_called_once_with(self.mock_company)
+
         mock_rt.assert_called_once()
-        template_name = mock_rt.call_args[0][0]
-        ctx = mock_rt.call_args[1]
-        assert template_name == "onboarding_shell.html"
-        assert "iframe_src_url" in ctx
+        template_name, ctx = mock_rt.call_args[0], mock_rt.call_args[1]
+        assert template_name[0] == "onboarding_shell.html"
+        assert ctx["iframe_src_url"] == DUMMY_TARGET_URL
         assert ctx["branding"] == {"logo": "logo.png"}
         assert ctx["onboarding_cards"] == [{"title": "Card 1"}]
 
-    def test_handle_login_path_fast_path(self):
-        """
-        Fast path: when rebuild is NOT needed, it should render chat.html
-        with branding and prompts.
-        """
+    def test_handle_login_path_fast_path_without_token(self):
+        """Fast path: should render chat.html with redeem_token as None."""
         # Arrange
-        self.mock_services["query_service"].prepare_context.return_value = {
-            "rebuild_needed": False
-        }
-        self.mock_services["branding_service"].get_company_branding.return_value = {
-            "theme": "dark"
-        }
-        self.mock_services["prompt_service"].get_user_prompts.return_value = [
-            {"id": "p1"}
-        ]
+        self.mock_services["query_service"].prepare_context.return_value = {"rebuild_needed": False}
+        self.mock_services["branding_service"].get_company_branding.return_value = {"theme": "dark"}
+        self.mock_services["prompt_service"].get_user_prompts.return_value = [{"id": "p1"}]
+        self.mock_services["onboarding_service"].get_onboarding_cards.return_value = []
 
-        # Flask app context required for render_template (no url_for used here)
         app = Flask(__name__)
         with app.test_request_context():
             with patch("iatoolkit.views.base_login_view.render_template") as mock_rt:
-                mock_rt.return_value = "<html>chat</html>"
-                result = self.view_instance._handle_login_path(
-                    COMPANY_SHORT_NAME, USER_IDENTIFIER, self.mock_company
+                # Act: Call without redeem_token
+                _ = self.view_instance._handle_login_path(
+                    company=self.mock_company,
+                    user_identifier=USER_IDENTIFIER,
+                    target_url=DUMMY_TARGET_URL
                 )
 
-        # Assert: prepare_context called with expected params
+        # Assert
         self.mock_services["query_service"].prepare_context.assert_called_once_with(
-            company_short_name=COMPANY_SHORT_NAME, user_identifier=USER_IDENTIFIER
+            company_short_name=self.mock_company.short_name, user_identifier=USER_IDENTIFIER
         )
-        # Branding and prompts used in fast path
-        self.mock_services["branding_service"].get_company_branding.assert_called_once_with(
-            self.mock_company
-        )
-        self.mock_services["prompt_service"].get_user_prompts.assert_called_once_with(
-            COMPANY_SHORT_NAME
-        )
+        self.mock_services["prompt_service"].get_user_prompts.assert_called_once_with(self.mock_company.short_name)
 
-        # Template and context
-        assert result == "<html>chat</html>"
         mock_rt.assert_called_once()
-        template_name = mock_rt.call_args[0][0]
-        ctx = mock_rt.call_args[1]
-        assert template_name == "chat.html"
+        template_name, ctx = mock_rt.call_args[0], mock_rt.call_args[1]
+        assert template_name[0] == "chat.html"
         assert ctx["branding"] == {"theme": "dark"}
         assert ctx["prompts"] == [{"id": "p1"}]
+        assert ctx["redeem_token"] is None
+
+    def test_handle_login_path_fast_path_with_token(self):
+        """Fast path: should pass the redeem_token to the chat.html template."""
+        # Arrange
+        self.mock_services["query_service"].prepare_context.return_value = {"rebuild_needed": False}
+        self.mock_services["branding_service"].get_company_branding.return_value = {}
+        self.mock_services["prompt_service"].get_user_prompts.return_value = []
+        self.mock_services["onboarding_service"].get_onboarding_cards.return_value = []
+        test_token = "test-token-123"
+
+        app = Flask(__name__)
+        with app.test_request_context():
+            with patch("iatoolkit.views.base_login_view.render_template") as mock_rt:
+                # Act: Call with redeem_token
+                _ = self.view_instance._handle_login_path(
+                    company=self.mock_company,
+                    user_identifier=USER_IDENTIFIER,
+                    target_url=DUMMY_TARGET_URL,
+                    redeem_token=test_token
+                )
+
+        # Assert
+        mock_rt.assert_called_once()
+        ctx = mock_rt.call_args[1]
+        assert ctx["redeem_token"] == test_token

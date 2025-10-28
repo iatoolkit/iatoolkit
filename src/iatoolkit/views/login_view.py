@@ -51,9 +51,14 @@ class LoginView(BaseLoginView):
 
         user_identifier = auth_response['user_identifier']
 
+        # 3. define URL to call when slow path is finished
+        target_url = url_for('finalize_no_token',
+                             company_short_name=company_short_name,
+                             _external=True)
+
         # 2. Delegate the path decision to the centralized logic.
         try:
-            return self._handle_login_path(company_short_name, user_identifier, company)
+            return self._handle_login_path(company, user_identifier, target_url)
         except Exception as e:
             return render_template("error.html", company=company, company_short_name=company_short_name,
                                    message=f"Error processing login path: {str(e)}"), 500

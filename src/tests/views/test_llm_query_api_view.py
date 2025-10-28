@@ -51,7 +51,7 @@ class TestLLMQueryApiView:
         assert response.status_code == 200
         assert response.json["answer"] == "Welcome, new user!"
         # Verify that the session creation was triggered
-        self.mock_profile.create_external_user_session.assert_called_once()
+        self.mock_profile.create_external_user_profile_context.assert_called_once()
         # Verify the query was still called
         self.mock_query.llm_query.assert_called_once_with(
             company_short_name=MOCK_COMPANY_SHORT_NAME,
@@ -77,7 +77,7 @@ class TestLLMQueryApiView:
         # Assert
         assert response.status_code == 200
         # Verify that session creation was SKIPPED
-        self.mock_profile.create_external_user_session.assert_not_called()
+        self.mock_profile.create_external_user_profile_context.assert_not_called()
         # Verify the query was called correctly
         self.mock_query.llm_query.assert_called_once_with(
             company_short_name=MOCK_COMPANY_SHORT_NAME,
