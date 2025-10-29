@@ -61,3 +61,12 @@ class InitContextApiView(MethodView):
         except Exception as e:
             logging.exception(f"Error durante la recarga de contexto {user_identifier}: {e}")
             return jsonify({"error_message": str(e)}), 500
+
+    def options(self, company_short_name):
+        """
+        Maneja las solicitudes preflight de CORS.
+        Su única función es existir y devolver una respuesta exitosa para que
+        el middleware Flask-CORS pueda interceptarla y añadir las cabeceras
+        'Access-Control-Allow-*'.
+        """
+        return {}, 200
