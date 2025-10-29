@@ -19,7 +19,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from injector import Binder, singleton, Injector
 from importlib.metadata import version as _pkg_version, PackageNotFoundError
 
-IATOOLKIT_VERSION = "0.58.5"
+IATOOLKIT_VERSION = "0.58.6"
 
 # global variable for the unique instance of IAToolkit
 _iatoolkit_instance: Optional['IAToolkit'] = None
@@ -230,7 +230,7 @@ class IAToolkit:
         default_origins = [
             "http://localhost:5001",
             "http://127.0.0.1:5001",
-            "https://portal-interno-maxxa.cl",
+            "https://portal-interno.maxxa.cl",
             os.getenv('IATOOLKIT_BASE_URL')
         ]
 
