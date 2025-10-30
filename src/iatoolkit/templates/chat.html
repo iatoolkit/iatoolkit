@@ -19,62 +19,62 @@
          class="company-section d-flex flex-column flex-md-row justify-content-md-between align-items-center px-3 py-2"
          style="{{ branding.header_style }}">
 
-    <!-- Izquierda: Nombre de la Empresa y atribución "Powered by" -->
-    <div class="d-flex align-items-center">
-        <span style="{{ branding.primary_text_style }}">
-            {{ branding.name }}
-        </span>
-        <span class="ms-2" data-bs-toggle="tooltip" data-bs-placement="bottom"
-              title="Powered by IAToolkit ({{ iatoolkit_version }})">
-            <i class="bi bi-info-circle" style="color: {{ branding.header_text_color }}; opacity: 0.7; font-size: 0.9rem;"></i>
-        </span>
+        <!-- Fila 1 (Móvil) / Columna Izquierda (Desktop): Nombre de la Empresa -->
+        <div class="d-flex align-items-center mb-2 mb-md-0">
+            <span style="{{ branding.primary_text_style }}">
+                {{ branding.name }}
+            </span>
+            <span class="ms-2" data-bs-toggle="tooltip" data-bs-placement="bottom"
+                  title="Powered by IAToolkit ({{ iatoolkit_version }})">
+                <i class="bi bi-info-circle" style="color: {{ branding.header_text_color }}; opacity: 0.7; font-size: 0.9rem;"></i>
+            </span>
+        </div>
+
+        <!-- Contenedor para la derecha que agrupa ID de usuario y botones -->
+        <div class="d-flex flex-column flex-md-row align-items-center">
+
+            <!-- Fila 2 (Móvil) / Parte 1 de la Columna Derecha (Desktop): ID de Usuario -->
+            <span style="{{ branding.secondary_text_style }}" class="mb-2 mb-md-0">
+                {{ user_identifier }}
+            </span>
+
+            <!-- Separador Vertical (Solo visible en Desktop) -->
+            <div class="vr mx-3 d-none d-md-block"></div>
+
+            <!-- Fila 3 (Móvil) / Parte 2 de la Columna Derecha (Desktop): Iconos de Acción -->
+            <div class="d-flex align-items-center">
+                <a href="javascript:void(0);"
+                   id="history-button"
+                   class="action-icon-style" title="Historial con mis consultas" style="color: {{ branding.header_text_color }};">
+                    <i class="bi bi-clock-history"></i>
+                </a>
+                <a href="javascript:void(0);"
+                   id="force-reload-button"
+                   class="ms-3 action-icon-style"
+                   title="Forzar Recarga de Contexto"
+                   style="color: {{ branding.header_text_color }};">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </a>
+                <a href="javascript:void(0);"
+                   id="send-feedback-button"
+                   class="ms-3 action-icon-style" title="Tu feedback es muy importante" style="color: {{ branding.header_text_color }};">
+                    <i class="bi bi-emoji-smile"></i>
+                </a>
+                <a href="javascript:void(0);"
+                   id="onboarding-button"
+                   class="ms-3 action-icon-style" title="Ver onboarding"
+                   style="color: {{ branding.header_text_color }};">
+                    <i class="bi bi-lightbulb"></i>
+                </a>
+                <a href="javascript:void(0);"
+                   id="logout-button"
+                   class="ms-3 action-icon-style" title="Cerrar sesión"
+                   style="color: {{ branding.header_text_color }}; !important;">
+                    <i class="bi bi-box-arrow-right"></i>
+                </a>
+            </div>
+        </div>
     </div>
-
-    <!-- Derecha: Grupo de información y acciones para el usuario -->
-    <div class="d-flex align-items-center">
-        <!-- 1. ID de Usuario -->
-        <span style="{{ branding.secondary_text_style }}">
-            {{ user_identifier }}
-        </span>
-
-        <!-- 2. Separador Vertical -->
-        <div class="vr mx-3"></div>
-
-        <!-- 3. Iconos de Acción -->
-        <a href="javascript:void(0);"
-           id="history-button"
-           class="action-icon-style" title="Historial con mis consultas" style="color: {{ branding.header_text_color }};">
-            <i class="bi bi-clock-history"></i>
-        </a>
-        <a href="javascript:void(0);"
-           id="force-reload-button"
-           class="ms-3 action-icon-style"
-           title="Forzar Recarga de Contexto"
-           style="color: {{ branding.header_text_color }};">
-            <i class="bi bi-arrow-clockwise"></i>
-        </a>
-        <a href="javascript:void(0);"
-           id="send-feedback-button"
-           class="ms-3 action-icon-style" title="Tu feedback es muy importante" style="color: {{ branding.header_text_color }};">
-            <i class="bi bi-emoji-smile"></i>
-        </a>
-        <a href="javascript:void(0);"
-           id="onboarding-button"
-           class="ms-3 action-icon-style" title="Ver onboarding"
-           style="color: {{ branding.header_text_color }};">
-            <i class="bi bi-lightbulb"></i>
-        </a>
-
-        <!-- Icono de cerrar sesión (al final) -->
-        <a href="javascript:void(0);"
-           id="logout-button"
-           class="ms-3 action-icon-style" title="Cerrar sesión"
-           style="color: {{ branding.header_text_color }}; !important;">
-            <i class="bi bi-box-arrow-right"></i>
-        </a>
-    </div>
-
-</div>
 
 <div id="chat-container"
      class="chat-block mt-2 flex-grow-1"

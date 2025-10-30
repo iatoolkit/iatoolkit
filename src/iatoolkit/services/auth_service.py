@@ -110,7 +110,7 @@ class AuthService:
             return {
                 "success": True,
                 "company_short_name": session_info['company_short_name'],
-                "user_identifier": session_info['user_identifier']
+                "user_identifier": session_info['user_identifier'],
             }
 
         # --- Priority 2: Check for a valid API Key in headers ---
