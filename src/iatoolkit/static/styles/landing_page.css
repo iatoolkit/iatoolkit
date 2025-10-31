@@ -36,8 +36,9 @@ body {
 
 /* --- Sección Principal (Hero) --- */
 .hero-section {
-    padding: 3rem 0 1rem; /* Ajustado: 5rem arriba, 0 a los lados, 2.5rem abajo */
+    padding: 2rem 0 1rem; /* Ajustado: 5rem arriba, 0 a los lados, 2.5rem abajo */
 }
+
 .hero-title {
     font-size: 3rem;
     font-weight: 800;
