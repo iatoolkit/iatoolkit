@@ -21,10 +21,8 @@ class Utility:
     def __init__(self):
         self.encryption_key = os.getenv('FERNET_KEY')
 
-
     def render_prompt_from_template(self,
                                     template_pathname: str,
-                                    query: str = None,
                                     client_data: dict = {},
                                     **kwargs) -> str:
 
@@ -36,8 +34,6 @@ class Utility:
 
             env = Environment(loader=FileSystemLoader(template_dir))
             template = env.get_template(template_file)
-
-            kwargs["query"] = query
 
             # add all the keys in client_data to kwargs
             kwargs.update(client_data)
@@ -53,7 +49,6 @@ class Utility:
     def render_prompt_from_string(self,
                                   template_string: str,
                                   searchpath: str | list[str] = None,
-                                  query: str = None,
                                   client_data: dict = {},
                                   **kwargs) -> str:
         """
@@ -76,7 +71,6 @@ class Utility:
             env = Environment(loader=loader)
             template = env.from_string(template_string)
 
-            kwargs["query"] = query
             kwargs.update(client_data)
 
             prompt = template.render(**kwargs)

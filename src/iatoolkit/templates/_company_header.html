@@ -1,15 +1,21 @@
 <div class="custom-company-header" style="{{ branding.header_style }}">
 
     {# Enlace condicional para el nombre de la marca a la izquierda #}
+    {% if company_short_name %}
         <a href="{{ url_for('home', company_short_name=company_short_name) }}"
            class="brand-name"
            style="{{ branding.primary_text_style }}">
             {{ branding.name }}
         </a>
+    {% else %}
+        <span class="brand-name" style="{{ branding.primary_text_style }}">
+            {{ branding.name }}
+        </span>
+    {% endif %}
 
+    {# Texto "Powered by" con enlace a iatoolkit.com #}
     <span class="powered-by">
-        Powered by IAToolkit
-         </a>
+        Powered by <a href="https://www.iatoolkit.com" target="_blank" rel="noopener noreferrer" class="iatoolkit-link">IAToolkit</a>
     </span>
 
 </div>

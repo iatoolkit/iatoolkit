@@ -19,7 +19,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from injector import Binder, Injector, singleton
 from importlib.metadata import version as _pkg_version, PackageNotFoundError
 
-IATOOLKIT_VERSION = "0.61.0"
+IATOOLKIT_VERSION = "0.62.0"
 
 # global variable for the unique instance of IAToolkit
 _iatoolkit_instance: Optional['IAToolkit'] = None

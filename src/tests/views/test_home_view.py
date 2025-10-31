@@ -2,7 +2,7 @@
 
 import pytest
 from flask import Flask
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, mock_open
 
 from iatoolkit.repositories.models import Company
 from iatoolkit.services.branding_service import BrandingService
@@ -37,71 +37,75 @@ class TestHomeView:
                                 branding_service=self.branding_service)
         self.app.add_url_rule("/<string:company_short_name>/home.html", view_func=view, methods=["GET"])
 
-        # Añadir rutas dummy para que los url_for() del template _login_widget.html no fallen
-        @self.app.route("/<string:company_short_name>/login", endpoint="login", methods=["POST"])
-        def dummy_login(company_short_name):
-            return "Login Page", 200
+        # Ruta dummy para que url_for() en el template de error no falle.
+        # Es importante tenerla aunque no se use directamente en el test.
+        @self.app.route("/<string:company_short_name>/home_dummy", endpoint="home_dummy_for_error")
+        def dummy_home_for_error_template(company_short_name):
+            return "Dummy Home"
 
-        @self.app.route("/<string:company_short_name>/signup", endpoint="signup")
-        def dummy_signup(company_short_name):
-            return "Signup Page", 200
-
-        @self.app.route("/<string:company_short_name>/forgot_password", endpoint="forgot_password")
-        def dummy_forgot_password(company_short_name):
-            return "Forgot Password Page", 200
-
-    @patch("iatoolkit.views.home_view.render_template")
-    def test_get_home_page_success(self, mock_render_template):
-        """Prueba que la página de inicio se carga correctamente sin alertas en la sesión."""
-        mock_render_template.return_value = "<html></html>"
+    @patch('iatoolkit.views.home_view.render_template_string')
+    @patch('iatoolkit.views.home_view.open', new_callable=mock_open, read_data="<html>{{ company.name }}</html>")
+    @patch('iatoolkit.views.home_view.os.path.exists', return_value=True)
+    def test_custom_template_renders_successfully(self, mock_exists, mock_file, mock_render_string):
+        """Prueba el caso de éxito: la plantilla personalizada existe y se renderiza."""
+        mock_render_string.return_value = "Rendered HTML"
 
         response = self.client.get("/test_co/home.html")
 
         assert response.status_code == 200
-        mock_render_template.assert_called_once_with(
-            'home.html',
+        # Verificamos que se llamó a la función correcta para renderizar el string
+        mock_render_string.assert_called_once_with(
+            "<html>{{ company.name }}</html>",
             company=self.test_company,
             company_short_name='test_co',
             branding=self.branding_service.get_company_branding.return_value,
             alert_message=None,
-            alert_icon='error'  # 'error' es el valor por defecto de session.pop
+            alert_icon='error'
         )
 
-    @patch("iatoolkit.views.home_view.render_template")
-    def test_get_home_page_with_session_alerts(self, mock_render_template):
-        """Prueba que la vista procesa y limpia correctamente las alertas de la sesión."""
-        mock_render_template.return_value = "<html></html>"
-        success_message = "¡Acción completada con éxito!"
-
-        # Preparar la sesión con los datos de la alerta
-        with self.client.session_transaction() as sess:
-            sess['alert_message'] = success_message
-            sess['alert_icon'] = 'success'
+    @patch('iatoolkit.views.home_view.render_template')
+    @patch('iatoolkit.views.home_view.os.path.exists', return_value=False)
+    def test_custom_template_does_not_exist(self, mock_exists, mock_render_template):
+        """Prueba el caso en que la plantilla personalizada no existe."""
+        mock_render_template.return_value = "Error Page"
 
         response = self.client.get("/test_co/home.html")
 
-        # Afirmar que se renderizó con los datos de la sesión
-        assert response.status_code == 200
+        assert response.status_code == 500
+        # Verificamos que se renderiza la página de error con el mensaje correcto
         mock_render_template.assert_called_once_with(
-            'home.html',
+            "error.html",
             company=self.test_company,
             company_short_name='test_co',
             branding=self.branding_service.get_company_branding.return_value,
-            alert_message=success_message,
-            alert_icon='success'
+            message="La plantilla de la página de inicio para la empresa 'test_co' no está configurada."
         )
 
-        with self.client.session_transaction() as sess:
-            assert 'alert_message' not in sess
-            assert 'alert_icon' not in sess
+    @patch('iatoolkit.views.home_view.render_template')
+    @patch('iatoolkit.views.home_view.render_template_string', side_effect=Exception("Jinja Error"))
+    @patch('iatoolkit.views.home_view.open', new_callable=mock_open, read_data="<html>...</html>")
+    @patch('iatoolkit.views.home_view.os.path.exists', return_value=True)
+    def test_custom_template_processing_fails(self, mock_exists, mock_file, mock_render_string, mock_render_template):
+        """Prueba el caso en que la plantilla existe pero falla al ser procesada."""
+        mock_render_template.return_value = "Error Page"
+
+        response = self.client.get("/test_co/home.html")
+
+        assert response.status_code == 500
+        # Verificamos que se renderiza la página de error con el mensaje de error de procesamiento
+        mock_render_template.assert_called_once_with(
+            "error.html",
+            company=self.test_company,
+            company_short_name='test_co',
+            branding=self.branding_service.get_company_branding.return_value,
+            message="Ocurrió un error al procesar la plantilla personalizada de la página de inicio."
+        )
 
     def test_get_home_page_invalid_company(self):
-        """Prueba que se devuelve un 404 si la empresa no es válida."""
+        """Prueba que se devuelve un 404 si la empresa no es válida (sin cambios)."""
         self.profile_service.get_company_by_short_name.return_value = None
 
         response = self.client.get("/invalid_co/home.html")
 
         assert response.status_code == 404
-        # Verificamos el texto con el caracter de comilla simple escapado (&#39;)
-        # ya que Flask lo convierte automáticamente en su página de error por defecto.
         assert b"La empresa &#39;invalid_co&#39; no fue encontrada." in response.data
