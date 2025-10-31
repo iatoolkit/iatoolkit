@@ -95,7 +95,6 @@
 
 /* Estilo del mensaje ingresado por el usuario */
 #chat-container .message {
-  margin-top: 10px;
   max-width: 75%;
   min-width: fit-content;
   width: fit-content;
@@ -105,20 +104,20 @@
   align-items: center;
   align-self: flex-end;
   text-align: left;
-  padding: 15px;
+  padding-left: 0.5em;
+    color: #202123;
   font-family: Arial, sans-serif;
   font-size: 15px;
-  line-height: 1.5;
-  color: #333;
-  background-color: #ffffff;
-  border: 1px solid #ddd;
+  line-height: 1.6;
+  background-color: #f8f9fa;
+  border: none;
 }
 
 
 .answer-section {
-    color: #202123; /* Texto negro suave */
-    font-family: "Inter", Arial, sans-serif; /* Fuente moderna */
-    font-size: 16px;
+    color: #202123;
+    font-family: "Inter", Arial, sans-serif;
+    font-size: 15px;
     line-height: 1.6;
     word-wrap: break-word;
     padding-top: 0.5em;

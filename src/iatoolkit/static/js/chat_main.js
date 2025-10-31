@@ -4,43 +4,22 @@ let abortController = null;
 let selectedPrompt = null; // Will hold a lightweight prompt object
 
 $(document).ready(function () {
-    // Gatilla el redeem sin esperar ni manejar respuesta aquí
+    // Si viene un Token retornado por login con APY-KEY se gatilla el redeem a una sesion de flask
         if (window.redeemToken) {
             const url = `/api/redeem_token`;
             // No await: dejamos que callToolkit maneje todo internamente
             callToolkit(url, {'token': window.redeemToken}, "POST").catch(() => {});
         }
 
-    // --- MAIN EVENT HANDLERS ---
+    // --- chat main event hadlers ---
     $('#send-button').on('click', handleChatMessage);
     $('#stop-button').on('click', abortCurrentRequest);
     if (window.sendButtonColor)
         $('#send-button i').css('color', window.sendButtonColor);
 
-// --- PROMPT ASSISTANT FUNCTIONALITY ---
-    $('.input-area').on('click', '.dropdown-menu a.dropdown-item', function (event) {
-        event.preventDefault();
-        const promptData = $(this).data();
-
-        const promptObject = {
-            prompt: promptData.promptName,
-            description: promptData.promptDescription,
-            custom_fields: typeof promptData.customFields === 'string' ? JSON.parse(promptData.customFields) : promptData.customFields
-        };
-
-        selectPrompt(promptObject);
-    });
-
-    // Handles the 'clear' button for the prompt selector
-    $('#clear-selection-button').on('click', function() {
-        resetPromptSelection();
-        updateSendButtonState();
-    });
-
-    // --- TEXTAREA FUNCTIONALITY ---
-    const questionTextarea = $('#question');
 
     // Handles Enter key press to send a message
+    const questionTextarea = $('#question');
     questionTextarea.on('keypress', function (event) {
         if (event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault();
@@ -60,71 +39,8 @@ $(document).ready(function () {
 
     // Set the initial disabled state of the send button
     updateSendButtonState();
+
 });
-
-
-/**
- * Handles the selection of a prompt from the dropdown.
- * @param {object} prompt The prompt object read from data attributes.
- */
-function selectPrompt(prompt) {
-    selectedPrompt = prompt;
-
-    // Update the dropdown button to show the selected prompt's description
-    $('#prompt-select-button').text(prompt.description).addClass('item-selected');
-    $('#clear-selection-button').show();
-
-    // Clear the main textarea, as we are now in "prompt mode"
-    $('#question').val('');
-    autoResizeTextarea($('#question')[0]); // Reset height after clearing
-
-    // Store values in hidden fields for backward compatibility or other uses
-    $('#prompt-select-value').val(prompt.prompt);
-    $('#prompt-select-description').val(prompt.description);
-
-    // Render the dynamic input fields required by the selected prompt
-    renderDynamicInputs(prompt.custom_fields || []);
-    updateSendButtonState();
-}
-
-/**
- * Resets the prompt selection and clears associated UI elements.
- */
-function resetPromptSelection() {
-    selectedPrompt = null;
-
-    $('#prompt-select-button').text('Prompts disponibles ....').removeClass('item-selected');
-    $('#clear-selection-button').hide();
-    $('#prompt-select-value').val('');
-    $('#prompt-select-description').val('');
-
-    // Clear any dynamically generated input fields
-    $('#dynamic-inputs-container').empty();
-}
-
-/**
- * Renders the custom input fields for the selected prompt.
- * @param {Array<object>} fields The array of custom field configurations.
- */
-function renderDynamicInputs(fields) {
-    const container = $('#dynamic-inputs-container');
-    container.empty();
-
-    const row = $('<div class="row g-2"></div>');
-    fields.forEach(field => {
-        const colDiv = $('<div class="col-md"></div>');
-        const formFloating = $('<div class="form-floating"></div>');
-        const input = $(`<input type="${field.type || 'text'}" class="form-control form-control-soft" id="${field.data_key}-id" ">`);
-        const label = $(`<label for="${field.data_key}-id">${field.label}</label>`);
-
-        formFloating.append(input, label);
-        colDiv.append(formFloating);
-        row.append(colDiv);
-    });
-
-    container.append(row);
-}
-
 
 
 /**
@@ -162,7 +78,6 @@ const handleChatMessage = async function () {
         }
 
         // Simplificado: Si no hay mensaje, el 'finally' se encargará de limpiar.
-        // Simplemente salimos de la función.
         if (!displayMessage) {
             return;
         }
@@ -267,27 +182,6 @@ const toggleSendStopButtons = function (showStop) {
     $('#send-button-container').toggle(!showStop);
     $('#stop-button-container').toggle(showStop);
 };
-
-/**
- * Resets the prompt selector to its default state.
- */
-function resetPromptSelect() {
-    $('#prompt-select-button').text('Prompts disponibles ....').removeClass('item-selected');
-    $('#prompt-select-value').val('');
-    $('#prompt-select-description').val('');
-    $('#clear-selection-button').hide();
-}
-
-/**
- * Resets the company-specific data input field.
- */
-function resetSpecificDataInput() {
-    if (specificDataConfig && specificDataConfig.enabled) {
-        const input = $('#' + specificDataConfig.id);
-        input.val('').removeClass('has-content');
-        $('#clear-' + specificDataConfig.id + '-button').hide();
-    }
-}
 
 
 /**
@@ -450,44 +344,3 @@ function toBase64(file) {
     });
 }
 
-/**
- * Displays the document validation results.
- * @param {Array<object>} document_list
- */
-function display_document_validation(document_list) {
-    const requiredFields = ['document_name', 'document_type', 'causes', 'is_valid'];
-    for (const doc of document_list) {
-        if (!requiredFields.every(field => field in doc)) {
-            console.warn("Document with incorrect structure:", doc);
-            continue;
-        }
-        const docValidationSection = $('<div>').addClass('document-section card mt-2 mb-2');
-        const cardBody = $('<div>').addClass('card-body');
-        const headerDiv = $('<div>').addClass('d-flex justify-content-between align-items-center mb-2');
-        const filenameSpan = $(`
-                <div>
-                    <span class="text-primary fw-bold">File: </span>
-                    <span class="text-secondary">${doc.document_name}</span>
-                </div>`);
-        const badge_style = doc.is_valid ? 'bg-success' : 'bg-danger';
-        const documentBadge = $('<span>')
-            .addClass(`badge ${badge_style} p-2`)
-            .text(doc.document_type);
-        headerDiv.append(filenameSpan).append(documentBadge);
-        cardBody.append(headerDiv);
-
-        if (!doc.is_valid && doc.causes && doc.causes.length > 0) {
-            const rejectionSection = $('<div>').addClass('rejection-reasons mt-2');
-            rejectionSection.append('<h6 class="text-danger">Rejection Causes:</h6>');
-            const causesList = doc.causes.map(cause => `<li class="text-secondary">${cause}</li>`).join('');
-            rejectionSection.append(`<ul class="list-unstyled">${causesList}</ul>`);
-            cardBody.append(rejectionSection);
-        } else if (doc.is_valid) {
-            const validSection = $('<div>').addClass('mt-2');
-            validSection.append('<p class="text-success fw-bold">Valid document.</p>');
-            cardBody.append(validSection);
-        }
-        docValidationSection.append(cardBody);
-        displayBotMessage(docValidationSection);
-    }
-}
