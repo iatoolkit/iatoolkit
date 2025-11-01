@@ -25,7 +25,7 @@ class HomeView(MethodView):
         company = self.profile_service.get_company_by_short_name(company_short_name)
 
         if not company:
-            abort(404, description=f"La empresa '{company_short_name}' no fue encontrada.")
+            return render_template('error.html', message="Empresa no encontrada"), 404
 
         branding_data = self.branding_service.get_company_branding(company)
         alert_message = session.pop('alert_message', None)
@@ -39,7 +39,6 @@ class HomeView(MethodView):
         if not os.path.exists(company_template_path):
             return render_template(
                 "error.html",
-                company=company,
                 company_short_name=company_short_name,
                 branding=branding_data,
                 message=f"La plantilla de la página de inicio para la empresa '{company_short_name}' no está configurada."
@@ -62,7 +61,6 @@ class HomeView(MethodView):
         except Exception as e:
             return render_template(
                 "error.html",
-                company=company,
                 company_short_name=company_short_name,
                 branding=branding_data,
                 message=f"Ocurrió un error al procesar la plantilla personalizada de la página de inicio: {str(e)}"

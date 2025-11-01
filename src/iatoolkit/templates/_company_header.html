@@ -1,16 +1,20 @@
 {# El div principal ahora es un contenedor y tiene los estilos y clases de alineación #}
 <div class="custom-company-header container d-flex justify-content-between align-items-center">
 
+    {% if company_short_name and branding %}
     <a href="{{ url_for('home', company_short_name=company_short_name) }}"
        class="brand-name"
        style="{{ branding.primary_text_style }}">
         {{ branding.name }} IA
     </a>
-
+    {% else %}
+        <span class="brand-name">
+             IAToolkit
+        </span>
+    {% endif %}
 
     {# Texto "Powered by" con enlace a iatoolkit.com #}
     <span class="powered-by">
         Powered by <a href="{{ url_for('index') }}" rel="noopener noreferrer" class="iatoolkit-link">IAToolkit</a>
     </span>
-
 </div>

@@ -50,7 +50,9 @@ class ChangePasswordView(MethodView):
         # get company info
         company = self.profile_service.get_company_by_short_name(company_short_name)
         if not company:
-            return render_template('error.html', message=f"Empresa no encontrada: {company_short_name}"), 404
+            return render_template('error.html',
+            company_short_name=company_short_name,
+            message=f"Empresa no encontrada: {company_short_name}"), 404
 
         branding_data = self.branding_service.get_company_branding(company)
         try:
@@ -95,7 +97,6 @@ class ChangePasswordView(MethodView):
 
         except Exception as e:
             return render_template("error.html",
-                                   company=company,
                                    company_short_name=company_short_name,
                                    branding=branding_data,
                                    message=f"Ha ocurrido un error inesperado: {str(e)}"), 500

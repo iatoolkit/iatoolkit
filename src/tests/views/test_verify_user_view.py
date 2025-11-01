@@ -127,7 +127,6 @@ class TestVerifyAccountView:
         assert response.status_code == 500
         mock_render_template.assert_called_once_with(
             "error.html",
-            company=self.test_company,
             branding=self.branding_service.get_company_branding.return_value,
             company_short_name='test_company',
             message="Ha ocurrido un error inesperado."

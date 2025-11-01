@@ -25,7 +25,9 @@ class SignupView(MethodView):
         # get company info
         company = self.profile_service.get_company_by_short_name(company_short_name)
         if not company:
-            return render_template('error.html', message="Empresa no encontrada"), 404
+            return render_template('error.html',
+                            company_short_name=company_short_name,
+                            message="Empresa no encontrada"), 404
 
         # Obtener los datos de branding
         branding_data = self.branding_service.get_company_branding(company)
@@ -39,8 +41,11 @@ class SignupView(MethodView):
         # get company info
         company = self.profile_service.get_company_by_short_name(company_short_name)
         if not company:
-            return render_template('error.html', message="Empresa no encontrada"), 404
+            return render_template('error.html',
+                        company_short_name=company_short_name,
+                        message="Empresa no encontrada"), 404
 
+        branding_data = self.branding_service.get_company_branding(company)
         try:
             first_name = request.form.get('first_name')
             last_name = request.form.get('last_name')
@@ -62,7 +67,6 @@ class SignupView(MethodView):
                 verification_url=verification_url)
 
             if "error" in response:
-                branding_data = self.branding_service.get_company_branding(company)
                 return render_template(
                     'signup.html',
                     company=company,
@@ -86,7 +90,7 @@ class SignupView(MethodView):
 
         except Exception as e:
             return render_template("error.html",
-                                   company=company,
                                    company_short_name=company_short_name,
+                                   branding=branding_data,
                                    message=f"Ha ocurrido un error inesperado: {str(e)}"), 500
 

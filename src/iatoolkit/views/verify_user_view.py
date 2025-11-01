@@ -55,7 +55,6 @@ class VerifyAccountView(MethodView):
 
         except Exception as e:
             return render_template("error.html",
-                                   company=company,
                                    company_short_name=company_short_name,
                                    branding=branding_data,
                                    message="Ha ocurrido un error inesperado."), 500

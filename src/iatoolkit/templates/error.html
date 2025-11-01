@@ -1,11 +1,14 @@
 {% extends "base.html" %}
 
-{% block title %}Error - {{ company.name }}{% endblock %}
+{% block title %}Error {% endblock %}
 
 {% block styles %}
+{# Carga las variables de CSS personalizadas de la empresa #}
+{% if branding %}
     <style>
         {{ branding.css_variables | safe }}
     </style>
+{% endif %}
     {# Enlace a los iconos de Bootstrap para el icono de error #}
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 {% endblock %}
@@ -25,22 +28,19 @@
                     {# Icono de error grande y visible #}
                     <i class="bi bi-exclamation-triangle-fill text-danger" style="font-size: 4rem;"></i>
 
-                    <h2 class="card-title mt-4">Ha Ocurrido un Error</h2>
+                    <h4 class="card-title mt-4">Ha Ocurrido un Error</h4>
 
                     {# El mensaje de error dinámico que se pasa desde la vista #}
                     <p class="text-muted mt-3 mb-4">
                         {{ message | default('Lo sentimos, algo salió mal. Por favor, inténtalo de nuevo más tarde.') }}
                     </p>
 
-                    {# Botón para volver a la página de inicio de la empresa #}
-                    <a href="{{ url_for('home', company_short_name=company_short_name) }}"
-                       class="btn btn-branded-primary px-4">
-                        Volver al Inicio
+                    <a href="javascript:history.back()"
+                        class="btn btn-branded-primary px-4">
+                            Volver
                     </a>
-
                 </div>
             </div>
-
         </div>
     </div>
 </div>
