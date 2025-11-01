@@ -66,8 +66,8 @@ PROMPT_LIST = [
 
 BRANDING = {
     # --- Estilos del Encabezado Principal ---
-    "header_background_color": "#0D5D53",       # Fondo en el nuevo verde pino
-    "header_text_color": "#FFFFFF",             # Texto principal en blanco
+    "header_background_color": "#4C6A8D",       # Fondo en Azul Acero
+    "header_text_color": "#FFFFFF",             # Texto en blanco para un contraste nítido
     "primary_font_weight": "600",
     "primary_font_size": "1.2rem",
     "secondary_font_weight": "400",
@@ -77,54 +77,8 @@ BRANDING = {
     "tertiary_opacity": "0.7",
 
     # --- Estilos Globales de la Marca (Botones y acciones) ---
-    "brand_primary_color": "#0D5D53",           # Verde pino como color de acción principal
-    "brand_secondary_color": "#64748B",         # Se mantiene el gris pizarra para acciones secundarias
-    "brand_text_on_primary": "#FFFFFF",         # Texto blanco sobre el verde
-    "brand_text_on_secondary": "#FFFFFF",       # Texto blanco sobre el gris
-
-    # --- Estilos para Alertas de Error ---
-    "brand_danger_color": "#dc3545",
-    "brand_danger_bg": "#f8d7da",
-    "brand_danger_text": "#842029",
-    "brand_danger_border": "#f5c2c7",
-
-    # --- Estilos para Alertas Informativas ---
-    "brand_info_bg": "#ECFDF5",                 # Un verde muy pálido, casi menta
-    "brand_info_text": "#0D5D53",               # El mismo verde pino
-    "brand_info_border": "#A7F3D0",             # Un borde verde menta claro
-
-    # --- Estilos para el Asistente de Prompts ---
-    "prompt_assistant_bg": "#f8f9fa",
-    "prompt_assistant_border": "#dee2e6",
-    "prompt_assistant_icon_color": "#0D5D53",    # Icono de la varita en verde pino
-    "prompt_assistant_button_bg": "#FFFFFF",
-    "prompt_assistant_button_text": "#334155",
-    "prompt_assistant_button_border": "#cbd5e1",
-    "prompt_assistant_dropdown_bg": "#FFFFFF",
-    "prompt_assistant_header_bg": "#f1f3f5",
-    "prompt_assistant_header_text": "#334155",
-    "prompt_assistant_item_hover_bg": None,
-    "prompt_assistant_item_hover_text": None,
-
-    # --- Color para el botón de Enviar ---
-    "send_button_color": "#0D5D53"               # El botón de enviar usa el color primario
-}
-
-BRANDING_AZUL = {
-    # --- Estilos del Encabezado Principal ---
-    "header_background_color": "#3D44C4",       # Fondo en el nuevo azul índigo
-    "header_text_color": "#FFFFFF",             # Texto principal en blanco para contraste
-    "primary_font_weight": "600",
-    "primary_font_size": "1.2rem",
-    "secondary_font_weight": "400",
-    "secondary_font_size": "0.9rem",
-    "tertiary_font_weight": "400",
-    "tertiary_font_size": "0.8rem",
-    "tertiary_opacity": "0.7",
-
-    # --- Estilos Globales de la Marca (Botones y acciones) ---
-    "brand_primary_color": "#3D44C4",           # Azul índigo como color de acción principal
-    "brand_secondary_color": "#6c757d",         # Gris estándar para acciones secundarias
+    "brand_primary_color": "#4C6A8D",           # Azul Acero como color de acción principal
+    "brand_secondary_color": "#9EADC0",         # Un gris azulado más claro para acciones secundarias
     "brand_text_on_primary": "#FFFFFF",         # Texto blanco sobre el azul
     "brand_text_on_secondary": "#FFFFFF",       # Texto blanco sobre el gris
 
@@ -135,26 +89,27 @@ BRANDING_AZUL = {
     "brand_danger_border": "#f5c2c7",
 
     # --- Estilos para Alertas Informativas ---
-    "brand_info_bg": "#e8e9ff",
-    "brand_info_text": "#3D44C4",
-    "brand_info_border": "#d2d5ff",
+    "brand_info_bg": "#F0F4F8",                 # Un fondo de gris azulado muy pálido
+    "brand_info_text": "#4C6A8D",               # Texto en el color primario
+    "brand_info_border": "#D9E2EC",             # Borde de gris azulado pálido
 
     # --- Estilos para el Asistente de Prompts ---
     "prompt_assistant_bg": "#f8f9fa",
-    "prompt_assistant_border": "#dee2e6",
-    "prompt_assistant_icon_color": "#3D44C4",
+    "prompt_assistant_border": "#e2e8f0",
+    "prompt_assistant_icon_color": "#4C6A8D",    # Icono de la varita en color primario
     "prompt_assistant_button_bg": "#FFFFFF",
-    "prompt_assistant_button_text": "#495057",
-    "prompt_assistant_button_border": "#ced4da",
+    "prompt_assistant_button_text": "#334155",
+    "prompt_assistant_button_border": "#cbd5e1",
     "prompt_assistant_dropdown_bg": "#FFFFFF",
     "prompt_assistant_header_bg": "#f1f3f5",
-    "prompt_assistant_header_text": "#212529",
-    "prompt_assistant_item_hover_bg": None,
-    "prompt_assistant_item_hover_text": None,
+    "prompt_assistant_header_text": "#334155",
+    "prompt_assistant_item_hover_bg": None,      # Usará el primario (Azul Acero)
+    "prompt_assistant_item_hover_text": None,  # Usará el texto sobre primario (blanco)
 
     # --- Color para el botón de Enviar ---
-    "send_button_color": "#3D44C4"
+    "send_button_color": "#4C6A8D"               # El botón de enviar usa el color primario
 }
+
 
 ONBOARDING_CARDS = [
     {
