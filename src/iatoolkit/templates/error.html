@@ -3,21 +3,17 @@
 {% block title %}Error - {{ company.name }}{% endblock %}
 
 {% block styles %}
-    {# Carga las variables de CSS y los estilos principales de la marca #}
     <style>
         {{ branding.css_variables | safe }}
     </style>
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles/chat_iatoolkit.css') }}">
     {# Enlace a los iconos de Bootstrap para el icono de error #}
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 {% endblock %}
 
 {% block content %}
-
-{# 1. Incluimos el encabezado reutilizable de la empresa #}
 {% include '_company_header.html' %}
 
-{# 2. Contenedor principal para el mensaje de error #}
+{# Contenedor principal para el mensaje de error #}
 <div class="container mt-5">
     <div class="row justify-content-center">
         <div class="col-md-8 col-lg-6">
