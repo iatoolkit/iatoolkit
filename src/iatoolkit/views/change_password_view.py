@@ -97,4 +97,5 @@ class ChangePasswordView(MethodView):
             return render_template("error.html",
                                    company=company,
                                    company_short_name=company_short_name,
-                                   message="Ha ocurrido un error inesperado."), 500
+                                   branding=branding_data,
+                                   message=f"Ha ocurrido un error inesperado: {str(e)}"), 500

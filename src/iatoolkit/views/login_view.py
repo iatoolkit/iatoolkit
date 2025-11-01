@@ -60,8 +60,10 @@ class LoginView(BaseLoginView):
         try:
             return self._handle_login_path(company, user_identifier, target_url)
         except Exception as e:
-            return render_template("error.html", company=company, company_short_name=company_short_name,
-                                   message=f"Error processing login path: {str(e)}"), 500
+            return render_template("error.html",
+            company=company,
+            company_short_name=company_short_name,
+            message=f"Error processing login path: {str(e)}"), 500
 
 
 class FinalizeContextView(MethodView):
@@ -107,6 +109,7 @@ class FinalizeContextView(MethodView):
         company = self.profile_service.get_company_by_short_name(company_short_name)
         if not company:
             return render_template('error.html', message="Empresa no encontrada"), 404
+        branding_data = self.branding_service.get_company_branding(company)
 
         try:
             # 2. Finalize the context rebuild (the heavy task).
@@ -117,7 +120,6 @@ class FinalizeContextView(MethodView):
 
             # 3. render the chat page.
             prompts = self.prompt_service.get_user_prompts(company_short_name)
-            branding_data = self.branding_service.get_company_branding(company)
             onboarding_cards = self.onboarding_service.get_onboarding_cards(company)
 
             return render_template(
@@ -134,5 +136,6 @@ class FinalizeContextView(MethodView):
             return render_template("error.html",
                                    company=company,
                                    company_short_name=company_short_name,
+                                   branding=branding_data,
                                    message=f"An unexpected error occurred during context loading: {str(e)}"), 500
 

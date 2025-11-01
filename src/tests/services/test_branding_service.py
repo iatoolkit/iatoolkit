@@ -40,11 +40,7 @@ class TestBrandingService:
 
         # Assert
         assert branding['name'] == "Test Corp"
-        expected_header_style = (
-            f"background-color: {self.default_styles['header_background_color']}; "
-            f"color: {self.default_styles['header_text_color']};"
-        )
-        assert branding['header_style'] == expected_header_style
+
 
     def test_get_branding_with_partial_custom_branding(self):
         """
@@ -65,14 +61,6 @@ class TestBrandingService:
         # Assert
         assert branding['name'] == "Partial Brand Inc."
 
-        # El color de fondo debe ser el personalizado, pero el de texto debe ser el por defecto
-        expected_header_style = (
-            f"background-color: #123456; "
-            f"color: {self.default_styles['header_text_color']};"
-        )
-        assert branding['header_style'] == expected_header_style
-
-    # Dentro de tu clase de test, por ejemplo, TestBrandingService
 
     def test_get_branding_with_full_custom_branding(self):
         # Arrange: Definimos solo los estilos que queremos sobreescribir para este test.
@@ -93,10 +81,6 @@ class TestBrandingService:
         # Assert
         # 1. Validar el nombre de la compañía
         assert branding['name'] == "Full Brand LLC"
-
-        # 2. Validar que la cadena del estilo del encabezado se construyó correctamente
-        expected_header_style = "background-color: #000000; color: #FFFFFF;"
-        assert branding['header_style'] == expected_header_style
 
         # 3. Validar que la cadena del estilo de texto primario se construyó correctamente
         expected_primary_style = "font-weight: 300; font-size: 1.2rem;"

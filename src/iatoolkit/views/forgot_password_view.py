@@ -36,6 +36,7 @@ class ForgotPasswordView(MethodView):
         company = self.profile_service.get_company_by_short_name(company_short_name)
         if not company:
             return render_template('error.html', message="Empresa no encontrada"), 404
+        branding_data = self.branding_service.get_company_branding(company)
 
         try:
             email = request.form.get('email')
@@ -48,7 +49,6 @@ class ForgotPasswordView(MethodView):
 
             response = self.profile_service.forgot_password(email=email, reset_url=reset_url)
             if "error" in response:
-                branding_data = self.branding_service.get_company_branding(company)
                 return render_template(
                     'forgot_password.html',
                     company=company,
@@ -66,5 +66,6 @@ class ForgotPasswordView(MethodView):
             return render_template("error.html",
                                    company=company,
                                    company_short_name=company_short_name,
-                                   message="Ha ocurrido un error inesperado."), 500
+                                   branding=branding_data,
+                                   message=f"Ha ocurrido un error inesperado: {str(e)}"), 500
 

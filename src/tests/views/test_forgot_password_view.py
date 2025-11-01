@@ -149,6 +149,7 @@ class TestForgotPasswordView:
             "error.html",
             company=self.test_company,
             company_short_name='test_company',
-            message="Ha ocurrido un error inesperado."
+            branding=self.branding_service.get_company_branding.return_value,
+            message="Ha ocurrido un error inesperado: an error"
         )
         assert response.status_code == 500
