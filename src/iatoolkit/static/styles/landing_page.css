@@ -86,7 +86,6 @@ body {
     color: var(--website-primary-color);
 }
 
-/* --- Sección de Características (Features) --- */
 .features-section {
     padding: 5rem 0;
     background-color: var(--website-light-bg);
