@@ -50,9 +50,9 @@ $(document).ready(function () {
                 .append(icon);
 
             const row = $('<tr>').append(
-                $('<td>').addClass('date-cell').text(formatDate(item.created_at)),
+                $('<td>').addClass('text-nowrap').text(formatDate(item.created_at)),
                 $('<td>').text(item.query),
-                $('<td>').addClass('text-center').append(link),
+                $('<td>').append(link),
             );
 
             historyTableBody.append(row);
