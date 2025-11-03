@@ -13,30 +13,30 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--brand-text-heading-color);
 }
 
-    ul {
-      /* Se resetea el padding por defecto del navegador y se aplica uno controlado */
-      padding-left: 1.5rem; /* ~24px de indentación para la lista */
-      margin-bottom: 1rem;  /* Espacio después de que termina la lista */
-    }
+ul {
+  /* Se resetea el padding por defecto del navegador y se aplica uno controlado */
+  padding-left: 1.5rem; /* ~24px de indentación para la lista */
+  margin-bottom: 1rem;  /* Espacio después de que termina la lista */
+}
 
-    li {
-      /* Espacio vertical entre cada elemento de la lista para mejor legibilidad */
-      margin-bottom: 0.5rem; /* ~8px */
-      padding-left: 0.25rem; /* Pequeño espacio extra entre la viñeta y el texto */
-        color: #495057;
-    }
+li {
+  /* Espacio vertical entre cada elemento de la lista para mejor legibilidad */
+  margin-bottom: 0.5rem; /* ~8px */
+  padding-left: 0.25rem; /* Pequeño espacio extra entre la viñeta y el texto */
+    color: #495057;
+}
 
-    /* Estilo para la viñeta (el punto) de cada elemento de la lista */
-    li::marker {
-      color: var(--brand-primary-color); /* La viñeta usa el color principal de la marca */
-      font-size: 1.1em; /* Ligeramente más grande para que sea más visible */
-    }
+/* Estilo para la viñeta (el punto) de cada elemento de la lista */
+li::marker {
+  color: var(--brand-primary-color); /* La viñeta usa el color principal de la marca */
+  font-size: 1.1em; /* Ligeramente más grande para que sea más visible */
+}
 
 .text-muted {
   color: #64748b;
 }
 
-/* --- Layout Principal de la Aplicación de Chat --- */
+/* --- Layout Principal de la pagina del Chat --- */
 main.chat-layout-container {
     display: flex;
     flex-direction: column;
@@ -44,7 +44,7 @@ main.chat-layout-container {
     overflow: hidden; /* Evita el scroll en el contenedor principal */
 
     padding-top: 1rem;
-    padding-bottom: 1rem;
+    padding-bottom: 0.2rem;
 }
 
 /* Esta parte para el prompt-assistant sigue siendo correcta */

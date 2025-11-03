@@ -199,7 +199,6 @@ const toggleSendStopButtons = function (showStop) {
     $('#stop-button-container').toggle(showStop);
 };
 
-
 /**
  * Generic function to make API calls to the backend.
  * @param {string} apiPath - The API endpoint path.
@@ -290,7 +289,9 @@ const displayUserMessage = function(message, isEditable, originalQuestion) {
 
     if (isEditable) {
         const editIcon = $('<i>').addClass('p-2 bi bi-pencil-fill edit-icon edit-pencil').attr('title', 'Edit query').on('click', function () {
-            $('#question').val(originalQuestion).focus();
+            if (window.innerWidth > 768)
+                $('#question').val(originalQuestion).focus();
+
             autoResizeTextarea($('#question')[0]);
 
             $('#send-button').removeClass('disabled');
