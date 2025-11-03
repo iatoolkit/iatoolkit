@@ -64,7 +64,7 @@ $(document).ready(function () {
         if (data.example_questions) {
             let contentHtml = '';
             data.example_questions.forEach(cat => {
-                contentHtml += `<h6>${cat.category}</h6><ul>`;
+                contentHtml += `<h6 class="fw-bold">${cat.category}</h6><ul>`;
                 cat.questions.forEach(q => contentHtml += `<li>${q}</li>`);
                 contentHtml += `</ul>`;
             });
@@ -86,8 +86,8 @@ $(document).ready(function () {
 
         if (data.capabilities) {
             let contentHtml = `<div class="row">`;
-            contentHtml += `<div class="col-md-6"><h6>Puede hacer:</h6><ul>${data.capabilities.can_do.map(item => `<li>${item}</li>`).join('')}</ul></div>`;
-            contentHtml += `<div class="col-md-6"><h6>No puede hacer:</h6><ul>${data.capabilities.cannot_do.map(item => `<li>${item}</li>`).join('')}</ul></div>`;
+            contentHtml += `<div class="col-md-6"><h6 class="fw-bold">Puede hacer:</h6><ul>${data.capabilities.can_do.map(item => `<li>${item}</li>`).join('')}</ul></div>`;
+            contentHtml += `<div class="col-md-6"><h6 class="fw-bold">No puede hacer:</h6><ul>${data.capabilities.cannot_do.map(item => `<li>${item}</li>`).join('')}</ul></div>`;
             contentHtml += `</div>`;
             accordionHtml += createAccordionItem('capabilities', 'Capacidades y Límites', contentHtml);
         }
