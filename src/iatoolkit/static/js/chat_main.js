@@ -186,7 +186,6 @@ function updateSendButtonState() {
  * Auto-resizes the textarea to fit its content.
  */
 function autoResizeTextarea(element) {
-    return;
     element.style.height = 'auto';
     element.style.height = (element.scrollHeight) + 'px';
 }
