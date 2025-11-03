@@ -289,12 +289,12 @@ const displayUserMessage = function(message, isEditable, originalQuestion) {
 
     if (isEditable) {
         const editIcon = $('<i>').addClass('p-2 bi bi-pencil-fill edit-icon edit-pencil').attr('title', 'Edit query').on('click', function () {
-            if (window.innerWidth > 768)
-                $('#question').val(originalQuestion).focus();
-
+            $('#question').val(originalQuestion)
             autoResizeTextarea($('#question')[0]);
-
             $('#send-button').removeClass('disabled');
+
+            if (window.innerWidth > 768)
+                $('#question').focus();
         });
         userMessage.append(editIcon);
     }
