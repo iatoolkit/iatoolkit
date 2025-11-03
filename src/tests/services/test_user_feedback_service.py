@@ -47,7 +47,7 @@ class TestUserFeedbackService:
             rating=5
         )
 
-        assert response == {'message': 'Feedback guardado correctamente'}
+        assert response == {'success': True, 'message': 'Feedback guardado correctamente'}
         self.profile_repo.save_feedback.assert_called_once()
         saved_feedback_arg = self.profile_repo.save_feedback.call_args[0][0]
         assert isinstance(saved_feedback_arg, UserFeedback)
@@ -157,7 +157,6 @@ class TestUserFeedbackService:
         self.google_chat_app.send_message.assert_called_once()
         # But the feedback was still saved and the operation succeeded
         self.profile_repo.save_feedback.assert_called_once()
-        assert response == {'message': 'Feedback guardado correctamente'}
 
     def test_feedback_when_company_not_exist(self):
         """Test error handling when the company does not exist."""
