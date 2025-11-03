@@ -9,42 +9,36 @@ $(document).ready(function () {
         const spinner = $('#help-spinner');
 
         // Si el contenido no se ha cargado, hacer la llamada a la API
-        if (!helpContent) {
-            spinner.show();
-            accordionContainer.hide();
-            helpModal.show(); // Muestra el modal con el spinner
+        if (helpContent) {
+            // Si el contenido ya está cacheado, solo muestra el modal
+            helpModal.show();
+            return;
+        }
 
-            try {
-                const response = await fetch(`/${window.companyShortName}/api/help-content`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    }
-                });
+        spinner.show();
+        accordionContainer.hide();
+        helpModal.show();
 
-                if (!response.ok) {
-                    toastr.error('No se pudo cargar la guía de uso. Por favor, intente más tarde.');
-                    spinner.hide();
-                    helpModal.hide();
-                    return;
-                }
+        try {
+            const helpContent = await callToolkit('/api/help-content', {}, "POST");
 
-                helpContent = await response.json();
-
-                // Construir el HTML del acordeón y mostrarlo
-                buildHelpAccordion(helpContent);
-                spinner.hide();
-                accordionContainer.show();
-
-            } catch (error) {
-                console.error("Error al cargar el contenido de ayuda:", error);
-                toastr.error('Ocurrió un error de red al cargar la guía.');
+            if (!helpContent) {
+                toastr.error('No se pudo cargar la guía de uso. Por favor, intente más tarde.');
                 spinner.hide();
                 helpModal.hide();
+                return;
             }
-        } else {
-             // Si el contenido ya está cacheado, solo muestra el modal
-             helpModal.show();
+
+            // Construir el HTML del acordeón y mostrarlo
+            buildHelpAccordion(helpContent);
+            spinner.hide();
+            accordionContainer.show();
+
+        } catch (error) {
+            console.error("Error al cargar el contenido de ayuda:", error);
+            toastr.error('Ocurrió un error de red al cargar la guía.');
+            spinner.hide();
+            helpModal.hide();
         }
     });
 
@@ -58,7 +52,15 @@ $(document).ready(function () {
 
         let accordionHtml = '';
 
-        // Pilar 1: Preguntas de Ejemplo
+        if (data.data_sources) {
+            let contentHtml = '<dl>';
+            data.data_sources.forEach(p => {
+                contentHtml += `<dt>${p.source}</dt><dd>${p.description}</dd>`;
+            });
+            contentHtml += `</dl>`;
+            accordionHtml += createAccordionItem('sources', 'Datos disponibles', contentHtml, true);
+        }
+
         if (data.example_questions) {
             let contentHtml = '';
             data.example_questions.forEach(cat => {
@@ -66,19 +68,9 @@ $(document).ready(function () {
                 cat.questions.forEach(q => contentHtml += `<li>${q}</li>`);
                 contentHtml += `</ul>`;
             });
-            accordionHtml += createAccordionItem('examples', 'Preguntas de Ejemplo', contentHtml, true);
+            accordionHtml += createAccordionItem('examples', 'Preguntas de Ejemplo', contentHtml);
         }
 
-        if (data.data_sources) {
-            let contentHtml = '<dl>';
-            data.data_sources.forEach(p => {
-                contentHtml += `<dt>${p.source}</dt><dd>${p.description}</dd>`;
-            });
-            contentHtml += `</dl>`;
-            accordionHtml += createAccordionItem('sources', 'Datos disponibles', contentHtml);
-        }
-
-        // Pilar 3: Mejores Prácticas
         if (data.best_practices) {
             let contentHtml = '<dl>';
             data.best_practices.forEach(p => {
@@ -92,7 +84,6 @@ $(document).ready(function () {
             accordionHtml += createAccordionItem('practices', 'Mejores Prácticas', contentHtml);
         }
 
-        // Pilar 4: Capacidades
         if (data.capabilities) {
             let contentHtml = `<div class="row">`;
             contentHtml += `<div class="col-md-6"><h6>Puede hacer:</h6><ul>${data.capabilities.can_do.map(item => `<li>${item}</li>`).join('')}</ul></div>`;

@@ -4,23 +4,22 @@
 example_questions:
   - category: "Consultas de Ventas"
     questions:
-      - "¿Cuál fue el total de ventas en Alemania el último trimestre?"
-      - "Compara las ventas de 'Product A' vs 'Product B' en el último mes."
+      - "¿Cuál fue el total de ventas en Alemania el primer trimestre del 2025?"
+      - "Muéstrame los últimos 3 despachos del proveedor 'Atlantic Seafood BV '."
+      - "Genera una tabla con el resumen de ventas por país para el año 2025: nùmero de ordenes y monto"
   - category: "Datos de Empleados"
     questions:
-      - "¿Cuántos empleados trabajan en el departamento de Ventas?"
-      - "Muéstrame el organigrama del área de Tecnología."
+      - "¿Cuántos empleados trabajan en canada?"
 
   # Pilar 2: datos disponibles
 data_sources:
   - source: "Clientes"
-    description: "nombres, direcciones, compras"
-  - source: "Prroveedores"
-    description: " "
+    description: "Nombres, direcciones, ordenes de compras (2023-2025), despachos, etc."
+  - source: "Proveedores"
+    description: "Datos de proveedores y shippers"
   - source: "Empleados"
-    description: ""
-  - source: "Ordenes de Compra"
-    description: ""
+    description: "Nombres, cargos, paises, territorios, contratos, salarios, etc."
+
 
 # Pilar 3: Mejores prácticas
 best_practices:
