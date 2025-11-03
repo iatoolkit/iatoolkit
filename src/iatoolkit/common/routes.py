@@ -5,7 +5,6 @@
 
 from flask import render_template, redirect, url_for,send_from_directory, current_app, abort
 from flask import jsonify
-from iatoolkit.views.history_api_view import HistoryApiView
 
 
 # this function register all the views
@@ -24,6 +23,9 @@ def register_views(injector, app):
     from iatoolkit.views.file_store_api_view import FileStoreApiView
     from iatoolkit.views.user_feedback_api_view import UserFeedbackApiView
     from iatoolkit.views.prompt_api_view import PromptApiView
+    from iatoolkit.views.history_api_view import HistoryApiView
+    from iatoolkit.views.help_content_api_view import HelpContentApiView
+
     from iatoolkit.views.login_view import LoginView, FinalizeContextView
     from iatoolkit.views.external_login_view import ExternalLoginView, RedeemTokenApiView
     from iatoolkit.views.logout_api_view import LogoutApiView
@@ -79,9 +81,10 @@ def register_views(injector, app):
     # open the promt directory
     app.add_url_rule('/<company_short_name>/api/prompts', view_func=PromptApiView.as_view('prompt'))
 
-    # feedback and history
+    # toolbar buttons
     app.add_url_rule('/<company_short_name>/api/feedback', view_func=UserFeedbackApiView.as_view('feedback'))
     app.add_url_rule('/<company_short_name>/api/history', view_func=HistoryApiView.as_view('history'))
+    app.add_url_rule('/<company_short_name>/api/help-content', view_func=HelpContentApiView.as_view('help-content'))
 
     # tasks management endpoints: create task, and review answer
     app.add_url_rule('/tasks', view_func=TaskApiView.as_view('tasks'))

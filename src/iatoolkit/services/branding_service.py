@@ -4,6 +4,7 @@
 # IAToolkit is open source software.
 
 from iatoolkit.repositories.models import Company
+from injector import inject
 
 
 class BrandingService:
@@ -11,6 +12,7 @@ class BrandingService:
     Servicio centralizado que gestiona la configuración de branding.
     """
 
+    @inject
     def __init__(self):
         """
         Define los estilos de branding por defecto para la aplicación.

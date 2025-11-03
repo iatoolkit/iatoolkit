@@ -123,6 +123,32 @@
   </div>
 </div>
 
+    <!-- Modal de Guía de Uso / Ayuda -->
+    <div class="modal fade" id="helpModal" tabindex="-1" aria-labelledby="helpModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header branded">
+            <h5 class="modal-title" id="helpModalLabel"><i class="bi bi-info-circle me-2"></i>Guía de Uso del Asistente</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <!-- El acordeón con el contenido de ayuda se inyectará aquí dinámicamente -->
+            <div id="help-spinner" class="text-center p-5" style="display: none;">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Cargando...</span>
+                </div>
+            </div>
+            <div class="accordion" id="help-accordion-container">
+                <!-- Contenido generado por JS -->
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-branded-secondary" data-bs-dismiss="modal">Cerrar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
 <!-- Modal para mostrar archivos cargados -->
 <div class="modal fade" id="uploadedFilesModal" tabindex="-1" aria-labelledby="uploadedFilesModalLabel" aria-hidden="true">
   <div class="modal-dialog">

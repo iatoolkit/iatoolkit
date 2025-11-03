@@ -1,0 +1,41 @@
+# Contenido de ayuda y capacitación para Sample Company
+
+# Pilar 1: Preguntas de ejemplo
+example_questions:
+  - category: "Consultas de Ventas"
+    questions:
+      - "¿Cuál fue el total de ventas en Alemania el último trimestre?"
+      - "Compara las ventas de 'Product A' vs 'Product B' en el último mes."
+  - category: "Datos de Empleados"
+    questions:
+      - "¿Cuántos empleados trabajan en el departamento de Ventas?"
+      - "Muéstrame el organigrama del área de Tecnología."
+
+  # Pilar 2: datos disponibles
+data_sources:
+  - source: "Clientes"
+    description: "nombres, direcciones, compras"
+  - source: "Prroveedores"
+    description: " "
+  - source: "Empleados"
+    description: ""
+  - source: "Ordenes de Compra"
+    description: ""
+
+# Pilar 3: Mejores prácticas
+best_practices:
+  - title: "Sé Específico"
+    description: "Mientras más detallada sea tu pregunta, mejor será la respuesta. Incluye fechas, nombres, regiones, etc."
+  - title: "Pide Formatos"
+    description: "No dudes en pedir la información en 'una tabla', 'una lista' o 'un resumen'. Esto te ayudará a visualizar mejor los datos."
+
+# Pilar 4: Capacidades
+capabilities:
+  can_do:
+    - "Acceder a bases de datos de Ventas, RRHH y Proveedores."
+    - "Leer documentos PDF y TXT que han sido cargados."
+    - "Generar resúmenes y agrupar datos."
+  cannot_do:
+    - "Navegar en internet o acceder a información en tiempo real."
+    - "Realizar acciones como enviar correos o agendar reuniones."
+    - "Opinar o predecir eventos futuros."

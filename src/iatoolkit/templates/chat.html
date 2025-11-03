@@ -59,15 +59,23 @@
                 </a>
                 <a href="javascript:void(0);"
                    id="send-feedback-button"
-                   class="ms-3 action-icon-style" title="Tu feedback es muy importante" style="color: {{ branding.header_text_color }};">
+                   class="ms-3 action-icon-style" title="Tu feedback es muy importante"
+                   style="color: {{ branding.header_text_color }};">
                     <i class="bi bi-emoji-smile"></i>
                 </a>
+
                 <a href="javascript:void(0);"
                    id="onboarding-button"
                    class="ms-3 action-icon-style" title="Como preguntar mejor"
                    style="color: {{ branding.header_text_color }};">
                     <i class="bi bi-lightbulb"></i>
                 </a>
+                <a href="javascript:void(0);"
+                       id="open-help-button"
+                       class="ms-3 action-icon-style" title="Guía de Uso"
+                       style="color: {{ branding.header_text_color }};">
+                        <i class="bi bi-question-circle-fill"></i>
+                    </a>
                 <a href="javascript:void(0);"
                    id="logout-button"
                    class="ms-3 action-icon-style" title="Cerrar sesión"
@@ -201,6 +209,7 @@
     <script src="{{ url_for('static', filename='js/chat_history_button.js', _external=True) }}"></script>
     <script src="{{ url_for('static', filename='js/chat_reload_button.js', _external=True) }}"></script>
     <script src="{{ url_for('static', filename='js/chat_feedback_button.js', _external=True) }}"></script>
+    <script src="{{ url_for('static', filename='js/chat_help_content.js', _external=True) }}"></script>
     <script src="{{ url_for('static', filename='js/chat_onboarding_button.js', _external=True) }}"></script>
     <script src="{{ url_for('static', filename='js/chat_logout_button.js', _external=True) }}"></script>
     <script src="{{ url_for('static', filename='js/chat_prompt_manager.js', _external=True) }}"></script>
