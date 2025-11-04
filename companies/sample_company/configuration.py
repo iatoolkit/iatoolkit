@@ -37,7 +37,24 @@ PROMPT_LIST = [
             {
                 'name': 'analisis_ventas',
                 'description': 'Analisis de ventas',
-                'order': 1,
+                'order': 1
+
+            },
+            {
+                'name': 'supplier_report',
+                'description': 'Análisis de proveedores',
+                'order': 2,
+                'custom_fields': [
+                    {
+                        "data_key": "supplier_id",
+                        "label": "Identificador del Proveedor",
+                    }
+                ]
+            },
+            {
+                'name': 'analisis_despachos',
+                'description': 'Analisis de despachos',
+                'order': 3,
                 'custom_fields': [
                     {
                         "data_key": "init_date",
@@ -51,17 +68,6 @@ PROMPT_LIST = [
                     }
                 ]
             },
-            {
-                'name': 'supplier_report',
-                'description': 'Análisis de proveedores',
-                'order': 2,
-                'custom_fields': [
-                    {
-                        "data_key": "supplier_id",
-                        "label": "Identificador del Proveedor",
-                    }
-                ]
-            }
         ]
 
 BRANDING = {

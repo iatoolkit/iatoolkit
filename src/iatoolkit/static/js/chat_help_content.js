@@ -52,15 +52,6 @@ $(document).ready(function () {
 
         let accordionHtml = '';
 
-        if (data.data_sources) {
-            let contentHtml = '<dl>';
-            data.data_sources.forEach(p => {
-                contentHtml += `<dt>${p.source}</dt><dd>${p.description}</dd>`;
-            });
-            contentHtml += `</dl>`;
-            accordionHtml += createAccordionItem('sources', 'Datos disponibles', contentHtml, true);
-        }
-
         if (data.example_questions) {
             let contentHtml = '';
             data.example_questions.forEach(cat => {
@@ -68,7 +59,16 @@ $(document).ready(function () {
                 cat.questions.forEach(q => contentHtml += `<li>${q}</li>`);
                 contentHtml += `</ul>`;
             });
-            accordionHtml += createAccordionItem('examples', 'Preguntas de Ejemplo', contentHtml);
+            accordionHtml += createAccordionItem('examples', 'Preguntas de Ejemplo', contentHtml, true);
+        }
+
+        if (data.data_sources) {
+            let contentHtml = '<dl>';
+            data.data_sources.forEach(p => {
+                contentHtml += `<dt>${p.source}</dt><dd>${p.description}</dd>`;
+            });
+            contentHtml += `</dl>`;
+            accordionHtml += createAccordionItem('sources', 'Datos disponibles', contentHtml );
         }
 
         if (data.best_practices) {

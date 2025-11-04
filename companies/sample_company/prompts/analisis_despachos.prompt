@@ -1,0 +1,23 @@
+
+Contexto: El usuario quiere un análisis completo de los despachos de
+proveedores
+
+Parámetros:
+	•	Fecha inicio → {{init_date}}
+	•	Fecha fin → {{end_date}}
+
+### **Estructura HTML de Salida OBLIGATORIA**
+- **Contenedor de Secciones:** envuelve TODAS las secciones en
+un `<div class="ficha-categorias">`.
+- **Secciones Individuales:** CADA sección (título + contenido) debe estar
+envuelta en su propio `<div class="categoria">`.
+
+### **Sección : shippers mas importantes**
+dame una tabla con los 5 shippers mas importantes por volumen de compra.
+columnas: nombre shipper, volumen de despachos.
+
+### **Sección : productos mas transportados**
+Dame una tabla con  los 10 productos mas transportados.
+columnas: nombre producto, precio, cantidad vendida.
+
+

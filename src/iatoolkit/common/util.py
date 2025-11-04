@@ -81,6 +81,23 @@ class Utility:
                                f'No se pudo renderizar el template desde el string, error: {str(e)}') from e
 
 
+    def get_company_template(self, company_short_name: str, template_name: str) -> str:
+        # 1. get the path to the company specific template
+        template_path = os.path.join(os.getcwd(), f'companies/{company_short_name}/templates/{template_name}')
+        if not os.path.exists(template_path):
+            return None
+
+        # 2. read the file
+        try:
+            with open(template_path, 'r') as f:
+                template_string = f.read()
+
+            return template_string
+        except Exception as e:
+            logging.exception(e)
+            return None
+
+
     def serialize(self, obj):
         if isinstance(obj, datetime) or isinstance(obj, date):
             return obj.isoformat()

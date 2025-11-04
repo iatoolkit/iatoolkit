@@ -27,6 +27,7 @@ class TestLoginView:
         self.prompt_service = MagicMock()
         self.jwt_service = MagicMock()
         self.auth_service = MagicMock()
+        self.utility = MagicMock()
 
         # Patch BaseLoginView.__init__ to inject mocks before as_view is called
         original_base_init = BaseLoginView.__init__
@@ -42,6 +43,7 @@ class TestLoginView:
                 prompt_service=self.prompt_service,
                 onboarding_service=self.onboarding_service,
                 query_service=self.query_service,
+                utility=self.utility,
             )
 
         monkeypatch.setattr(BaseLoginView, "__init__", patched_base_init)
@@ -58,7 +60,6 @@ class TestLoginView:
                 prompt_service=self.prompt_service,
                 branding_service=self.branding_service,
                 onboarding_service=self.onboarding_service,
-                auth_service=self.auth_service,
                 jwt_service=self.jwt_service,
             )
 
@@ -106,13 +107,12 @@ class TestLoginView:
             "success": False,
             "message": "Invalid credentials",
         }
+        self.utility.get_company_template.return_value = "<html>index</html>"
 
-        with patch("iatoolkit.views.login_view.render_template") as mock_rt:
-            mock_rt.return_value = "<html>index</html>"
-            resp = self.client.post(
+        resp = self.client.post(
                 f"/{self.company_short_name}/login",
-                data={"email": self.email, "password": self.password},
-            )
+                data={"email": self.email, "password": self.password}
+        )
 
         assert resp.status_code == 400
 

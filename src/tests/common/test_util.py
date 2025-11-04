@@ -444,3 +444,63 @@ class TestUtil:
         mock_exists.assert_called_once_with('/test/directory')
         mock_isdir.assert_called_once_with('/test/directory')
         mock_listdir.assert_called_once_with('/test/directory')
+
+    @patch('os.path.exists', return_value=True)
+    def test_get_company_template_success(self, mock_exists):
+        """
+        Prueba que la plantilla de una compañía se cargue correctamente cuando el archivo existe.
+        """
+        # Arrange
+        company_name = "sample_co"
+        template_name = "welcome_email.txt"
+        template_content = "Hola, bienvenido a {{ company_name }}!"
+        expected_path = os.path.join(os.getcwd(), f'companies/{company_name}/templates/{template_name}')
+
+        with patch("builtins.open", mock_open(read_data=template_content)) as mock_file:
+            # Act
+            result = self.util.get_company_template(company_name, template_name)
+
+            # Assert
+            mock_exists.assert_called_once_with(expected_path)
+            mock_file.assert_called_once_with(expected_path, 'r')
+            assert result == template_content
+
+    @patch('os.path.exists', return_value=False)
+    def test_get_company_template_file_not_found(self, mock_exists):
+        """
+        Prueba que la función retorne None si el archivo de la plantilla no existe.
+        """
+        # Arrange
+        company_name = "no_template_co"
+        template_name = "non_existent.txt"
+        expected_path = os.path.join(os.getcwd(), f'companies/{company_name}/templates/{template_name}')
+
+        with patch("builtins.open") as mock_file:
+            # Act
+            result = self.util.get_company_template(company_name, template_name)
+
+            # Assert
+            mock_exists.assert_called_once_with(expected_path)
+            mock_file.assert_not_called()
+            assert result is None
+
+    @patch('os.path.exists', return_value=True)
+    @patch('logging.exception')
+    def test_get_company_template_read_error(self, mock_logging, mock_exists):
+        """
+        Prueba que la función retorne None y loguee una excepción si hay un error al leer el archivo.
+        """
+        # Arrange
+        company_name = "error_co"
+        template_name = "corrupt.txt"
+        expected_path = os.path.join(os.getcwd(), f'companies/{company_name}/templates/{template_name}')
+
+        with patch("builtins.open", side_effect=IOError("Permission denied")) as mock_file:
+            # Act
+            result = self.util.get_company_template(company_name, template_name)
+
+            # Assert
+            mock_exists.assert_called_once_with(expected_path)
+            mock_file.assert_called_once_with(expected_path, 'r')
+            mock_logging.assert_called_once()
+            assert result is None

@@ -1,10 +1,6 @@
 
 Contexto: El usuario quiere un análisis completo de las ventas realizadas
-entre dos fechas dadas.
-
-Parámetros:
-	•	Fecha inicio → {{init_date}}
-	•	Fecha fin → {{end_date}}
+entre los años 2024 y 2025
 
 ### **Estructura HTML de Salida OBLIGATORIA**
 - **Contenedor de Secciones:** envuelve TODAS las secciones en

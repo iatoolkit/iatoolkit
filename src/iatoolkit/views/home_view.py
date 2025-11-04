@@ -1,12 +1,10 @@
 # iatoolkit/views/home_view.py
-import logging
-import os
-from flask import render_template, abort, session, render_template_string
+from flask import render_template, session, render_template_string
 from flask.views import MethodView
 from injector import inject
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.branding_service import BrandingService
-import logging
+from iatoolkit.common.util import Utility
 
 class HomeView(MethodView):
     """
@@ -17,9 +15,11 @@ class HomeView(MethodView):
     @inject
     def __init__(self,
                  profile_service: ProfileService,
-                 branding_service: BrandingService):
+                 branding_service: BrandingService,
+                 utility: Utility):
         self.profile_service = profile_service
         self.branding_service = branding_service
+        self.util = utility
 
     def get(self, company_short_name: str):
         company = self.profile_service.get_company_by_short_name(company_short_name)
@@ -31,12 +31,10 @@ class HomeView(MethodView):
         alert_message = session.pop('alert_message', None)
         alert_icon = session.pop('alert_icon', 'error')
 
-
-        # 1. Construimos la ruta al archivo de plantilla específico de la empresa.
-        company_template_path = os.path.join(os.getcwd(), f'companies/{company_short_name}/templates/home.html')
+        home_template = self.util.get_company_template(company_short_name, "home.html")
 
         # 2. Verificamos si el archivo de plantilla personalizado no existe.
-        if not os.path.exists(company_template_path):
+        if not home_template:
             return render_template(
                 "error.html",
                 company_short_name=company_short_name,
@@ -46,12 +44,8 @@ class HomeView(MethodView):
 
         # 3. Si el archivo existe, intentamos leerlo y renderizarlo.
         try:
-            with open(company_template_path, 'r') as f:
-                template_string = f.read()
-
-            # Usamos render_template_string, que entiende el contexto de Flask.
             return render_template_string(
-                template_string,
+                home_template,
                 company=company,
                 company_short_name=company_short_name,
                 branding=branding_data,

@@ -4,10 +4,9 @@
 # IAToolkit is open source software.
 
 from flask.views import MethodView
-from flask import request, redirect, render_template, url_for
+from flask import request, redirect, render_template, url_for, render_template_string
 from injector import inject
 from iatoolkit.services.profile_service import ProfileService
-from iatoolkit.services.auth_service import AuthService
 from iatoolkit.services.jwt_service import JWTService
 from iatoolkit.services.query_service import QueryService
 from iatoolkit.services.prompt_manager_service import PromptService
@@ -41,9 +40,10 @@ class LoginView(BaseLoginView):
         )
 
         if not auth_response['success']:
+            home_template = self.utility.get_company_template(company_short_name, "home.html")
 
-            return render_template(
-                'home.html',
+            return render_template_string(
+                home_template,
                 company_short_name=company_short_name,
                 company=company,
                 branding=branding_data,
@@ -76,7 +76,6 @@ class FinalizeContextView(MethodView):
     @inject
     def __init__(self,
                  profile_service: ProfileService,
-                 auth_service: AuthService,
                  query_service: QueryService,
                  prompt_service: PromptService,
                  branding_service: BrandingService,

@@ -13,6 +13,7 @@ from iatoolkit.services.query_service import QueryService
 from iatoolkit.services.branding_service import BrandingService
 from iatoolkit.services.onboarding_service import OnboardingService
 from iatoolkit.services.prompt_manager_service import PromptService
+from iatoolkit.common.util import Utility
 from iatoolkit.services.jwt_service import JWTService
 from iatoolkit.repositories.models import Company
 
@@ -30,7 +31,8 @@ class BaseLoginView(MethodView):
                  branding_service: BrandingService,
                  prompt_service: PromptService,
                  onboarding_service: OnboardingService,
-                 query_service: QueryService
+                 query_service: QueryService,
+                 utility: Utility
                  ):
         self.profile_service = profile_service
         self.auth_service = auth_service
@@ -39,6 +41,7 @@ class BaseLoginView(MethodView):
         self.prompt_service = prompt_service
         self.onboarding_service = onboarding_service
         self.query_service = query_service
+        self.utility = utility
 
 
     def _handle_login_path(self,
