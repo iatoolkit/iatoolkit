@@ -5,6 +5,8 @@ from unittest.mock import MagicMock
 from iatoolkit.views.help_content_api_view import HelpContentApiView
 from iatoolkit.services.help_content_service import HelpContentService
 from iatoolkit.services.auth_service import AuthService
+from iatoolkit.services.i18n_service import I18nService
+
 
 # --- Constantes para los Tests ---
 MOCK_COMPANY_SHORT_NAME = "sample-company"
@@ -24,12 +26,16 @@ class TestHelpContentApiView:
         # Mocks para los servicios inyectados
         self.mock_auth_service = MagicMock(spec=AuthService)
         self.mock_help_content_service = MagicMock(spec=HelpContentService)
+        self.i8n_service = MagicMock(spec=I18nService)
+
+        self.i8n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
 
         # Registrar la vista con las dependencias mockeadas
         view_func = HelpContentApiView.as_view(
             'help_content',
             auth_service=self.mock_auth_service,
-            help_content_service=self.mock_help_content_service
+            help_content_service=self.mock_help_content_service,
+            i18n_service=self.i8n_service
         )
         self.app.add_url_rule('/<company_short_name>/api/help-content', view_func=view_func, methods=['POST'])
 
@@ -104,4 +110,4 @@ class TestHelpContentApiView:
         # Assert
         assert response.status_code == 500
         assert "error_message" in response.json
-        assert "Ha ocurrido un error inesperado en el servidor" in response.json['error_message']
+        assert 'translated:errors.general.unexpected_error' == response.json['error_message']

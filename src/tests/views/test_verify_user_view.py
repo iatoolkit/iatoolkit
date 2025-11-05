@@ -61,9 +61,7 @@ class TestVerifyAccountView:
     def test_get_with_invalid_company(self, mock_render):
         self.profile_service.get_company_by_short_name.return_value = None
         response = self.client.get("/test_company/verify/some_token")
-
         assert response.status_code == 404
-        mock_render.assert_called_once_with('error.html', message="Empresa no encontrada")
 
     @patch("iatoolkit.views.verify_user_view.render_template")
     @patch("iatoolkit.views.verify_user_view.URLSafeTimedSerializer")

@@ -44,6 +44,8 @@ class TestChangePasswordView:
         self.i8n_service = MagicMock(spec=I18nService)
         self.branding_service.get_company_branding.return_value = {}
 
+        self.i8n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
+
         self.test_company = Company(
             id=1,
             name="Empresa de Prueba",
@@ -51,7 +53,6 @@ class TestChangePasswordView:
         )
         self.profile_service.get_company_by_short_name.return_value = self.test_company
         # Configure the mock to return a real string, not another mock.
-        self.i8n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
 
         # Registrar la vista
         view = ChangePasswordView.as_view("change_password",

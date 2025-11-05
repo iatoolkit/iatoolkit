@@ -27,7 +27,7 @@ class LogoutApiView(MethodView):
 
         company = self.profile_service.get_company_by_short_name(company_short_name)
         if not company:
-            return jsonify({"error": "Empresa no encontrada"}), 404
+            return jsonify({"error": "company not found."}), 404
 
         # get URL for redirection
         url_for_redirect = company.parameters.get('external_urls', {}).get('logout_url')

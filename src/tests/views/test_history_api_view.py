@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 from iatoolkit.views.history_api_view import HistoryApiView
 from iatoolkit.services.history_service import HistoryService
 from iatoolkit.services.auth_service import AuthService
+from iatoolkit.services.i18n_service import I18nService
 
 # --- Constantes para los Tests ---
 MOCK_COMPANY_SHORT_NAME = "test-company"
@@ -24,12 +25,16 @@ class TestHistoryView:
         # Mocks para los servicios inyectados
         self.mock_auth = MagicMock(spec=AuthService)
         self.mock_history_service = MagicMock(spec=HistoryService)
+        self.i8n_service = MagicMock(spec=I18nService)
+
+        self.i8n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
 
         # Registrar la vista con las dependencias correctas
         view_func = HistoryApiView.as_view(
             'history',
             auth_service=self.mock_auth,
-            history_service=self.mock_history_service
+            history_service=self.mock_history_service,
+            i18n_service=self.i8n_service
         )
         self.app.add_url_rule('/<company_short_name>/api/history', view_func=view_func, methods=['POST'])
 
@@ -89,4 +94,4 @@ class TestHistoryView:
 
         assert response.status_code == 500
         assert "error_message" in response.json
-        assert "Ha ocurrido un error inesperado" in response.json['error_message']
+        assert 'translated:errors.general.unexpected_error' == response.json['error_message']

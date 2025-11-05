@@ -7,6 +7,7 @@ from flask.views import MethodView
 from flask import render_template, request, url_for, redirect, flash
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.branding_service import BrandingService
+from iatoolkit.services.i18n_service import I18nService
 from injector import inject
 from itsdangerous import URLSafeTimedSerializer
 import os
@@ -15,9 +16,12 @@ import os
 class SignupView(MethodView):
     @inject
     def __init__(self, profile_service: ProfileService,
-                 branding_service: BrandingService):
+                 branding_service: BrandingService,
+                 i18n_service: I18nService):
         self.profile_service = profile_service
         self.branding_service = branding_service # 3. Guardar la instancia
+        self.i18n_service = i18n_service
+
         self.serializer = URLSafeTimedSerializer(os.getenv("USER_VERIF_KEY"))
 
 
@@ -26,24 +30,19 @@ class SignupView(MethodView):
         company = self.profile_service.get_company_by_short_name(company_short_name)
         if not company:
             return render_template('error.html',
-                            company_short_name=company_short_name,
-                            message="Empresa no encontrada"), 404
+                                   message=self.i18n_service.t('errors.templates.company_not_found')), 404
 
-        # Obtener los datos de branding
         branding_data = self.branding_service.get_company_branding(company)
-
         return render_template('signup.html',
                                company=company,
                                company_short_name=company_short_name,
                                branding=branding_data)
 
     def post(self, company_short_name: str):
-        # get company info
         company = self.profile_service.get_company_by_short_name(company_short_name)
         if not company:
             return render_template('error.html',
-                        company_short_name=company_short_name,
-                        message="Empresa no encontrada"), 404
+                                 message=self.i18n_service.t('errors.templates.company_not_found')), 404
 
         branding_data = self.branding_service.get_company_branding(company)
         try:
@@ -85,8 +84,10 @@ class SignupView(MethodView):
             return redirect(url_for('home', company_short_name=company_short_name))
 
         except Exception as e:
-            return render_template("error.html",
-                                   company_short_name=company_short_name,
-                                   branding=branding_data,
-                                   message=f"Ha ocurrido un error inesperado: {str(e)}"), 500
-
+            message = self.i18n_service.t('errors.templates.home_template_processing_error', error=str(e))
+            return render_template(
+                "error.html",
+                company_short_name=company_short_name,
+                branding=branding_data,
+                message=message
+            ), 500

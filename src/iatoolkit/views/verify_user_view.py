@@ -28,7 +28,8 @@ class VerifyAccountView(MethodView):
         # get company info
         company = self.profile_service.get_company_by_short_name(company_short_name)
         if not company:
-            return render_template('error.html', message="Empresa no encontrada"), 404
+            return render_template('error.html',
+                                   message=self.i18n_service.t('errors.templates.company_not_found')), 404
 
         branding_data = self.branding_service.get_company_branding(company)
         try:

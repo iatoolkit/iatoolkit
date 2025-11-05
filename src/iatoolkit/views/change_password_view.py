@@ -31,7 +31,8 @@ class ChangePasswordView(MethodView):
         # get company info
         company = self.profile_service.get_company_by_short_name(company_short_name)
         if not company:
-            return render_template('error.html', message=f"Empresa no encontrada: {company_short_name}"), 404
+            return render_template('error.html',
+                                   message=self.i18n_service.t('errors.templates.company_not_found')), 404
 
         branding_data = self.branding_service.get_company_branding(company)
 
@@ -47,15 +48,15 @@ class ChangePasswordView(MethodView):
                                company_short_name=company_short_name,
                                company=company,
                                branding=branding_data,
-                               token=token, email=email)
+                               token=token,
+                               email=email)
 
     def post(self, company_short_name: str, token: str):
         # get company info
         company = self.profile_service.get_company_by_short_name(company_short_name)
         if not company:
             return render_template('error.html',
-            company_short_name=company_short_name,
-            message=f"company not found: {company_short_name}"), 404
+                                   message=self.i18n_service.t('errors.templates.company_not_found')), 404
 
         branding_data = self.branding_service.get_company_branding(company)
         try:
@@ -99,7 +100,10 @@ class ChangePasswordView(MethodView):
             return redirect(url_for('home', company_short_name=company_short_name))
 
         except Exception as e:
-            return render_template("error.html",
-                                   company_short_name=company_short_name,
-                                   branding=branding_data,
-                                   message=f"Ha ocurrido un error inesperado: {str(e)}"), 500
+            message = self.i18n_service.t('errors.templates.home_template_processing_error', error=str(e))
+            return render_template(
+                "error.html",
+                company_short_name=company_short_name,
+                branding=branding_data,
+                message=message
+            ), 500

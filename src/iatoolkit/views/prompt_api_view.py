@@ -33,5 +33,5 @@ class PromptApiView(MethodView):
             return response, 200
         except Exception as e:
             logging.exception(
-                f"Error inesperado al obtener el historial de consultas para company {company_short_name}: {e}")
+                f"unexpected error getting company prompts  {company_short_name}: {e}")
             return jsonify({"error_message": str(e)}), 500

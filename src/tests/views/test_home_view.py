@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch, mock_open
 from iatoolkit.repositories.models import Company
 from iatoolkit.services.branding_service import BrandingService
 from iatoolkit.services.profile_service import ProfileService
+from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.views.home_view import HomeView
 from iatoolkit.common.util import Utility
 
@@ -28,6 +29,9 @@ class TestHomeView:
         self.profile_service = MagicMock(spec=ProfileService)
         self.branding_service = MagicMock(spec=BrandingService)
         self.utility = MagicMock(spec=Utility)
+        self.i8n_service = MagicMock(spec=I18nService)
+
+        self.i8n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
 
         self.test_company = Company(id=1, name="Test Co", short_name="test_co")
         self.profile_service.get_company_by_short_name.return_value = self.test_company
@@ -37,7 +41,8 @@ class TestHomeView:
         view = HomeView.as_view("home",
                                 profile_service=self.profile_service,
                                 branding_service=self.branding_service,
-                                utility=self.utility)
+                                utility=self.utility,
+                                i18n_service=self.i8n_service,)
         self.app.add_url_rule("/<string:company_short_name>/home.html", view_func=view, methods=["GET"])
 
         # Ruta dummy para que url_for() en el template de error no falle.
@@ -63,16 +68,22 @@ class TestHomeView:
         mock_render_template.return_value = "Error Page"
         self.utility.get_company_template.return_value = None
 
+        # Define el mensaje esperado que devolverá el mock de i18n
+        expected_message = "translated:errors.templates.home_template_not_found"
+        self.i8n_service.t.return_value = expected_message
 
         response = self.client.get("/test_co/home.html")
 
         assert response.status_code == 500
-        # Verificamos que se renderiza la página de error con el mensaje correcto
+        self.i8n_service.t.assert_called_once_with(
+            'errors.templates.home_template_not_found', company_name='test_co'
+        )
+        # Verificamos que se renderiza la página de error con el mensaje traducido por el mock
         mock_render_template.assert_called_once_with(
             "error.html",
             company_short_name='test_co',
             branding=self.branding_service.get_company_branding.return_value,
-            message="La plantilla de la página de inicio para la empresa 'test_co' no está configurada."
+            message=expected_message
         )
 
     @patch('iatoolkit.views.home_view.render_template')

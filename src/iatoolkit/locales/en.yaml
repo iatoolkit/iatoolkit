@@ -57,6 +57,7 @@ ui:
     view_attached_files: "View attached files"
     send: "Send"
     stop: "Stop"
+
   modals:
     files_title: "Uploaded Files"
     feedback_title: "Your Opinion is Important"
@@ -69,7 +70,6 @@ ui:
     loading_history: "Loading history..."
     no_history_found: "No query history found."
     help_title: "AI Assistant User Guide"
-
 
   buttons:
     cancel: "Close"
@@ -84,7 +84,10 @@ errors:
     authentication_required: "Authentication required. No session cookie or API Key provided."
     invalid_api_key: "Invalid or inactive API Key."
     no_user_identifier_api: "No user_identifier provided for API call."
-
+  templates:
+    company_not_found: "Company not found."
+    home_template_not_found: "The home page template for the company '{company_name}' is not configured."
+    home_template_processing_error: "An error occurred while processing the custom home page template: {error}"
   general:
     unexpected_error: "An unexpected error has occurred. Please contact support."
     unsupported_language: "The selected language is not supported."
@@ -102,7 +105,6 @@ errors:
   verification:
     token_expired: "The verification link has expired. Please contact support if you need a new one."
     user_not_found: "The user you are trying to verify does not exist."
-
   validation:
     password_too_short: "Password must be at least 8 characters long."
     password_no_uppercase: "Password must contain at least one uppercase letter."

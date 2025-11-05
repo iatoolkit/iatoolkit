@@ -7,6 +7,7 @@ from flask import request, jsonify
 from flask.views import MethodView
 from iatoolkit.services.history_service import HistoryService
 from iatoolkit.services.auth_service import AuthService
+from iatoolkit.services.i18n_service import I18nService
 from injector import inject
 import logging
 
@@ -20,9 +21,12 @@ class HistoryApiView(MethodView):
     @inject
     def __init__(self,
                  auth_service: AuthService,
-                 history_service: HistoryService):
+                 history_service: HistoryService,
+                 i18n_service: I18nService):
         self.auth_service = auth_service
         self.history_service = history_service
+        self.i18n_service = i18n_service
+
 
     def post(self, company_short_name: str):
         # 1. Get the authenticated user's
@@ -48,4 +52,4 @@ class HistoryApiView(MethodView):
         except Exception as e:
             logging.exception(
                 f"Unexpected error fetching history for {company_short_name}/{user_identifier}: {e}")
-            return jsonify({"error_message": "Ha ocurrido un error inesperado en el servidor."}), 500
+            return jsonify({"error_message": self.i18n_service.t('errors.general.unexpected_error')}), 500

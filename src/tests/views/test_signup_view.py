@@ -8,6 +8,7 @@ from flask import Flask, url_for, get_flashed_messages
 from unittest.mock import MagicMock, patch
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.branding_service import BrandingService
+from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.views.signup_view import SignupView
 from iatoolkit.repositories.models import Company
 import os
@@ -38,14 +39,19 @@ class TestSignupView:
         self.client = self.app.test_client()
         self.profile_service = MagicMock(spec=ProfileService)
         self.branding_service = MagicMock(spec=BrandingService)
+        self.i8n_service = MagicMock(spec=I18nService)
+
         self.test_company = Company(id=1, name="Empresa de Prueba", short_name="test_company")
         self.profile_service.get_company_by_short_name.return_value = self.test_company
         self.branding_service.get_company_branding.return_value = {"name": "Empresa de Prueba"}
 
+        self.i8n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
+
         # Registrar la vista
         view = SignupView.as_view("signup",
                                   profile_service=self.profile_service,
-                                  branding_service=self.branding_service)
+                                  branding_service=self.branding_service,
+                                  i18n_service=self.i8n_service,)
         self.app.add_url_rule("/<string:company_short_name>/signup", view_func=view, methods=["GET", "POST"])
 
         # --- CORRECCIÓN: Añadir rutas dummy con los endpoints correctos ---

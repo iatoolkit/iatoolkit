@@ -29,15 +29,17 @@ class UserFeedbackApiView(MethodView):
 
         data = request.get_json()
         if not data:
-            return jsonify({"error_message": "Cuerpo de la solicitud JSON inválido o faltante"}), 402
+            return jsonify({"error_message": "invalid json body"}), 402
 
+        # these validations are performed also in the frontend
+        # the are localized in the front
         message = data.get("message")
         if not message:
-            return jsonify({"error_message": "Falta el mensaje de feedback"}), 400
+            return jsonify({"error_message": "missing feedback message"}), 400
         
         rating = data.get("rating")
         if not rating:
-            return jsonify({"error_message": "Falta la calificación"}), 400
+            return jsonify({"error_message": "missing rating"}), 400
 
         try:
             response = self.user_feedback_service.new_feedback(
@@ -53,7 +55,6 @@ class UserFeedbackApiView(MethodView):
             return response, 200
         except Exception as e:
             logging.exception(
-                f"Error inesperado al procesar feedback para company {company_short_name}: {e}")
-
+                f"unexpected error processing feedback for {company_short_name}: {e}")
             return jsonify({"error_message": str(e)}), 500
 

@@ -27,8 +27,7 @@ class LoginView(BaseLoginView):
         company = self.profile_service.get_company_by_short_name(company_short_name)
         if not company:
             return render_template('error.html',
-                        company_short_name=company_short_name,
-                        message="Empresa no encontrada"), 404
+                                   message=self.i18n_service.t('errors.templates.company_not_found')), 404
 
         branding_data = self.branding_service.get_company_branding(company)
         email = request.form.get('email')
@@ -64,10 +63,13 @@ class LoginView(BaseLoginView):
         try:
             return self._handle_login_path(company, user_identifier, target_url)
         except Exception as e:
-            return render_template("error.html",
-            company_short_name=company_short_name,
-            branding=branding_data,
-            message=f"Error processing login path: {str(e)}"), 500
+            message = self.i18n_service.t('errors.templates.home_template_processing_error', error=str(e))
+            return render_template(
+                "error.html",
+                company_short_name=company_short_name,
+                branding=branding_data,
+                message=message
+            ), 500
 
 
 class FinalizeContextView(MethodView):

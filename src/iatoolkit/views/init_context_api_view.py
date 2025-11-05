@@ -59,7 +59,7 @@ class InitContextApiView(MethodView):
             return jsonify({'status': 'OK', 'message': success_message}), 200
 
         except Exception as e:
-            logging.exception(f"Error durante la recarga de contexto {user_identifier}: {e}")
+            logging.exception(f"errors while reloading context {user_identifier}: {e}")
             error_message = self.i18n_service.t('errors.general.unexpected_error')
             return jsonify({"error_message": error_message}), 500
 

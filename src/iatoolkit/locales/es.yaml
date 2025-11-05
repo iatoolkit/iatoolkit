@@ -80,6 +80,10 @@
         authentication_required: "Autenticación requerida. No se proporcionó cookie de sesión o clave de API."
         invalid_api_key: "Clave de API inválida o inactiva."
         no_user_identifier_api: "No se proporcionó user_identifier para la llamada a la API."
+      templates:
+        company_not_found: "Empresa no encontrada."
+        home_template_not_found: "La plantilla de la página de inicio para la empresa '{company_name}' no está configurada."
+        home_template_processing_error: "Ocurrió un error al procesar la plantilla personalizada de la página de inicio: {error}"
 
       general:
         unexpected_error: "Ha ocurrido un error inesperado. Por favor, contacta a soporte."
