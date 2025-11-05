@@ -74,7 +74,7 @@ main.chat-layout-container.prompt-assistant-open {
     background-color: #fff; /* Fondo blanco para el contenedor del chat */
 }
 
-/* La caja principal que envuelve toda el área de entrada */
+/* La caja principal que envuelve toda el área de entrada TODO: */
 .input-area {
     background-color: var(--brand-prompt-assistant-bg, #f8f9fa);
 }
@@ -329,12 +329,6 @@ main.chat-layout-container.prompt-assistant-open {
         display: block;
     }
 
-    /* Efecto de foco brandeado para todos los form-control */
-    .form-control:focus {
-        border-color: var(--brand-primary-color);
-        box-shadow: 0 0 0 0.25rem rgba(var(--brand-primary-color-rgb), 0.25); /* Usa la variable RGB para el shadow */
-    }
-
     .branded-form-title {
         color: var(--brand-primary-color);
         font-size: 1.75rem; /* Un tamaño más prominente */
@@ -342,7 +336,6 @@ main.chat-layout-container.prompt-assistant-open {
         text-align: center;
         margin-bottom: 1.5rem; /* Espacio consistente debajo del título */
     }
-
 
 
 /* Aplica el color secundario de la marca al icono de ver archivos */
@@ -483,8 +476,8 @@ main.chat-layout-container.prompt-assistant-open {
 
 .prompt-select-button {
     /* Estado por defecto: Estilo "outline" sutil */
-    background-color: transparent;
-    color: var(--brand-primary-color);
+    background-color: var(--brand-primary-color);
+    color: var(--brand-text-on-primary);
     border: 1px solid var(--brand-primary-color); /* Borde fino con el color primario */
 
     /* Estilos de botón estándar */
@@ -499,11 +492,11 @@ main.chat-layout-container.prompt-assistant-open {
 }
 
 .prompt-select-button:hover {
-    /* Estado hover: Se rellena para dar feedback claro */
-    background-color: var(--brand-primary-color);
-    color: var(--brand-text-on-primary);
+    background-color: var(--brand-secondary-color);       /* Contraste fuerte */
+    color: var(--brand-text-on-secondary);                /* Texto visible */
+    border: 2px solid var(--brand-secondary-color);       /* Borde más grueso al hacer hover */
+    font-weight: 600;                                     /* Más fuerza al texto */
 }
-
 
 #clear-selection-button {
     position: absolute;
