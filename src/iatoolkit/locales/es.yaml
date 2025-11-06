@@ -70,6 +70,7 @@
       buttons:
         cancel: "Cerrar"
         send: "Enviar"
+        stop: "Detener"
 
     errors:
       auth:

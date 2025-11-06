@@ -76,6 +76,7 @@ class ProfileService:
             self.set_session_for_user(company.short_name, user_identifier)
             return {'success': True, "user_identifier": user_identifier, "message": "Login exitoso"}
         except Exception as e:
+            logging.error(f"Error in login: {e}")
             return {'success': False, "message": str(e)}
 
     def create_external_user_profile_context(self, company: Company, user_identifier: str):

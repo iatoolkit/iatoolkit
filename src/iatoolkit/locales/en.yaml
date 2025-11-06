@@ -74,6 +74,7 @@ ui:
   buttons:
     cancel: "Close"
     send: "Send"
+    stop: "Stop"
 
 errors:
   auth:

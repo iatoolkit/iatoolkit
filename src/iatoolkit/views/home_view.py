@@ -27,7 +27,6 @@ class HomeView(MethodView):
     def get(self, company_short_name: str):
         try:
             company = self.profile_service.get_company_by_short_name(company_short_name)
-
             if not company:
                 return render_template('error.html',
                                        message=self.i18n_service.t('errors.templates.company_not_found')), 404
