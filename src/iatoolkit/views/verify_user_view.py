@@ -58,5 +58,5 @@ class VerifyAccountView(MethodView):
             return redirect(url_for('home', company_short_name=company_short_name))
 
         except Exception as e:
-            flash(self.i18n_service.t('errors.general.unexpected_error'), 'error')
+            flash(self.i18n_service.t('errors.general.unexpected_error', error=str(e)), 'error')
             return redirect(url_for('home', company_short_name=company_short_name))

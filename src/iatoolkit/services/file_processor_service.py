@@ -52,23 +52,15 @@ class FileProcessor:
                  logger: Optional[logging.Logger] = None):
         self.connector = connector
         self.config = config
-        self.logger = logger or self._setup_logger()
         self.processed_files = 0
 
-    def _setup_logger(self):
-        logging.basicConfig(
-            filename=self.config.log_file,
-            level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(message)s'
-        )
-        return logging.getLogger(__name__)
 
     def process_files(self):
         # Fetches files from the connector, filters them, and processes them.
         try:
             files = self.connector.list_files()
         except Exception as e:
-            self.logger.error(f"Error fetching files: {e}")
+            logging.error(f"Error fetching files: {e}")
             return False
 
         if self.config.echo:
@@ -95,10 +87,10 @@ class FileProcessor:
                                      context=self.config.context)
                 self.processed_files += 1
 
-                self.logger.info(f"Successfully processed file: {file_path}")
+                logging.info(f"Successfully processed file: {file_path}")
 
             except Exception as e:
-                self.logger.error(f"Error processing {file_path}: {e}")
+                logging.error(f"Error processing {file_path}: {e}")
                 if not self.config.continue_on_error:
                     raise e
 

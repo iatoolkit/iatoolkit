@@ -60,7 +60,7 @@ class InitContextApiView(MethodView):
 
         except Exception as e:
             logging.exception(f"errors while reloading context: {e}")
-            error_message = self.i18n_service.t('errors.general.unexpected_error')
+            error_message = self.i18n_service.t('errors.general.unexpected_error', error=str(e))
             return jsonify({"error_message": error_message}), 500
 
     def options(self, company_short_name):

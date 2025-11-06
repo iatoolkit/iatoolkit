@@ -84,7 +84,7 @@ class AuthService:
             )
             return {'success': True, 'user_identifier': user_identifier}
         except Exception as e:
-            logging.error(f"Error al crear la sesión desde token para {user_identifier}: {e}")
+            logging.error(f"error creeating session for Token of {user_identifier}: {e}")
             self.log_access(
                 company_short_name=company_short_name,
                 auth_type='redeem_token',
@@ -189,5 +189,5 @@ class AuthService:
             session.commit()
 
         except Exception as e:
-            logging.error(f"Fallo al escribir en AccessLog: {e}", exc_info=False)
+            logging.error(f"error writting to AccessLog: {e}", exc_info=False)
             session.rollback()

@@ -3,6 +3,8 @@
 #
 # IAToolkit is open source software.
 
+# This is the Flask connected session manager for IAToolkit
+
 from flask import session
 
 class SessionManager:

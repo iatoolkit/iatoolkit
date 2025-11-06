@@ -75,6 +75,8 @@
     errors:
       company_not_found: "La empresa {company_short_name} no existe."
       timeout: "El tiempo de espera ha expirado."
+
+
       auth:
         invalid_password: "La contraseña proporcionada es incorrecta."
         user_not_found: "No se encontró un usuario con ese correo."
@@ -86,11 +88,11 @@
       templates:
         company_not_found: "Empresa no encontrada."
         home_template_not_found: "La plantilla de la página de inicio para la empresa '{company_name}' no está configurada."
+        processing_error: "Error al procesar el template: {error}"
         template_not_found: "No se encontro el template: '{template_name}'."
-        processing_error: "Ocurrió un error al procesar la plantilla personalizada de la página de inicio: {error}"
 
       general:
-        unexpected_error: "Ha ocurrido un error inesperado. Por favor, contacta a soporte."
+        unexpected_error: "Ha ocurrido un error inesperado: {error}."
         unsupported_language: "El idioma seleccionado no es válido."
       signup:
         company_not_found: "La empresa {company_name} no existe."

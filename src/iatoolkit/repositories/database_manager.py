@@ -77,7 +77,7 @@ class DatabaseManager:
         inspector = inspect(self._engine)
 
         if table_name not in inspector.get_table_names():
-            raise RuntimeError(f"La tabla '{table_name}' no existe en la BD.")
+            raise RuntimeError(f"Table '{table_name}' does not exist.")
 
         if exclude_columns is None:
             exclude_columns = []

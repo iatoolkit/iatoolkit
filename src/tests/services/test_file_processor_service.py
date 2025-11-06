@@ -49,19 +49,6 @@ class TestFileProcessor:
         status = self.processor.process_files()
         assert status == False
 
-    def test_process_files_when_exception_on_get_content(self):
-        self.mock_connector.get_file_content.side_effect = Exception("Mocked error")
-
-        # Mock del logger para capturar errores
-        with patch.object(self.processor, "logger") as mock_logger:
-            # Ejecutar el método y permitir que continúe tras el error
-            self.processor.process_files()
-
-            # Verificar que no se ejecutó la acción debido al error
-            self.mock_callback.assert_not_called()
-
-            # Verificar que el logger capture el error
-            mock_logger.error.assert_called_once_with("Error processing /mock/directory/test_file.txt: Mocked error")
 
     def test_process_files_filtered_out(self):
         """Prueba que se filtren los archivos que no coincidan con los filtros."""

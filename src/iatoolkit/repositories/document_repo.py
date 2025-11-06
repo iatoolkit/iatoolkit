@@ -22,7 +22,7 @@ class DocumentRepo:
     def get(self, company_id, filename: str ) -> Document:
         if not company_id or not filename:
             raise IAToolkitException(IAToolkitException.ErrorType.PARAM_NOT_FILLED,
-                               'Falta empresa o filename')
+                               'missing company_id or filename')
 
         return self.session.query(Document).filter_by(company_id=company_id, filename=filename).first()
 

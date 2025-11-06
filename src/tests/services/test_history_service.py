@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 from iatoolkit.services.history_service import HistoryService
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.repositories.profile_repo import ProfileRepo
+from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.repositories.models import LLMQuery, Company
 
 
@@ -16,16 +17,21 @@ class TestHistoryService:
     def setup(self):
         self.llm_query_repo = MagicMock(spec=LLMQueryRepo)
         self.profile_repo = MagicMock(spec=ProfileRepo)
+        self.mock_i18n_service = MagicMock(spec=I18nService)
 
         self.history_service = HistoryService(
             llm_query_repo=self.llm_query_repo,
-            profile_repo=self.profile_repo
+            profile_repo=self.profile_repo,
+            i18n_service=self.mock_i18n_service
         )
         # Mock común para la compañía
         self.mock_company = MagicMock(spec=Company)
         self.mock_company.id = 1
         self.mock_company.name = 'Test Company'
         self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+
+        self.mock_i18n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
+
 
     def test_get_history_company_not_found(self):
         """Prueba que el servicio devuelve un error si la empresa no se encuentra."""
@@ -36,7 +42,7 @@ class TestHistoryService:
             user_identifier='test_user'
         )
 
-        assert result == {'error': 'missing company: nonexistent_company'}
+        assert result == {'error': 'translated:errors.company_not_found'}
         self.profile_repo.get_company_by_short_name.assert_called_once_with('nonexistent_company')
         self.llm_query_repo.get_history.assert_not_called()
 
@@ -70,7 +76,7 @@ class TestHistoryService:
             user_identifier=user_identifier
         )
 
-        assert result['message'] == 'history loades'
+        assert result['message'] == 'history loaded ok'
         assert len(result['history']) == 2
         assert result['history'][0]['id'] == 1
 

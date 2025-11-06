@@ -80,4 +80,4 @@ class TestDatabaseManager:
         with pytest.raises(RuntimeError) as exc_info:
             self.db_manager.get_table_schema('non_existent_table')
 
-        assert "La tabla 'non_existent_table' no existe en la BD" in str(exc_info.value)
+        assert "Table 'non_existent_table' does not exist." in str(exc_info.value)

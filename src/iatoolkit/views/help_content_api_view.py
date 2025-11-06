@@ -51,4 +51,4 @@ class HelpContentApiView(MethodView):
         except Exception as e:
             logging.exception(
                 f"Unexpected error fetching help_content for {company_short_name}/{user_identifier}: {e}")
-            return jsonify({"error_message": self.i18n_service.t('errors.general.unexpected_error')}), 500
+            return jsonify({"error_message": self.i18n_service.t('errors.general.unexpected_error', error=str(e))}), 500

@@ -186,7 +186,7 @@ class SampleCompany(BaseCompany):
                         connector_config=connector_config,
                         predefined_metadata=predefined_metadata,
                         filters={"filename_contains": ".pdf"})
-                    click.echo(f'folder {doc["folder"]}:  {result} documentos procesados exitosamente.')
+                    click.echo(f'folder {doc["folder"]}: {result} documents processed successfully.')
                 except Exception as e:
                     logging.exception(e)
                     click.echo(f"Error: {str(e)}")
