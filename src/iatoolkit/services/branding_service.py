@@ -75,7 +75,6 @@ class BrandingService:
         fusionando los valores por defecto con los personalizados.
         """
         final_branding_values = self._default_branding.copy()
-
         if company:
             branding_data = self.config_service.get_company_content(company.short_name, 'branding')
             final_branding_values.update(branding_data)

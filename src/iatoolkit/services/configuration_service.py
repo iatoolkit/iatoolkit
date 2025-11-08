@@ -40,8 +40,10 @@ class ConfigurationService:
         logging.info(f"⚙️  Starting configuration for company '{company_short_name}'...")
 
         # 1. identify the instance with his name and load info from database
-        company_instance.id = company_short_name
+        company_instance.company_short_name = company_short_name
         company_instance.company = self.profile_repo.get_company_by_short_name(company_short_name)
+        if not company_instance.company:
+            raise ValueError(f"Company '{company_short_name}' not found in database.")
 
         # 2. Load the main configuration file and supplementary content files
         config = self._load_and_merge_configs(company_short_name)
@@ -129,7 +131,6 @@ class ConfigurationService:
                 continue
 
             category_obj = created_categories[category_name]
-
             company_instance._create_prompt(
                 prompt_name=prompt_data['name'],
                 description=prompt_data['description'],
