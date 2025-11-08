@@ -1,6 +1,10 @@
 
 <div align="center">
-  <h1>IAToolkit</h1>
+<h1>
+  <a href="https://www.iatoolkit.com" target="_blank" style="text-decoration: none; color: inherit;">
+    IAToolkit
+  </a>
+</h1>
   <p><strong>The Open-Source Framework for Building AI Chatbots on Your Private Data.</strong></p>
 </div>
 
