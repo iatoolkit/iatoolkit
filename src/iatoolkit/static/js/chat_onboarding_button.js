@@ -44,9 +44,11 @@
       if (elIcon) elIcon.innerHTML = `<i class="${c.icon || 'bi bi-lightbulb'}"></i>`;
       if (elTitle) elTitle.textContent = c.title || '';
       if (elText) elText.innerHTML = c.text || '';
-      if (c.example) {
+      if (elExample && c.example) {
           elExample.innerHTML = ('Ejemplo: ' + c.example) || '';
       }
+      else
+          elExample.innerHTML = '';
       if (elDots) createDots(elDots, cards.length, idx);
     }
 
