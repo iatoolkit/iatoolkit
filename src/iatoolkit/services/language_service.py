@@ -71,7 +71,6 @@ class LanguageService:
                 locale = self.config_service.get_company_content(company_short_name, 'locale')
                 if locale:
                     company_language = locale.split('_')[0]
-                    logging.debug(f"Language determined by company default: {company_language}")
                     g.lang = company_language
                     return g.lang
         except Exception as e:
