@@ -23,7 +23,7 @@ class TestLoginView:
         self.profile_service = MagicMock()
         self.query_service = MagicMock()
         self.branding_service = MagicMock()
-        self.onboarding_service = MagicMock()
+        self.config_service = MagicMock()
         self.prompt_service = MagicMock()
         self.jwt_service = MagicMock()
         self.auth_service = MagicMock()
@@ -42,7 +42,7 @@ class TestLoginView:
                 jwt_service=self.jwt_service,
                 branding_service=self.branding_service,
                 prompt_service=self.prompt_service,
-                onboarding_service=self.onboarding_service,
+                config_service=self.config_service,
                 query_service=self.query_service,
                 utility=self.utility,
                 i18n_service=self.i18n_service,
@@ -61,7 +61,7 @@ class TestLoginView:
                 query_service=self.query_service,
                 prompt_service=self.prompt_service,
                 branding_service=self.branding_service,
-                onboarding_service=self.onboarding_service,
+                config_service=self.config_service,
                 jwt_service=self.jwt_service,
                 i18n_service=self.i18n_service,
             )
@@ -149,7 +149,7 @@ class TestLoginView:
         }
         self.prompt_service.get_user_prompts.return_value = [{"id": "p1"}]
         self.branding_service.get_company_branding.return_value = {"logo": "x.png"}
-        self.onboarding_service.get_onboarding_cards.return_value = [{"title": "card1"}]
+        self.config_service.get_company_content.return_value = [{"title": "card1"}]
 
         with patch("iatoolkit.views.login_view.render_template") as mock_rt:
             mock_rt.return_value = "CHAT", 200
@@ -163,7 +163,7 @@ class TestLoginView:
         )
         self.prompt_service.get_user_prompts.assert_called_once_with(self.company_short_name)
         self.branding_service.get_company_branding.assert_called_once()
-        self.onboarding_service.get_onboarding_cards.assert_called_once()  # <-- Verificar la llamada
+        self.config_service.get_company_content.assert_called_once()
 
         # Ensure chat.html is rendered with expected context
         mock_rt.assert_called_once()
@@ -205,7 +205,7 @@ class TestLoginView:
         # Datos auxiliares
         self.prompt_service.get_user_prompts.return_value = [{"id": "p1"}]
         self.branding_service.get_company_branding.return_value = {"logo": "x.png"}
-        self.onboarding_service.get_onboarding_cards.return_value = [{"title": "card1"}]
+        self.config_service.get_company_content.return_value = [{"title": "card1"}]
 
         with patch("iatoolkit.views.login_view.render_template") as mock_rt:
             mock_rt.return_value = "CHAT", 200
@@ -222,7 +222,7 @@ class TestLoginView:
         )
         self.prompt_service.get_user_prompts.assert_called_once_with(self.company_short_name)
         self.branding_service.get_company_branding.assert_called_once()
-        self.onboarding_service.get_onboarding_cards.assert_called_once()
+        self.config_service.get_company_content.assert_called_once()
 
         mock_rt.assert_called_once()
         assert mock_rt.call_args[0][0] == "chat.html"

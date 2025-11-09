@@ -11,7 +11,7 @@ from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.auth_service import AuthService
 from iatoolkit.services.query_service import QueryService
 from iatoolkit.services.branding_service import BrandingService
-from iatoolkit.services.onboarding_service import OnboardingService
+from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.prompt_manager_service import PromptService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.common.util import Utility
@@ -31,7 +31,7 @@ class BaseLoginView(MethodView):
                  jwt_service: JWTService,
                  branding_service: BrandingService,
                  prompt_service: PromptService,
-                 onboarding_service: OnboardingService,
+                 config_service: ConfigurationService,
                  query_service: QueryService,
                  i18n_service: I18nService,
                  utility: Utility
@@ -41,7 +41,7 @@ class BaseLoginView(MethodView):
         self.jwt_service = jwt_service
         self.branding_service = branding_service
         self.prompt_service = prompt_service
-        self.onboarding_service = onboarding_service
+        self.config_service = config_service
         self.query_service = query_service
         self.i18n_service = i18n_service
         self.utility = utility
@@ -56,9 +56,9 @@ class BaseLoginView(MethodView):
         Centralized logic to decide between the fast path and the slow path.
         """
         # --- Get the company branding and onboarding_cards
-        branding_data = self.branding_service.get_company_branding(company)
-        onboarding_cards = self.onboarding_service.get_onboarding_cards(company)
         company_short_name = company.short_name
+        branding_data = self.branding_service.get_company_branding(company)
+        onboarding_cards = self.config_service.get_company_content(company_short_name, 'onboarding_cards')
 
         # this service decides is the context needs to be rebuilt or not
         prep_result = self.query_service.prepare_context(

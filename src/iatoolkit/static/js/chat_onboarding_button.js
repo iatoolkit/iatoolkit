@@ -28,6 +28,7 @@
     const elIcon = qs(root, ui.icon);
     const elTitle = qs(root, ui.title);
     const elText = qs(root, ui.text);
+    const elExample = qs(root, ui.example);
     const elDots = qs(root, ui.dots);
     const elPrev = qs(root, ui.prev);
     const elNext = qs(root, ui.next);
@@ -43,6 +44,9 @@
       if (elIcon) elIcon.innerHTML = `<i class="${c.icon || 'bi bi-lightbulb'}"></i>`;
       if (elTitle) elTitle.textContent = c.title || '';
       if (elText) elText.innerHTML = c.text || '';
+      if (elExample) {
+          elExample.innerHTML = 'Ejemplo: ' + c.example || '';
+      }
       if (elDots) createDots(elDots, cards.length, idx);
     }
 
