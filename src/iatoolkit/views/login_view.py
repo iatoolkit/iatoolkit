@@ -111,7 +111,7 @@ class FinalizeContextView(MethodView):
 
                 user_identifier = payload.get('user_identifier')
             else:
-                logging.warning("Fallo crítico: missing session information or auth token")
+                logging.error("missing session information or auth token")
                 return redirect(url_for('home', company_short_name=company_short_name))
 
             company = self.profile_service.get_company_by_short_name(company_short_name)

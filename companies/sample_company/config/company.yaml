@@ -6,7 +6,7 @@
 # 1. General Company Information
 id: "sample_company"
 name: "Sample Company"
-locale: "en_ES"
+locale: "es_ES"
 parameters:
   cors_origin:
     - "https://portal-interno.empresa_de_ejemplo.cl"
