@@ -48,7 +48,7 @@ class BaseLoginView(MethodView):
 
 
     def _handle_login_path(self,
-                           company: Company,
+                           company_short_name: str,
                            user_identifier: str,
                            target_url: str,
                            redeem_token: str = None):
@@ -56,13 +56,12 @@ class BaseLoginView(MethodView):
         Centralized logic to decide between the fast path and the slow path.
         """
         # --- Get the company branding and onboarding_cards
-        company_short_name = company.short_name
-        branding_data = self.branding_service.get_company_branding(company)
+        branding_data = self.branding_service.get_company_branding(company_short_name)
         onboarding_cards = self.config_service.get_company_content(company_short_name, 'onboarding_cards')
 
         # this service decides is the context needs to be rebuilt or not
         prep_result = self.query_service.prepare_context(
-            company_short_name=company.short_name, user_identifier=user_identifier
+            company_short_name=company_short_name, user_identifier=user_identifier
         )
 
         if prep_result.get('rebuild_needed'):

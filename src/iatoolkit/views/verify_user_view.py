@@ -32,14 +32,13 @@ class VerifyAccountView(MethodView):
                 return render_template('error.html',
                                        message=self.i18n_service.t('errors.templates.company_not_found')), 404
 
-            branding_data = self.branding_service.get_company_branding(company)
+            branding_data = self.branding_service.get_company_branding(company_short_name)
             try:
                 # decode the token from the URL
                 email = self.serializer.loads(token, salt='email-confirm', max_age=3600*5)
             except SignatureExpired:
                 flash(self.i18n_service.t('errors.verification.token_expired'), 'error')
                 return render_template('signup.html',
-                                       company=company,
                                        company_short_name=company_short_name,
                                        branding=branding_data,
                                        token=token), 400
@@ -49,7 +48,6 @@ class VerifyAccountView(MethodView):
                 flash(response["error"], 'error')
                 return render_template(
                     'signup.html',
-                    company=company,
                     company_short_name=company_short_name,
                     branding=branding_data,
                     token=token), 400

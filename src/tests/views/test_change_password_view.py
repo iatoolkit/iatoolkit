@@ -169,7 +169,6 @@ class TestChangePasswordView:
 
         mock_render_template.assert_called_once_with(
                 "change_password.html",
-            company=self.test_company,
             branding={},
             company_short_name='test_company',
                 form_data={"temp_code": "123456", "new_password": "password123", "confirm_password": "password456"},

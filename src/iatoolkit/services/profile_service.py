@@ -95,6 +95,9 @@ class ProfileService:
             user_identifier=user_identifier,
             user_profile=external_user_profile)
 
+        # 3. make sure the flask session is clean
+        SessionManager.clear()
+
     def save_user_profile(self, company: Company, user_identifier: str, user_profile: dict):
         """
         Private helper: Takes a pre-built profile, saves it to Redis, and sets the Flask cookie.

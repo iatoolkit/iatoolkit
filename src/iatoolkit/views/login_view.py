@@ -29,7 +29,7 @@ class LoginView(BaseLoginView):
             return render_template('error.html',
                                    message=self.i18n_service.t('errors.templates.company_not_found')), 404
 
-        branding_data = self.branding_service.get_company_branding(company)
+        branding_data = self.branding_service.get_company_branding(company_short_name)
         email = request.form.get('email')
         password = request.form.get('password')
 
@@ -61,7 +61,7 @@ class LoginView(BaseLoginView):
 
         # 2. Delegate the path decision to the centralized logic.
         try:
-            return self._handle_login_path(company, user_identifier, target_url)
+            return self._handle_login_path(company_short_name, user_identifier, target_url)
         except Exception as e:
             message = self.i18n_service.t('errors.templates.processing_error', error=str(e))
             return render_template(
@@ -119,7 +119,7 @@ class FinalizeContextView(MethodView):
                 return render_template('error.html',
                             company_short_name=company_short_name,
                             message="Empresa no encontrada"), 404
-            branding_data = self.branding_service.get_company_branding(company)
+            branding_data = self.branding_service.get_company_branding(company_short_name)
 
             # 2. Finalize the context rebuild (the heavy task).
             self.query_service.finalize_context_rebuild(

@@ -30,9 +30,8 @@ class ForgotPasswordView(MethodView):
             return render_template('error.html',
                                    message=self.i18n_service.t('errors.templates.company_not_found')), 404
 
-        branding_data = self.branding_service.get_company_branding(company)
+        branding_data = self.branding_service.get_company_branding(company_short_name)
         return render_template('forgot_password.html',
-                               company=company,
                                company_short_name=company_short_name,
                                branding=branding_data
                                )
@@ -45,7 +44,7 @@ class ForgotPasswordView(MethodView):
                 return render_template('error.html',
                                        message=self.i18n_service.t('errors.templates.company_not_found')), 404
 
-            branding_data = self.branding_service.get_company_branding(company)
+            branding_data = self.branding_service.get_company_branding(company_short_name)
             email = request.form.get('email')
 
             # create a safe token and url for it
@@ -59,7 +58,6 @@ class ForgotPasswordView(MethodView):
                 flash(response["error"], 'error')
                 return render_template(
                     'forgot_password.html',
-                    company=company,
                     company_short_name=company_short_name,
                     branding=branding_data,
                     form_data={"email": email}), 400

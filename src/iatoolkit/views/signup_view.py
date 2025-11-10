@@ -32,9 +32,8 @@ class SignupView(MethodView):
             return render_template('error.html',
                                    message=self.i18n_service.t('errors.templates.company_not_found')), 404
 
-        branding_data = self.branding_service.get_company_branding(company)
+        branding_data = self.branding_service.get_company_branding(company_short_name)
         return render_template('signup.html',
-                               company=company,
                                company_short_name=company_short_name,
                                branding=branding_data)
 
@@ -45,7 +44,7 @@ class SignupView(MethodView):
                 return render_template('error.html',
                                      message=self.i18n_service.t('errors.templates.company_not_found')), 404
 
-            branding_data = self.branding_service.get_company_branding(company)
+            branding_data = self.branding_service.get_company_branding(company_short_name)
 
             first_name = request.form.get('first_name')
             last_name = request.form.get('last_name')
@@ -70,7 +69,6 @@ class SignupView(MethodView):
                 flash(response["error"], 'error')
                 return render_template(
                     'signup.html',
-                    company=company,
                     company_short_name=company_short_name,
                     branding=branding_data,
                     form_data={

@@ -87,7 +87,6 @@ class TestSignupView:
         assert response.status_code == 200
         mock_render_template.assert_called_once_with(
             'signup.html',
-            company=self.test_company,
             company_short_name='test_company',
             branding=self.branding_service.get_company_branding.return_value
         )
@@ -106,7 +105,6 @@ class TestSignupView:
         assert response.status_code == 400
         mock_render_template.assert_called_once_with(
             'signup.html',
-            company=self.test_company,
             company_short_name='test_company',
             branding=self.branding_service.get_company_branding.return_value,
             form_data=form_data,

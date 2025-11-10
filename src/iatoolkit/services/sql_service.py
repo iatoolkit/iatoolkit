@@ -4,16 +4,22 @@
 # IAToolkit is open source software.
 
 from iatoolkit.repositories.database_manager import DatabaseManager
-
 from iatoolkit.common.util import Utility
 from iatoolkit.services.i18n_service import I18nService
-from sqlalchemy import text
-from injector import inject
-import json
 from iatoolkit.common.exceptions import IAToolkitException
+from sqlalchemy import text
+from injector import inject, singleton
+import json
+import logging
 
 
+@singleton
 class SqlService:
+    """
+    Manages database connections and executes SQL statements.
+    It maintains a cache of named DatabaseManager instances to avoid reconnecting.
+    """
+
     @inject
     def __init__(self,
                  util: Utility,
@@ -21,44 +27,64 @@ class SqlService:
         self.util = util
         self.i18n_service = i18n_service
 
-    def exec_sql(self, db_manager: DatabaseManager, sql_statement: str) -> str:
+        # Cache for database connections
+        self._db_connections: dict[str, DatabaseManager] = {}
+
+    def register_database(self, db_name: str, db_uri: str):
         """
-        Executes a raw SQL statement and returns the result as a JSON string.
+        Creates and caches a DatabaseManager instance for a given database name and URI.
+        If a database with the same name is already registered, it does nothing.
+        """
+        if db_name in self._db_connections:
+            return
 
-        This method takes a DatabaseManager instance and a SQL query, executes it
-        against the database, and fetches all results. The results are converted
-        into a list of dictionaries, where each dictionary represents a row.
-        This list is then serialized to a JSON string.
-        If an exception occurs during execution, the transaction is rolled back,
-        and a custom IAToolkitException is raised.
+        logging.debug(f"Registering and creating connection for database: '{db_name}'")
+        db_manager = DatabaseManager(db_uri, register_pgvector=False)
+        self._db_connections[db_name] = db_manager
 
-        Args:
-            db_manager: The DatabaseManager instance to get the database session from.
-            sql_statement: The raw SQL statement to be executed.
-
-        Returns:
-            A JSON string representing the list of rows returned by the query.
+    def get_database_manager(self, db_name: str) -> DatabaseManager:
+        """
+        Retrieves a registered DatabaseManager instance from the cache.
         """
         try:
-            # here the SQL is executed
+            return self._db_connections[db_name]
+        except KeyError:
+            logging.error(f"Attempted to access unregistered database: '{db_name}'")
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.DATABASE_ERROR,
+                f"Database '{db_name}' is not registered with the SqlService."
+            )
+
+    def exec_sql(self, db_name: str, sql_statement: str) -> str:
+        """
+        Executes a raw SQL statement against a registered database and returns the result as a JSON string.
+        """
+        try:
+            # 1. Get the database manager from the cache
+            db_manager = self.get_database_manager(db_name)
+
+            # 2. Execute the SQL statement
             result = db_manager.get_session().execute(text(sql_statement))
-
-            # get the column names
             cols = result.keys()
-
-            # convert rows to dict
             rows_context = [dict(zip(cols, row)) for row in result.fetchall()]
 
-            # Serialize to JSON with type convertion
+            # seialize the result
             sql_result_json = json.dumps(rows_context, default=self.util.serialize)
 
             return sql_result_json
+        except IAToolkitException:
+            # Re-raise exceptions from get_database_manager to preserve the specific error
+            raise
         except Exception as e:
-            db_manager.get_session().rollback()
+            # Attempt to rollback if a session was active
+            db_manager = self._db_connections.get(db_name)
+            if db_manager:
+                db_manager.get_session().rollback()
 
             error_message = str(e)
             if 'timed out' in str(e):
                 error_message = self.i18n_service.t('errors.timeout')
 
+            logging.error(f"Error executing SQL statement: {error_message}")
             raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR,
                                      error_message) from e

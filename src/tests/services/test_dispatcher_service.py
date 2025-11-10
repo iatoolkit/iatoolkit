@@ -16,14 +16,13 @@ from iatoolkit.services.prompt_manager_service import PromptService
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.mail_service import MailService
 from iatoolkit.services.configuration_service import ConfigurationService
+from iatoolkit.services.sql_service import SqlService
 from iatoolkit.common.util import Utility
 
 
 # A mock company class for testing purposes
 class MockSampleCompany(BaseCompany):
     def register_company(self): pass
-
-    def get_company_context(self, **kwargs) -> str: return "Company Context for Sample"
 
     def handle_request(self, tag: str, params: dict) -> dict: return {"result": "sample_company_response"}
 
@@ -49,6 +48,7 @@ class TestDispatcher:
         self.util = MagicMock(spec=Utility)
         self.mock_profile_repo = MagicMock(spec=ProfileRepo)
         self.mock_config_service = MagicMock(spec=ConfigurationService)
+        self.mock_sql_service = MagicMock(spec=SqlService)
 
 
         # Create a mock injector that will be used for instantiation.
@@ -95,6 +95,7 @@ class TestDispatcher:
             excel_service=self.excel_service,
             mail_service=self.mail_service,
             config_service=self.mock_config_service,
+            sql_service=self.mock_sql_service
         )
 
 
@@ -139,16 +140,6 @@ class TestDispatcher:
         self.mock_sample_company_instance.handle_request.assert_not_called()
         assert result == {"file": "test.xlsx"}
 
-    def test_get_company_context(self):
-        """Tests that get_company_context works correctly."""
-        # Simulate no context files to simplify
-        self.util.get_files_by_extension.return_value = []
-
-        params = {"param1": "value1"}
-        result = self.dispatcher.get_company_context("sample", **params)
-
-        self.mock_sample_company_instance.get_company_context.assert_called_once_with(**params)
-        assert "Company Context for Sample" in result
 
     def test_get_company_instance(self):
         """Tests that get_company_instance returns the correct company instance."""
@@ -249,6 +240,7 @@ class TestDispatcher:
                 excel_service=self.excel_service,
                 mail_service=self.mail_service,
                 config_service=self.mock_config_service,
+                sql_service=self.mock_sql_service
             )
 
             assert len(dispatcher.company_instances) == 0

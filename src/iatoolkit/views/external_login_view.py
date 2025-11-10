@@ -47,7 +47,7 @@ class ExternalLoginView(BaseLoginView):
 
         # 5. Delegate the path decision to the centralized logic.
         try:
-            return self._handle_login_path(company, user_identifier, target_url, redeem_token)
+            return self._handle_login_path(company_short_name, user_identifier, target_url, redeem_token)
         except Exception as e:
             logging.exception(f"Error processing external login path for {company_short_name}/{user_identifier}: {e}")
             return jsonify({"error": f"Internal server error while starting chat. {str(e)}"}), 500

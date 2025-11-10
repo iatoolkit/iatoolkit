@@ -29,7 +29,7 @@ class LoginSimulationView(MethodView):
                                    company_short_name=company_short_name,
                                    message="Empresa no encontrada"), 404
 
-        branding_data = self.branding_service.get_company_branding(company)
+        branding_data = self.branding_service.get_company_branding(company_short_name)
 
         return render_template('login_simulation.html',
                                branding=branding_data,

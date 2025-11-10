@@ -19,7 +19,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from injector import Binder, Injector, singleton
 from importlib.metadata import version as _pkg_version, PackageNotFoundError
 
-IATOOLKIT_VERSION = "0.67.2"
+IATOOLKIT_VERSION = "0.68.0"
 
 # global variable for the unique instance of IAToolkit
 _iatoolkit_instance: Optional['IAToolkit'] = None
@@ -360,7 +360,7 @@ class IAToolkit:
         # instantiate all the registered companies
         get_company_registry().instantiate_companies(self._injector)
 
-        # use the dispatcher to load the config and prepare the execution
+        # use the dispatcher to load the company config and prepare the execution
         dispatcher = self._injector.get(Dispatcher)
         dispatcher.load_company_configs()
 

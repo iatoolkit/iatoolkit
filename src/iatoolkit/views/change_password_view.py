@@ -34,7 +34,7 @@ class ChangePasswordView(MethodView):
                 return render_template('error.html',
                                        message=self.i18n_service.t('errors.templates.company_not_found')), 404
 
-            branding_data = self.branding_service.get_company_branding(company)
+            branding_data = self.branding_service.get_company_branding(company_short_name)
 
             try:
                 # Decodificar el token
@@ -66,7 +66,7 @@ class ChangePasswordView(MethodView):
             return render_template('error.html',
                                    message=self.i18n_service.t('errors.templates.company_not_found')), 404
 
-        branding_data = self.branding_service.get_company_branding(company)
+        branding_data = self.branding_service.get_company_branding(company_short_name)
         try:
             # Decodificar el token
             email = self.serializer.loads(token, salt='password-reset', max_age=3600)
@@ -98,7 +98,6 @@ class ChangePasswordView(MethodView):
                     'change_password.html',
                     token=token,
                     company_short_name=company_short_name,
-                    company=company,
                     branding=branding_data,
                     form_data={"temp_code": temp_code,
                                "new_password": new_password,

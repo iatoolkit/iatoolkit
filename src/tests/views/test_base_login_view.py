@@ -31,10 +31,6 @@ class TestBaseLoginView:
         }
         self.view_instance = BaseLoginView(**self.mock_services)
 
-        # Mock Company object with a short_name attribute
-        self.mock_company = MagicMock(spec=Company)
-        self.mock_company.short_name = COMPANY_SHORT_NAME
-
     def test_handle_login_path_slow_path(self):
         """Slow path: should render onboarding_shell.html with correct context."""
         # Arrange
@@ -47,17 +43,17 @@ class TestBaseLoginView:
             with patch("iatoolkit.views.base_login_view.render_template") as mock_rt:
                 # Act: Call with the new signature
                 _ = self.view_instance._handle_login_path(
-                    company=self.mock_company,
+                    company_short_name=COMPANY_SHORT_NAME,
                     user_identifier=USER_IDENTIFIER,
                     target_url=DUMMY_TARGET_URL
                 )
 
         # Assert
         self.mock_services["query_service"].prepare_context.assert_called_once_with(
-            company_short_name=self.mock_company.short_name, user_identifier=USER_IDENTIFIER
+            company_short_name=COMPANY_SHORT_NAME, user_identifier=USER_IDENTIFIER
         )
-        self.mock_services["branding_service"].get_company_branding.assert_called_once_with(self.mock_company)
-        self.mock_services["config_service"].get_company_content.assert_called_once_with(self.mock_company.short_name, 'onboarding_cards')
+        self.mock_services["branding_service"].get_company_branding.assert_called_once_with(COMPANY_SHORT_NAME)
+        self.mock_services["config_service"].get_company_content.assert_called_once_with(COMPANY_SHORT_NAME, 'onboarding_cards')
 
         mock_rt.assert_called_once()
         template_name, ctx = mock_rt.call_args[0], mock_rt.call_args[1]
@@ -79,16 +75,16 @@ class TestBaseLoginView:
             with patch("iatoolkit.views.base_login_view.render_template") as mock_rt:
                 # Act: Call without redeem_token
                 _ = self.view_instance._handle_login_path(
-                    company=self.mock_company,
+                    company_short_name=COMPANY_SHORT_NAME,
                     user_identifier=USER_IDENTIFIER,
                     target_url=DUMMY_TARGET_URL
                 )
 
         # Assert
         self.mock_services["query_service"].prepare_context.assert_called_once_with(
-            company_short_name=self.mock_company.short_name, user_identifier=USER_IDENTIFIER
+            company_short_name=COMPANY_SHORT_NAME, user_identifier=USER_IDENTIFIER
         )
-        self.mock_services["prompt_service"].get_user_prompts.assert_called_once_with(self.mock_company.short_name)
+        self.mock_services["prompt_service"].get_user_prompts.assert_called_once_with(COMPANY_SHORT_NAME)
 
         mock_rt.assert_called_once()
         template_name, ctx = mock_rt.call_args[0], mock_rt.call_args[1]
@@ -111,7 +107,7 @@ class TestBaseLoginView:
             with patch("iatoolkit.views.base_login_view.render_template") as mock_rt:
                 # Act: Call with redeem_token
                 _ = self.view_instance._handle_login_path(
-                    company=self.mock_company,
+                    company_short_name=COMPANY_SHORT_NAME,
                     user_identifier=USER_IDENTIFIER,
                     target_url=DUMMY_TARGET_URL,
                     redeem_token=test_token

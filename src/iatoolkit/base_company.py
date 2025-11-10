@@ -68,12 +68,6 @@ class BaseCompany(ABC):
             **kwargs
         )
 
-
-    @abstractmethod
-    # get context specific for this company
-    def get_company_context(self, **kwargs) -> str:
-        raise NotImplementedError("La subclase debe implementar el método get_company_context()")
-
     @abstractmethod
     # get context specific for this company
     def get_user_info(self, user_identifier: str) -> dict:

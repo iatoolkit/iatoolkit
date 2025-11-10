@@ -8,6 +8,7 @@ from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.repositories.document_repo import DocumentRepo
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.document_service import DocumentService
+from iatoolkit.services.company_context_service import CompanyContextService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.repositories.models import Task
@@ -33,6 +34,7 @@ class QueryService:
     def __init__(self,
                  llm_client: llmClient,
                  profile_service: ProfileService,
+                 company_context_service: CompanyContextService,
                  document_service: DocumentService,
                  document_repo: DocumentRepo,
                  llmquery_repo: LLMQueryRepo,
@@ -44,6 +46,7 @@ class QueryService:
                  session_context: UserSessionContextService
                  ):
         self.profile_service = profile_service
+        self.company_context_service = company_context_service
         self.document_service = document_service
         self.document_repo = document_repo
         self.llmquery_repo = llmquery_repo
@@ -81,7 +84,7 @@ class QueryService:
         )
 
         # get the company context: schemas, database models, .md files
-        company_specific_context = self.dispatcher.get_company_context(company_name=company_short_name)
+        company_specific_context = self.company_context_service.get_company_context(company_short_name)
 
         # merge context: company + user
         final_system_context = f"{company_specific_context}\n{rendered_system_prompt}"

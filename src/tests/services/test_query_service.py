@@ -8,6 +8,7 @@ import base64
 from iatoolkit.services.query_service import QueryService
 from iatoolkit.services.prompt_manager_service import PromptService
 from iatoolkit.services.user_session_context_service import UserSessionContextService
+from iatoolkit.services.company_context_service import ConfigurationService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.profile_service import ProfileService
@@ -37,6 +38,7 @@ class TestQueryService:
         self.mock_llmquery_repo = MagicMock()
         self.mock_profile_repo = MagicMock(spec=ProfileRepo)
         self.mock_prompt_service = MagicMock(spec=PromptService)
+        self.company_context_service = MagicMock(spec=ConfigurationService)
         self.mock_util = MagicMock(spec=Utility)
         self.mock_dispatcher = MagicMock(spec=Dispatcher)
         self.mock_session_context = MagicMock(spec=UserSessionContextService)
@@ -47,6 +49,7 @@ class TestQueryService:
         with patch.dict(os.environ, {"LLM_MODEL": "gpt-test"}):
             self.service = QueryService(
                 llm_client=self.mock_llm_client,
+                company_context_service=self.company_context_service,
                 profile_service=self.mock_profile_service,
                 document_service=self.mock_document_service,
                 document_repo=MagicMock(),

@@ -5,6 +5,7 @@
 
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.prompt_manager_service import PromptService
+from iatoolkit.services.sql_service import SqlService
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.repositories.models import Company, Function
@@ -23,12 +24,14 @@ class Dispatcher:
                  prompt_service: PromptService,
                  llmquery_repo: LLMQueryRepo,
                  util: Utility,
+                 sql_service: SqlService,
                  excel_service: ExcelService,
                  mail_service: MailService):
         self.config_service = config_service
         self.prompt_service = prompt_service
         self.llmquery_repo = llmquery_repo
         self.util = util
+        self.sql_service = sql_service
         self.excel_service = excel_service
         self.mail_service = mail_service
         self.system_functions = _FUNCTION_LIST
@@ -64,13 +67,42 @@ class Dispatcher:
         """Loads the configuration of every company"""
         for company_name, company_instance in self.company_instances.items():
             try:
-                # register the company configuration
+                # read company configuration from company.yaml
                 self.config_service.register_company(company_name, company_instance)
+
+                # register the company databases
+                self._register_company_databases(company_name)
+
             except Exception as e:
                 logging.error(f"❌ Failed to register configuration for '{company_name}': {e}")
                 continue
 
         return True
+
+    def _register_company_databases(self, company_name: str):
+        """
+        Reads the data_sources config for a company and registers each
+        database with the central SqlService.
+        """
+        logging.info(f"  -> Registering databases for '{company_name}'...")
+        data_sources_config = self.config_service.get_company_content(company_name, 'data_sources')
+
+        if not data_sources_config or not data_sources_config.get('sql'):
+            logging.info(f"  -> No SQL data sources to register for '{company_name}'.")
+            return
+
+        for db_config in data_sources_config['sql']:
+            db_name = db_config.get('database')
+            db_env_var = db_config.get('connection_string_env')
+
+            # resolve the URI connection string from the environment variable
+            db_uri = os.getenv(db_env_var) if db_env_var else None
+            if not db_uri:
+                logging.warning(
+                    f"-> Skipping database registration for '{company_name}' due to missing 'database' name or connection URI.")
+                return
+
+            self.sql_service.register_database(db_name, db_uri)
 
     def setup_iatoolkit_system(self):
         # create system functions
@@ -122,37 +154,6 @@ class Dispatcher:
             logging.exception(e)
             raise IAToolkitException(IAToolkitException.ErrorType.EXTERNAL_SOURCE_ERROR,
                                f"Error en function call '{action}': {str(e)}") from e
-
-    def get_company_context(self, company_name: str, **kwargs) -> str:
-        if company_name not in self.company_instances:
-            raise IAToolkitException(IAToolkitException.ErrorType.EXTERNAL_SOURCE_ERROR,
-                               f"Empresa no configurada: {company_name}")
-
-        company_context = ''
-
-        # read the company context from this list of markdown files,
-        # company brief, credits, operation description, etc.
-        context_dir = os.path.join(os.getcwd(), f'companies/{company_name}/context')
-        context_files = self.util.get_files_by_extension(context_dir, '.md', return_extension=True)
-        for file in context_files:
-            filepath = os.path.join(context_dir, file)
-            company_context += self.util.load_markdown_context(filepath)
-
-        # add the schemas for every table or function call responses
-        schema_dir = os.path.join(os.getcwd(), f'companies/{company_name}/schema')
-        schema_files = self.util.get_files_by_extension(schema_dir, '.yaml', return_extension=True)
-        for file in schema_files:
-            schema_name = file.split('_')[0]
-            filepath = os.path.join(schema_dir, file)
-            company_context += self.util.generate_context_for_schema(schema_name, filepath)
-
-        company_instance = self.company_instances[company_name]
-        try:
-            return company_context + company_instance.get_company_context(**kwargs)
-        except Exception as e:
-            logging.exception(e)
-            raise IAToolkitException(IAToolkitException.ErrorType.EXTERNAL_SOURCE_ERROR,
-                               f"Error getting company context of: {company_name}: {str(e)}") from e
 
     def get_company_services(self, company: Company) -> list[dict]:
         # create the syntax with openai response syntax, for the company function list

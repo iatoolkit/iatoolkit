@@ -19,8 +19,8 @@ parameters:
 # 2. Data Sources
 data_sources:
   sql:
-    - database: "northwind_db"
-      connection_string_env: "NORTHWIND_DATABASE_URI"
+    - database: "sample_database"
+      connection_string_env: "SAMPLE_DATABASE_URI"
       description: |
         Esta es la base de datos principal de la empresa, modelada a partir del conjunto de datos 'Northwind'.
         Contiene toda la información operativa, incluyendo productos, clientes, empleados, órdenes de compra y detalles de envío.

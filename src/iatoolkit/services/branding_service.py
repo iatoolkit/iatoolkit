@@ -69,15 +69,15 @@ class BrandingService:
             "send_button_color": "#212529"          # Gris oscuro/casi negro por defecto
         }
 
-    def get_company_branding(self, company: Company | None) -> dict:
+    def get_company_branding(self, company_short_name: str) -> dict:
         """
         Retorna los estilos de branding finales para una compañía,
         fusionando los valores por defecto con los personalizados.
         """
         final_branding_values = self._default_branding.copy()
-        if company:
-            branding_data = self.config_service.get_company_content(company.short_name, 'branding')
-            final_branding_values.update(branding_data)
+        branding_data = self.config_service.get_company_content(company_short_name, 'branding')
+        final_branding_values.update(branding_data)
+
 
         # Función para convertir HEX a RGB
         def hex_to_rgb(hex_color):
@@ -139,8 +139,11 @@ class BrandingService:
             }}
         """
 
+        # get the company name from configuration for the branding render
+        company_name = self.config_service.get_company_content(company_short_name, 'name')
+
         return {
-            "name": company.name if company else "IAToolkit",
+            "name": company_name,
             "primary_text_style": primary_text_style,
             "secondary_text_style": secondary_text_style,
             "tertiary_text_style": tertiary_text_style,

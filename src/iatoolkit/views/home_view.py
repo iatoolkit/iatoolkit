@@ -31,7 +31,7 @@ class HomeView(MethodView):
                 return render_template('error.html',
                                        message=self.i18n_service.t('errors.templates.company_not_found')), 404
 
-            branding_data = self.branding_service.get_company_branding(company)
+            branding_data = self.branding_service.get_company_branding(company_short_name)
             home_template = self.util.get_company_template(company_short_name, "home.html")
 
             # 2. Verificamos si el archivo de plantilla personalizado no existe.
@@ -47,7 +47,6 @@ class HomeView(MethodView):
             # 3. Si el archivo existe, intentamos leerlo y renderizarlo.
             return render_template_string(
                 home_template,
-                company=company,
                 company_short_name=company_short_name,
                 branding=branding_data,
             )
