@@ -25,6 +25,7 @@ class HomeView(MethodView):
         self.util = utility
 
     def get(self, company_short_name: str):
+        branding_data = {}
         try:
             company = self.profile_service.get_company_by_short_name(company_short_name)
             if not company:

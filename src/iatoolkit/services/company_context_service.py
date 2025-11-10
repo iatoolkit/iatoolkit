@@ -113,10 +113,9 @@ class CompanyContextService:
                 # if not include_all_tables, use the list of tables explicitly specified in the map.
                 tables_to_process = list(source['tables'].keys())
 
-            # 2. get the global list of columns to exclude.
+            # 2. get the global settings and overrides.
             global_exclude_columns = source.get('exclude_columns', [])
-
-            # 3. get the overrides for specific tables.
+            table_prefix = source.get('table_prefix')
             table_overrides = source.get('tables', {})
 
             # 3. iterate over the tables.
@@ -126,7 +125,16 @@ class CompanyContextService:
                     table_config = table_overrides.get(table_name, {})
 
                     # 5. define the schema name, using the override if it exists.
-                    schema_name = table_config.get('schema_name', table_name)
+                    # Priority 1: Explicit override from the 'tables' map.
+                    schema_name = table_config.get('schema_name')
+
+                    if not schema_name:
+                        # Priority 2: Automatic prefix stripping.
+                        if table_prefix and table_name.startswith(table_prefix):
+                            schema_name = table_name[len(table_prefix):]
+                        else:
+                            # Priority 3: Default to the table name itself.
+                            schema_name = table_name
 
                     # 6. define the list of columns to exclude, (local vs. global).
                     local_exclude_columns = table_config.get('exclude_columns')
