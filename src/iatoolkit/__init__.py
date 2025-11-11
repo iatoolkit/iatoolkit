@@ -5,7 +5,7 @@ IAToolkit Package
 # Expose main classes and functions at the top level of the package
 
 # main IAToolkit class
-from .iatoolkit import create_app, current_iatoolkit
+from .iatoolkit import IAToolkit, create_app, current_iatoolkit
 
 # for registering the client companies
 from .company_registry import register_company
@@ -20,6 +20,7 @@ from iatoolkit.services.load_documents_service import LoadDocumentsService
 from iatoolkit.infra.call_service import CallServiceClient
 
 __all__ = [
+    'IAToolkit',
     'create_app',
     'current_iatoolkit',
     'register_company',
