@@ -50,6 +50,13 @@ all powered by leading models from OpenAI, Google Gemini, and more.
 * **🔒 Security & Observability Built-In**
     * Comes with integrated user authentication, API keys, and secure session handling out of the box.  
     * Full traceability with detailed logging of all queries, function calls, token usage, and costs.
+
+## 📚 Documentation
+
+For comprehensive guides, tutorials, and API references, visit our complete documentation:
+
+➡️ **[Read the Full Documentation](./docs/index.md)**
+
 ## ⚡ Quick Start: Try our 'hello world' example
 
 Ready to see it in action? Our Quickstart Guide will walk you through downloading, configuring, and launching your first AI assistant in just a few minutes. 

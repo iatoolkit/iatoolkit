@@ -64,3 +64,8 @@ flask populate-sample-db
 This command will create tables for a tipical company with: customers, products, orders, countries, employees with dummy data.
 You can use is as an example of sql access to your own data
 
+## Next Steps
+
+Now that you have IAToolkit running, you're ready to create your own company and customize it for your specific needs.
+
+➡️ **[Learn how to create and configure your own Company →](./companies_and_components.md#2-the-companyyaml-configuration-file)**
