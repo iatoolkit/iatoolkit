@@ -69,6 +69,8 @@ It's the best way to experience the toolkit's capabilities firsthand.
 We welcome contributions! Whether it's adding a new feature, improving documentation, or fixing a bug, 
 please feel free to open a pull request.
 
+➡️ **[Contributing guide](./contributing.md)**
+
 ## 📄 License
 
 IAToolkit is open-source and licensed under the [MIT License](LICENSE).
