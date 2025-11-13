@@ -45,7 +45,7 @@ IAToolkit is built with a provider-agnostic approach. You are not locked into a 
 
 IAToolkit is composed of several key building blocks that work together to deliver a rich user experience:
 
-*   **Companies**: The core concept for multi-tenancy. Each "Company" is an isolated environment with its own data sources, branding, prompts, business logic, and LLM configuration.
+*   **Companies**: The core concept for multi-tenancy. Each "Company" is an isolated environment with its own data sources, branding, prompts, business logic, and LLM configuration. [Learn more about Companies →](./companies_and_components.md)
 *   **YAML Schema & Data Integration**: A declarative YAML-based schema allows you to map your corporate SQL databases. The toolkit uses this schema to automatically generate SQL queries from natural language, enabling the LLM to interact directly with your data.
 *   **Branding & Configuration**: Each "Company" can have a unique look and feel, including custom logos, colors, and UI text (i18n support).
 *   **Prompt & Function Management**: A powerful prompt manager using Jinja templates allows for dynamic and context-aware interactions. You can define custom Python functions (e.g., for calling external APIs, sending emails, generating reports) that the LLM can invoke.
