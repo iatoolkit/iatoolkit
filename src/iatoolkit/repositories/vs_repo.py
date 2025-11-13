@@ -103,7 +103,7 @@ class VSRepo:
             sql_query = "".join(sql_query_parts)
 
             # add sorting and limit of results
-            sql_query += " ORDER BY embedding <-> :query_embedding LIMIT :n_results"
+            sql_query += " ORDER BY embedding <-> CAST(:query_embedding AS VECTOR) LIMIT :n_results"
 
             logging.debug(f"Executing SQL query: {sql_query}")
             logging.debug(f"With parameters: {params}")
