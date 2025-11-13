@@ -22,7 +22,7 @@ can query relational databases, perform semantic searches on documents,
 and connect to your internal APIs in minutes.
 
 Create secure, branded chat interfaces that can reason over your data, answer questions, and execute custom business logic, 
-all powered by leading models from OpenAI, Google Gemini, and more.
+all powered by leading models from OpenAI, Google, and more.
 
 
 ## 🚀 Key Features
