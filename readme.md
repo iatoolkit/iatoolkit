@@ -27,29 +27,55 @@ all powered by leading models from OpenAI, Google Gemini, and more.
 
 ## 🚀 Key Features
 
+* **⚙️ Configuration-First Architecture**
+    * **Zero-Code Data Integration**: Connect your databases with a simple YAML configuration—no coding required. Just declare your data sources, and IAToolkit handles the rest.
+    * **Declarative Setup**: Define everything from database connections, embedding providers, custom tools, and UI branding in a single, intuitive `company.yaml` file.
+    * **Smart Table Mapping**: Automatically discover and map all your database tables, or selectively include/exclude specific tables and columns with simple YAML directives.
+
 * **🔗 Unified Data Connection**
     * **Natural Language to SQL**: Let your chatbot query relational databases (PostgreSQL, MySQL, SQLite) using everyday language.
-    * **Semantic Document Search**: Automatically chunk, embed, and search across your private documents (PDFs, Word, etc.) to provide contextually accurate answers.
+    * **Semantic Document Search (RAG)**: Automatically chunk, embed, and search across your private documents (PDFs, Word, etc.) to provide contextually accurate answers.
+    * **Flexible Embedding Options**: Choose between OpenAI or HuggingFace embedding models. Switch providers with a single configuration change—no code modifications needed.
 
 * **🏢 Enterprise-Ready Multi-Tenancy**
-    * Deploy isolated "Company" modules, each with its own data, tools, and context. 
-    * Perfect for SaaS products or internal departmental agents.
+    * Deploy isolated "Company" modules, each with its own data sources, tools, context, and branding.
+    * Perfect for SaaS products serving multiple clients or for managing different internal departments.
+    * Each company gets its own configuration file, ensuring complete isolation and customization.
 
 * **🎨 Fully Brandable UI**
-    * Customize the look and feel for each "Company" with its own logos, colors, and even language settings (i18n).
-    * Provides a white-labeled experience for your users.
+    * Customize the look and feel for each "Company" with its own colors, logos, and even language settings (i18n).
+    * Define your brand identity in YAML—from header colors to button styles.
+    * Provides a white-labeled experience for your users with zero front-end coding.
 
-* **🧠 LLM Agnostic**
-    * Switch between **OpenAI (GPT-*)** and **Google (Gemini-*)** with a single line change in your configuration. 
-    * No code refactoring needed.
+* **🧠 Multi-LLM by Design**
+    * **Provider Agnostic**: Switch between **OpenAI (GPT-4, GPT-4o)** and **Google (Gemini Pro, Gemini Flash)** with a single configuration line.
+    * **Future-Proof**: Easily add support for new LLM providers as they emerge.
+    * **Per-Company Configuration**: Mix and match different LLM providers across companies based on cost, performance, or feature requirements.
 
-* **🛠️ Developer-First Experience**
-    * Built with a clean **Dependency Injection** architecture.  
-    * High-quality code base with **90%+ test coverage**.
+* **🛠️ Powerful Tool System**
+    * Define custom functions (tools) that your AI can invoke to perform actions—from database queries to API calls.
+    * Declare tools in YAML with OpenAPI-style schemas.
+    * Built-in support for common operations like document search, with easy extensibility for custom business logic.
 
 * **🔒 Security & Observability Built-In**
-    * Comes with integrated user authentication, API keys, and secure session handling out of the box.  
+    * Integrated user authentication, API key management, and secure session handling out of the box.
     * Full traceability with detailed logging of all queries, function calls, token usage, and costs.
+    * Production-ready security features including CORS configuration and environment-based secrets management.
+
+* **👨‍💻 Developer-First Experience**
+    * Built with a clean **Dependency Injection** architecture for maximum testability and maintainability.
+    * High-quality codebase with **90%+ test coverage**.
+    * Comprehensive documentation and working examples to get you started quickly.
+
+## 💡 Why IAToolkit?
+
+**Build in Minutes, Not Months**: Traditional AI chatbot development requires months of infrastructure setup, security hardening, and complex integrations. IAToolkit provides all of this out-of-the-box, letting you focus on your business logic and user experience.
+
+**Configuration Over Code**: Most AI frameworks force you to write extensive boilerplate code. With IAToolkit, you describe what you want in YAML, and the framework does the heavy lifting. Connect databases, configure embeddings, define tools—all declaratively.
+
+**Multi-Tenant by Design**: Whether you're building a SaaS product for multiple clients or managing different departments within your organization, IAToolkit's Company architecture provides true isolation with shared infrastructure efficiency.
+
+**Production-Ready from Day One**: No need to retrofit security, logging, or monitoring later. IAToolkit includes enterprise-grade features from the start, so you can deploy confidently.
 
 ## 📚 Documentation
 
