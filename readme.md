@@ -62,6 +62,8 @@ For comprehensive guides, tutorials, and API references, visit our complete docu
 Ready to see it in action? Our Quickstart Guide will walk you through downloading, configuring, and launching your first AI assistant in just a few minutes. 
 It's the best way to experience the toolkit's capabilities firsthand.
 
+➡️ **[Get Started with the Quickstart Guide](./docs/quickstart.md)**
+
 ## 🤝 Contributing
 
 We welcome contributions! Whether it's adding a new feature, improving documentation, or fixing a bug, 
