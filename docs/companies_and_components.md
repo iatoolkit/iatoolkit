@@ -25,6 +25,11 @@ Every Company resides in its own directory within the `companies/` folder. The `
 ## 2. The `company.yaml` Configuration File
 
 The `company.yaml` file is where you define the behavior and resources for your Company. It's structured into several logical sections. Let's break down each part using the `sample_company` configuration as a reference.
+The configuration file for the Sample Company can be found at:
+
+**[`companies/sample_company/config/company.yaml`](../companies/sample_company/config/company.yaml)**
+
+This file serves as a complete, working example that you can use as a template when creating your own company configurations.
 
 ### 2.1 General Information
 
