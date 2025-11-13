@@ -48,14 +48,14 @@ all powered by leading models from OpenAI, Google Gemini, and more.
     * Provides a white-labeled experience for your users with zero front-end coding.
 
 * **🧠 Multi-LLM by Design**
-    * **Provider Agnostic**: Switch between **OpenAI (GPT-4, GPT-4o)** and **Google (Gemini Pro, Gemini Flash)** with a single configuration line.
+    * **Provider Agnostic**: Switch between **OpenAI (GPT-5)** and **Google (Gemini Pro, Gemini Flash)** with a single configuration line.
     * **Future-Proof**: Easily add support for new LLM providers as they emerge.
     * **Per-Company Configuration**: Mix and match different LLM providers across companies based on cost, performance, or feature requirements.
 
 * **🛠️ Powerful Tool System**
     * Define custom functions (tools) that your AI can invoke to perform actions—from database queries to API calls.
     * Declare tools in YAML with OpenAPI-style schemas.
-    * Built-in support for common operations like document search, with easy extensibility for custom business logic.
+    * Built-in support for common operations like sql query, excel export, sending mail with easy extensibility for custom business logic.
 
 * **🔒 Security & Observability Built-In**
     * Integrated user authentication, API key management, and secure session handling out of the box.

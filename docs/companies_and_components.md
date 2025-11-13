@@ -8,7 +8,7 @@ This modular approach allows you to create highly customized AI agents for diffe
 
 ### Anatomy of a Company Module
 
-Every Company resides in its own directory within the `companies/` folder. The `companies/sample_company/` directory serves as a complete reference implementation. Here is a breakdown of its essential components:
+Every Company resides in its own directory within the `companies/` folder. The **`companies/sample_company/`** directory serves as a complete reference implementation. Here is a breakdown of its essential components:
 
 *   **`sample_company.py`**: This is the heart of your module. It contains a primary class (e.g., `SampleCompany`) that inherits from `iatoolkit.base_company.BaseCompany`. This class acts as the entry point for registering your company with the core application.
 
