@@ -8,23 +8,114 @@ This modular approach allows you to create highly customized AI agents for diffe
 
 ### Anatomy of a Company Module
 
-Every Company resides in its own directory within the `companies/` folder. The **`companies/sample_company/`** directory serves as a complete reference implementation. Here is a breakdown of its essential components:
+Each Company module is a self-contained directory that encapsulates all company-specific 
+resources—from configuration and AI context to prompt templates and sample data. 
+The structure below shows the organization of a typical company module, 
+using `sample_company` as the reference implementation:
 
-*   **`sample_company.py`**: This is the heart of your module. It contains a primary class (e.g., `SampleCompany`) that inherits from `iatoolkit.base_company.BaseCompany`. This class acts as the entry point for registering your company with the core application.
-
-*   **`config/company.yaml`**: This is the primary configuration file for your Company. It declaratively defines everything from database connections and branding to available LLM tools and knowledge base sources. We will explore this file in detail in the next section.
-
-*   **`context/`**: This directory contains `.md` (Markdown) files. Any text you place here—business rules, operational procedures, product descriptions, FAQs—is automatically loaded into the AI's system prompt. This is the primary way to provide the AI with the static, domain-specific knowledge it needs to answer questions accurately.
-
-*   **`schema/`**: This directory holds `.yaml` files that define data structures. These can be database table schemas, API response structures, or any other structured data. By providing these schemas, you enable the AI to understand your data models, allowing it to generate precise SQL queries or correctly interpret API responses.
-
-*   **`prompts/`**: This directory is for `.prompt` files, which are powerful Jinja2 templates. They are used for complex, multi-step tasks or for generating structured outputs. You can instruct the AI to use a specific prompt to perform a task, guiding its reasoning process and ensuring consistent results.
+companies/sample_company/              # Company module directory
+├── config/                            # Configuration files
+│   ├── company.yaml                   # Main company configuration
+│   ├── onboarding_cards.yaml          # UI onboarding content
+│   └── help_content.yaml              # Help system content
+│
+├── context/                           # AI context (Markdown files)
+│   ├── company_overview.md            # General company information
+│   ├── business_rules.md              # Business logic and rules
+│   ├── procedures.md                  # Standard operating procedures
+│   └── faqs.md                        # Frequently asked questions
+│
+├── schema/                            # Data structure definitions (YAML)
+│   ├── database_schemas.yaml          # Database table schemas
+│   └── api_schemas.yaml               # API response structures
+│
+├── prompts/                           # Jinja2 prompt templates
+│   ├── analisis_ventas.prompt         # Sales analysis prompt
+│   ├── supplier_report.prompt         # Supplier report prompt
+│   └── analisis_despachos.prompt      # Shipment analysis prompt
+│
+├── templates/                         # Company-specific HTML templates
+│   └── custom_page.html               # Custom pages for this company
+│
+├── sample_data/                       # Sample documents for RAG
+│   ├── supplier_manuals/              # Supplier manual documents
+│   └── employee_contracts/            # Employee contract documents
+│
+└── sample_company.py                  # Company module entry point (Python class)
 
 ---
 
 ## 2. The `company.yaml` Configuration File
 
-The `company.yaml` file is where you define the behavior and resources for your Company. It's structured into several logical sections. Let's break down each part using the `sample_company` configuration as a reference.
+The `company.yaml` file is the central configuration hub for your AI assistant. 
+It declaratively defines all aspects of your company's behavior, from LLM selection and database connections to UI branding and knowledge base sources. 
+The diagram below illustrates the complete structure and hierarchy of the configuration file:
+
+company.yaml
+│
+├── General Information              # Company identity and LLM configuration
+│   ├── id, name, locale
+│   └── llm (model, api-key)
+│
+├── Embedding Provider               # Vector embeddings for semantic search
+│   ├── provider (openai/huggingface)
+│   ├── model
+│   └── api_key_name
+│
+├── Data Sources                     # SQL database connections
+│   └── sql[]
+│       ├── database
+│       ├── connection_string_env
+│       ├── description
+│       ├── include_all_tables
+│       ├── exclude_tables[]
+│       ├── exclude_columns[]
+│       └── tables{}
+│           ├── schema_name
+│           ├── exclude_columns[]
+│           └── description
+│
+├── Tools (Functions)                # Custom AI capabilities
+│   └── []
+│       ├── function_name
+│       ├── description
+│       └── params (OpenAPI schema)
+│
+├── Prompts                          # UI prompt configuration
+│   ├── prompt_categories[]
+│   └── prompts[]
+│       ├── category
+│       ├── name
+│       ├── description
+│       ├── order
+│       └── custom_fields[]
+│
+├── Parameters                       # Custom company settings
+│   ├── cors_origin[]
+│   ├── user_feedback{}
+│   └── external_urls{}
+│
+├── Branding                         # UI customization
+│   ├── header_background_color
+│   ├── header_text_color
+│   ├── brand_primary_color
+│   └── brand_secondary_color
+│
+├── Help Files                       # User assistance content
+│   ├── onboarding_cards
+│   └── help_content
+│
+└── Knowledge Base (RAG)             # Document indexing for semantic search
+    ├── connectors{}
+    │   ├── development (type: local)
+    │   └── production (type: s3)
+    └── document_sources{}
+        └── [source_name]
+            ├── path
+            └── metadata{}
+
+
+
 The configuration file for the Sample Company can be found at **[`companies/sample_company/config/company.yaml`](../companies/sample_company/config/company.yaml)**
 
 This file serves as a complete, working example that you can use as a template when creating your own company configurations.
