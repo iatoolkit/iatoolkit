@@ -57,66 +57,70 @@ The diagram below illustrates the complete structure and hierarchy of the config
 ```text
 company.yaml
 │
-├── General Information              # Company identity and LLM configuration
-│   ├── id, name, locale
-│   └── llm (model, api-key)
+├── General Information                                  # Company identity and default LLM
+│   ├── id                         # Unique company identifier (used in URLs and routing)
+│   ├── name                       # Human-readable company name shown in the UI
+│   ├── locale                     # Default locale/language (e.g., es_ES, en_US)
+│   └── llm                        # Primary LLM configuration for this company
+│       ├── model                  # LLM model name (e.g., gpt-4, gemini-pro)
+│       └── api-key                # Env var name that stores the LLM provider API key
 │
-├── Embedding Provider               # Vector embeddings for semantic search
-│   ├── provider (openai/huggingface)
-│   ├── model
-│   └── api_key_name
+├── Embedding Provider                                 # Vector embeddings for semantic search
+│   ├── provider                  # Embedding provider (openai or huggingface)
+│   ├── model                     # Embedding model name (e.g., text-embedding-ada-002)
+│   └── api_key_name              # Env var name that stores the embedding API key
 │
-├── Data Sources                     # SQL database connections
-│   └── sql[]
-│       ├── database
-│       ├── connection_string_env
-│       ├── description
-│       ├── include_all_tables
-│       ├── exclude_tables[]
-│       ├── exclude_columns[]
-│       └── tables{}
-│           ├── schema_name
-│           ├── exclude_columns[]
-│           └── description
+├── Data Sources                                       # Structured data sources (SQL databases)
+│   └── sql[]                      # List of SQL data source definitions
+│       ├── database               # Logical name for this database
+│       ├── connection_string_env  # Env var name with the DB connection URI
+│       ├── description            # Natural-language description of what this DB contains
+│       ├── include_all_tables     # If true, auto-load all tables from this DB
+│       ├── exclude_tables[]       # List of table names to ignore globally
+│       ├── exclude_columns[]      # Columns to hide from all tables by default
+│       └── tables{}               # Per-table overrides and custom metadata
+│           ├── schema_name        # Optional custom schema name exposed to the LLM
+│           ├── exclude_columns[]  # Columns to hide for this specific table
+│           └── description        # Table-specific description to guide query generation
 │
-├── Tools (Functions)                # Custom AI capabilities
-│   └── []
-│       ├── function_name
-│       ├── description
-│       └── params (OpenAPI schema)
+├── Tools (Functions)                                # Custom actions the LLM can invoke
+│   └── []                        # List of tool/function definitions
+│       ├── function_name         # Internal name used by the LLM to call the tool
+│       ├── description           # When/why the LLM should use this tool
+│       └── params                # Input schema (OpenAPI-style) for tool arguments
 │
-├── Prompts                          # UI prompt configuration
-│   ├── prompt_categories[]
-│   └── prompts[]
-│       ├── category
-│       ├── name
-│       ├── description
-│       ├── order
-│       └── custom_fields[]
+├── Prompts                                          # Predefined prompts exposed in the UI
+│   ├── prompt_categories[]       # List of categories for grouping prompts in the UI
+│   └── prompts[]                 # List of individual prompt configurations
+│       ├── category              # Category this prompt belongs to
+│       ├── name                  # Internal prompt identifier (matches .prompt file)
+│       ├── description           # User-facing description in the UI
+│       ├── order                 # Display order within its category
+│       └── custom_fields[]       # Extra input fields shown in the UI for this prompt
 │
-├── Parameters                       # Custom company settings
-│   ├── cors_origin[]
-│   ├── user_feedback{}
-│   └── external_urls{}
+├── Parameters                                       # Miscellaneous company-specific settings
+│   ├── cors_origin[]             # Allowed origins for browser-based access (CORS)
+│   ├── user_feedback{}           # Configuration for collecting user feedback (channel, target)
+│   └── external_urls{}           # External URLs (e.g., logout redirects, portals)
 │
-├── Branding                         # UI customization
-│   ├── header_background_color
-│   ├── header_text_color
-│   ├── brand_primary_color
-│   └── brand_secondary_color
+├── Branding                                         # Visual customization for this company
+│   ├── header_background_color   # Header background color (hex)
+│   ├── header_text_color         # Header text color (hex)
+│   ├── brand_primary_color       # Primary brand color used across the UI
+│   └── brand_secondary_color     # Secondary brand color used across the UI
 │
-├── Help Files                       # User assistance content
-│   ├── onboarding_cards
-│   └── help_content
+├── Help Files                                       # Configuration for in-app help content
+│   ├── onboarding_cards          # YAML file with onboarding/tutorial cards
+│   └── help_content              # YAML file with help topics and descriptions
 │
-└── Knowledge Base (RAG)             # Document indexing for semantic search
-    ├── connectors{}
-    │   ├── development (type: local)
-    │   └── production (type: s3)
-    └── document_sources{}
-        └── [source_name]
-            ├── path
-            └── metadata{}
+└── Knowledge Base (RAG)                             # Unstructured documents for RAG
+    ├── connectors{}              # How to access document storage per environment
+    │   ├── development           # Dev connector (usually type: local)
+    │   └── production            # Prod connector (usually type: s3 with bucket/prefix)
+    └── document_sources{}        # Logical groups of documents to index
+        └── [source_name]         # e.g., supplier_manuals, employee_contracts
+            ├── path              # Filesystem or S3 path where documents are stored
+            └── metadata{}        # Static metadata applied to all docs from this source
 ```
 
 The configuration file for the Sample Company can be 
