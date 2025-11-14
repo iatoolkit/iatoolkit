@@ -21,6 +21,7 @@ Understanding this structure is essential for navigating the code and knowing wh
 to add new features. 
 The diagram below illustrates the complete project organization:
 
+```text
 iatoolkit/
 ├── src/
 │   ├── iatoolkit/                    # Core framework code
@@ -50,6 +51,7 @@ iatoolkit/
 ├── .env.example                      # Environment variables template
 ├── app.py                            # Application entry point
 └── README.md                         # Project overview
+```
 
 ### Layer Responsibilities
 

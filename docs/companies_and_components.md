@@ -51,6 +51,7 @@ The `company.yaml` file is the central configuration hub for your AI assistant.
 It declaratively defines all aspects of your company's behavior, from LLM selection and database connections to UI branding and knowledge base sources. 
 The diagram below illustrates the complete structure and hierarchy of the configuration file:
 
+```text
 company.yaml
 │
 ├── General Information              # Company identity and LLM configuration
@@ -113,8 +114,7 @@ company.yaml
         └── [source_name]
             ├── path
             └── metadata{}
-
-
+```
 
 The configuration file for the Sample Company can be found at **[`companies/sample_company/config/company.yaml`](../companies/sample_company/config/company.yaml)**
 
