@@ -112,34 +112,3 @@ class MailApp:
             logging.exception("MAIL ERROR: %s", str(e))
             raise IAToolkitException(IAToolkitException.ErrorType.MAIL_ERROR,
                                f"No se pudo enviar correo: {str(e)}") from e
-''''
-    def send_template_email(self,
-                   subject: str,
-                   recipients: list,
-                   template_name: str,
-                   context: dict,
-                   sender=None):
-        try:
-            # Renderiza el template con el contexto proporcionado
-            with self.app.app_context():
-                html_message = render_template(template_name, **context)
-
-            # Crea el mensaje
-            msg = Message(
-                subject=subject,
-                recipients=recipients,
-                html=html_message,
-                sender=sender or self.app.config.get('MAIL_DEFAULT_SENDER')
-            )
-
-            # Envía el correo
-            # self.send_brevo_email(msg)
-            pass
-        except jinja2.exceptions.TemplateNotFound:
-            raise IAToolkitException(IAToolkitException.ErrorType.MAIL_ERROR,
-                               f"Error: No se encontró el template '{template_name}'.")
-        except Exception as e:
-            raise IAToolkitException(IAToolkitException.ErrorType.MAIL_ERROR,
-                               f'No se pudo enviar correo: {str(e)}') from e
-    
-    '''

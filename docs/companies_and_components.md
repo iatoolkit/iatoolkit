@@ -2,75 +2,124 @@
 
 ## 1. The "Company" Concept
 
-IAToolkit is a multi-tenant framework designed to serve multiple, isolated "Companies" (or projects) from a single core application. A **Company** is the central concept for this isolation. It's not just a user profile; it is a self-contained Python module that encapsulates all the specific data, logic, branding, and context required for the AI to operate within a particular business domain.
+IAToolkit is a multi-tenant framework designed to serve multiple, isolated "Companies" 
+(or projects) from a single core application. A **Company** is the central concept for 
+this isolation. 
+It is a self-contained Python module that encapsulates all the specific data, logic, 
+branding, and context required for the AI to operate within a particular business domain.
 
-This modular approach allows you to create highly customized AI agents for different clients or internal departments, each with its own unique knowledge and capabilities, without them interfering with one another.
+This modular approach allows you to create highly customized AI agents for different 
+clients or internal department projects, each with its own unique knowledge and capabilities, 
+without them interfering with one another.
 
 ### Anatomy of a Company Module
 
 Each Company module is a self-contained directory that encapsulates all company-specific 
 resources—from configuration and AI context to prompt templates and sample data. 
+
+
 The structure below shows the organization of a typical company module, 
 using `sample_company` as the reference implementation:
 
 ```text
-companies/sample_company/              # Company module directory
-├── config/                            # Configuration files
-│   ├── company.yaml                   # Main company configuration
-│   ├── onboarding_cards.yaml          # UI onboarding content
-│   └── help_content.yaml              # Help system content
-│
-├── context/                           # AI context (Markdown files)
-│   ├── company_overview.md            # General company information
-│   ├── business_rules.md              # Business logic and rules
-│   ├── procedures.md                  # Standard operating procedures
-│   └── faqs.md                        # Frequently asked questions
-│
-├├── schema/                            # YAML schemas (one file per table/entity)
-│   ├── customers.yaml                 # Schema for the "customers" table
-│   ├── orders.yaml                    # Schema for the "orders" table
-│   ├── products.yaml                  # Schema for the "products" table
-│   └── employee_territories.yaml      # Schema for the "employee_territories" table
-│
-├── prompts/                           # Jinja2 prompt templates
-│   ├── analisis_ventas.prompt         # Sales analysis prompt
-│   ├── supplier_report.prompt         # Supplier report prompt
-│   └── analisis_despachos.prompt      # Shipment analysis prompt
-│
-├── templates/                         # Company-specific HTML templates
-│   └── custom_page.html               # Custom pages for this company
-│
-├── sample_data/                       # Sample documents for RAG
-│   ├── supplier_manuals/              # Supplier manual documents
-│   └── employee_contracts/            # Employee contract documents
-│
-└── sample_company.py                  # Company module entry point (Python class)
+companies/
+├── sample_company/                   # Reference implementation of a Company module
+│   ├── config/                       # Company configuration files (YAML)
+│   │   ├── company.yaml              # Main configuration: LLM, data sources, tools, branding, RAG
+│   │   ├── onboarding_cards.yaml     # Onboarding/help cards shown in the UI
+│   │   └── help_content.yaml         # Help and documentation content for this company
+│   │
+│   ├── context/                      # Static domain knowledge (Markdown files)
+│   │   ├── company_overview.md       # High-level description of the company
+│   │   ├── business_rules.md         # Business rules and policies
+│   │   ├── procedures.md             # Operational procedures
+│   │   └── faqs.md                   # Frequently asked questions
+│   │
+│   ├── schema/                       # Data model schemas (one YAML per table/entity)
+│   │   ├── customers.yaml            # Schema for the "customers" table
+│   │   ├── orders.yaml               # Schema for the "orders" table
+│   │   ├── products.yaml             # Schema for the "products" table
+│   │   └── employee_territories.yaml # Schema for the "employee_territories" table
+│   │
+│   ├── prompts/                      # Jinja2 prompt templates used by the LLM
+│   │   ├── analisis_ventas.prompt    # Sales analysis prompt
+│   │   ├── supplier_report.prompt    # Supplier report prompt
+│   │   └── analisis_despachos.prompt # Shipment analysis prompt
+│   │
+│   ├── templates/                    # Company-specific HTML templates (optional)
+│   │   └── custom_page.html          # Example of a custom page for this company
+│   │
+│   ├── sample_data/                  # Sample documents for RAG (optional)
+│   │   ├── supplier_manuals/         # Supplier manuals
+│   │   └── employee_contracts/       # Employee contracts
+│   │
+│   └── sample_company.py             # Python entry point (class SampleCompany)```
 ```
+In detail, each folder plays a specific role:
+
+- **`config/`**  
+  Contains the declarative configuration for the company.  
+  - `company.yaml`: the main file that defines the LLM, data sources, tools, branding, RAG, etc.  
+  - `onboarding_cards.yaml`: onboarding content for the UI (welcome cards, first steps).  
+  - `help_content.yaml`: texts and sections for the company’s help system.
+
+- **`context/`**  
+  Markdown files with the static domain knowledge:  
+  - `company_overview.md`: high-level description of the company.  
+  - `business_rules.md`: business rules and internal policies.  
+  - `procedures.md`: standard operating procedures.  
+  - `faqs.md`: frequently asked questions.  
+  Everything you place here is used to build the company’s system prompts.
+
+- **`schema/`**  
+  YAML files that describe the structure of the tables (or entities) relevant to the LLM:  
+  - One file per table (e.g., `customers.yaml`, `orders.yaml`).  
+  - Each file documents columns, types, relationships, and natural-language descriptions.  
+  This helps the model generate correct SQL and “understand” your data model.
+
+- **`prompts/`**  
+  Jinja2 templates (`.prompt`) that define structured, multi-step prompts:  
+  - For example, `analisis_ventas.prompt` can contain complex instructions and output format.  
+  These templates are referenced from `company.yaml` and used both by the UI and the prompt engine.
+
+- **`templates/`**  
+  Company-specific HTML templates used by Flask:  
+  - Customized pages, special views, additional screens for that company.  
+  This allows you to have a differentiated UI beyond just color branding.
+
+- **`sample_data/`**  
+  Optional directory for sample data used as the basis for the **Knowledge Base** (RAG).  
+  - For example, `supplier_manuals/` and `employee_contracts/` with PDFs or sample documents.
+
+- **`sample_company.py`**  
+  The Python module that defines the company’s main class (e.g., `SampleCompany`) inheriting from `BaseCompany`.  
+  This is where you can customize company-specific logic, register custom tools, extra CLI commands, etc.
 ---
 
 ## 2. The `company.yaml` Configuration File
 
 The `company.yaml` file is the central configuration hub for your AI assistant. 
-It declaratively defines all aspects of your company's behavior, from LLM selection and database connections to UI branding and knowledge base sources. 
+It declaratively defines all aspects of your company's behavior, from LLM selection and 
+database connections to UI branding and knowledge base sources. 
 The diagram below illustrates the complete structure and hierarchy of the configuration file:
 
 ```text
 company.yaml
 │
-├── General Information                                  # Company identity and default LLM
-│   ├── id                         # Unique company identifier (used in URLs and routing)
+├── General Information            # Company identity and default LLM
+│   ├── id                         # Unique company identifier (company_short_name, used in URLs and routing)
 │   ├── name                       # Human-readable company name shown in the UI
 │   ├── locale                     # Default locale/language (e.g., es_ES, en_US)
 │   └── llm                        # Primary LLM configuration for this company
-│       ├── model                  # LLM model name (e.g., gpt-4, gemini-pro)
+│       ├── model                  # LLM model name (e.g., gpt-5, gemini-pro)
 │       └── api-key                # Env var name that stores the LLM provider API key
 │
-├── Embedding Provider                                 # Vector embeddings for semantic search
+├── Embedding Provider            # Vector embeddings for semantic search
 │   ├── provider                  # Embedding provider (openai or huggingface)
 │   ├── model                     # Embedding model name (e.g., text-embedding-ada-002)
 │   └── api_key_name              # Env var name that stores the embedding API key
 │
-├── Data Sources                                       # Structured data sources (SQL databases)
+├── Data Sources                   # Structured data sources (SQL databases)
 │   └── sql[]                      # List of SQL data source definitions
 │       ├── database               # Logical name for this database
 │       ├── connection_string_env  # Env var name with the DB connection URI
@@ -83,13 +132,13 @@ company.yaml
 │           ├── exclude_columns[]  # Columns to hide for this specific table
 │           └── description        # Table-specific description to guide query generation
 │
-├── Tools (Functions)                                # Custom actions the LLM can invoke
+├── Tools (Functions)             # Custom actions the LLM can invoke
 │   └── []                        # List of tool/function definitions
 │       ├── function_name         # Internal name used by the LLM to call the tool
 │       ├── description           # When/why the LLM should use this tool
 │       └── params                # Input schema (OpenAPI-style) for tool arguments
 │
-├── Prompts                                          # Predefined prompts exposed in the UI
+├── Prompts                       # Predefined prompts exposed in the UI
 │   ├── prompt_categories[]       # List of categories for grouping prompts in the UI
 │   └── prompts[]                 # List of individual prompt configurations
 │       ├── category              # Category this prompt belongs to
@@ -98,22 +147,22 @@ company.yaml
 │       ├── order                 # Display order within its category
 │       └── custom_fields[]       # Extra input fields shown in the UI for this prompt
 │
-├── Parameters                                       # Miscellaneous company-specific settings
+├── Parameter                     # Miscellaneous company-specific settings
 │   ├── cors_origin[]             # Allowed origins for browser-based access (CORS)
 │   ├── user_feedback{}           # Configuration for collecting user feedback (channel, target)
 │   └── external_urls{}           # External URLs (e.g., logout redirects, portals)
 │
-├── Branding                                         # Visual customization for this company
+├── Branding                      # Visual customization for this company
 │   ├── header_background_color   # Header background color (hex)
 │   ├── header_text_color         # Header text color (hex)
 │   ├── brand_primary_color       # Primary brand color used across the UI
 │   └── brand_secondary_color     # Secondary brand color used across the UI
 │
-├── Help Files                                       # Configuration for in-app help content
+├── Help Files                    # Configuration for in-app help content
 │   ├── onboarding_cards          # YAML file with onboarding/tutorial cards
 │   └── help_content              # YAML file with help topics and descriptions
 │
-└── Knowledge Base (RAG)                             # Unstructured documents for RAG
+└── Knowledge Base (RAG)          # Unstructured documents for RAG
     ├── connectors{}              # How to access document storage per environment
     │   ├── development           # Dev connector (usually type: local)
     │   └── production            # Prod connector (usually type: s3 with bucket/prefix)
@@ -248,6 +297,8 @@ the LLM with precise information about what inputs each tool expects.
 This declarative approach means you can add powerful capabilities to your assistant
 without complex integration code—just define the tool in YAML and implement its logic 
 in Python.
+
+
 ```yaml
 # ools (Functions)
 # Defines the custom actions the LLM can take, including their parameters.
@@ -279,6 +330,8 @@ a text field for entering a supplier ID. These structured prompts combine the po
 of your custom Jinja2 templates (stored in the `prompts/` directory) with a 
 user-friendly UI, making complex multi-step tasks accessible to non-technical users.
 
+#todo: mostrar un prompt de ejemplo.
+
 ```yaml
 # Prompts
 # Defines the ordered list of categories and the prompts available in the UI.
@@ -309,9 +362,7 @@ prompts:
       - data_key: "end_date"
         label: "Fecha hasta"
         type: "date"
-
 ```
-
 *   **`prompt_categories`**: Defines the groups for organizing prompts in the UI.
 *   **`prompts`**: A list of available prompts.
     *   **`category`**: The category this prompt belongs to.
@@ -348,6 +399,8 @@ parameters:
 *   **`cors_origin`**: List of allowed origins for CORS (Cross-Origin Resource Sharing).
 *   **`user_feedback`**: Configuration for user feedback collection.
 *   **`external_urls`**: External URLs for integration (e.g., custom logout redirects).
+
+#todo: mostrar las opciones de configuración de user_feedback y explicarla
 
 ### 2.7 Branding
 
@@ -462,6 +515,8 @@ To create a new company, you can scaffold it from the `sample_company` template:
 4. **Update the Configuration**: Edit `companies/my_company/config/company.yaml` and update all the configuration values according to your needs.
 
 5. **Register the New Company**: Open `app.py` and add the following lines:
+#todo: mostrar el codigo en app.py
+mostrar el codigo de sample_company.py
 
 6. **Add Context and Resources**:
    - Place Markdown files in `companies/my_company/context/`
@@ -471,10 +526,20 @@ To create a new company, you can scaffold it from the `sample_company` template:
 7. **Set Environment Variables**: Ensure all required environment variables referenced in your `company.yaml` (like database URIs and API keys) are properly set.
 
 ---
+## 4. System Prompts (context)
 
-## 4. Best Practices
+#fdo: explicar cuales son los system prompts y que tene c/u
+---
 
-### 4.1 Organizing Context Files
+## 5. company specific repo en github
+
+#fdo: explicar la estructura y como se integra
+---
+
+
+## 6. Best Practices
+
+### 6.1 Organizing Context Files
 
 Structure your context files logically. For example:
 - `context/company_overview.md` - General company information
@@ -482,7 +547,7 @@ Structure your context files logically. For example:
 - `context/procedures.md` - Standard operating procedures
 - `context/faqs.md` - Frequently asked questions
 
-### 4.2 Writing Good Tool Descriptions
+### 6.2 Writing Good Tool Descriptions
 
 The `description` field in your tools configuration is critical. Write descriptions that:
 - Clearly state what the tool does
@@ -490,7 +555,7 @@ The `description` field in your tools configuration is critical. Write descripti
 - Mention the types of questions it can answer
 - Include relevant examples if helpful
 
-### 4.3 Database Configuration
+### 6.3 Schema Files and Database Tables
 
 When configuring data sources:
 - Provide clear, comprehensive descriptions for databases
@@ -498,7 +563,7 @@ When configuring data sources:
 - Add table-specific descriptions for complex or important tables
 - Test your queries to ensure the AI has access to the right data
 
-### 4.4 Prompt Templates
+### 6.4 Prompt Templates
 
 When creating `.prompt` files:
 - Use clear, descriptive filenames that match the `name` in `company.yaml`
@@ -508,9 +573,12 @@ When creating `.prompt` files:
 
 ---
 
-## 5. Summary
+## 6. Summary
 
-By combining the Python module for logic and the `company.yaml` for configuration, you can create a powerful, context-aware, and fully customized AI agent that is deeply integrated with your unique business environment. The modular design of IAToolkit ensures that each company operates in complete isolation while sharing the robust core infrastructure.
+By combining the Python module for logic and the `company.yaml` for configuration, you can create a powerful, 
+context-aware, and fully customized AI agent that is deeply integrated with your unique business environment. 
+The modular design of IAToolkit ensures that each company operates in complete isolation while sharing the robust
+core infrastructure.
 
 The key benefits of this architecture are:
 - **Isolation**: Each company has its own data, context, and configuration

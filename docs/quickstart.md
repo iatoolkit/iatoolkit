@@ -42,6 +42,8 @@ Configure the core settings of the application by creating a `.env` file.
     - `IATOOLKIT_BASE_URL`: "http://127.0.0.1:5008"
     - `REDIS_URL`: "redis://localhost:6379/0"
 
+#todo: configurar mail
+
 ### Step 3: Run the Application
 You are now ready to start the IAToolkit web server.
 ```
@@ -51,7 +53,7 @@ flask run
 The application will be available at `IATOOLKIT_BASE_URL`. 
 You can now navigate to the web interface, register as a new user, 
 and start chatting with your newly configured AI!
-
+#todo: explicar que debe llegar una confrmación de email
 
 ### Step 4: Populate the SampleCompany Database 
 Most companies need access to their own data. IAToolkit allows you to define custom CLI commands for this purpose. 
