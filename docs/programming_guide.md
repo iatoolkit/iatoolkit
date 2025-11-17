@@ -168,21 +168,127 @@ The service layer is the heart of IAToolkit's business logic. Here's a detailed 
 - Integration with vector store for RAG capabilities
 
 ---
-
 ### 3.3 Dispatcher (`dispatcher_service.py`)
 
-**Purpose**: Routes and executes tool/function calls requested by the LLM.
+**Purpose**: The Dispatcher is the central router between the LLM’s tool/function calls and the actual business logic implemented per company. 
+It takes a high‑level request (typically coming from the LLM or an API endpoint), resolves which company and tools are involved, 
+and then orchestrates the execution of the appropriate methods on the company service.
 
-**Key Responsibilities:**
-- Loads and validates company configurations
-- Registers available tools for each company
-- Executes tool calls with proper error handling
-- Manages tool execution context
+The Dispatcher is the bridge between:
+- **LLM function calling** (structured tool calls)
+- **Company-specific services** (implementations derived from `BaseCompany`)
 
-The Dispatcher is the bridge between the LLM's function calling capability and your actual business logic implementations.
-
-#todo: mostrar como el dsipatcher ejecuta una tool definida en Company Class.
 ---
+
+#### Relationship with `BaseCompany`
+
+Each company in the system is represented by a concrete class that extends `BaseCompany`. 
+`BaseCompany` defines the common interface and shared behavior that all company services must implement, for example:
+
+- How to **load configuration** and credentials
+- How to **fetch user information** (`user_info`) from the company’s data source (e.g., internal API, database, SSO)
+- Which **tools / actions** are exposed to the LLM and how they should be invoked
+
+The Dispatcher does **not** implement business logic itself. Instead, it:
+
+1. **Identifies the target company** (e.g. from a `company_short_name`).
+2. **Instantiates or retrieves** the corresponding `BaseCompany` subclass (e.g. `AcmeCompany`, `ContosoCompany`) using the loaded configuration.
+3. **Delegates tool calls** to methods defined on that company instance.
+
+This separation allows:
+- A single Dispatcher implementation for all companies.
+- Company‑specific variability (APIs, data models, permissions) encapsulated inside `BaseCompany` subclasses.
+- Easier onboarding of new companies: you create a new `BaseCompany` implementation and register its tools; the Dispatcher logic remains unchanged.
+
+---
+
+#### Request Handling Flow (`handle_request`)
+
+The core entry point of the Dispatcher is typically a method like `handle_request`. Conceptually, this method performs the following steps:
+
+1. **Parse and validate the incoming request**
+   - Extracts fields such as `company_id`, `user_id`, `tool_name`, `tool_arguments`, and any additional context.
+   - Validates that the minimal required data is present (e.g., company identifier and user/session information).
+
+2. **Load and validate company configuration**
+   - Uses `company_id` (or equivalent) to look up the company configuration (API keys, endpoints, feature flags, permissions).
+   - Ensures that the company is active and properly configured.
+   - This step usually relies on shared logic defined or expected by `BaseCompany`.
+
+3. **Create the company service instance**
+   - Instantiates the appropriate `BaseCompany` subclass for the target company, injecting:
+     - The company configuration
+     - Any shared infrastructure clients (e.g., HTTP client, database/session, cache)
+   - The resulting object is the “company service” that contains all company-specific tools and helper methods.
+
+4. **Build the execution context**
+   - Gathers contextual information that might be required for tool execution:
+     - User data (when available)
+     - Current conversation/session metadata
+     - Company configuration and capabilities
+   - This context is often passed to company methods either explicitly (as parameters) or implicitly (through the company instance’s state).
+
+5. **Resolve and execute the tool/function**
+   - Using the requested `tool_name`, the Dispatcher looks up the corresponding registered tool in the company service.
+   - Performs basic validation:
+     - Check that the tool is **registered** for this company.
+     - Validate argument structure and types against the tool definition.
+   - Calls the tool implementation on the company service:
+     - For example: `company_service.handle_<tool_name>(**tool_arguments)`
+   - Wraps execution in error handling:
+     - Distinguishes between user errors (invalid input) and internal errors (exceptions, integration failures).
+     - Produces structured error responses for the LLM when needed.
+
+6. **Format the response for the LLM or API**
+   - Converts the raw return value from the tool into a normalized, serializable structure.
+   - Ensures that the output matches the schema expected by the LLM’s tool definition (e.g., JSON with defined fields).
+   - Returns this payload back to the caller (API layer or LLM integration).
+
+---
+
+#### `user_info` Retrieval and Usage
+
+A key piece of context for almost any tool execution is the **user information** (`user_info`), which usually includes identifiers, roles, 
+permissions, and sometimes profile data.
+
+Within this architecture, `user_info` is generally obtained and used as follows:
+
+1. **User identification from the incoming request**
+
+2. **Delegating user lookup to the company service**
+   - Since user data sources are often **company-specific** (different databases, HR systems, identity providers), the Dispatcher delegates the retrieval to the `BaseCompany` subclass.
+   - The dispatch flow may call a method on the company service, such as:
+     - `company_service.get_user_info(user_identifier, **context)`  
+  
+3. **Building a normalized `user_info` object**
+   - The company service returns a **normalized structure** for `user_info`, for example:
+     - `id` (canonical internal ID)
+     - `display_name`
+     - `email`
+     - `roles` / `permissions`
+     - Optional additional metadata (organization, manager, locale, etc.)
+   - The Dispatcher does not need to know the underlying data model; it just expects the standard shape that `BaseCompany` guarantees.
+
+4. **Injecting `user_info` into tool execution**
+   - The Dispatcher passes `user_info` to the company tools in one of two ways:
+     1. **As part of the execution context**, stored on the company service instance (e.g. `self.user_info`).
+     2. **As an explicit argument** to each tool method that needs it.
+   - Tools rely on `user_info` to:
+     - Enforce authorization (e.g., “is this user allowed to perform this action?”)
+     - Apply company-specific rules depending on role or department
+     - Personalize results (language, locale, visibility filters, etc.)
+---
+
+#### Why this design?
+
+- **Clear separation of concerns**  
+  The Dispatcher focuses on orchestration (routing, validation, context management) and delegates all company-specific details (APIs, user model, permissions) to `BaseCompany` implementations.
+
+- **Scalability for multi-tenant / multi-company environments**  
+  Adding a new company does not require changes to the Dispatcher; you only provide a new `BaseCompany` subclass and register its tools.
+
+- **LLM‑friendly interface**  
+  Because all tools are invoked through the Dispatcher with stable schemas and error formats, the LLM sees a consistent, predictable set of tools, even though the underlying business logic may vary significantly per company.---
 
 ### 3.4 ConfigurationService (`configuration_service.py`)
 
