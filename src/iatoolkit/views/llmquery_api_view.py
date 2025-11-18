@@ -41,6 +41,7 @@ class LLMQueryApiView(MethodView):
             result = self.query_service.llm_query(
                 company_short_name=company_short_name,
                 user_identifier=user_identifier,
+                model=data.get('model', ''),
                 question=data.get('question', ''),
                 prompt_name=data.get('prompt_name'),
                 client_data=data.get('client_data', {}),
