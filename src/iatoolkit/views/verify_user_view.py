@@ -22,7 +22,7 @@ class VerifyAccountView(MethodView):
         self.profile_service = profile_service
         self.branding_service = branding_service
         self.i18n_service = i18n_service
-        self.serializer = URLSafeTimedSerializer(os.getenv("USER_VERIF_KEY"))
+        self.serializer = URLSafeTimedSerializer(os.getenv("IATOOLKIT_SECRET_KEY"))
 
     def get(self, company_short_name: str, token: str):
         try:

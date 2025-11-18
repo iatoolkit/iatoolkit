@@ -42,6 +42,9 @@ class LoginSimulationView(MethodView):
         Llama al endpoint 'external_login' y devuelve su respuesta (HTML y headers).
         """
         api_key = os.getenv("IATOOLKIT_API_KEY")
+        if not api_key:
+            return Response("Error: Es necesaria la variable de ambiente 'IATOOLKIT_API_KEY'.", status=400)
+
         # Obtenemos la URL base de la petición actual para construir la URL interna
         base_url = request.host_url.rstrip('/')
 

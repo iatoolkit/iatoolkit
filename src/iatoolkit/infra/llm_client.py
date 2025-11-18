@@ -132,7 +132,7 @@ class llmClient:
                     try:
                         result = self.dispatcher.dispatch(
                             company_short_name=company.short_name,
-                            action=function_name,
+                            function_name=function_name,
                             **args
                         )
                         force_tool_name = None
