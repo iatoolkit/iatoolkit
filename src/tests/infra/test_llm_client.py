@@ -102,7 +102,7 @@ class TestLLMClient:
 
         # Verify that the dispatcher was correctly retrieved and called
         dispatcher_mock.dispatch.assert_called_once_with(
-            company_short_name='test_company', action='test_func', a=1
+            company_short_name='test_company', function_name='test_func', a=1
         )
 
         # Verify that the function output was reinjected into the history

@@ -62,7 +62,7 @@ class QueryService:
         self.llm_client = llm_client
 
         # get the model from the environment variable
-        self.default_model = os.getenv("LLM_MODEL", "")
+        self.default_model = os.getenv("LLM_MODEL", "gpt-5")
         if not self.default_model:
             raise IAToolkitException(IAToolkitException.ErrorType.API_KEY,
                                "missing ENV variable 'LLM_MODEL' configuration.")

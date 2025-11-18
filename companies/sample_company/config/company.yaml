@@ -8,10 +8,15 @@ id: "sample_company"
 name: "Sample Company"
 locale: "es_ES"
 
-# Language Model and api-key for provider
+# Default Language Model and api-key for provider
+# Can be overridden in the API call: llm_query_api_view and init_context_api_view
 llm:
   model: "gpt-5-mini"
   api-key: "OPENAI_API_KEY"
+
+  # Values for Gemini
+  # model: "gemini-2.5-pro"
+  # api-key: "GEMINI_API_KEY"
 
 # Embeddings: supported only openai and huggingface. only one at a atime
 embedding_provider:

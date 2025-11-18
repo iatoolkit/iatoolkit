@@ -18,7 +18,7 @@ from itsdangerous import SignatureExpired
 class TestVerifyAccountView:
     @classmethod
     def setup_class(cls):
-        cls.patcher = patch.dict(os.environ, {"USER_VERIF_KEY": "mocked_secret_key"})
+        cls.patcher = patch.dict(os.environ, {"IATOOLKIT_SECRET_KEY": "mocked_secret_key"})
         cls.patcher.start()
 
     @classmethod

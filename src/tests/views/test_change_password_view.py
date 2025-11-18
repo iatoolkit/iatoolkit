@@ -19,7 +19,7 @@ from iatoolkit.repositories.models import Company
 class TestChangePasswordView:
     @classmethod
     def setup_class(cls):
-        cls.patcher = patch.dict(os.environ, {"PASS_RESET_KEY": "mocked_reset_key"})
+        cls.patcher = patch.dict(os.environ, {"IATOOLKIT_SECRET_KEY": "mocked_reset_key"})
         cls.patcher.start()
 
     @classmethod

@@ -129,7 +129,7 @@ class Dispatcher:
             i += 1
 
 
-    def dispatch(self, company_short_name: str, action: str, **kwargs) -> dict:
+    def dispatch(self, company_short_name: str, function_name: str, **kwargs) -> dict:
         company_key = company_short_name.lower()
 
         if company_key not in self.company_instances:
@@ -140,12 +140,12 @@ class Dispatcher:
             )
 
         # check if action is a system function
-        if action in self.tool_handlers:
-            return  self.tool_handlers[action](company_short_name, **kwargs)
+        if function_name in self.tool_handlers:
+            return  self.tool_handlers[function_name](company_short_name, **kwargs)
 
         company_instance = self.company_instances[company_short_name]
         try:
-            return company_instance.handle_request(action, **kwargs)
+            return company_instance.handle_request(function_name, **kwargs)
         except IAToolkitException as e:
             # Si ya es una IAToolkitException, la relanzamos para preservar el tipo de error original.
             raise e
@@ -153,7 +153,7 @@ class Dispatcher:
         except Exception as e:
             logging.exception(e)
             raise IAToolkitException(IAToolkitException.ErrorType.EXTERNAL_SOURCE_ERROR,
-                               f"Error en function call '{action}': {str(e)}") from e
+                               f"Error en function call '{function_name}': {str(e)}") from e
 
     def get_company_services(self, company: Company) -> list[dict]:
         # create the syntax with openai response syntax, for the company function list

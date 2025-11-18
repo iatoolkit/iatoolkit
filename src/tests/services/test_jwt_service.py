@@ -23,7 +23,7 @@ TEST_ALGORITHM = 'HS256'
 def app():
     """Fixture para crear una instancia de la aplicación Flask para tests."""
     flask_app = Flask(__name__)
-    flask_app.config['JWT_SECRET_KEY'] = TEST_SECRET_KEY
+    flask_app.config['IATOOLKIT_SECRET_KEY'] = TEST_SECRET_KEY
     flask_app.config['JWT_ALGORITHM'] = TEST_ALGORITHM
     return flask_app
 
@@ -37,12 +37,12 @@ class TestJWTService:
     def test_initialization_missing_config(self):
         """Prueba que JWTService levante RuntimeError si falta configuración."""
         app_sin_config_key = Flask(__name__)
-        app_sin_config_key.config['JWT_ALGORITHM'] = TEST_ALGORITHM  # Falta JWT_SECRET_KEY
-        with pytest.raises(RuntimeError, match="missing JWT configuration variables: 'JWT_SECRET_KEY'"):
+        app_sin_config_key.config['JWT_ALGORITHM'] = TEST_ALGORITHM  # Falta IATOOLKIT_SECRET_KEY
+        with pytest.raises(RuntimeError, match="missing JWT configuration variables: 'IATOOLKIT_SECRET_KEY'"):
             JWTService(app_sin_config_key)
 
         app_sin_config_algo = Flask(__name__)
-        app_sin_config_algo.config['JWT_SECRET_KEY'] = TEST_SECRET_KEY  # Falta JWT_ALGORITHM
+        app_sin_config_algo.config['IATOOLKIT_SECRET_KEY'] = TEST_SECRET_KEY  # Falta JWT_ALGORITHM
         with pytest.raises(RuntimeError, match="missing JWT configuration variables: 'JWT_ALGORITHM'"):
             JWTService(app_sin_config_algo)
 
@@ -59,7 +59,7 @@ class TestJWTService:
         # Decodificar para verificar el payload
         payload = jwt.decode(
             token,
-            app.config['JWT_SECRET_KEY'],
+            app.config['IATOOLKIT_SECRET_KEY'],
             algorithms=[app.config['JWT_ALGORITHM']]
         )
         assert payload['company_short_name'] == COMPANY_SHORT_NAME
@@ -133,7 +133,7 @@ class TestJWTService:
         }
         token_wrong_type = jwt.encode(
             payload_data,
-            app.config['JWT_SECRET_KEY'],
+            app.config['IATOOLKIT_SECRET_KEY'],
             algorithm=app.config['JWT_ALGORITHM']
         )
         payload = jwt_service.validate_chat_jwt(token_wrong_type)
@@ -150,7 +150,7 @@ class TestJWTService:
         }
         token_missing_field = jwt.encode(
             payload_data_missing,
-            app.config['JWT_SECRET_KEY'],
+            app.config['IATOOLKIT_SECRET_KEY'],
             algorithm=app.config['JWT_ALGORITHM']
         )
         payload = jwt_service.validate_chat_jwt(token_missing_field)
@@ -165,7 +165,7 @@ class TestJWTService:
         }
         token_empty_user_id = jwt.encode(
             payload_data_empty_user_id,
-            app.config['JWT_SECRET_KEY'],
+            app.config['IATOOLKIT_SECRET_KEY'],
             algorithm=app.config['JWT_ALGORITHM']
         )
         payload = jwt_service.validate_chat_jwt(token_empty_user_id)

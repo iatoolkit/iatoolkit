@@ -19,7 +19,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from injector import Binder, Injector, singleton
 from importlib.metadata import version as _pkg_version, PackageNotFoundError
 
-IATOOLKIT_VERSION = "0.72.0"
+IATOOLKIT_VERSION = "0.73.0"
 
 # global variable for the unique instance of IAToolkit
 _iatoolkit_instance: Optional['IAToolkit'] = None
@@ -173,9 +173,8 @@ class IAToolkit:
             'SESSION_COOKIE_SECURE': True,
             'SESSION_PERMANENT': False,
             'SESSION_USE_SIGNER': True,
-            'JWT_SECRET_KEY': self._get_config_value('JWT_SECRET_KEY', 'iatoolkit-jwt-secret'),
+            'IATOOLKIT_SECRET_KEY': self._get_config_value('IATOOLKIT_SECRET_KEY', 'iatoolkit-jwt-secret'),
             'JWT_ALGORITHM': 'HS256',
-            'JWT_EXPIRATION_SECONDS_CHAT': int(self._get_config_value('JWT_EXPIRATION_SECONDS_CHAT', 3600))
         })
 
         parsed_url = urlparse(os.getenv('IATOOLKIT_BASE_URL'))

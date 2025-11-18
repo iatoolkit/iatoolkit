@@ -17,7 +17,7 @@ class JWTService:
     def __init__(self,  app: Flask):
         # Acceder a la configuración directamente desde app.config
         try:
-            self.secret_key = app.config['JWT_SECRET_KEY']
+            self.secret_key = app.config['IATOOLKIT_SECRET_KEY']
             self.algorithm = app.config['JWT_ALGORITHM']
         except KeyError as e:
             logging.error(f"missing JWT configuration: {e}.")
