@@ -56,9 +56,13 @@ psycopg2-binary
 pandas
 boto3
 ```
-## 3.2 app.py  (Application Entry Point)
+## 3.2 app.py (Application Entry Point)
 
-This file is responsible for creating the Flask application. It imports and registers only the companies that should be active in this specific deployment.
+This file is responsible for creating the Flask application. 
+It imports and registers only the companies that should be active in this 
+specific deployment.
+It's also the perfect place to initialize production-only services 
+like Application Performance Monitoring (APM).
 ```python
 # app.py
 
