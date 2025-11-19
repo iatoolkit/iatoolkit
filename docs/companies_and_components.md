@@ -601,9 +601,11 @@ app = create_app()
 
 ---
 
-## 4. Integrating with Company-Specific Repositories in Github
+## 4. Best Practices
 
-For maximum isolation and portability, you can structure your project so that the **IAToolkit** framework 
+## 4.1 Integrating with Company-Specific Repositories in Github
+
+Our recommendation is to structure your project so that the **IAToolkit** framework 
 acts as an external dependency, while all code specific to your company (or client) resides in its own 
 dedicated GitHub repository.
 
@@ -611,79 +613,10 @@ This approach is ideal for:
 *   **Agencies or consultants** managing multiple clients, each with their own repository.
 *   **Large organizations** wanting to keep code for different departments in separate repositories.
 *   **Isolated deployments** where each IAToolkit instance should only be aware of a single company.
+ 
+See the **[deployment guide](./deployment_guide.md)** for more details.
 
-#### Company Repository Structure
-
-A repository dedicated to a company does not contain the IAToolkit source code itself; 
-instead, it consumes it as a library. The recommended file structure is as follows:
-
-```text
-my-client-project/
-├── companies/
-│   └── my_company/          # The complete company module
-│       ├── config/
-│       ├── context/
-│       ├── prompts/
-│       ├── schema/
-│       └── my_company.py
-│
-├── .env                      # Secrets and keys for THIS company only
-├── app.py                    # Flask application entry point
-├── requirements.txt          # Project dependencies, including iatoolkit
-└── ...                       # Other files like README.md, .gitignore, etc.
-```
-
-#### Key Components
-
-1.  **`companies/` Directory**
-    This directory is identical in structure to the one in the main framework, but it **only contains the company modules relevant to this specific deployment**. IAToolkit is designed to look inside this folder to find modules to register.
-
-2.  **`requirements.txt`**
-    This  defines your project's Python dependencies, with the primary one being `iatoolkit` itself. You can install it directly from a Git repository, ensuring you always use the correct version of the framework.
-
-    **Example `requirements.txt`:**
-    ```txt
-    # Install the IAToolkit framework from its GitHub repository
-    # You can point to a specific branch or tag (e.g., @main, @v1.2.0)
-    iatoolkit==0.98.0
-
-    # Other dependencies your company might need
-    pandas>=2.0.0
-    boto3
-    ```
-
-3.  **`.env` File**
-    This file contains **only** the environment variables and secrets required by the companies defined in this repository. This includes API keys for LLMs, database connection strings, etc.
-
-4.  **`app.py` File**
-    This is the entry point for running your application. Its responsibility is to import your company classes, register them with IAToolkit, and create the Flask application instance.
-
-
-#### Development Workflow
-
-1.  **Create** a new GitHub repository for your company-specific project.
-2.  **Clone** the repository to your local machine.
-3.  **Create** the directory structure (`companies/my_company`, etc.).
-4.  **Develop** your company module inside `companies/my_company/`, including its `company.yaml`, `prompts`, `context`, and any custom Python code.
-5.  **Create** the `requirements.txt` file, pointing to your core IAToolkit framework repository.
-6.  **Create** the `.env` file with the necessary secrets.
-7.  **Create** the `app.py` entry point.
-8.  **Install dependencies**:
-    ```bash
-    pip install -r requirements.txt
-    ```
-9.  **Run the application**:
-    ```bash
-    flask run
-    # or
-    python app.py
-    ```
-
-With this approach, you maintain a clean and professional separation between the core framework and client-specific implementations, simplifying both maintenance and independent deployment.
-
-## 5. Best Practices
-
-### 5.1 Organizing Context Files
+### 4.2 Organizing Context Files
 
 Structure your context files logically. For example:
 - `context/company_overview.md` - General company information
@@ -691,7 +624,7 @@ Structure your context files logically. For example:
 - `context/procedures.md` - Standard operating procedures
 - `context/faqs.md` - Frequently asked questions
 
-### 5.2 Writing Good Tool Descriptions
+### 4.3 Writing Good Tool Descriptions
 
 The `description` field in your tools configuration is critical. Write descriptions that:
 - Clearly state what the tool does
@@ -699,7 +632,7 @@ The `description` field in your tools configuration is critical. Write descripti
 - Mention the types of questions it can answer
 - Include relevant examples if helpful
 
-### 5.3 Schema Files and Database Tables
+### 4.4 Schema Files and Database Tables
 
 When configuring data sources:
 - Provide clear, comprehensive descriptions for databases
@@ -707,7 +640,7 @@ When configuring data sources:
 - Add table-specific descriptions for complex or important tables
 - Test your queries to ensure the AI has access to the right data
 
-### 5.4 Prompt Templates
+### 4.5 Prompt Templates
 
 When creating `.prompt` files:
 - Use clear, descriptive filenames that match the `name` in `company.yaml`
@@ -717,7 +650,7 @@ When creating `.prompt` files:
 
 ---
 
-## 6. Summary
+## 5. Summary
 
 By combining the Python module for logic and the `company.yaml` for configuration, you can create a powerful, 
 context-aware, and fully customized AI agent that is deeply integrated with your unique business environment. 

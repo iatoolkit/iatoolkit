@@ -52,6 +52,18 @@ Understand IAToolkit's internal architecture and learn how to extend the framewo
 - Contributing guidelines
 
 ---
+### For DevOps & Administrators
+
+**[Deployment Guide](./deploy_guide.md)**
+Learn how to deploy IAToolkit to a production environment.
+
+*What you'll learn:*
+- Production architecture recommendations
+- Configuring a WSGI server like Gunicorn
+- Managing environment variables for production
+- Running one-off administrative commands
+
+---
 
 ## Getting Started
 
@@ -61,8 +73,9 @@ Already familiar with the basics? Jump to **[Companies and Components](./compani
 
 The IAToolkit database is documented here: **[Database Model](./database_guide.md)**.
 
-
 Want to contribute or extend? Check out the **[Programming Guide](./programming_guide.md)**.
+
+Ready to go to production? Follow the **[Deployment Guide](./deploy_guide.md)**.
 
 ---
 
