@@ -28,17 +28,5 @@ app = create_app()
 
 if __name__ == "__main__":
     if app:
-        base_url = os.getenv('IATOOLKIT_BASE_URL')
-        run_port = 5001
-        if base_url:
-            try:
-                parsed_url = urlparse(base_url)
-                if parsed_url.port:
-                    run_port = parsed_url.port
-                else:
-                    logging.warning(f"IATOOLKIT_BASE_URL ('{base_url}') has no port. Using default {run_port}.")
-            except Exception as e:
-                logging.error(f"Failed to parse IATOOLKIT_BASE_URL: '{base_url}'. Error: {e}. Using default {run_port}.")
-        else:
-            logging.info(f"IATOOLKIT_BASE_URL not set. Using default {run_port}.")
-        app.run(debug=True, port=run_port)
+        default_port = 5007
+        app.run(debug=True, port=default_port)

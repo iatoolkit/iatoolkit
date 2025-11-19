@@ -3,7 +3,7 @@
 #
 # IAToolkit is open source software.
 
-from flask import Flask, url_for, get_flashed_messages
+from flask import Flask, url_for, get_flashed_messages, request
 from flask_session import Session
 from flask_injector import FlaskInjector
 from flask_bcrypt import Bcrypt
@@ -177,10 +177,6 @@ class IAToolkit:
             'JWT_ALGORITHM': 'HS256',
         })
 
-        parsed_url = urlparse(os.getenv('IATOOLKIT_BASE_URL'))
-        if parsed_url.scheme == 'https':
-            self.app.config['PREFERRED_URL_SCHEME'] = 'https'
-
         # 2. ProxyFix para no tener problemas con iframes y rutas
         self.app.wsgi_app = ProxyFix(self.app.wsgi_app, x_proto=1)
 
@@ -242,9 +238,7 @@ class IAToolkit:
         from iatoolkit.company_registry import get_company_registry
 
         # default CORS origin
-        default_origins = [
-            os.getenv('IATOOLKIT_BASE_URL')
-        ]
+        default_origins = []
 
         # Iterate through the registered company names
         extra_origins = []
@@ -410,7 +404,7 @@ class IAToolkit:
                 'company_short_name': SessionManager.get('company_short_name'),
                 'user_is_local': user_profile.get('user_is_local'),
                 'user_email': user_profile.get('user_email'),
-                'iatoolkit_base_url': os.environ.get('IATOOLKIT_BASE_URL', ''),
+                'iatoolkit_base_url': request.url_root,
                 'flashed_messages': get_flashed_messages(with_categories=True),
                 't': translate_for_template
             }
