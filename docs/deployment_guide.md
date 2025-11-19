@@ -128,7 +128,7 @@ Any other keys referenced in your company.yaml (e.g., BREVO_API_KEY, AWS_ACCESS_
 - Configure the environment variables as described in the previous step.
 - Trigger a deployment. The platform will use requirements.txt to install iatoolkit and other dependencies, then use the Procfile to start the Gunicorn server.
 
-## 5. Running One-Off Administrative Commands
+## 6. Running One-Off Administrative Commands
 After a successful deployment, your application will be running, but your databases will be empty. You need to run the same setup commands from the Quickstart Guide, but this time on your production server.
 Most hosting platforms provide a way to run a one-off command in the context of your deployed application.
 On Heroku: You can run commands using `heroku run`.
