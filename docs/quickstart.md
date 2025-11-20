@@ -154,7 +154,7 @@ loading: contract_Chloe_Hernandez.pdf
 loading: huf_group_supplier_manual.pdf
 ```
 Now that the documents are indexed, you can ask the assistant questions related to their content, 
-such as *"What is the company's vacation policy?"* or *"Summarize the quality standards from the ACME supplier manual."*
+such as *"resume el contrato de julia bianchi?"* 
 
 ## Next Steps
 
