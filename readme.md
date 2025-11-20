@@ -1,102 +1,113 @@
-
 <div align="center">
-<h1>
-    IAToolkit
-</h1>
-
-  <p><strong>The Open-Source Framework for Building AI Chatbots on Your Private Data.</strong></p>
-<h4>
-  <a href="https://www.iatoolkit.com" target="_blank" style="text-decoration: none; color: inherit;">
-    www.iatoolkit.com
-  </a>
-</h4>
+  <img src="https://www.iatoolkit.com/static/images/logo.png" alt="IAToolkit Logo" width="150"/>
+  <h1>IAToolkit</h1>
+  <p><strong>The Open-Source Framework for Building Enterprise-Grade AI Assistants on Your Private Data</strong></p>
+  <p>
+    <a href="https://www.iatoolkit.com">Website</a> |
+    <a href="./docs/index.md">Full Documentation</a> |
+    <a href="./docs/quickstart.md">Quickstart Guide</a>
+  </p>
 </div>
 
-IAToolkit is a comprehensive, Python open-source framework designed for building enterprise-grade 
-AI chatbots and conversational applications. It bridges the gap between the power of 
-Large Language Models (LLMs) and the valuable, 
-private data locked within your organization's databases and documents.
+![IAToolkit Demo](./docs/assets/iatoolkit-demo.gif)
 
-With IAToolkit, you can build production-ready, context-aware chatbots and agents that 
-can query relational databases, perform semantic searches on documents, 
-and connect to your internal APIs in minutes.
+---
 
-Create secure, branded chat interfaces that can reason over your data, answer questions, and execute custom business logic, 
-all powered by leading models from OpenAI, Google Gemini, and more.
+## ✨ Why IAToolkit?
 
+IAToolkit is more than a framework — it's a complete foundation for building **enterprise-grade AI assistants** capable of understanding your proprietary data, automating workflows, and integrating seamlessly with your existing systems.
 
-## 🚀 Key Features
+Whether you're building a production chatbot for your company **or learning how real AI applications are architected**, IAToolkit gives you the structure, tooling, and best practices you need.
 
-* **⚙️ Configuration-First Architecture**
-    * **Zero-Code Data Integration**: Connect your databases with a simple YAML configuration—no coding required. Just declare your data sources, and IAToolkit handles the rest.
-    * **Declarative Setup**: Define everything from database connections, embedding providers, custom tools, and UI branding in a single, intuitive `company.yaml` file.
-    * 
+---
 
-* **🔗 Unified Data Connection**
-    * **Natural Language to SQL**: Let your chatbot query relational databases (PostgreSQL, MySQL, SQLite) using everyday language.
-    * **Semantic Document Search (RAG)**: Automatically chunk, embed, and search across your private documents (PDFs, Word, etc.) to provide contextually accurate answers.
-    * **Flexible Embedding Options**: Choose between OpenAI or HuggingFace embedding models. Switch providers with a single configuration change—no code modifications needed.
+### 🔌 Connect to Anything  
+Build AI assistants that truly understand your business.
 
-* **🏢 Enterprise-Ready Multi-Tenancy**
-    * Deploy isolated "Company" modules, each with its own data sources, tools, context, and branding.
-    * Perfect for SaaS products serving multiple clients or for managing different internal departments.
-    * Each company gets its own configuration file, ensuring complete isolation and customization.
+- Connect to **SQL databases** (PostgreSQL, MySQL, SQLite)
+- Query structured data using natural language
+- Perform **semantic search** on PDFs, DOCX, TXT, XLSX
+- Works as a full RAG engine out-of-the-box
 
-* **🎨 Fully Brandable UI**
-    * Customize the look and feel for each "Company" with its own colors, logos, and even language settings (i18n).
-    * Define your brand identity in YAML—from header colors to button styles.
-    * Provides a white-labeled experience for your users with zero front-end coding.
+---
 
-* **🧠 Multi-LLM by Design**
-    * **Provider Agnostic**: Switch between **OpenAI (GPT-5)** and **Google (Gemini Pro, Gemini Flash)** with a single configuration line.
-    * **Future-Proof**: Easily add support for new LLM providers as they emerge.
-    * **Per-Company Configuration**: Mix and match different LLM providers across companies based on cost, performance, or feature requirements.
+### 🏢 Multi-Tenant by Design  
+Ideal for SaaS, agencies, consultancies, or large enterprises.
 
-* **🛠️ Powerful Tool System**
-    * Define custom functions (tools) that your AI can invoke to perform actions—from database queries to API calls.
-    * Declare tools in YAML with OpenAPI-style schemas.
-    * Built-in support for common operations like sql query, excel export, sending mail with easy extensibility for custom business logic.
+- Isolated **Company Modules**  
+- Each company defines its own:
+  - data sources  
+  - prompts  
+  - custom tools  
+  - branding + UI theme  
+- Clean separation for multi-client deployments  
+- Perfect for scaling from 1 to 100 customers
+- Configure everything using simple YAML — **no boilerplate needed**
 
-* **🔒 Security & Observability Built-In**
-    * Integrated user authentication, API key management, and secure session handling out of the box.
-    * Full traceability with detailed logging of all queries, function calls, token usage, and costs.
-    * Production-ready security features including CORS configuration and environment-based secrets management.
+---
 
-* **👨‍💻 Developer-First Experience**
-    * Built with a clean **Dependency Injection** architecture for maximum testability and maintainability.
-    * High-quality codebase with **90%+ test coverage**.
-    * Comprehensive documentation and working examples to get you started quickly.
+### 🧩 Extensible & Provider-Agnostic  
+Customize every layer and keep full control.
 
-## 💡 Why IAToolkit?
+- Add **custom tools** the LLM can call (SQL, API, Python functions)
+- Swap between **OpenAI (GPT)**, **Google Gemini**, or future models
+- Built on dependency injection for maximum modularity
+- Extend prompts, dispatchers, services, and LLM clients effortlessly
 
-**Build in Minutes, Not Months**: Traditional AI chatbot development requires months of infrastructure setup, security hardening, and complex integrations. IAToolkit provides all of this out-of-the-box, letting you focus on your business logic and user experience.
+---
 
-**Configuration Over Code**: Most AI frameworks force you to write extensive boilerplate code. With IAToolkit, you describe what you want in YAML, and the framework does the heavy lifting. Connect databases, configure embeddings, define tools—all declaratively.
+### 🛡️ Built for Production  
+Designed for real-world systems — reliable, maintainable, and scalable.
 
-**Multi-Tenant by Design**: Whether you're building a SaaS product for multiple clients or managing different departments within your organization, IAToolkit's Company architecture provides true isolation with shared infrastructure efficiency.
+- Integrated authentication and session handling  
+- Secure secret management via environment variables  
+- Detailed logging of prompts, tool calls, and token usage  
+- Structured architecture with **90%+ automated test coverage**  
+- Clean separation of UI, business logic, and LLM orchestration  
+- Runs anywhere: local machine, Docker, cloud, serverless  
 
-**Production-Ready from Day One**: No need to retrofit security, logging, or monitoring later. IAToolkit includes enterprise-grade features from the start, so you can deploy confidently.
+---
+
+### 🎓 Learn How Real AI Applications Are Built  
+IAToolkit is also an excellent learning resource:
+
+- Understand how to orchestrate multiple LLM calls  
+- Learn how tools, SQL, vector search and prompts interact  
+- Explore a complete architecture for real AI products  
+- Use the Sample Company demo to practice building AI assistants  
+- Perfect for developers, students, and teams exploring enterprise AI
+
+---
+
+IAToolkit helps you go from *idea* to *production-ready assistant* in minutes —  
+without reinventing the wheel.
+
+## 🚀 Getting Started in 3 Minutes
+
+Get your first AI assistant running locally by following our "Hello World" example.
+Our detailed guide will walk you through setting up your virtual environment, configuring your `.env` file, 
+and launching the application.
+
+➡️ **[Start the Quickstart Guide](./docs/quickstart.md)**
 
 ## 📚 Documentation
 
-For comprehensive guides, tutorials, and API references, visit our complete documentation:
+Our documentation is designed for users of all levels, from initial setup to advanced development.
 
-➡️ **[Read the Full Documentation](./docs/index.md)**
+| Guide                                         | Description                                                                                               |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| 🚀 **[Quickstart Guide](./docs/quickstart.md)** | The fastest way to install, configure, and run IAToolkit for the first time.                                |
+| ⚙️ **[Companies & Components](./docs/companies_and_components.md)** | A deep dive into the `company.yaml` file, the core of all configuration.                  |
+| 💻 **[Programming Guide](./docs/programming_guide.md)** | Understand the internal architecture, services, and design patterns to extend the framework.      |
+| ☁️ **[Deployment Guide](./docs/deployment_guide.md)** | Learn how to deploy your IAToolkit application to a production environment.                             |
+| 🗃️ **[Database Guide](./docs/database_guide.md)** | An overview of the core database schema used by the IAToolkit framework itself.                         |
 
-## ⚡ Quick Start: Try our 'hello world' example
-
-Ready to see it in action? Our Quickstart Guide will walk you through downloading, configuring, and launching your first AI assistant in just a few minutes. 
-It's the best way to experience the toolkit's capabilities firsthand.
-
-➡️ **[Get Started with the Quickstart Guide](./docs/quickstart.md)**
+➡️ **[Explore all documentation](./docs/index.md)**
 
 ## 🤝 Contributing
 
-We welcome contributions! Whether it's adding a new feature, improving documentation, or fixing a bug, 
-please feel free to open a pull request.
-
-➡️ **[Contributing guide](./contributing.md)**
+We welcome contributions of all kinds! Whether it's a new feature, a bug fix, or an improvement to the documentation, your help is appreciated. Please read our **[Contributing Guide](./contributing.md)** to get started.
 
 ## 📄 License
 
-IAToolkit is open-source and licensed under the [MIT License](LICENSE).
+IAToolkit is open-source software licensed under the **[MIT License](./LICENSE)**.

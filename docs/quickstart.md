@@ -101,11 +101,13 @@ flask create-sample-db
 ```
 You should see an output similar to this, confirming that the schema was created and the data was loaded successfully:
 ```bash
-(venv) iatoolkit-install %flask create-sample-db
-2025-11-19 13:52:31,840 - IATOOLKIT - root - INFO - 🎉 IAToolkit v0.10.2 inicializado correctamente
-⚙️  Creando y poblando la base de datos, esto puede tardar unos momentos...
+(venv) iatoolkit %flask create-sample-db
+2025-11-20 11:50:20,896 - IATOOLKIT - root - INFO - ✅ Comandos CLI del núcleo registrados.
+2025-11-20 11:50:20,896 - IATOOLKIT - root - INFO - ✅ download dir created in: /Users/fernando/Documents/software/iatoolkit-install/iatoolkit/iatoolkit-downloads
+2025-11-20 11:50:20,896 - IATOOLKIT - root - INFO - 🎉 IAToolkit v0.74.0 inicializado correctamente
+⚙️  creating and populating the database...
 Database schema created successfully from 'companies/sample_company/sample_data/sample_database_schema.sql'.
-✅ Base de datos de poblada exitosamente.
+✅ database created and populated successfully!
 ```
 
 This command will create the tables company with: customers, products, orders, countries, employees with dummy data.
@@ -125,12 +127,12 @@ It defines two sources: `employee_contracts` and `supplier_manuals`.
 
 From your project's root directory, execute the following command:
 ```bash
-    flask load
+    flask load-documents
 ```
 
 After running you will see the service processing each file from the configured sources:
 ```bash
-(venv) iatoolkit-install %flask load
+(venv) iatoolkit-install %flask load-documents
 2025-11-19 18:17:58,893 - IATOOLKIT - root - INFO - ✅ Base de datos configurada correctamente
 2025-11-19 18:17:58,899 - IATOOLKIT - root - INFO - ✅ Dependencias configuradas correctamente
 2025-11-19 18:17:58,911 - IATOOLKIT - root - INFO - ✅ Routes registered.
