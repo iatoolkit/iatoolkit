@@ -71,22 +71,7 @@ you will see something like this:
 ```
 
 Now you can enter into the IAToolkit main page:
-http://127.0.0.1:5007/sample_company/home
-
-### Possible Issues and How to Solve Them
-
-- **Port 5000 is already in use**  
-  If the default port is busy, you can change it in your `.env` file:  
-  ```env
-  FLASK_RUN_PORT=5007
-    ```
-    Or override it directly when running the server: 
-  ```bash
-  flask run -port 5007.
-
-- **Registration mail **
-    This instance is configured for **not sending any emails**, so you won't receive 
-    any confirmation emails (see company.yaml for more details).
+http://127.0.0.1:5000/sample_company/home
 
 ### Step 4: Populate the SampleCompany Database 
 
@@ -112,11 +97,11 @@ creating the necessary tables and filling them with sample data for products, or
 Once the SAMPLE_DATABASE_URI variable is set, activate your virtual environment and run the 
 following command from the project root:
 ```bash
-flask populate-sample-db
+flask create-sample-db
 ```
 You should see an output similar to this, confirming that the schema was created and the data was loaded successfully:
 ```bash
-(venv) iatoolkit-install %flask populate-sample-db
+(venv) iatoolkit-install %flask create-sample-db
 2025-11-19 13:52:31,840 - IATOOLKIT - root - INFO - 🎉 IAToolkit v0.10.2 inicializado correctamente
 ⚙️  Creando y poblando la base de datos, esto puede tardar unos momentos...
 Database schema created successfully from 'companies/sample_company/sample_data/sample_database_schema.sql'.

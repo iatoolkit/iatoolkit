@@ -41,29 +41,29 @@ class SampleCompany(BaseCompany):
 
 
     def register_cli_commands(self, app):
-        @app.cli.command("populate-sample-db")
-        def populate_sample_db():
+        @app.cli.command("create-sample-db")
+        def create_sample_db():
             # get the handler to the database
             sample_db_manager = self.sql_service.get_database_manager('sample_database')
             self.sample_database = SampleCompanyDatabase(sample_db_manager)
 
-            """📦 Crea y puebla la base de datos de sample_company."""
+            """📦 create and populate the database."""
             if not self.sample_database:
                 click.echo("❌ Error: La base de datos no está configurada.")
-                click.echo("👉 Asegúrate de que 'SAMPLE_DATABASE_URI' esté definida en tu entorno.")
+                click.echo("👉 make sure you have configured the database in the config.py file.")
                 return
 
             try:
                 click.echo(
-                    "⚙️  Creando y poblando la base de datos, esto puede tardar unos momentos...")
+                    "⚙️  creating and populating the database...")
                 self.sample_database.create_database()
                 self.sample_database.populate_from_excel('companies/sample_company/sample_data/northwind.xlsx')
-                click.echo("✅ Base de datos de poblada exitosamente.")
+                click.echo("✅ database created and populated successfully!")
             except Exception as e:
                 logging.exception(e)
-                click.echo(f"❌ Ocurrió un error inesperado: {e}")
+                click.echo(f"❌ an error: {e}")
 
-        @app.cli.command("load")
+        @app.cli.command("load-documents")
         def load_documents():
             try:
                 self.load_document_service.load_sources(

@@ -2,6 +2,8 @@
 import os
 import sys
 
+# Add src/ to sys.path BEFORE importing iatoolkit
+# this is only needed when iatoolkit is running without importing the pip package
 src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src')
 sys.path.insert(0, src_path)
 
@@ -26,5 +28,4 @@ app = create_app()
 
 if __name__ == "__main__":
     if app:
-        default_port = 5007
-        app.run(debug=True, port=default_port)
+        app.run(debug=True)
