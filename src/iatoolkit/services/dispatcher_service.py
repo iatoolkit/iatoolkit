@@ -76,7 +76,7 @@ class Dispatcher:
 
             except Exception as e:
                 logging.error(f"❌ Failed to register configuration for '{company_name}': {e}")
-                continue
+                raise e
 
         return True
 

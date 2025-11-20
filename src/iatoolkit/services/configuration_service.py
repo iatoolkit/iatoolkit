@@ -264,12 +264,12 @@ class ConfigurationService:
 
         # If any errors were found, log all messages and raise an exception
         if errors:
-            error_summary = f"Configuration for '{company_short_name}' has validation errors:\n" + "\n".join(
+            error_summary = f"Configuration file '{company_short_name}/config/company.yaml' for '{company_short_name}' has validation errors:\n" + "\n".join(
                 f" - {e}" for e in errors)
             logging.error(error_summary)
 
             raise IAToolkitException(
                 IAToolkitException.ErrorType.CONFIG_ERROR,
-                "configuration errors, review your company.yaml file"
+                'company.yaml validation errors'
             )
 

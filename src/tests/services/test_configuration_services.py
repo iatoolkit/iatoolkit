@@ -257,4 +257,4 @@ class TestConfigurationService:
                 self.service.load_configuration(self.COMPANY_NAME, self.mock_company_instance)
 
             assert excinfo.value.error_type == IAToolkitException.ErrorType.CONFIG_ERROR
-            assert "configuration errors" in str(excinfo.value)
+            assert "company.yaml validation errors" in str(excinfo.value)

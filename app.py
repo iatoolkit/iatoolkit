@@ -4,9 +4,7 @@ from dotenv import load_dotenv
 from iatoolkit.iatoolkit import IAToolkit
 from iatoolkit.company_registry import register_company
 from companies.sample_company.sample_company import SampleCompany
-from urllib.parse import urlparse
 import os
-import logging
 import sys
 
 src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src')

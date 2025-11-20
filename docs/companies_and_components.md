@@ -87,7 +87,49 @@ In detail, each folder plays a specific role:
   This is where you can customize company-specific logic, register custom tools, extra CLI commands, etc.
 ---
 
-## 2. The `company.yaml` Configuration File
+## 2. Creating a New Company
+
+To create a new company, you can scaffold it from the `sample_company` template:
+
+1. **Duplicate the Folder**: In the `companies/` directory, copy `sample_company` and rename the copy to `my_company`.
+
+2. **Rename the Core File**: Inside `companies/my_company/`, rename `sample_company.py` to `my_company.py`.
+
+3. **Update the Class Name**: Open `my_company.py` and change the class name from `SampleCompany` to `MyCompany`.
+
+4. **Update the Configuration**: Edit `companies/my_company/config/company.yaml` and update all the configuration values according to your needs.
+
+5. **Register the New Company**: Open `app.py` and add the following lines:
+
+```python
+from iatoolkit.iatoolkit import IAToolkit
+from iatoolkit.company_registry import register_company
+from companies.sample_company.sample_company import SampleCompany
+from companies.my_company.my_company import MyCompany
+
+
+def create_app():
+    # IMPORTANT: companies must be registered before creating the IAToolkit
+    register_company('sample_company', SampleCompany)
+    register_company('my_company', MyCompany)
+
+
+    # create the IAToolkit and Flask instance
+    toolkit = IAToolkit()
+    return toolkit.create_iatoolkit()
+
+app = create_app()
+
+```
+
+6. **Add Context and Resources**:
+   - Place Markdown files in `companies/my_company/context/`
+   - Add schema files to `companies/my_company/schema/`
+   - Create prompt templates in `companies/my_company/prompts/`
+
+---
+
+## 3. The `company.yaml` Configuration File
 
 The `company.yaml` file is the central configuration hub for your AI assistant. 
 It declaratively defines all aspects of your company's behavior, from LLM selection and 
@@ -179,7 +221,7 @@ in detail, explaining its purpose, available options, and best practices.
 By understanding these building blocks, you'll be able to fully customize your 
 AI assistant to meet your specific business requirements.
 
-### 2.1 General Information
+### 3.1 General Information
 
 This section establishes the core identity of your company within IAToolkit. 
 Here you define the unique identifier that will be used in URLs and routing, 
@@ -206,7 +248,7 @@ llm:
     *   **`api-key`**: The **name of the environment variable** that holds the API key for the LLM provider.
 
 
-### 2.2 Data Sources (SQL)
+### 3.2 Data Sources (SQL)
 
 This is one of the most powerful features of IAToolkit: the ability to connect your 
 AI directly to your corporate databases. 
@@ -269,7 +311,7 @@ data_sources:
     *   **`exclude_columns`**: Override the global exclude_columns for this specific table.
     *   **`description`**: Provide a more detailed description for this table.
 
-### 2.3 Tools (Functions)
+### 3.3 Tools (Functions)
 
 Tools (also called functions or actions) extend your AI assistant's capabilities beyond 
 simple conversation. They are custom operations that the LLM can invoke to perform 
@@ -303,7 +345,7 @@ tools:
 *   **`description`**: A clear, natural language description telling the AI *when* and *why* it should use this tool.
 *   **`params`**: An OpenAPI-style schema defining the parameters the function accepts.
 
-### 2.4 Prompts
+### 3.4 Prompts
 
 Prompts are pre-configured, reusable conversation starters that appear in your 
 application's user interface. They serve as guided entry points for common tasks,
@@ -358,7 +400,7 @@ prompts:
         *   **`label`**: User-facing label for the field.
         *   **`type`**: Field type (e.g., `"text"`, `"date"`).
 
-### 2.5 Company-specific Parameters
+### 3.5 Company-specific Parameters
 
 This section acts as a flexible storage area for any custom configuration parameters 
 your company might need. It's a key-value map where you can define company-specific 
@@ -387,7 +429,7 @@ parameters:
     logout_url: ""
 ```
 
-### 2.6 Knowledge Base (RAG)
+### 3.6 Knowledge Base (RAG)
 
 This section enables one of the most valuable AI capabilities: the ability to answer 
 questions based on your organization's private documents. 
@@ -441,7 +483,7 @@ knowledge_base:
     *   **`metadata`**: Key-value pairs that will be automatically attached to every document indexed from this source. This is extremely useful for filtering searches later (e.g., searching *only* within employee contracts using `metadata_filter={"type": "employee_contract"}`).
 ---
 
-### 2.7 Branding
+### 3.7 Branding
 
 One of IAToolkit's most powerful multi-tenant features is the ability to fully 
 customize the look and feel of the interface for each company. 
@@ -465,7 +507,7 @@ branding:
 ```
 All colors are specified in hexadecimal format. These values control various UI elements, allowing each company to have its own visual identity.
 
-### 2.8 Embedding Provider
+### 3.8 Embedding Provider
 
 Embeddings are numerical representations of text that enable semantic search capabilities. 
 This section configures which embedding model your company will use to convert documents and queries into vectors for similarity matching. IAToolkit supports multiple providers, allowing you to choose between OpenAI's models (offering high quality at a cost) or HuggingFace's open-source alternatives (offering flexibility and potential cost savings). The embedding provider works behind the scenes to power your document search and RAG (Retrieval-Augmented Generation) features. Note that you can use a different provider for embeddings than you use for your main LLM.
@@ -487,7 +529,7 @@ embedding_provider:
   model: "sentence-transformers/all-MiniLM-L6-v2"
   api_key_name: "huggingface_token"       # value in .env file
 ```
-## 2.9 Mail Provider Configuration
+## 3.9 Mail Provider Configuration
 
 IAToolkit includes a flexible system for sending emails, which is essential for features like user registration, 
 password resets, and notifications. 
@@ -539,7 +581,7 @@ mail_provider:
 
 By separating the configuration from the secrets, you can safely commit `company.yaml` to version control while keeping your sensitive credentials secure in the `.env` file.
 
-### 2.10 Help Files
+### 3.10 Help Files
 
 User assistance and onboarding are critical for adoption. 
 This section points to additional YAML files that contain structured content 
@@ -558,48 +600,6 @@ help_files:
 ```
 
 These files should be located in the company's `config/` directory.
-
-## 3. Creating a New Company
-
-To create a new company, you can scaffold it from the `sample_company` template:
-
-1. **Duplicate the Folder**: In the `companies/` directory, copy `sample_company` and rename the copy to `my_company`.
-
-2. **Rename the Core File**: Inside `companies/my_company/`, rename `sample_company.py` to `my_company.py`.
-
-3. **Update the Class Name**: Open `my_company.py` and change the class name from `SampleCompany` to `MyCompany`.
-
-4. **Update the Configuration**: Edit `companies/my_company/config/company.yaml` and update all the configuration values according to your needs.
-
-5. **Register the New Company**: Open `app.py` and add the following lines:
-
-```python
-from iatoolkit.iatoolkit import IAToolkit
-from iatoolkit.company_registry import register_company
-from companies.sample_company.sample_company import SampleCompany
-from companies.my_company.my_company import MyCompany
-
-
-def create_app():
-    # IMPORTANT: companies must be registered before creating the IAToolkit
-    register_company('sample_company', SampleCompany)
-    register_company('my_company', MyCompany)
-
-
-    # create the IAToolkit and Flask instance
-    toolkit = IAToolkit()
-    return toolkit.create_iatoolkit()
-
-app = create_app()
-
-```
-
-6. **Add Context and Resources**:
-   - Place Markdown files in `companies/my_company/context/`
-   - Add schema files to `companies/my_company/schema/`
-   - Create prompt templates in `companies/my_company/prompts/`
-
----
 
 ## 4. Best Practices
 

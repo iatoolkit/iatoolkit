@@ -22,13 +22,11 @@ from iatoolkit.common.util import Utility
 
 # A mock company class for testing purposes
 class MockSampleCompany(BaseCompany):
-    def register_company(self): pass
-
     def handle_request(self, tag: str, params: dict) -> dict: return {"result": "sample_company_response"}
 
     def get_user_info(self, user_identifier: str): pass
 
-    def get_metadata_from_filename(self, filename: str) -> dict: return {}
+    def register_cli_commands(self, app): pass
 
 
 class TestDispatcher:
