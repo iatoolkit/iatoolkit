@@ -97,7 +97,7 @@ def register_views(injector, app):
     app.add_url_rule('/tasks/review/<int:task_id>', view_func=TaskReviewApiView.as_view('tasks-review'))
 
     # this endpoint is for upload documents into the vector store (api-key)
-    app.add_url_rule('/api/load', view_func=FileStoreApiView.as_view('load_api'))
+    app.add_url_rule('/api/load-document', view_func=FileStoreApiView.as_view('load-document'), methods=['POST'])
 
     # this endpoint is for generating embeddings for a given text
     app.add_url_rule('/<company_short_name>/api/embedding',

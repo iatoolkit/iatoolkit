@@ -18,7 +18,7 @@ class TestFileStoreView:
     def setup_method(self):
         self.app = Flask(__name__)
         self.client = self.app.test_client()
-        self.url = '/api/load'
+        self.url = '/api/load-document'
 
         # Mock the services
         self.mock_doc_service = MagicMock(spec=LoadDocumentsService)

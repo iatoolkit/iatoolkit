@@ -264,6 +264,127 @@ without needing to re-enter their credentials, providing a Single Sign-On (SSO) 
 The reference implementation for this flow can be found in the file `src/iatoolkit/views/external_login_view.py`.
 
 
+## 10. Appendix: Available API
+
+The following section describes the key API endpoints available for programmatic integration. All API calls must be authenticated by including the `IATOOLKIT_API_KEY` in the `Authorization` header as a Bearer token.
+
+```text
+Authorization: Bearer <your_api_key>
+```
+
+---
+
+### `POST /api/<company_short_name>/init-context`
+
+This endpoint initializes or resets the conversation context for a specific user. It's useful for starting a new conversation from scratch, ensuring that no previous history is carried over.
+
+**Example Call:**
+```bash
+curl -X POST \
+  https://your-iatoolkit-instance.com/api/my_company/init-context \
+  -H "Authorization: Bearer <your_api_key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "model": "gpt-4"
+      }'
+```
+
+**Example Response:**
+```json
+{
+  "status": "Context initialized",
+  "response_id": "chatcmpl-xxxxxxxxxxxxxxxxxxxxxx",
+  "model": "gpt-4"
+}
+```
+
+---
+
+### `POST /api/<company_short_name>/llm_query`
+
+This is the primary endpoint for interacting with the assistant. You can send a direct question or invoke a predefined prompt with associated data.
+
+**Example Call (direct question):**
+```bash
+curl -X POST \
+  https://your-iatoolkit-instance.com/api/my_company/llm_query \
+  -H "Authorization: Bearer <your_api_key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "question": "What were the total sales last month?"
+      }'
+```
+
+**Example Call (using a prompt):**
+```bash
+curl -X POST \
+  https://your-iatoolkit-instance.com/api/my_company/llm_query \
+  -H "Authorization: Bearer <your_api_key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "prompt_name": "summarize_customer_activity",
+        "client_data": {
+          "customer_id": "CUST-12345",
+          "last_purchase_date": "2025-10-15"
+        }
+      }'
+```
+
+**Example Response:**
+```json
+{
+  "answer": "The total sales for last month were $150,000.",
+  "response_id": "chatcmpl-yyyyyyyyyyyyyyyyyyyyyy",
+  "valid_response": true
+}
+```
+
+---
+### `POST /api/<company_short_name>/file-store`
+
+This endpoint uploads a temporary file and returns a token. This token can then be used in a `llm_query` call to provide the file's content as context for a single query. This is useful for analyzing documents on-the-fly without permanently adding them to the knowledge base.
+
+**Step 1: Upload the file**
+```bash
+curl -X POST \
+  https://your-iatoolkit-instance.com/api/my_company/file-store \
+  -H "Authorization: Bearer <your_api_key>" \
+  -F "file=@/path/to/your/document.pdf"
+```
+
+**Response:**
+```json
+{
+  "token": "a-unique-file-token-xxxxxxxx",
+  "filename": "document.pdf"
+}
+```
+
+---
+
+### `POST /api/<company_short_name>/embedding`
+
+This endpoint generates a vector embedding for a given string of text using the company's configured embedding model.
+
+**Example Call:**
+```bash
+curl -X POST \
+  https://your-iatoolkit-instance.com/api/my_company/embedding \
+  -H "Authorization: Bearer <your_api_key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "text": "This is the text to embed."
+      }'
+```
+
+**Example Response:**
+```json
+{
+  "embedding": "AbCdEfGhIjKlMnOp... (base64 encoded string) ...=",
+  "model": "text-embedding-3-small"
+}
+```
+
 
 
 

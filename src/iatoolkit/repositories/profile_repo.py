@@ -98,16 +98,11 @@ class ProfileRepo:
         search for an active API Key by its value.
         returns the entry if found and is active, None otherwise.
         """
-        try:
-            # Usamos joinedload para cargar la compañía en la misma consulta
-            api_key_entry = self.session.query(ApiKey)\
-                .options(joinedload(ApiKey.company))\
-                .filter(ApiKey.key == api_key_value, ApiKey.is_active == True)\
-                .first()
-            return api_key_entry
-        except Exception:
-            self.session.rollback() # Asegura que la sesión esté limpia tras un error
-            return None
+        api_key_entry = (self.session.query(ApiKey).filter
+                             (ApiKey.key == api_key_value, ApiKey.is_active == True).first())
+
+        return api_key_entry
+
 
     def get_active_api_key_by_company(self, company: Company) -> ApiKey | None:
         return self.session.query(ApiKey)\
