@@ -90,9 +90,6 @@ you will see something like this:
  * Running on http://127.0.0.1:5000
 ```
 
-Now you can enter into the IAToolkit main page:
-http://127.0.0.1:5000/sample_company/home
-
 ### Step 4: Populate the SampleCompany Database 
 
 The sample_company instance is pre-configured to demonstrate one of IAToolkit's most powerful features: 
@@ -131,6 +128,18 @@ Database schema created successfully from 'companies/sample_company/sample_data/
 ```
 
 This command will create the following tables with dummy data: customers, products, orders, countries, employees.
+
+### Test the Database Connection
+
+Now that the sample database is populated, you can test the assistant's ability to query it. 
+Open the application in your browser (`http://127.0.0.1:5000/sample_company/home`), 
+register a new user, and try asking the following questions in the chat interface:
+
+*   `give me a table with the sample employees`
+*   `give me a table with the sales in year 2025 by country`
+
+```text
+```
 
 ### Step 5: Load documents into the vector store 
 
