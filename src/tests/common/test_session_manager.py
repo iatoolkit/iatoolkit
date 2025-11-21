@@ -5,6 +5,7 @@
 
 import unittest
 from unittest.mock import patch
+from flask import Flask
 from iatoolkit.common.session_manager import SessionManager
 
 
@@ -14,6 +15,12 @@ class TestSessionManager(unittest.TestCase):
         """
         Configura los patches y mocks comunes para las pruebas.
         """
+        # Crear un contexto de aplicación y de solicitud de Flask
+        self.app = Flask(__name__)
+        self.app.secret_key = "super-secret"  # Necesario para el manejo de sesiones
+        self.ctx = self.app.test_request_context()
+        self.ctx.push()
+
         # Parchear el objeto 'session' como un diccionario en todos los tests
         self.session_patcher = patch("iatoolkit.common.session_manager.session", new_callable=dict)
         self.mock_session = self.session_patcher.start()  # Iniciar el patch y obtener el mock
@@ -22,7 +29,8 @@ class TestSessionManager(unittest.TestCase):
         """
         Detiene todos los patches después de cada prueba.
         """
-        patch.stopall()  # Detener cualquier parche activo y limpiar el entorno
+        patch.stopall()
+        self.ctx.pop()
 
     def test_set(self):
         """Prueba que el método set almacena un valor en la sesión."""

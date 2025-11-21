@@ -84,7 +84,7 @@ class BrevoMailApp:
         if not provider_config.get("api_key"):
             logging.error(f'Try to send brevo_mail without api_key in provider_config')
             raise IAToolkitException(IAToolkitException.ErrorType.MAIL_ERROR,
-                                     f"Invalid mail configuration for Brevo")
+                                     f"Invalid mail configuration for Brevo: missing api-key")
 
         # init the Brevo client
         self._init_brevo(provider_config)
