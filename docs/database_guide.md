@@ -37,6 +37,9 @@ At a high level, IAToolkit’s internal database can be thought of in terms of f
 In addition to the **core IAToolkit schema**, each Company can connect to its **own business database** via the `data_sources.sql` section in `company.yaml`. 
 Those external databases are **not owned** by IAToolkit; instead, they are *described* using YAML schemas in `companies/<company>/schema/`.
 
+Here is an ER diagram of the main tables in IAToolkit:
+
+![ER Diagram](images/database_model.png)
 ---
 
 ## 3. Tenant & User Model
