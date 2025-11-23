@@ -59,9 +59,10 @@ Learn how to deploy IAToolkit to a production environment.
 
 *What you'll learn:*
 - Production architecture recommendations
-- Configuring a WSGI server like Gunicorn
+- Mail service configuration
 - Managing environment variables for production
-- Running one-off administrative commands
+- IAToolkit API-KEY for external integrations
+- IAToolkit API reference
 
 ---
 
