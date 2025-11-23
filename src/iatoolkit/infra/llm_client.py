@@ -173,7 +173,7 @@ class llmClient:
                     logging.info(f"end execution {function_name} in {elapsed:.1f} secs.")
 
                 if not function_calls:
-                    break           # no function call answer to send back to llm
+                    break           # no more function calls, the answer to send back to llm
 
                 # send results back to the LLM
                 tool_choice_value = "auto"

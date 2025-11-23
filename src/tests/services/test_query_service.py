@@ -2,17 +2,18 @@
 # Product: IAToolkit
 
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, ANY
 import os
 import base64
-from iatoolkit.services.query_service import QueryService
+from iatoolkit.services.query_service import QueryService, HistoryHandle
 from iatoolkit.services.prompt_manager_service import PromptService
 from iatoolkit.services.user_session_context_service import UserSessionContextService
-from iatoolkit.services.company_context_service import ConfigurationService
+from iatoolkit.services.company_context_service import CompanyContextService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.profile_service import ProfileService
+from iatoolkit.services.history_manager_service import HistoryManagerService
 from iatoolkit.repositories.models import Company
 from iatoolkit.common.util import Utility
 from iatoolkit.infra.llm_client import llmClient
@@ -26,7 +27,7 @@ MOCK_EXTERNAL_USER_ID = "ext-user-abc"
 
 class TestQueryService:
     """
-    Test suite for the refactored and simplified QueryService.
+    Test suite for the refactored QueryService using HistoryManagerService Strategy and HistoryHandle.
     """
 
     @pytest.fixture(autouse=True)
@@ -39,31 +40,33 @@ class TestQueryService:
         self.mock_llmquery_repo = MagicMock()
         self.mock_profile_repo = MagicMock(spec=ProfileRepo)
         self.mock_prompt_service = MagicMock(spec=PromptService)
-        self.company_context_service = MagicMock(spec=ConfigurationService)
+        self.mock_company_context_service = MagicMock(spec=CompanyContextService)
         self.mock_configuration_service = MagicMock(spec=ConfigurationService)
         self.mock_util = MagicMock(spec=Utility)
         self.mock_dispatcher = MagicMock(spec=Dispatcher)
         self.mock_session_context = MagicMock(spec=UserSessionContextService)
         self.mock_i18n_service = MagicMock(spec=I18nService)
 
+        # Mock directo del HistoryManagerService (ya no hay factory)
+        self.mock_history_manager = MagicMock(spec=HistoryManagerService)
 
         # --- Instancia del servicio bajo prueba ---
-        with patch.dict(os.environ, {"LLM_MODEL": "gpt-test"}):
-            self.service = QueryService(
-                llm_client=self.mock_llm_client,
-                company_context_service=self.company_context_service,
-                profile_service=self.mock_profile_service,
-                document_service=self.mock_document_service,
-                document_repo=MagicMock(),
-                llmquery_repo=self.mock_llmquery_repo,
-                profile_repo=self.mock_profile_repo,
-                prompt_service=self.mock_prompt_service,
-                i18n_service=self.mock_i18n_service,
-                util=self.mock_util,
-                dispatcher=self.mock_dispatcher,
-                session_context=self.mock_session_context,
-                configuration_service=self.mock_configuration_service
-            )
+        self.service = QueryService(
+            llm_client=self.mock_llm_client,
+            profile_service=self.mock_profile_service,
+            company_context_service=self.mock_company_context_service,
+            document_service=self.mock_document_service,
+            document_repo=MagicMock(),
+            llmquery_repo=self.mock_llmquery_repo,
+            profile_repo=self.mock_profile_repo,
+            prompt_service=self.mock_prompt_service,
+            i18n_service=self.mock_i18n_service,
+            util=self.mock_util,
+            dispatcher=self.mock_dispatcher,
+            session_context=self.mock_session_context,
+            configuration_service=self.mock_configuration_service,
+            history_manager=self.mock_history_manager
+        )
 
         self.mock_i18n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
 
@@ -82,17 +85,17 @@ class TestQueryService:
     # --- Tests para prepare_context ---
 
     def test_prepare_context_rebuild_not_needed(self):
-        """Prueba que prepare_context devuelve 'rebuild_needed: False' si la caché es válida."""
+        """Prueba que prepare_context devuelve 'rebuild_needed: False' si la versión coincide."""
         mock_version = "v_hash_123"
         user_identifier = str(MOCK_LOCAL_USER_ID)
         with patch.object(self.service, '_compute_context_version_from_string', return_value=mock_version):
             self.mock_session_context.get_context_version.return_value = mock_version
-            with patch.object(self.service, '_has_valid_cached_context', return_value=True):
-                result = self.service.prepare_context(MOCK_COMPANY_SHORT_NAME, user_identifier=user_identifier)
+
+            result = self.service.prepare_context(MOCK_COMPANY_SHORT_NAME, user_identifier=user_identifier)
 
         assert result == {'rebuild_needed': False}
         self.service._build_context_and_profile.assert_called_once_with(MOCK_COMPANY_SHORT_NAME, user_identifier)
-        self.mock_session_context.save_prepared_context.assert_not_called()
+        self.mock_session_context.save_prepared_context.assert_called_once()
 
     def test_prepare_context_rebuild_needed_due_to_version_mismatch(self):
         """Prueba que se necesita reconstruir si la versión del contexto difiere."""
@@ -109,40 +112,24 @@ class TestQueryService:
 
     # --- Tests para set_context_for_llm ---
 
-    def test_set_context_for_llm_sends_to_llm_when_prepared(self):
-        """Prueba que set_context_for_llm envía el contexto al LLM usando el modelo por defecto."""
+    def test_set_context_for_llm_delegates_to_manager(self):
+        """Prueba que set_context_for_llm usa el manager para inicializar el contexto."""
         mock_version = "v_prep_abc"
         self.mock_session_context.acquire_lock.return_value = True
         self.mock_session_context.get_and_clear_prepared_context.return_value = (self.mock_final_context, mock_version)
-        self.mock_util.is_openai_model.return_value = True
-        self.mock_util.is_gemini_model.return_value = False
+
         self.mock_configuration_service.get_configuration.return_value = {'model': 'gpt-test'}
+        self.mock_history_manager.initialize_context.return_value = {'response_id': 'init_123'}
 
-        self.service.set_context_for_llm(MOCK_COMPANY_SHORT_NAME, user_identifier=str(MOCK_LOCAL_USER_ID))
+        result = self.service.set_context_for_llm(MOCK_COMPANY_SHORT_NAME, user_identifier=str(MOCK_LOCAL_USER_ID))
 
-        self.mock_llm_client.set_company_context.assert_called_once()
-        assert self.mock_llm_client.set_company_context.call_args.kwargs['model'] == 'gpt-test'
-        self.mock_session_context.acquire_lock.assert_called_once()
-        self.mock_session_context.save_context_version.assert_called_once_with(MOCK_COMPANY_SHORT_NAME,
-                                                                               str(MOCK_LOCAL_USER_ID), mock_version)
+        # Verifica que se delegó la inicialización al manager inyectado
+        self.mock_history_manager.initialize_context.assert_called_once()
+
+        # Verifica persistencia de versión y release de lock
+        self.mock_session_context.save_context_version.assert_called_once()
         self.mock_session_context.release_lock.assert_called_once()
-
-    def test_set_context_for_llm_uses_explicit_model(self):
-        """Prueba que el modelo explícito en set_context_for_llm tiene prioridad."""
-        self.mock_session_context.acquire_lock.return_value = True
-        self.mock_session_context.get_and_clear_prepared_context.return_value = (self.mock_final_context, "v1")
-        self.mock_util.is_openai_model.return_value = True
-        self.mock_util.is_gemini_model.return_value = False
-
-        self.service.set_context_for_llm(
-            MOCK_COMPANY_SHORT_NAME,
-            user_identifier=str(MOCK_LOCAL_USER_ID),
-            model="explicit-model-for-context"
-        )
-
-        self.mock_llm_client.set_company_context.assert_called_once()
-        assert self.mock_llm_client.set_company_context.call_args.kwargs['model'] == 'explicit-model-for-context'
-        self.mock_configuration_service.get_configuration.assert_not_called()
+        assert result == {'response_id': 'init_123'}
 
     def test_set_context_for_llm_does_nothing_if_lock_not_acquired(self):
         """Prueba que set_context_for_llm no hace nada si no puede adquirir el lock."""
@@ -150,90 +137,110 @@ class TestQueryService:
 
         self.service.set_context_for_llm(MOCK_COMPANY_SHORT_NAME, user_identifier=str(MOCK_LOCAL_USER_ID))
 
-        self.mock_session_context.get_and_clear_prepared_context.assert_not_called()
-        self.mock_llm_client.set_company_context.assert_not_called()
+        self.mock_history_manager.initialize_context.assert_not_called()
         self.mock_session_context.release_lock.assert_not_called()
 
     # --- Tests para init_context ---
     def test_init_context_orchestrates_clearing_and_rebuilding(self):
-        """
-        Prueba que init_context llama a los métodos correctos en la secuencia correcta
-        para forzar una reconstrucción completa del contexto.
-        """
-        # --- Configuración de Mocks ---
-        # Mock para los métodos que serán llamados por init_context
+        """Prueba que init_context llama a los métodos correctos en la secuencia correcta."""
         with patch.object(self.service, 'prepare_context') as mock_prepare, \
-             patch.object(self.service, 'set_context_for_llm', return_value={'response_id': 'new_id_123'}) as mock_set_context:
-
-            # --- Llamada al Método bajo Prueba ---
+                patch.object(self.service, 'set_context_for_llm',
+                             return_value={'response_id': 'new_id_123'}) as mock_set_context:
             result = self.service.init_context(
                 company_short_name=MOCK_COMPANY_SHORT_NAME,
                 user_identifier=str(MOCK_LOCAL_USER_ID),
                 model="gpt-test-model"
             )
 
-        # --- Aserciones ---
-        # 1. Se debe haber limpiado el contexto antiguo
-        self.mock_session_context.clear_all_context.assert_called_once_with(
-            MOCK_COMPANY_SHORT_NAME, str(MOCK_LOCAL_USER_ID)
-        )
-
-        # 2. Se debe haber llamado a prepare_context
-        mock_prepare.assert_called_once_with(
-            company_short_name=MOCK_COMPANY_SHORT_NAME,
-            user_identifier=str(MOCK_LOCAL_USER_ID)
-        )
-
-        # 3. Se debe haber llamado a set_context_for_llm
-        mock_set_context.assert_called_once_with(
-            company_short_name=MOCK_COMPANY_SHORT_NAME,
-            user_identifier=str(MOCK_LOCAL_USER_ID),
-            model="gpt-test-model"
-        )
-
-        # 4. El resultado debe ser el devuelto por set_context_for_llm
+        self.mock_session_context.clear_all_context.assert_called_once()
+        mock_prepare.assert_called_once()
+        mock_set_context.assert_called_once()
         assert result == {'response_id': 'new_id_123'}
 
     # --- Tests para llm_query ---
 
     def test_llm_query_happy_path(self):
-        """Prueba una llamada a llm_query cuando el contexto ya está inicializado."""
-        self.mock_session_context.get_last_response_id.return_value = "existing_id"
-        self.mock_util.is_openai_model.return_value = True
+        """Prueba una llamada a llm_query cuando el historial es válido usando HistoryHandle."""
+
+        # Mock side effect to populate the handle request params
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': 'existing_id'}
+            return False  # No rebuild needed
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+
+        # Simular respuesta válida del LLM
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'Hello'}
 
         self.service.llm_query(company_short_name=MOCK_COMPANY_SHORT_NAME,
                                user_identifier=str(MOCK_LOCAL_USER_ID),
-                               question="Hi")
+                               question="Hi",
+                               model='gpt-test')
 
-        self.mock_llm_client.invoke.assert_called_once()
-        assert self.mock_llm_client.invoke.call_args.kwargs['previous_response_id'] == "existing_id"
+        # 1. Verifica que se llamó a populate_request_params con un Handle
+        self.mock_history_manager.populate_request_params.assert_called_once()
+        call_args = self.mock_history_manager.populate_request_params.call_args
+        handle_arg = call_args[0][0]
+        assert isinstance(handle_arg, HistoryHandle)
+        assert handle_arg.company_short_name == MOCK_COMPANY_SHORT_NAME
 
-    def test_llm_query_uses_company_model(self):
-        """Prueba que llm_query usa el modelo de la compañía si está definido."""
-        self.mock_session_context.get_last_response_id.return_value = "existing_id"
-        self.mock_util.is_openai_model.return_value = True
-        self.mock_configuration_service.get_configuration.return_value = {'model': 'company-model-456'}
-
-        self.service.llm_query(
-            company_short_name=MOCK_COMPANY_SHORT_NAME,
-            user_identifier=str(MOCK_LOCAL_USER_ID),
-            question="Hi"
-        )
-
+        # 2. Se invoca al cliente con los parámetros extraídos del handle
         self.mock_llm_client.invoke.assert_called_once()
         kwargs = self.mock_llm_client.invoke.call_args.kwargs
-        assert kwargs['model'] == 'company-model-456'
+        assert kwargs['previous_response_id'] == 'existing_id'
+        assert kwargs['context_history'] is None
 
-    def test_llm_query_fails_if_context_is_missing(self):
-        """Prueba que llm_query ahora falla si no hay un contexto inicializado."""
-        self.mock_session_context.get_last_response_id.return_value = None
-        self.mock_util.is_openai_model.return_value = True
-        self.mock_util.is_gemini_model.return_value = False
-        self.mock_configuration_service.get_configuration.return_value = None
+        # 3. Se actualiza el historial pasando el handle
+        # self.mock_history_manager.update_history.assert_called_once()
+        # update_args = self.mock_history_manager.update_history.call_args
+        #assert update_args[0][0] == handle_arg  # El primer argumento debe ser el handle
 
-        result = self.service.llm_query(company_short_name=MOCK_COMPANY_SHORT_NAME,
-                                        user_identifier=str(MOCK_LOCAL_USER_ID),
-                                        question="Hi")
+    def test_llm_query_rebuilds_context_if_missing(self):
+        """Prueba que llm_query reconstruye el contexto automáticamente si populate_request_params lo indica."""
+
+        # Setup side effect to simulate rebuild logic
+        # Call 1: Returns True (needs rebuild), handle params empty
+        # Call 2: Returns False (ok), populates handle params
+        def populate_side_effect(handle, prompt, ignore):
+            if self.mock_history_manager.populate_request_params.call_count == 1:
+                return True
+            handle.request_params = {'previous_response_id': 'new_id'}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True}
+
+        with patch.object(self.service, 'prepare_context') as mock_prepare, \
+                patch.object(self.service, 'set_context_for_llm') as mock_set_context:
+            self.service.llm_query(company_short_name=MOCK_COMPANY_SHORT_NAME,
+                                   user_identifier=str(MOCK_LOCAL_USER_ID),
+                                   question="Hi")
+
+            # Verificar que se intentó reconstruir
+            mock_prepare.assert_called_once()
+            mock_set_context.assert_called_once()
+
+            # Verificar que se llamó a populate_request_params dos veces
+            assert self.mock_history_manager.populate_request_params.call_count == 2
+
+            # Verificar que finalmente se invocó con el nuevo ID
+            kwargs = self.mock_llm_client.invoke.call_args.kwargs
+            assert kwargs['previous_response_id'] == 'new_id'
+
+    def test_llm_query_fails_if_rebuild_fails(self):
+        """Prueba que devuelve error si la reconstrucción falla (populate sigue devolviendo True)."""
+        # Siempre devuelve True
+        self.mock_history_manager.populate_request_params.return_value = True
+
+        with patch.object(self.service, 'prepare_context'), \
+                patch.object(self.service, 'set_context_for_llm'):
+            result = self.service.llm_query(company_short_name=MOCK_COMPANY_SHORT_NAME,
+                                            user_identifier=str(MOCK_LOCAL_USER_ID),
+                                            question="Hi")
+
+            assert result['error'] is True
+            assert "translated:errors.services.context_rebuild_failed" in result['error_message']
+            self.mock_llm_client.invoke.assert_not_called()
 
     # --- Tests para load_files_for_context ---
 

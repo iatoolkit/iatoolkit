@@ -3,7 +3,7 @@ import pytest
 from flask import Flask
 from unittest.mock import MagicMock
 from iatoolkit.views.history_api_view import HistoryApiView
-from iatoolkit.services.history_service import HistoryService
+from iatoolkit.services.history_manager_service import HistoryManagerService
 from iatoolkit.services.auth_service import AuthService
 from iatoolkit.services.i18n_service import I18nService
 
@@ -24,7 +24,7 @@ class TestHistoryView:
 
         # Mocks para los servicios inyectados
         self.mock_auth = MagicMock(spec=AuthService)
-        self.mock_history_service = MagicMock(spec=HistoryService)
+        self.mock_history_service = MagicMock(spec=HistoryManagerService)
         self.i8n_service = MagicMock(spec=I18nService)
 
         self.i8n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
@@ -40,7 +40,7 @@ class TestHistoryView:
 
         self.mock_auth.verify.return_value = {"success": True, 'user_identifier': MOCK_USER_IDENTIFIER}
 
-    def test_get_history_success(self):
+    def test_get_full_history_success(self):
         """
         Tests the happy path: user is authenticated, and history is fetched successfully.
         """
@@ -49,7 +49,7 @@ class TestHistoryView:
             'message': 'Historial obtenido correctamente',
             'history': [{'id': 1, 'question': 'What is AI?'}]
         }
-        self.mock_history_service.get_history.return_value = mock_history_response
+        self.mock_history_service.get_full_history.return_value = mock_history_response
 
         # Act
         response = self.client.post(self.url)
@@ -60,13 +60,13 @@ class TestHistoryView:
 
         # Verify that the session was checked and the history service was called with the correct user ID.
         self.mock_auth.verify.assert_called_once()
-        self.mock_history_service.get_history.assert_called_once_with(
+        self.mock_history_service.get_full_history.assert_called_once_with(
             company_short_name=MOCK_COMPANY_SHORT_NAME,
             user_identifier=MOCK_USER_IDENTIFIER
         )
 
 
-    def test_get_history_when_auth_error(self):
+    def test_get_full_history_when_auth_error(self):
         self.mock_auth.verify.return_value = {"success": False, "error_message": "Invalid API Key", "status_code": 401}
 
         response = self.client.post(self.url)
@@ -74,8 +74,8 @@ class TestHistoryView:
         assert response.status_code == 401
         assert "Invalid API Key" in response.json['error_message']
 
-    def test_get_history_handles_service_error(self):
-        self.mock_history_service.get_history.return_value = {
+    def test_get_full_history_handles_service_error(self):
+        self.mock_history_service.get_full_history.return_value = {
             'error': 'Database query failed'
         }
 
@@ -83,13 +83,13 @@ class TestHistoryView:
 
         assert response.status_code == 400
         assert response.json['error_message'] == 'Database query failed'
-        self.mock_history_service.get_history.assert_called_once()
+        self.mock_history_service.get_full_history.assert_called_once()
 
-    def test_get_history_handles_unexpected_exception(self):
+    def test_get_full_history_handles_unexpected_exception(self):
         """
         Tests that the view returns a 500 error if an unexpected exception occurs.
         """
-        self.mock_history_service.get_history.side_effect = Exception("A critical error occurred")
+        self.mock_history_service.get_full_history.side_effect = Exception("A critical error occurred")
         response = self.client.post(self.url)
 
         assert response.status_code == 500

@@ -343,6 +343,6 @@ class Utility:
 
     def is_gemini_model(self, model: str) -> bool:
         gemini_models = [
-            'gemini', 'gemini-2.5-pro'
+            'gemini', 'gemini-2.5-pro', 'gemini-3'
         ]
         return any(gemini_model in model.lower() for gemini_model in gemini_models)

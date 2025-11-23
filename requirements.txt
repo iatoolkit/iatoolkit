@@ -32,6 +32,7 @@ httpx-sse==0.4.0
 huggingface-hub==0.31.4
 humanfriendly==10.0
 idna==3.10
+injector==0.22.0
 Jinja2==3.1.5
 langchain==0.3.19
 langchain-core==0.3.35

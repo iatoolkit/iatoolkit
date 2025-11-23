@@ -130,7 +130,7 @@ errors:
     user_not_authorized: "user is not authorized for this company"
     account_not_verified: "Your account has not been verified. Please check your email."
     missing_response_id: "Can not found 'previous_response_id' for '{company_short_name}/{user_identifier}'. Reinit context"
-
+    context_rebuild_failed: "Company context rebuild failed."
 
 api_responses:
   context_reloaded_success: "The context has been successfully reloaded."

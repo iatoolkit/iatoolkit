@@ -19,7 +19,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from injector import Binder, Injector, singleton
 from importlib.metadata import version as _pkg_version, PackageNotFoundError
 
-IATOOLKIT_VERSION = "0.75.0"
+IATOOLKIT_VERSION = "0.76.0"
 
 # global variable for the unique instance of IAToolkit
 _iatoolkit_instance: Optional['IAToolkit'] = None
@@ -311,6 +311,7 @@ class IAToolkit:
         from iatoolkit.services.language_service import LanguageService
         from iatoolkit.services.configuration_service import ConfigurationService
         from iatoolkit.services.embedding_service import EmbeddingService
+        from iatoolkit.services.history_manager_service import HistoryManagerService
 
         binder.bind(QueryService, to=QueryService)
         binder.bind(TaskService, to=TaskService)
@@ -328,6 +329,7 @@ class IAToolkit:
         binder.bind(LanguageService, to=LanguageService)
         binder.bind(ConfigurationService, to=ConfigurationService)
         binder.bind(EmbeddingService, to=EmbeddingService)
+        binder.bind(HistoryManagerService, to=HistoryManagerService)
 
     def _bind_infrastructure(self, binder: Binder):
         from iatoolkit.infra.llm_client import llmClient

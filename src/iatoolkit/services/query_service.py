@@ -16,6 +16,7 @@ from iatoolkit.repositories.models import Task
 from iatoolkit.services.dispatcher_service import Dispatcher
 from iatoolkit.services.prompt_manager_service import PromptService
 from iatoolkit.services.user_session_context_service import UserSessionContextService
+from iatoolkit.services.history_manager_service import HistoryManagerService
 from iatoolkit.common.util import Utility
 from iatoolkit.common.exceptions import IAToolkitException
 from injector import inject
@@ -25,10 +26,18 @@ from typing import Optional
 import json
 import time
 import hashlib
+from dataclasses import dataclass
 import os
 
 
-GEMINI_MAX_TOKENS_CONTEXT_HISTORY = 200000
+@dataclass
+class HistoryHandle:
+    """Encapsulates the state needed to manage history for a single turn."""
+    company_short_name: str
+    user_identifier: str
+    type: str
+    request_params: dict = None
+
 
 class QueryService:
     @inject
@@ -45,7 +54,8 @@ class QueryService:
                  util: Utility,
                  dispatcher: Dispatcher,
                  session_context: UserSessionContextService,
-                 configuration_service: ConfigurationService
+                 configuration_service: ConfigurationService,
+                 history_manager: HistoryManagerService,
                  ):
         self.profile_service = profile_service
         self.company_context_service = company_context_service
@@ -60,30 +70,107 @@ class QueryService:
         self.session_context = session_context
         self.configuration_service = configuration_service
         self.llm_client = llm_client
+        self.history_manager = history_manager
 
 
-    def init_context(self, company_short_name: str,
-                     user_identifier: str,
-                     model: str = None) -> dict:
 
-        # 1. Execute the forced rebuild sequence using the unified identifier.
-        self.session_context.clear_all_context(company_short_name, user_identifier)
-        logging.info(f"Context for {company_short_name}/{user_identifier} has been cleared.")
+    def _resolve_model(self, company_short_name: str, model: Optional[str]) -> str:
+        # Priority: 1. Explicit model -> 2. Company config
+        effective_model = model
+        if not effective_model:
+            llm_config = self.configuration_service.get_configuration(company_short_name, 'llm')
+            if llm_config and llm_config.get('model'):
+                effective_model = llm_config['model']
+        return effective_model
 
-        # 2. LLM context is clean, now we can load it again
-        self.prepare_context(
-            company_short_name=company_short_name,
-            user_identifier=user_identifier
-        )
+    def _get_history_type(self, model: str) -> str:
+        return HistoryManagerService.TYPE_SERVER_SIDE if self.util.is_openai_model(
+            model) else HistoryManagerService.TYPE_CLIENT_SIDE
 
-        # 3. communicate the new context to the LLM
-        response = self.set_context_for_llm(
-            company_short_name=company_short_name,
+
+    def _build_user_facing_prompt(self, company, user_identifier: str,
+                                  client_data: dict, files: list,
+                                  prompt_name: Optional[str], question: str) -> str:
+        # get the user profile data from the session context
+        user_profile = self.profile_service.get_profile_by_identifier(company.short_name, user_identifier)
+
+        # combine client_data with user_profile
+        final_client_data = (user_profile or {}).copy()
+        final_client_data.update(client_data)
+
+        # Load attached files into the context
+        files_context = self.load_files_for_context(files)
+
+        # Initialize prompt_content. It will be an empty string for direct questions.
+        main_prompt = ""
+        # We use a local variable for the question to avoid modifying the argument reference if it were mutable,
+        # although strings are immutable, this keeps the logic clean regarding what 'question' means in each context.
+        effective_question = question
+
+        if prompt_name:
+            question_dict = {'prompt': prompt_name, 'data': final_client_data}
+            effective_question = json.dumps(question_dict)
+            prompt_content = self.prompt_service.get_prompt_content(company, prompt_name)
+
+            # Render the user requested prompt
+            main_prompt = self.util.render_prompt_from_string(
+                template_string=prompt_content,
+                question=effective_question,
+                client_data=final_client_data,
+                user_identifier=user_identifier,
+                company=company,
+            )
+
+        # This is the final user-facing prompt for this specific turn
+        user_turn_prompt = f"{main_prompt}\n{files_context}"
+        if not prompt_name:
+            user_turn_prompt += f"\n### La pregunta que debes responder es: {effective_question}"
+        else:
+            user_turn_prompt += f'\n### Contexto Adicional: El usuario ha aportado este contexto puede ayudar: {effective_question}'
+
+        return user_turn_prompt
+
+    def _ensure_valid_history(self, company, user_identifier: str,
+                              effective_model: str, user_turn_prompt: str,
+                              ignore_history: bool) -> tuple[Optional[HistoryHandle], Optional[dict]]:
+        """
+            Manages the history strategy and rebuilds context if necessary.
+            Returns: (HistoryHandle, error_response)
+        """
+        history_type = self._get_history_type(effective_model)
+
+        # Initialize the handle with base context info
+        handle = HistoryHandle(
+            company_short_name=company.short_name,
             user_identifier=user_identifier,
-            model=model
+            type=history_type
         )
 
-        return response
+        # pass the handle to populate request_params
+        needs_rebuild = self.history_manager.populate_request_params(
+            handle, user_turn_prompt, ignore_history
+        )
+
+        if needs_rebuild:
+            logging.warning(f"No valid history for {company.short_name}/{user_identifier}. Rebuilding context...")
+
+            # try to rebuild the context
+            self.prepare_context(company_short_name=company.short_name, user_identifier=user_identifier)
+            self.set_context_for_llm(company_short_name=company.short_name, user_identifier=user_identifier,
+                                     model=effective_model)
+
+            # Retry populating params with the same handle
+            needs_rebuild = self.history_manager.populate_request_params(
+                handle, user_turn_prompt, ignore_history
+            )
+
+            if needs_rebuild:
+                error_key = 'errors.services.context_rebuild_failed'
+                error_message = self.i18n_service.t(error_key, company_short_name=company.short_name,
+                                                    user_identifier=user_identifier)
+                return None, {'error': True, "error_message": error_message}
+
+        return handle, None
 
     def _build_context_and_profile(self, company_short_name: str, user_identifier: str) -> tuple:
         # this method read the user/company context from the database and renders the system prompt
@@ -112,6 +199,31 @@ class QueryService:
 
         return final_system_context, user_profile
 
+
+    def init_context(self, company_short_name: str,
+                     user_identifier: str,
+                     model: str = None) -> dict:
+
+        # 1. Execute the forced rebuild sequence using the unified identifier.
+        self.session_context.clear_all_context(company_short_name, user_identifier)
+        logging.info(f"Context for {company_short_name}/{user_identifier} has been cleared.")
+
+        # 2. LLM context is clean, now we can load it again
+        self.prepare_context(
+            company_short_name=company_short_name,
+            user_identifier=user_identifier
+        )
+
+        # 3. communicate the new context to the LLM
+        response = self.set_context_for_llm(
+            company_short_name=company_short_name,
+            user_identifier=user_identifier,
+            model=model
+        )
+
+        return response
+
+
     def prepare_context(self, company_short_name: str, user_identifier: str) -> dict:
         # prepare the context and decide if it needs to be rebuilt
         # save the generated context in the session context for later use
@@ -129,21 +241,22 @@ class QueryService:
         # calculate the context version
         current_version = self._compute_context_version_from_string(final_system_context)
 
+        # get the current version from the session cache
         try:
             prev_version = self.session_context.get_context_version(company_short_name, user_identifier)
         except Exception:
             prev_version = None
 
-        rebuild_is_needed = not (prev_version and prev_version == current_version and
-                                 self._has_valid_cached_context(company_short_name, user_identifier))
+        # Determine if we need to persist the prepared context again.
+        # If versions match, we assume the artifact is likely safe, but forcing a save
+        # on version mismatch ensures data consistency.
+        rebuild_is_needed = (prev_version != current_version)
 
-        if rebuild_is_needed:
-            # Guardar el contexto preparado y su versión para que `finalize_context_rebuild` los use.
-            self.session_context.save_prepared_context(company_short_name,
-                                                       user_identifier,
-                                                       final_system_context,
-                                                       current_version)
-
+        # Save the prepared context and its version for `set_context_for_llm` to use.
+        self.session_context.save_prepared_context(company_short_name,
+                                                   user_identifier,
+                                                   final_system_context,
+                                                   current_version)
         return {'rebuild_needed': rebuild_is_needed}
 
     def set_context_for_llm(self,
@@ -158,12 +271,7 @@ class QueryService:
             return
 
         # --- Model Resolution ---
-        # Priority: 1. Explicit model -> 2. Company config
-        effective_model = model
-        if not effective_model:
-            llm_config = self.configuration_service.get_configuration(company_short_name, 'llm')
-            if llm_config and llm_config.get('model'):
-                effective_model = llm_config['model']
+        effective_model = self._resolve_model(company_short_name, model)
 
         # blocking logic to avoid multiple requests for the same user/company at the same time
         lock_key = f"lock:context:{company_short_name}/{user_identifier}"
@@ -174,37 +282,29 @@ class QueryService:
 
         try:
             start_time = time.time()
-            company = self.profile_repo.get_company_by_short_name(company_short_name)
 
             # get the prepared context and version from the session cache
-            prepared_context, version_to_save = self.session_context.get_and_clear_prepared_context(company_short_name,
-                                                                                                    user_identifier)
+            prepared_context, version_to_save = self.session_context.get_and_clear_prepared_context(company_short_name,                                                                                                    user_identifier)
             if not prepared_context:
                 return
 
             logging.info(f"sending context to LLM model {effective_model} for: {company_short_name}/{user_identifier}...")
 
-            # clean only the chat history and the last response ID for this user/company
-            self.session_context.clear_llm_history(company_short_name, user_identifier)
-
-            response_id = ''
-            if self.util.is_gemini_model(effective_model):
-                context_history = [{"role": "user", "content": prepared_context}]
-                self.session_context.save_context_history(company_short_name, user_identifier, context_history)
-            elif self.util.is_openai_model(effective_model):
-                # Here is the call to the LLM client for settling the company/user context
-                response_id = self.llm_client.set_company_context(
-                    company=company,
-                    company_base_context=prepared_context,
-                    model=effective_model
-                )
-                self.session_context.save_last_response_id(company_short_name, user_identifier, response_id)
+            # --- Use Strategy Pattern for History/Context Initialization ---
+            history_type = self._get_history_type(effective_model)
+            response_data = self.history_manager.initialize_context(
+                company_short_name, user_identifier, history_type, prepared_context, company, effective_model
+            )
 
             if version_to_save:
                 self.session_context.save_context_version(company_short_name, user_identifier, version_to_save)
 
             logging.info(
                 f"Context for: {company_short_name}/{user_identifier} settled in {int(time.time() - start_time)} sec.")
+
+            # Return data (e.g., response_id) if the manager generated any
+            return response_data
+
         except Exception as e:
             logging.exception(f"Error in finalize_context_rebuild for {company_short_name}: {e}")
             raise e
@@ -212,7 +312,6 @@ class QueryService:
             # release the lock
             self.session_context.release_lock(lock_key)
 
-        return {'response_id': response_id }
 
     def llm_query(self,
                   company_short_name: str,
@@ -221,7 +320,7 @@ class QueryService:
                   prompt_name: str = None,
                   question: str = '',
                   client_data: dict = {},
-                  response_id: str = '',
+                  ignore_history: bool = False,
                   files: list = [],
                   model: Optional[str] = None) -> dict:
         try:
@@ -235,69 +334,28 @@ class QueryService:
                         "error_message": self.i18n_service.t('services.start_query')}
 
             # --- Model Resolution ---
-            # Priority: 1. Explicit model -> 2. Company config
-            effective_model = model
-            if not effective_model:
-                llm_config = self.configuration_service.get_configuration(company_short_name, 'llm')
-                if llm_config and llm_config.get('model'):
-                    effective_model = llm_config['model']
+            effective_model = self._resolve_model(company_short_name, model)
 
-            # get the previous response_id and context history
-            previous_response_id = None
-            context_history = self.session_context.get_context_history(company.short_name, user_identifier) or []
+            # --- Build User-Facing Prompt ---
+            user_turn_prompt = self._build_user_facing_prompt(
+                company=company,
+                user_identifier=user_identifier,
+                client_data=client_data,
+                files=files,
+                prompt_name=prompt_name,
+                question=question
+            )
 
-            if self.util.is_openai_model(effective_model):
-                if response_id:
-                    # context is getting from this response_id
-                    previous_response_id = response_id
-                else:
-                    # use the full user history context
-                    previous_response_id = self.session_context.get_last_response_id(company.short_name, user_identifier)
-                    if not previous_response_id:
-                        return {'error': True,
-                                "error_message": self.i18n_service.t('errors.services.missing_response_id', company_short_name=company.short_name, user_identifier=user_identifier)
-                                }
-            elif self.util.is_gemini_model(effective_model):
-                # check the length of the context_history and remove old messages
-                self._trim_context_history(context_history)
-
-            # get the user profile data from the session context
-            user_profile = self.profile_service.get_profile_by_identifier(company.short_name, user_identifier)
-
-            # combine client_data with user_profile
-            final_client_data = (user_profile or {}).copy()
-            final_client_data.update(client_data)
-
-            # Load attached files into the context
-            files_context = self.load_files_for_context(files)
-
-            # Initialize prompt_content. It will be an empty string for direct questions.
-            main_prompt = ""
-            if prompt_name:
-                # For task-based queries, wrap data into a JSON string and get the specific prompt template
-                question_dict = {'prompt': prompt_name, 'data': final_client_data }
-                question = json.dumps(question_dict)
-                prompt_content = self.prompt_service.get_prompt_content(company, prompt_name)
-
-                # Render the main user prompt using the appropriate template (or an empty one)
-                main_prompt = self.util.render_prompt_from_string(
-                    template_string=prompt_content,
-                    question=question,
-                    client_data=final_client_data,
-                    user_identifier=user_identifier,
-                    company=company,
-                )
-
-            # This is the final user-facing prompt for this specific turn
-            user_turn_prompt = f"{main_prompt}\n{files_context}"
-            if not prompt_name:
-                user_turn_prompt += f"\n### La pregunta que debes responder es: {question}"
-            else:
-                user_turn_prompt += f'\n### Contexto Adicional: El usuario ha aportado este contexto puede ayudar: {question}'
-
-            # add to the history context
-            if self.util.is_gemini_model(effective_model):
-                context_history.append({"role": "user", "content": user_turn_prompt})
+            # --- History Management (Strategy Pattern) ---
+            history_handle, error_response = self._ensure_valid_history(
+                company=company,
+                user_identifier=user_identifier,
+                effective_model=effective_model,
+                user_turn_prompt=user_turn_prompt,
+                ignore_history=ignore_history
+            )
+            if error_response:
+                return error_response
 
             # service list for the function calls
             tools = self.dispatcher.get_company_services(company)
@@ -305,13 +363,18 @@ class QueryService:
             # openai structured output instructions
             output_schema = {}
 
+            # Safely extract parameters for invoke using the handle
+            # The handle is guaranteed to have request_params populated if no error returned
+            previous_response_id = history_handle.request_params.get('previous_response_id')
+            context_history = history_handle.request_params.get('context_history')
+
             # Now send the instructions to the llm
             response = self.llm_client.invoke(
                 company=company,
                 user_identifier=user_identifier,
                 model=effective_model,
                 previous_response_id=previous_response_id,
-                context_history=context_history if self.util.is_gemini_model(effective_model) else None,
+                context_history=context_history,
                 question=question,
                 context=user_turn_prompt,
                 tools=tools,
@@ -321,11 +384,10 @@ class QueryService:
             if not response.get('valid_response'):
                 response['error'] = True
 
-            # save last_response_id for the history chain
-            if "response_id" in response:
-                self.session_context.save_last_response_id(company.short_name, user_identifier, response["response_id"])
-            if self.util.is_gemini_model(effective_model):
-                self.session_context.save_context_history(company.short_name, user_identifier, context_history)
+                # save history using the manager passing the handle
+                self.history_manager.update_history(
+                    history_handle, user_turn_prompt, response
+                )
 
             return response
         except Exception as e:
@@ -339,24 +401,6 @@ class QueryService:
         except Exception:
             return "unknown"
 
-    def _has_valid_cached_context(self, company_short_name: str, user_identifier: str) -> bool:
-        """
-        Verifica si existe un estado de contexto reutilizable en sesión.
-        - OpenAI: last_response_id presente.
-        - Gemini: context_history con al menos 1 mensaje.
-        """
-        model = self.configuration_service.get_configuration(company_short_name, 'llm').get('model')
-        try:
-            if self.util.is_openai_model(model):
-                prev_id = self.session_context.get_last_response_id(company_short_name, user_identifier)
-                return bool(prev_id)
-            if self.util.is_gemini_model(model):
-                history = self.session_context.get_context_history(company_short_name, user_identifier) or []
-                return len(history) >= 1
-            return False
-        except Exception as e:
-            logging.warning(f"error verifying context cache: {e}")
-            return False
 
     def load_files_for_context(self, files: list) -> str:
         """
@@ -402,32 +446,3 @@ class QueryService:
 
         return context
 
-    def _trim_context_history(self, context_history: list):
-        """
-        Verifica el tamaño del historial de contexto y elimina los mensajes más antiguos
-        si supera un umbral, conservando siempre el mensaje del sistema (índice 0).
-        """
-        if not context_history or len(context_history) <= 1:
-            return  # nothing to remember
-
-        # calculate total tokens
-        try:
-            total_tokens = sum(self.llm_client.count_tokens(json.dumps(message)) for message in context_history)
-        except Exception as e:
-            logging.error(f"error counting tokens for history: {e}.")
-            return
-
-        # Si se excede el límite, eliminar mensajes antiguos (empezando por el segundo)
-        while total_tokens > GEMINI_MAX_TOKENS_CONTEXT_HISTORY and len(context_history) > 1:
-            try:
-                # Eliminar el mensaje más antiguo después del prompt del sistema
-                removed_message = context_history.pop(1)
-                removed_tokens = self.llm_client.count_tokens(json.dumps(removed_message))
-                total_tokens -= removed_tokens
-                logging.warning(
-                    f"history tokens ({total_tokens + removed_tokens} tokens) exceed the limit of: {GEMINI_MAX_TOKENS_CONTEXT_HISTORY}. "
-                    f"new context: {total_tokens} tokens."
-                )
-            except IndexError:
-                # Se produce si solo queda el mensaje del sistema, el bucle debería detenerse.
-                break

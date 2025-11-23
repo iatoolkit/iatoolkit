@@ -234,7 +234,7 @@ const callToolkit = async function(apiPath, data, method, timeoutMs = 500000) {
             try {
                 // Intentamos leer el error como JSON, que es el formato esperado de nuestra API.
                 const errorData = await response.json();
-                const errorMessage = errorData.error_message || t_js('unknown_server_error'); // <-- Translation
+                const errorMessage = errorData.error_message || t_js('unknown_server_error');
                 const errorIcon = '<i class="bi bi-exclamation-triangle"></i>';
                 const endpointError = $('<div>').addClass('error-section').html(errorIcon + `<p>${errorMessage}</p>`);
                 displayBotMessage(endpointError);

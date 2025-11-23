@@ -5,7 +5,7 @@
 
 from flask import request, jsonify
 from flask.views import MethodView
-from iatoolkit.services.history_service import HistoryService
+from iatoolkit.services.history_manager_service import HistoryManagerService
 from iatoolkit.services.auth_service import AuthService
 from iatoolkit.services.i18n_service import I18nService
 from injector import inject
@@ -21,7 +21,7 @@ class HistoryApiView(MethodView):
     @inject
     def __init__(self,
                  auth_service: AuthService,
-                 history_service: HistoryService,
+                 history_service: HistoryManagerService,
                  i18n_service: I18nService):
         self.auth_service = auth_service
         self.history_service = history_service
@@ -39,7 +39,7 @@ class HistoryApiView(MethodView):
 
             # 2. Call the history service with the unified identifier.
             # The service's signature should now only expect user_identifier.
-            response = self.history_service.get_history(
+            response = self.history_service.get_full_history(
                 company_short_name=company_short_name,
                 user_identifier=user_identifier
             )

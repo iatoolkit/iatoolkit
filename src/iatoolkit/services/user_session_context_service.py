@@ -49,6 +49,24 @@ class UserSessionContextService:
         if session_key:
             RedisSessionManager.hset(session_key, 'last_response_id', response_id)
 
+    def get_initial_response_id(self, company_short_name: str, user_identifier: str) -> Optional[str]:
+        """
+        Obtiene el ID de respuesta inicial desde la sesión del usuario.
+        Este ID corresponde al estado del LLM justo después de haber configurado el contexto.
+        """
+        session_key = self._get_session_key(company_short_name, user_identifier)
+        if not session_key:
+            return None
+        return RedisSessionManager.hget(session_key, 'initial_response_id')
+
+    def save_initial_response_id(self, company_short_name: str, user_identifier: str, response_id: str):
+        """
+        Guarda el ID de respuesta inicial en la sesión del usuario.
+        """
+        session_key = self._get_session_key(company_short_name, user_identifier)
+        if session_key:
+            RedisSessionManager.hset(session_key, 'initial_response_id', response_id)
+
     def save_context_history(self, company_short_name: str, user_identifier: str, context_history: List[Dict]):
         session_key = self._get_session_key(company_short_name, user_identifier)
         if session_key:
