@@ -203,7 +203,24 @@ configuration (e.g., in Heroku Config Vars):
 
 Once these variables are set according to your `company.yaml` configuration, the mail service will be operational.
 
-## 8. IAToolkit API-Key
+## 8. OCR Support with Tesseract
+
+IAToolkit can automatically extract text from images embedded within documents (such as scanned PDFs) 
+using Optical Character Recognition (OCR). 
+This capability is powered by the `pytesseract` Python library, 
+which in turn depends on Google's **Tesseract OCR engine**.
+
+While the `pytesseract` library is included in IAToolkit's dependencies, 
+the Tesseract engine itself is an external binary that must be installed on the operating system 
+where the application is deployed.
+
+You must install the Tesseract package on your server or in your deployment container.
+
+Without Tesseract installed in the environment, document processing will still work for text-based files,
+but the system will not be able to read text from any images it encounters.
+
+
+## 9. IAToolkit API-Key
 
 To enable integrations and allow external systems to communicate securely with your IAToolkit instance, 
 you need to generate an API key. This key is used to authenticate API calls.
@@ -214,7 +231,7 @@ The main uses for the API key are:
 2.  **Corporate Portal Integration**: Enables the external login flow from an internal company portal, providing a seamless Single Sign-On (SSO) experience for users, as detailed in the next chapter.
 
 
-### 8.1. API Key Generation
+### 9.1. API Key Generation
 
 The API key is generated using a Flask CLI command. You will need to run this command in your production server environment 
 for the desired company.
@@ -234,7 +251,7 @@ and the following output will be displayed:
 IATOOLKIT_API_KEY='ntyFHTob55TCHFdLoOkCxSi0WhyOfMGRJcqH5qIM'```
 ```
 
-### 8.2. Configuration
+### 9.2. Configuration
 
 The `IATOOLKIT_API_KEY` environment variable must be configured in the environment of the **client system** that 
 will be making calls to the IAToolkit API (for example, your internal corporate portal's server). 
@@ -242,7 +259,7 @@ You should **not** configure this variable in the IAToolkit server environment i
 
 This key should be treated with the same confidentiality as a password.
 
-## 9. External Login
+## 10. External Login
 
 IAToolkit offers an "external login" feature designed to smoothly integrate the chat platform into a company portal or 
 intranet where users are already authenticated.
@@ -250,7 +267,7 @@ intranet where users are already authenticated.
 This allows a user to navigate from the internal portal to IAToolkit and be logged in automatically, 
 without needing to re-enter their credentials, providing a Single Sign-On (SSO) experience.
 
-### 9.1. Authentication Flow
+This is the authentication flow that IAToolkit implements:
 
 1.  **API Call**: The external system (your corporate portal) must make an authenticated `POST` call to the following IAToolkit endpoint:
     `/external_login/<company_short_name>`
@@ -264,7 +281,7 @@ without needing to re-enter their credentials, providing a Single Sign-On (SSO) 
 The reference implementation for this flow can be found in the file `src/iatoolkit/views/external_login_view.py`.
 
 
-## 10. Appendix: Available API
+## 11. Appendix: Available API
 
 The following section describes the key API endpoints available for programmatic integration. All API calls must be authenticated by including the `IATOOLKIT_API_KEY` in the `Authorization` header as a Bearer token.
 
@@ -324,6 +341,7 @@ curl -X POST \
   -H "Authorization: Bearer <your_api_key>" \
   -H "Content-Type: application/json" \
   -d '{
+        "user_identity": "johndoe",         # the user sending the question
         "question": "What were the total sales last month?"
       }'
 ```
@@ -362,10 +380,12 @@ curl -X POST \
   -H "Authorization: Bearer <your_api_key>" \
   -H "Content-Type: application/json" \
   -d '{
+        "user_identity": "johndoe",
         "prompt_name": "get_sales_report",
         "client_data": {
           "region": "North America"
         }
+        "ignore_history": true      # ignore any previous conversation history
       }'
 ```
 
@@ -400,6 +420,7 @@ curl -X POST \
   -H "Authorization: Bearer <your_api_key>" \
   -H "Content-Type: application/json" \
   -d '{
+        "user_identity": "johndoe",
         "question": "Summarize the key findings in the attached quarterly report.",
         "files": [
             { "name": "Q3_Report.pdf", "base64": "JVBERi0xLjcKJeLjz9MKMSAwIG9iago8PC9UeXBlL0NhdGFsb2cvUGFnZXMgMiAwIFIvTGFu..." }
