@@ -456,7 +456,7 @@ class IAToolkit:
         default_download_dir = os.path.join(os.getcwd(), 'iatoolkit-downloads')
 
         # 3. if user specified one, use it
-        download_dir = self.app.config.get('IATOOLKIT_DOWNLOAD_DIR', default_download_dir)
+        download_dir = self._get_config_value('IATOOLKIT_DOWNLOAD_DIR', default_download_dir)
 
         # 3. save it in the app config
         self.app.config['IATOOLKIT_DOWNLOAD_DIR'] = download_dir

@@ -42,7 +42,7 @@ class BrandingService:
             # Estilos para Alertas de Error ---
             "brand_danger_color": "#dc3545",  # Rojo principal para alertas
             "brand_danger_bg": "#f8d7da",  # Fondo rojo pálido
-            "brand_danger_text": "#842029",  # Texto rojo oscuro
+            "brand_danger_text": "#000000",
             "brand_danger_border": "#f5c2c7",  # Borde rojo intermedio
 
             # Estilos para Alertas Informativas ---

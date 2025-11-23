@@ -49,11 +49,11 @@ class LLMQueryApiView(MethodView):
                 files=data.get('files', [])
             )
             if 'error' in result:
-                return jsonify(result), 407
+                return jsonify(result), 409
 
             return jsonify(result), 200
 
         except Exception as e:
             logging.exception(
                 f"Unexpected error: {e}")
-            return jsonify({"error_message": self.i18n_service.t('errors.general.unexpected_error', error=str(e))}), 500
+            return jsonify({"error": True, "error_message": self.i18n_service.t('errors.general.unexpected_error')}), 500

@@ -77,7 +77,7 @@ class TestLLMQueryApiView:
                                     json={"external_user_id": MOCK_EXTERNAL_USER_ID})
 
         # Assert
-        assert response.status_code == 407
+        assert response.status_code == 409
         assert response.json['error_message'] == 'some error'
 
 

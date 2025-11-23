@@ -230,22 +230,35 @@ const callToolkit = async function(apiPath, data, method, timeoutMs = 500000) {
         }
         const response = await fetch(url, fetchOptions);
         clearTimeout(timeoutId);
+
+        // answer is NOT OK (status != 200)
         if (!response.ok) {
             try {
                 // Intentamos leer el error como JSON, que es el formato esperado de nuestra API.
                 const errorData = await response.json();
-                const errorMessage = errorData.error_message || t_js('unknown_server_error');
-                const errorIcon = '<i class="bi bi-exclamation-triangle"></i>';
-                const endpointError = $('<div>').addClass('error-section').html(errorIcon + `<p>${errorMessage}</p>`);
-                displayBotMessage(endpointError);
+
+                // if it's a iatoolkit error  (409 o 400 with a message), shot it on the chat
+                if (errorData && (errorData.error_message || errorData.error)) {
+                    const errorMessage = errorData.error_message || errorData.error || t_js('unknown_server_error');
+                    const errorIcon = '<i class="bi bi-exclamation-triangle"></i>';
+                    const endpointError = $('<div>').addClass('error-section').html(errorIcon + `<p>${errorMessage}</p>`);
+                    displayBotMessage(endpointError);
+                } else {
+                    // if there is not message, we show a generic error message
+                    throw new Error(`Server error: ${response.status}`);
+                }
             } catch (e) {
                 // Si response.json() falla, es porque el cuerpo no era JSON (ej. un 502 con HTML).
                 // Mostramos un error genérico y más claro para el usuario.
                 const errorMessage = `Error de comunicación con el servidor (${response.status}). Por favor, intente de nuevo más tarde.`;
                 toastr.error(errorMessage);
             }
+
+            // stop the flow on the calling function
             return null;
         }
+
+        // if the answer is OK
         return await response.json();
     } catch (error) {
         clearTimeout(timeoutId);

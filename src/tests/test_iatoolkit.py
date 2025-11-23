@@ -166,8 +166,8 @@ class TestIAToolkit(unittest.TestCase):
         mock_session_cls.assert_called_once_with(toolkit.app)
         self.assertEqual(toolkit.app.config['SESSION_TYPE'], 'redis')
 
-    @patch('iatoolkit.iatoolkit.register_core_commands')
-    @patch('iatoolkit.iatoolkit.get_company_registry')
+    @patch('iatoolkit.cli_commands.register_core_commands')
+    @patch('iatoolkit.company_registry.get_company_registry')
     def test_setup_cli_commands(self, mock_get_registry, mock_register_core):
         """Test registration of core and company-specific CLI commands."""
         toolkit = IAToolkit({})
@@ -215,3 +215,30 @@ class TestIAToolkit(unittest.TestCase):
 
         mock_makedirs.assert_called_once_with('/custom/path', exist_ok=True)
         self.assertEqual(toolkit.app.config['IATOOLKIT_DOWNLOAD_DIR'], '/custom/path')
+
+    @patch('iatoolkit.company_registry.get_company_registry')
+    @patch('iatoolkit.iatoolkit.CORS')
+    def test_setup_cors(self, mock_cors, mock_get_registry):
+        """Test CORS setup aggregates origins from all companies."""
+        toolkit = IAToolkit({})
+        toolkit.app = Flask(__name__)
+
+        # Mock registry with 2 companies having different cors_origin params
+        mock_co1 = MagicMock()
+        mock_co1.company.parameters = {'cors_origin': ['https://a.com']}
+        mock_co2 = MagicMock()
+        mock_co2.company.parameters = {'cors_origin': ['https://b.com']}
+
+        mock_registry = MagicMock()
+        mock_registry.get_all_company_instances.return_value = {
+            'co1': mock_co1,
+            'co2': mock_co2
+        }
+        mock_get_registry.return_value = mock_registry
+
+        toolkit._setup_cors()
+
+        # Verify CORS was initialized with combined origins
+        mock_cors.assert_called_once()
+        call_kwargs = mock_cors.call_args[1]
+        self.assertIn('https://a.com', call_kwargs['origins'])

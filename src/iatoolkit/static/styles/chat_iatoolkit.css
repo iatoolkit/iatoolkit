@@ -172,7 +172,7 @@ li {
     max-width: 75%;
     min-width: 250px;
 
-    color: var(--brand-danger-text, #842029); /* Color de texto de error de la marca */
+    color: var(--brand-danger-text, #000000); /* Color de texto de error de la marca */
     background-color: var(--brand-danger-bg, #f8d7da); /* Fondo de error de la marca */
     border: 1px solid var(--brand-danger-border, #f5c2c7); /* Borde de error de la marca */
     font-style: italic;
