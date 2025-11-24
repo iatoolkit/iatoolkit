@@ -31,6 +31,7 @@ def register_views(injector, app):
     from iatoolkit.views.external_login_view import ExternalLoginView, RedeemTokenApiView
     from iatoolkit.views.logout_api_view import LogoutApiView
     from iatoolkit.views.home_view import HomeView
+    from iatoolkit.views.static_page_view import StaticPageView
 
     # iatoolkit home page
     app.add_url_rule('/', view_func=IndexView.as_view('index'))
@@ -103,6 +104,10 @@ def register_views(injector, app):
     app.add_url_rule('/<company_short_name>/api/embedding',
                      view_func=EmbeddingApiView.as_view('embedding_api'))
 
+    # static pages
+    # url: /pages/foundation o /pages/implementation_plan
+    static_view = StaticPageView.as_view('static_pages')
+    app.add_url_rule('/pages/<page_name>', view_func=static_view, methods=['GET'])
 
     @app.route('/download/<path:filename>')
     def download_file(filename):

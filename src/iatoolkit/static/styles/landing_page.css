@@ -25,6 +25,8 @@ body {
     display: flex;
     align-items: center;
 
+
+
     /* Estilos de color (se mantienen) */
     background-color: var(--website-primary-color);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
@@ -35,6 +37,14 @@ body {
     font-size: 1.75rem;
      color: #ffffff;
 }
+
+/* --- Header & Link Styles --- */
+.website-header .website-brand,
+.website-header a.website-brand,
+.website-header a.website-brand:hover {
+    text-decoration: none; /* Elimina el subrayado de los enlaces */
+}
+
 
 /* --- Sección Principal (Hero) --- */
 .hero-section {
@@ -144,6 +154,12 @@ body {
     margin-bottom: 1.5rem;
 }
 
+.article-footer {
+    margin-top: 4rem;
+    padding-top: 2rem;
+    border-top: 1px solid #e9ecef; /* Separador visual */
+}
+
 /* --- Sección del Autor --- */
 .author-section {
     background-color: #fff;
@@ -170,7 +186,61 @@ body {
 .author-linkedin:hover {
     opacity: 0.8;
 }
+.author-box {
+    display: flex;
+    align-items: center;
+    gap: 25px;
+    background-color: #f8f9fa;
+    padding: 25px;
+    border-radius: 12px;
+}
 
+.author-avatar img {
+    width: 90px;
+    height: 90px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 3px solid #fff;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.author-details {
+    line-height: 1.4; /* Reduce el espacio entre líneas */
+}
+
+.author-details p {
+    margin: 0; /* Elimina los márgenes por defecto de los párrafos */
+}
+
+.author-name {
+    font-weight: 600;
+    font-size: 1.25rem;
+    color: #212529;
+}
+
+.author-title {
+    font-size: 1rem;
+    color: #6c757d;
+    margin-top: 2px; /* Pequeño espacio después del nombre */
+    font-style: normal;
+}
+
+.author-social-link {
+    display: inline-block;
+    margin-top: 8px; /* Espacio reducido antes del enlace */
+    font-size: 0.95rem;
+    color: #007bff;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.author-social-link:hover {
+    text-decoration: underline;
+}
+
+.author-social-link i {
+    margin-right: 5px;
+}
 /* --- Footer --- */
 .landing-footer {
     background-color: var(--website-light-bg);
@@ -179,4 +249,102 @@ body {
     text-align: center;
     margin-top: 4rem;
     border-top: 1px solid #e9ecef;
+}
+
+/* === Article Page Styles === */
+.article-container {
+    max-width: 800px;
+    margin: 40px auto;
+    padding: 20px;
+    font-family: 'Georgia', serif;
+    line-height: 1.8;
+    color: #333;
+    background-color: #fff;
+}
+
+.article-header {
+    margin-bottom: 40px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 20px;
+}
+
+.article-title {
+    font-family: 'Helvetica Neue', sans-serif;
+    font-weight: 700;
+    font-size: 2.5rem;
+    color: #111;
+    line-height: 1.2;
+}
+
+.article-subtitle {
+    font-size: 1.25rem;
+    color: #666;
+    font-style: italic;
+    margin-top: 15px;
+}
+
+.article-content h2 {
+    font-family: 'Helvetica Neue', sans-serif;
+    font-weight: 600;
+    font-size: 1.8rem;
+    margin-top: 2.5rem;
+    margin-bottom: 1rem;
+    color: #222;
+}
+
+.article-content h3 {
+    font-family: 'Helvetica Neue', sans-serif;
+    font-weight: 600;
+    font-size: 1.4rem;
+    margin-top: 2rem;
+    margin-bottom: 0.8rem;
+    color: #333;
+}
+
+.article-content p {
+    margin-bottom: 1.5rem;
+    font-size: 1.1rem;
+}
+
+.article-content ul {
+    margin-bottom: 1.5rem;
+    padding-left: 2rem;
+}
+
+.article-content li {
+    margin-bottom: 0.5rem;
+}
+
+.article-content pre {
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 4px;
+    padding: 15px;
+    overflow-x: auto;
+    margin-bottom: 1.5rem;
+    font-size: 0.9em;
+}
+
+.article-content blockquote {
+    border-left: 4px solid #ddd;
+    padding-left: 15px;
+    color: #555;
+    font-style: italic;
+    margin: 1.5em 0;
+}
+
+.article-footer {
+    margin-top: 4rem;
+    padding-top: 2rem;
+    border-top: 1px solid #e9ecef;
+}
+
+.article-content code {
+    color: #343a40;  /* Cambia el color del texto a uno oscuro y neutro */
+    background-color: #f1f3f5; /* Fondo gris claro para resaltar */
+    padding: 0.2em 0.4em;
+    margin: 0;
+    font-size: 85%;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
 }

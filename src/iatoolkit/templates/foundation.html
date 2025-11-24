@@ -1,31 +1,25 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>IAToolkit: The Open-Source Framework for Real Enterprise AI Assistants</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+{% extends "base.html" %}
 
-  <style>
-    body { font-family: 'Georgia', serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; }
-    h1 { font-family: 'Helvetica Neue', sans-serif; font-size: 2.5em; margin-bottom: 0.2em; color: #1a1a1a; }
-    h2 { font-family: 'Helvetica Neue', sans-serif; font-size: 1.5em; margin-top: 1.5em; color: #1a1a1a; }
-    .subtitle { font-size: 1.2em; color: #666; margin-bottom: 2em; font-style: italic; }
-    p { margin-bottom: 1.2em; font-size: 1.1em; }
-    ul { list-style-type: disc; margin-left: 20px; margin-bottom: 1.5em; }
-    li { margin-bottom: 0.5em; font-size: 1.1em; }
-    strong { font-weight: bold; color: #000; }
-    code { background-color: #f4f4f4; padding: 2px 5px; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 0.9em; }
-    blockquote { border-left: 4px solid #ddd; padding-left: 15px; color: #555; font-style: italic; margin: 1.5em 0; }
-  </style>
+{% block title %}IAToolkit - Foundation{% endblock %}
 
-</head>
-<body>
-  <article>
-    <h1>IAToolkit: Building Real Enterprise AI Assistants on Your Own Data</h1>
+{% block styles %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles/landing_page.css') }}">
+{% endblock %}
 
-    <p class="subtitle">
-      A practical guide for CTOs and developers who want to build real AI assistants connected to corporate data.
-    </p>
+{% block content %}
+<div class="container-fluid p-0">
+    {% include '_static_header.html' %}
+</div>
+
+<div class="article-container">
+    <header class="article-header">
+        <h1 class="article-title">IAToolkit: Building Real Enterprise AI Assistants on Your Own Data</h1>
+        <p class="article-subtitle">
+            A practical guide for CTOs and developers who want to build real AI assistants connected to corporate data.
+        </p>
+    </header>
+
+    <div class="article-content">
 
     <p>
       Over the last two years, many teams have experimented with “AI chatbots” for their business.
@@ -345,10 +339,7 @@
   You're invited to download it, clone the repo, and experiment with your own data.
 </p>
 
-<footer style="margin-top: 3em; text-align: center; color: #666; font-style: italic;">
-  <p>Written by <strong>Fernando Libedinsky</strong></p>
-  <p>Creator of IAToolkit · CTO · Software Engineer</p>
-</footer>
-  </article>
-</body>
-</html>
+{% include '_static_footer.html' %}
+    </div>
+</div>
+{% endblock %}
