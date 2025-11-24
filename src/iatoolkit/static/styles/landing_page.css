@@ -307,13 +307,28 @@ body {
 }
 
 .article-content ul {
+    list-style: none; /* Quitamos los bullets por defecto */
+    padding-left: 0;
     margin-bottom: 1.5rem;
-    padding-left: 2rem;
 }
 
 .article-content li {
-    margin-bottom: 0.5rem;
+    position: relative; /* Necesario para posicionar el bullet personalizado */
+    padding-left: 1.75em; /* Espacio a la izquierda para el nuevo bullet */
+    margin-bottom: 0.8rem; /* Un poco más de aire entre elementos */
+    font-size: 1.1rem;
 }
+
+.article-content li::before {
+    content: '•'; /* Este es nuestro nuevo bullet */
+    position: absolute;
+    left: 0;
+    top: -0.05em; /* Ajuste fino de la alineación vertical */
+
+    font-weight: bold;
+    font-size: 1.2em; /* Hacemos el bullet un poco más grande */
+}
+
 
 .article-content pre {
     background-color: #f8f9fa;
