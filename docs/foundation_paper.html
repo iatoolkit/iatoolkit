@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>IAToolkit: The Open-Source Framework for Real Enterprise AI Assistants</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <style>
+    body { font-family: 'Georgia', serif; line-height: 1.6; color: #333; max-width: 800px; margin: 0 auto; padding: 20px; }
+    h1 { font-family: 'Helvetica Neue', sans-serif; font-size: 2.5em; margin-bottom: 0.2em; color: #1a1a1a; }
+    h2 { font-family: 'Helvetica Neue', sans-serif; font-size: 1.5em; margin-top: 1.5em; color: #1a1a1a; }
+    .subtitle { font-size: 1.2em; color: #666; margin-bottom: 2em; font-style: italic; }
+    p { margin-bottom: 1.2em; font-size: 1.1em; }
+    ul { list-style-type: disc; margin-left: 20px; margin-bottom: 1.5em; }
+    li { margin-bottom: 0.5em; font-size: 1.1em; }
+    strong { font-weight: bold; color: #000; }
+    code { background-color: #f4f4f4; padding: 2px 5px; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 0.9em; }
+    blockquote { border-left: 4px solid #ddd; padding-left: 15px; color: #555; font-style: italic; margin: 1.5em 0; }
+  </style>
+
+</head>
+<body>
+  <article>
+    <h1>IAToolkit: Building Real Enterprise AI Assistants on Your Own Data</h1>
+
+    <p class="subtitle">
+      A practical guide for CTOs and developers who want to build real AI assistants connected to corporate data.
+    </p>
+
+    <p>
+      Over the last two years, many teams have experimented with “AI chatbots” for their business.
+      A few proofs of concept worked well in slide decks, but very few survived contact with
+      production requirements: real authentication, real databases, real security constraints,
+      and real users asking messy questions.
+    </p>
+
+    <p>
+      IAToolkit is an open-source framework designed specifically for that gap.
+      It gives you a complete, production-ready base for building AI assistants that:
+      connect to your corporate databases, run custom tools, query private documents
+      using RAG, and serve multiple companies or business units from a single, clean architecture.
+    </p>
+
+    <p>
+      This article is written for technical founders, developers, and CTOs who want to understand
+      what IAToolkit offers, how it’s architected, how multi-tenancy works,
+      and what a small real-world implementation project looks like.
+    </p>
+
+    <hr />
+
+    <!-- Chapter 1 -->
+      <h2>1. The Problem IAToolkit Solves</h2>
+
+
+      <p>
+          In simple terms, an AI assistant is like an internal ChatGPT for your company:
+          a private, secure interface where people can ask questions and run tasks in natural language.
+          It plays a role similar to the intranet in the 2000s—a central gateway to internal knowledge and processes.
+      </p>
+
+      <p>
+          If you’ve tried to build an internal AI assistant, you’ve probably run into some of these issues:
+      </p>
+
+      <ul>
+          <li>
+              <strong>Chatbots disconnected from real data.</strong>
+              Many “LLM chatbots” only work with a simple vector store or a few uploaded PDFs
+              and cannot query real business databases.
+          </li>
+      <li>
+        <strong>One-off architectures for every POC.</strong>
+        Each proof of concept becomes its own fragile stack with duplicated logic.
+      </li>
+      <li>
+        <strong>No real workflow integration.</strong>
+        Prototypes rarely evolve into assistants that send emails, call APIs,
+        or trigger internal processes.
+      </li>
+      <li>
+        <strong>Vendor lock-in.</strong>
+        Closed platforms limit customization and transparency.
+      </li>
+      <li>
+        <strong>Multi-client deployments are painful.</strong>
+        Forking code for each client or department does not scale.
+      </li>
+    </ul>
+
+    <p>
+      IAToolkit solves these issues by providing a real framework:
+      a full web app, multi-tenant architecture, SQL access, RAG, tool calling,
+      logging, extensibility, and a clean Python API.
+    </p>
+
+    <hr />
+
+<h2>2. Inside the Architecture: A Framework You Can Trust</h2>
+
+<p>
+  IAToolkit is designed with a clear, layered architecture that keeps concerns separated and makes the system easy to maintain, extend, and reason about. Each part of the framework plays a specific role, ensuring that your assistant remains robust as it grows in complexity.
+</p>
+
+<p>
+  The framework organizes its logic into well-defined layers:
+</p>
+
+<ul>
+  <li><strong>Views</strong> handle HTTP requests, authentication, sessions, and JSON/HTML responses.</li>
+  <li><strong>Services</strong> orchestrate core workflows—query handling, RAG, prompt rendering, authentication, history, feedback, and configuration.</li>
+  <li><strong>Repositories</strong> provide structured access to the internal database using SQLAlchemy.</li>
+  <li><strong>Infrastructure adapters</strong> connect to external systems such as LLM providers (OpenAI, Gemini), mail services, and file storage like S3.</li>
+  <li><strong>Common utilities</strong> include helpers for encryption, validation, routing, and error handling.</li>
+</ul>
+
+<p>
+  Under the hood, IAToolkit is a well-structured Flask application that uses Dependency Injection (via the <code>injector</code> library) to keep components decoupled and testable, SQLAlchemy as its ORM for predictable persistence, and a comprehensive suite of automated tests to guarantee reliability as you extend the framework for new companies and workflows.
+</p>
+
+    <!-- Chapter 3 -->
+    <h2>3. Building a Multi-Tenant Assistant: Companies, <code>company.yaml</code>, and Per-Client Customization</h2>
+
+    <p>
+      One of the most powerful ideas in IAToolkit is the concept of a <strong>Company</strong>.
+      A Company is a self-contained module that defines everything the AI needs
+      to operate within a single business domain or client:
+      data sources, prompts, tools, documents, branding, and context.
+    </p>
+
+    <h3>3.1 The Company Module: A Clean Boundary per Tenant</h3>
+
+    <p>
+      Each Company lives in its own directory, for example:
+    </p>
+
+    <pre><code>companies/
+  ├── sample_company/
+  │   ├── config/
+  │   ├── context/
+  │   ├── schema/
+  │   ├── prompts/
+  │   └── sample_company.py
+  └── your_company/
+      ├── config/
+      ├── context/
+      ├── schema/
+      ├── prompts/
+      └── your_company.py
+    </code></pre>
+
+    <p>
+      This structure gives you a natural, file-system level isolation:
+      each client or business unit gets its own folder with its own configuration and resources.
+      For agencies and SaaS providers, this means you can host many clients in the same deployment,
+      while keeping their logic and knowledge cleanly separated.
+    </p>
+
+    <h3>3.2 <code>company.yaml</code>: Declarative Control Over Each Assistant</h3>
+
+    <p>
+      At the heart of each Company lies a single file: <code>company.yaml</code>.
+      This is the declarative blueprint for that assistant. Among other things, it defines:
+    </p>
+
+    <ul>
+      <li><strong>Identity</strong>: company ID, display name, default locale.</li>
+      <li><strong>LLM configuration</strong>: which model to use and which environment variable stores its API key.</li>
+        <li><strong>Data sources</strong>: SQL databases, connection strings (via env vars), table inclusion/exclusion rules, and natural-language descriptions.</li>
+      <li><strong>Knowledge base options</strong>: document connectors (local, S3) and logical document sources for RAG.</li>
+      <li><strong>Tools</strong>: the functions the LLM can call, with OpenAPI-style schemas for parameters.</li>
+      <li><strong>Prompts &amp; categories</strong>: pre-configured prompts with descriptions and custom fields for the UI.</li>
+      <li><strong>Branding</strong>: header colors, primary and secondary brand colors, and visual tweaks.</li>
+        <li><strong>Embedding provider</strong>: model and key for semantic search.</li>
+
+    </ul>
+
+    <p>
+      Instead of hard-coding any of this in Python, you configure it declaratively.
+      That makes it much easier to spin up a new tenant, tweak a single client’s branding,
+      or point a new assistant to a different database without modifying core code.
+    </p>
+
+    <h3>3.3 Per-Company Directories: Context, Schema, Prompts, and Templates</h3>
+
+    <p>
+      Around <code>company.yaml</code>, each Company has several dedicated directories:
+    </p>
+
+    <ul>
+      <li>
+        <strong><code>context/</code></strong>:
+        Markdown files with static knowledge – business rules, procedures, FAQs, company overview.
+        These become part of the system context for that assistant.
+      </li>
+      <li>
+        <strong><code>schema/</code></strong>:
+        YAML descriptions of each table or entity in your business database.
+        They document column names, types, relationships, and natural-language explanations,
+        helping the LLM generate high-quality SQL.
+      </li>
+      <li>
+        <strong><code>prompts/</code></strong>:
+        Jinja2 prompt templates for predefined complex questions, such as sales analysis,
+        supplier reports, or risk summaries. The UI can expose these as one-click prompts.
+      </li>
+      <li>
+        <strong><code>your_company.py</code></strong>:
+        A Python class that extends a base Company class and can register
+        custom tools or company-specific logic.
+      </li>
+    </ul>
+
+    <p>
+      The result is a powerful multi-tenant pattern:
+      the core IAToolkit framework is shared, but each Company folder
+      encapsulates a complete AI assistant tailored to a specific domain or client.
+      Adding a new client becomes a matter of copying a template Company,
+      editing some YAML files, and implementing whatever custom tools are needed.
+    </p>
+
+      <h3>3.4 The Dispatcher: Connecting the LLM to Your Custom Python Logic</h3>
+
+<p>
+  While <code>company.yaml</code> defines <em>what</em> tools exist, the <strong>Dispatcher</strong> is the
+  component that makes them actually work. It acts as a bridge between the LLM and each
+  Company’s custom Python code.
+</p>
+
+<p>
+  When the LLM decides to call a tool (for example: <code>get_customer_summary</code> or
+  <code>generate_invoice</code>), the Dispatcher:
+</p>
+
+<ul>
+  <li>Detects which Company the user belongs to</li>
+  <li>Loads that Company’s Python class (e.g. <code>AcmeCompany</code>)</li>
+  <li>Maps the LLM tool call to a Python method inside that Company</li>
+  <li>Validates inputs, executes the method, and returns structured output to the LLM</li>
+</ul>
+
+<p>
+  This design gives each Company full power to implement its own logic:
+</p>
+
+<blockquote>
+  “Every Company gets its own business logic, its own functions, its own workflow automation —
+  all without touching the core framework.”
+</blockquote>
+
+<p>
+  For agencies, this means each client can have custom behaviors.
+  For enterprises, each business unit can integrate with its own APIs and processes.
+  For developers, it creates a clean and safe extension point that avoids code duplication.
+</p>
+    <hr />
+
+    <!-- Chapter 4 -->
+    <h2>4. From Idea to Production: A Mini Implementation Project</h2>
+
+    <p>
+      Let’s make this concrete. Imagine you want to roll out IAToolkit
+      for a single business unit or a pilot client. What does a small, realistic
+      implementation project look like?
+    </p>
+
+    <h3>4.1 What You Need to Get Started</h3>
+
+    <p>
+      A typical “mini project” for IAToolkit requires:
+    </p>
+
+    <ul>
+      <li>
+        <strong>One developer</strong>
+        comfortable with Python and basic DevOps (virtual environments, environment variables,
+        deploying a Flask app).
+      </li>
+      <li>
+        <strong>One domain expert</strong>
+        who understands the business questions you want the assistant to answer:
+        sales managers, operations, risk analysts, support leaders, etc.
+      </li>
+      <li>
+        <strong>Access to at least one SQL database</strong>
+        with meaningful, production-like data
+        (a read-only replica is ideal).
+      </li>
+      <li>
+        <strong>A small set of documents</strong>
+        that people frequently reference (policies, manuals, procedures, contracts).
+      </li>
+      <li>
+        <strong>A basic infrastructure target</strong>:
+        a cloud environment or PaaS where you can run a Python web app
+        with a PostgreSQL database and a Redis instance.
+      </li>
+    </ul>
+
+    <p>
+      With that in place, the project flows through a few clear phases.
+    </p>
+
+    <h3>4.2 Phase 1: Local Setup and Hello World</h3>
+
+    <p>
+      The goal of this phase is simple: run IAToolkit locally and understand the basics.
+    </p>
+
+    <ul>
+      <li>Clone the repository and create a virtual environment.</li>
+      <li>Install dependencies and configure a <code>.env</code> file.</li>
+      <li>Start the Flask server and log in to the sample Company.</li>
+      <li>Use the included sample database to ask questions and see how SQL + RAG work together.</li>
+    </ul>
+
+    <p>
+      At the end of this phase, your developer understands how the framework behaves end-to-end:
+      UI, LLM calls, tools, and logging.
+    </p>
+
+    <h3>4.3 Phase 2: Create Your First Real Company</h3>
+
+    <p>
+      Next, you create a Company module that represents your real business unit or client:
+    </p>
+
+    <ul>
+      <li>Copy the sample Company folder to a new directory (e.g. <code>companies/acme_corp/</code>).</li>
+      <li>Rename the Python entry point and class (e.g. <code>AcmeCompany</code>).</li>
+      <li>Fill in <code>company.yaml</code>:
+        <ul>
+          <li>Set the Company ID, name, and locale.</li>
+          <li>Configure the LLM model and environment variable for its API key.</li>
+          <li>Declare at least one SQL data source pointing to your own database.</li>
+          <li>Define a couple of prompt categories and initial prompts.</li>
+          <li>Set basic branding so your pilot users recognize “their” assistant.</li>
+        </ul>
+      </li>
+      <li>Register the new Company in your app’s bootstrap code.</li>
+    </ul>
+
+    <p>
+      With these steps, you already have a tenant-specific assistant running locally
+      with its own branding and connected to your real data.
+    </p>
+
+    <h3>4.4 Phase 3: Model Your Data and Questions</h3>
+
+    <p>
+      Now the focus shifts to quality: you want the assistant to answer real questions correctly.
+      This is where collaboration between developer and domain expert is crucial.
+    </p>
+
+    <ul>
+      <li>
+        In <code>schema/</code>, create YAML files describing the most important tables:
+        customers, orders, products, or any entities your users care about.
+      </li>
+      <li>
+        For each table, write clear, domain-friendly descriptions of columns and relationships.
+      </li>
+      <li>
+        In <code>context/</code>, add Markdown files that capture business rules, definitions,
+        and processes that the LLM should know.
+      </li>
+      <li>
+        Test natural language questions in the UI and inspect how the generated SQL behaves.
+        Adjust schema descriptions as needed to guide the model.
+      </li>
+    </ul>
+
+    <p>
+      You will typically iterate a few times here, refining both the schema descriptions
+      and the context until answers are robust enough for a pilot.
+    </p>
+
+    <h3>4.5 Phase 4: Tools, Prompts, and RAG</h3>
+
+    <p>
+      Once basic Q&amp;A over SQL works, you can add more powerful capabilities:
+    </p>
+
+    <ul>
+      <li>
+        <strong>Tools</strong>:
+        define actions in <code>company.yaml</code> and implement them in the Company’s Python code.
+        These can send emails, generate reports, call internal APIs, or trigger workflows.
+      </li>
+      <li>
+        <strong>Prompts</strong>:
+        create Jinja2 templates for standard analyses (e.g. “Sales by region over the last quarter”)
+        and expose them as clickable prompts in the UI, with custom input fields for parameters.
+      </li>
+      <li>
+        <strong>RAG over documents</strong>:
+        configure a connector (local or S3), load a small curated set of documents,
+        and test document_search-style prompts.
+      </li>
+    </ul>
+
+    <p>
+      After this phase, your assistant is no longer “just chat”:
+      it becomes a real interface to your processes, data, and knowledge.
+    </p>
+
+    <h3>4.6 Phase 5: Pilot and Production Rollout</h3>
+
+    <p>
+      When the functionality is good enough for a first group of users,
+      you move from local to a production environment:
+    </p>
+
+    <ul>
+      <li>Package your Company code in a dedicated repository that depends on IAToolkit as a library.</li>
+      <li>Deploy it to your preferred cloud environment with a managed PostgreSQL and Redis.</li>
+      <li>Configure environment variables securely (database URIs, API keys, mail provider, etc.).</li>
+      <li>Create a small group of pilot users, train them, and collect feedback using IAToolkit’s feedback features.</li>
+    </ul>
+
+    <p>
+      From there, you can iterate on prompts, tools, and schema descriptions,
+      or onboard additional Companies (clients or business units) as new modules
+      in the same deployment.
+    </p>
+
+    <hr />
+
+    <h2>Closing Thoughts</h2>
+
+    <p>
+      IAToolkit sits in a sweet spot: it’s not a shrink-wrapped SaaS product,
+      but it’s also far from a raw set of scripts. It’s a framework that encodes
+      a lot of hard-won experience about how real AI assistants should be built:
+      multi-tenant from day one, deeply integrated with SQL and documents,
+      and designed to be extended by your own developers.
+    </p>
+
+    <p>
+      If you’re a developer or CTO looking to move beyond demos and into
+      production-grade AI assistants that truly understand your business,
+      IAToolkit gives you a strong architectural starting point —
+      open-source, transparent, and ready to adapt to your stack.
+    </p>
+
+      <hr />
+
+<footer style="margin-top: 3em; text-align: center; color: #666; font-style: italic;">
+  <p>Written by <strong>Fernando Libedinsky</strong></p>
+  <p>Creator of IAToolkit · CTO · Software Engineer</p>
+</footer>
+  </article>
+</body>
+</html>
