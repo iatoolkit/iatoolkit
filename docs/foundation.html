@@ -258,192 +258,85 @@
     <!-- Chapter 4 -->
     <h2>4. From Idea to Production: A Mini Implementation Project</h2>
 
-    <p>
-      Let’s make this concrete. Imagine you want to roll out IAToolkit
-      for a single business unit or a pilot client. What does a small, realistic
-      implementation project look like?
-    </p>
+<p>
+  A realistic IAToolkit implementation for a single business unit or client usually unfolds as
+  a structured mini-project. Based on real deployments, a full cycle of analysis, setup,
+  configuration, tooling, testing, and rollout takes approximately <strong>three months</strong>.
+</p>
 
-    <h3>4.1 What You Need to Get Started</h3>
+<h3>4.1 What You Need</h3>
 
-    <p>
-      A typical “mini project” for IAToolkit requires:
-    </p>
+<ul>
+  <li>One Python developer familiar with SQL and APIs</li>
+  <li>One domain expert who understands key business questions</li>
+  <li>Access to a SQL database (ideally a read-only replica)</li>
+  <li>A small set of internal documents for RAG</li>
+  <li>A cloud environment for hosting (Python + PostgreSQL + Redis)</li>
+</ul>
 
-    <ul>
-      <li>
-        <strong>One developer</strong>
-        comfortable with Python and basic DevOps (virtual environments, environment variables,
-        deploying a Flask app).
-      </li>
-      <li>
-        <strong>One domain expert</strong>
-        who understands the business questions you want the assistant to answer:
-        sales managers, operations, risk analysts, support leaders, etc.
-      </li>
-      <li>
-        <strong>Access to at least one SQL database</strong>
-        with meaningful, production-like data
-        (a read-only replica is ideal).
-      </li>
-      <li>
-        <strong>A small set of documents</strong>
-        that people frequently reference (policies, manuals, procedures, contracts).
-      </li>
-      <li>
-        <strong>A basic infrastructure target</strong>:
-        a cloud environment or PaaS where you can run a Python web app
-        with a PostgreSQL database and a Redis instance.
-      </li>
-    </ul>
+<h3>4.2 Project Phases</h3>
 
-    <p>
-      With that in place, the project flows through a few clear phases.
-    </p>
+<p>The mini-project advances through five clear phases:</p>
 
-    <h3>4.2 Phase 1: Local Setup and Hello World</h3>
+<ul>
+  <li>
+    <strong>Phase 1 — Local Setup and Exploration</strong><br/>
+    Running IAToolkit locally, understanding the sample Company, learning the structure
+    of companies, prompts, schemas, and tools.
+  </li>
 
-    <p>
-      The goal of this phase is simple: run IAToolkit locally and understand the basics.
-    </p>
+  <li>
+    <strong>Phase 2 — Creating Your Company Module</strong><br/>
+    Defining the Company’s identity, configuring <code>company.yaml</code>,
+    connecting SQL databases, applying basic branding, and enabling authentication.
+  </li>
 
-    <ul>
-      <li>Clone the repository and create a virtual environment.</li>
-      <li>Install dependencies and configure a <code>.env</code> file.</li>
-      <li>Start the Flask server and log in to the sample Company.</li>
-      <li>Use the included sample database to ask questions and see how SQL + RAG work together.</li>
-    </ul>
+  <li>
+    <strong>Phase 3 — Modeling Knowledge and Data</strong><br/>
+    Creating schema YAML files, writing context documents, aligning terminology with
+    domain experts, and iterating until SQL and RAG answers become consistent and useful.
+  </li>
 
-    <p>
-      At the end of this phase, your developer understands how the framework behaves end-to-end:
-      UI, LLM calls, tools, and logging.
-    </p>
+  <li>
+    <strong>Phase 4 — Tools, Workflows, and Documents</strong><br/>
+    Adding Python tools the LLM can call, integrating APIs, loading documents into the
+    vector store, and building structured prompts for recurrent analyses.
+  </li>
 
-    <h3>4.3 Phase 2: Create Your First Real Company</h3>
+  <li>
+    <strong>Phase 5 — Pilot and Production Rollout</strong><br/>
+    Deploying a pilot version to real users, collecting feedback, refining prompts and
+    schemas, and finally deploying the production assistant with monitoring and logs.
+  </li>
+</ul>
+<h2>Closing Thoughts</h2>
 
-    <p>
-      Next, you create a Company module that represents your real business unit or client:
-    </p>
+<p>
+  IAToolkit sits in a unique sweet spot: not a closed SaaS platform,
+  but not a loose collection of scripts either. It’s a well-engineered,
+  open-source framework for building real, production-grade AI assistants
+  connected to corporate data, documents, and workflows.
+</p>
 
-    <ul>
-      <li>Copy the sample Company folder to a new directory (e.g. <code>companies/acme_corp/</code>).</li>
-      <li>Rename the Python entry point and class (e.g. <code>AcmeCompany</code>).</li>
-      <li>Fill in <code>company.yaml</code>:
-        <ul>
-          <li>Set the Company ID, name, and locale.</li>
-          <li>Configure the LLM model and environment variable for its API key.</li>
-          <li>Declare at least one SQL data source pointing to your own database.</li>
-          <li>Define a couple of prompt categories and initial prompts.</li>
-          <li>Set basic branding so your pilot users recognize “their” assistant.</li>
-        </ul>
-      </li>
-      <li>Register the new Company in your app’s bootstrap code.</li>
-    </ul>
+<p>
+  If your goal is to move beyond demos and into robust, secure, extensible systems,
+  IAToolkit gives you a strong and transparent foundation. Its multi-tenant design,
+  declarative configuration, and extensible Python tools make it ideal for organizations
+  taking their first serious steps into AI.
+</p>
 
-    <p>
-      With these steps, you already have a tenant-specific assistant running locally
-      with its own branding and connected to your real data.
-    </p>
+<p>
+  Because IAToolkit is <strong>fully open source</strong>, anyone can explore it, test it,
+  adapt it, and deploy it freely. The easiest way to understand its power is to use it in a
+  <strong>focused mini-project</strong>: a three-month initiative where your team gains hands-on experience
+  with prompts, SQL modeling, document integration, and custom tools in a real, high-learning environment.
+</p>
 
-    <h3>4.4 Phase 3: Model Your Data and Questions</h3>
-
-    <p>
-      Now the focus shifts to quality: you want the assistant to answer real questions correctly.
-      This is where collaboration between developer and domain expert is crucial.
-    </p>
-
-    <ul>
-      <li>
-        In <code>schema/</code>, create YAML files describing the most important tables:
-        customers, orders, products, or any entities your users care about.
-      </li>
-      <li>
-        For each table, write clear, domain-friendly descriptions of columns and relationships.
-      </li>
-      <li>
-        In <code>context/</code>, add Markdown files that capture business rules, definitions,
-        and processes that the LLM should know.
-      </li>
-      <li>
-        Test natural language questions in the UI and inspect how the generated SQL behaves.
-        Adjust schema descriptions as needed to guide the model.
-      </li>
-    </ul>
-
-    <p>
-      You will typically iterate a few times here, refining both the schema descriptions
-      and the context until answers are robust enough for a pilot.
-    </p>
-
-    <h3>4.5 Phase 4: Tools, Prompts, and RAG</h3>
-
-    <p>
-      Once basic Q&amp;A over SQL works, you can add more powerful capabilities:
-    </p>
-
-    <ul>
-      <li>
-        <strong>Tools</strong>:
-        define actions in <code>company.yaml</code> and implement them in the Company’s Python code.
-        These can send emails, generate reports, call internal APIs, or trigger workflows.
-      </li>
-      <li>
-        <strong>Prompts</strong>:
-        create Jinja2 templates for standard analyses (e.g. “Sales by region over the last quarter”)
-        and expose them as clickable prompts in the UI, with custom input fields for parameters.
-      </li>
-      <li>
-        <strong>RAG over documents</strong>:
-        configure a connector (local or S3), load a small curated set of documents,
-        and test document_search-style prompts.
-      </li>
-    </ul>
-
-    <p>
-      After this phase, your assistant is no longer “just chat”:
-      it becomes a real interface to your processes, data, and knowledge.
-    </p>
-
-    <h3>4.6 Phase 5: Pilot and Production Rollout</h3>
-
-    <p>
-      When the functionality is good enough for a first group of users,
-      you move from local to a production environment:
-    </p>
-
-    <ul>
-      <li>Package your Company code in a dedicated repository that depends on IAToolkit as a library.</li>
-      <li>Deploy it to your preferred cloud environment with a managed PostgreSQL and Redis.</li>
-      <li>Configure environment variables securely (database URIs, API keys, mail provider, etc.).</li>
-      <li>Create a small group of pilot users, train them, and collect feedback using IAToolkit’s feedback features.</li>
-    </ul>
-
-    <p>
-      From there, you can iterate on prompts, tools, and schema descriptions,
-      or onboard additional Companies (clients or business units) as new modules
-      in the same deployment.
-    </p>
-
-    <hr />
-
-    <h2>Closing Thoughts</h2>
-
-    <p>
-      IAToolkit sits in a sweet spot: it’s not a shrink-wrapped SaaS product,
-      but it’s also far from a raw set of scripts. It’s a framework that encodes
-      a lot of hard-won experience about how real AI assistants should be built:
-      multi-tenant from day one, deeply integrated with SQL and documents,
-      and designed to be extended by your own developers.
-    </p>
-
-    <p>
-      If you’re a developer or CTO looking to move beyond demos and into
-      production-grade AI assistants that truly understand your business,
-      IAToolkit gives you a strong architectural starting point —
-      open-source, transparent, and ready to adapt to your stack.
-    </p>
-
-      <hr />
+<p>
+  Whether you're a CTO evaluating platforms or a developer curious about enterprise AI patterns,
+  IAToolkit is an accessible, transparent, and practical place to start.
+  You're invited to download it, clone the repo, and experiment with your own data.
+</p>
 
 <footer style="margin-top: 3em; text-align: center; color: #666; font-style: italic;">
   <p>Written by <strong>Fernando Libedinsky</strong></p>
