@@ -37,7 +37,6 @@ class TestQueryService:
         self.mock_llm_client = MagicMock(spec=llmClient)
         self.mock_profile_service = MagicMock(spec=ProfileService)
         self.mock_document_service = MagicMock()
-        self.mock_llmquery_repo = MagicMock()
         self.mock_profile_repo = MagicMock(spec=ProfileRepo)
         self.mock_prompt_service = MagicMock(spec=PromptService)
         self.mock_company_context_service = MagicMock(spec=CompanyContextService)
@@ -56,8 +55,6 @@ class TestQueryService:
             profile_service=self.mock_profile_service,
             company_context_service=self.mock_company_context_service,
             document_service=self.mock_document_service,
-            document_repo=MagicMock(),
-            llmquery_repo=self.mock_llmquery_repo,
             profile_repo=self.mock_profile_repo,
             prompt_service=self.mock_prompt_service,
             i18n_service=self.mock_i18n_service,

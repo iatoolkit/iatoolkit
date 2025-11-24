@@ -5,20 +5,17 @@
 
 from iatoolkit.infra.llm_client import llmClient
 from iatoolkit.services.profile_service import ProfileService
-from iatoolkit.repositories.document_repo import DocumentRepo
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.document_service import DocumentService
 from iatoolkit.services.company_context_service import CompanyContextService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.services.configuration_service import ConfigurationService
-from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.repositories.models import Task
 from iatoolkit.services.dispatcher_service import Dispatcher
 from iatoolkit.services.prompt_manager_service import PromptService
 from iatoolkit.services.user_session_context_service import UserSessionContextService
 from iatoolkit.services.history_manager_service import HistoryManagerService
 from iatoolkit.common.util import Utility
-from iatoolkit.common.exceptions import IAToolkitException
 from injector import inject
 import base64
 import logging
@@ -27,7 +24,6 @@ import json
 import time
 import hashlib
 from dataclasses import dataclass
-import os
 
 
 @dataclass
@@ -42,26 +38,22 @@ class HistoryHandle:
 class QueryService:
     @inject
     def __init__(self,
+                 dispatcher: Dispatcher,
                  llm_client: llmClient,
                  profile_service: ProfileService,
                  company_context_service: CompanyContextService,
                  document_service: DocumentService,
-                 document_repo: DocumentRepo,
-                 llmquery_repo: LLMQueryRepo,
                  profile_repo: ProfileRepo,
                  prompt_service: PromptService,
                  i18n_service: I18nService,
-                 util: Utility,
-                 dispatcher: Dispatcher,
                  session_context: UserSessionContextService,
                  configuration_service: ConfigurationService,
                  history_manager: HistoryManagerService,
+                 util: Utility,
                  ):
         self.profile_service = profile_service
         self.company_context_service = company_context_service
         self.document_service = document_service
-        self.document_repo = document_repo
-        self.llmquery_repo = llmquery_repo
         self.profile_repo = profile_repo
         self.prompt_service = prompt_service
         self.i18n_service = i18n_service
@@ -71,7 +63,6 @@ class QueryService:
         self.configuration_service = configuration_service
         self.llm_client = llm_client
         self.history_manager = history_manager
-
 
 
     def _resolve_model(self, company_short_name: str, model: Optional[str]) -> str:
