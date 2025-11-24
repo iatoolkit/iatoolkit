@@ -161,13 +161,21 @@
       while keeping their logic and knowledge cleanly separated.
     </p>
 
-    <h3>3.2 Per-Company Directories: Context, Schema, Prompts, and Templates</h3>
+    <h3>3.2 Per-Company Directories: Config, Context, Schema, Prompts</h3>
 
     <p>
-      Around <code>company.yaml</code>, each Company has several dedicated directories:
+      Each Company has several dedicated directories:
     </p>
 
     <ul>
+        <li>
+            <strong><code>config/</code></strong>:
+    Contains the core configuration files for the assistant.
+    The most important is <strong><code>company.yaml</code></strong>, which defines
+    the company’s name, branding, LLM models, SQL connections, tools,
+    document sources, and prompt categories.
+    This file is essentially the “brain” of each Company.
+        </li>
       <li>
         <strong><code>context/</code></strong>:
         Markdown files with static knowledge – business rules, procedures, FAQs, company overview.
