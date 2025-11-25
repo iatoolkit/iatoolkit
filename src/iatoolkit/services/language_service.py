@@ -81,7 +81,6 @@ class LanguageService:
                     g.lang = company_language
                     return g.lang
         except Exception as e:
-            logging.info(f"Could not determine language, falling back to default. Reason: {e}")
             pass
 
         # Priority 3: System-wide fallback
