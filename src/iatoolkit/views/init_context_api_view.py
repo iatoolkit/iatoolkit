@@ -54,7 +54,7 @@ class InitContextApiView(MethodView):
             response_message = {'status': 'OK', 'message': success_message}
 
             # if received a response ID with the context, return it
-            if response.get('response_id'):
+            if response and response.get('response_id'):
                 response_message['response_id'] = response['response_id']
 
             return jsonify(response_message), 200

@@ -411,3 +411,113 @@ body {
     background-color: var(--website-primary-color);
     color: #fff;
 }
+/* Stair-style timeline */
+.iat-stair-timeline {
+    position: relative;
+    margin: 2rem 0 1.5rem;
+    min-height: 10rem;
+}
+
+.iat-stair-step {
+    position: relative;
+    max-width: 260px;
+    background-color: #f8f9fa;
+    border-radius: 10px;
+    padding: 0.75rem 1rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.iat-stair-header {
+    display: flex;
+    justify-content: flex-start;
+    margin-bottom: 0.35rem;
+}
+
+.iat-stair-phase-badge {
+    display: inline-block;
+    background-color: #4A55A2; /* IAToolkit color */
+    color: #ffffff;
+    font-size: 0.8rem;
+    font-weight: 600;
+    border-radius: 999px;
+    padding: 0.1rem 0.7rem;
+}
+
+.iat-stair-title {
+    font-size: 0.9rem;
+    margin: 0;
+    color: #343a40;
+}
+
+/* Posiciones escalonadas: hacia la derecha y hacia abajo */
+.iat-stair-step.step-1 {
+    left: 0%;
+    top: 0;
+}
+
+.iat-stair-step.step-2 {
+    left: 24%;
+    top: 1.2rem;
+}
+
+.iat-stair-step.step-3 {
+    left: 48%;
+    top: 2.4rem;
+}
+
+.iat-stair-step.step-4 {
+    left: 72%;
+    top: 3.6rem;
+}
+
+/* Ajuste responsive: en pantallas pequeñas, apilar vertical */
+@media (max-width: 768px) {
+    .iat-stair-timeline {
+        min-height: auto;
+    }
+
+    .iat-stair-step {
+        position: static;
+        margin-bottom: 0.75rem;
+        max-width: 100%;
+    }
+}
+
+/* Intelligence bar */
+.iat-intelligence-bar {
+    margin: 1.5rem 0 2.5rem;
+}
+
+.iat-intelligence-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.9rem;
+    color: #495057;
+    margin-bottom: 0.35rem;
+}
+
+.iat-intelligence-end {
+    font-weight: 500;
+}
+
+.iat-intelligence-track {
+    position: relative;
+    height: 6px;
+    border-radius: 999px;
+    background: #e2e5f5;
+    overflow: hidden;
+    margin-bottom: 0.4rem;
+}
+
+.iat-intelligence-fill {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(to right, #cfd3ff, #4A55A2);
+}
+
+.iat-intelligence-marks {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    color: #6c757d;
+}
