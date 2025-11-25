@@ -461,4 +461,4 @@ class ProfileService:
                                     recipient=user.email,
                                     subject=subject,
                                     body=body)
-        return {"message": "se envio mail para cambio de clave"}
+        return {"message": self.i18n_service.t('services.mail_change_password') }

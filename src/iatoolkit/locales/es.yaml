@@ -139,6 +139,7 @@ api_responses:
 services:
   mail_sent: "mail enviado exitosamente."
   start_query: "Hola, cual es tu pregunta?"
+  mail_change_password: "se envio mail para cambio de clave"
 
 flash_messages:
   password_changed_success: "Tu contraseña ha sido restablecida exitosamente. Ahora puedes iniciar sesión."

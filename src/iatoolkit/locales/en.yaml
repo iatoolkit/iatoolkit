@@ -141,6 +141,7 @@ api_responses:
 services:
   mail_sent: "Email sent successfully."
   start_query: "Hello, what can I help you with today?"
+  mail_change_password: "mail sent for password change"
 
 
 flash_messages:

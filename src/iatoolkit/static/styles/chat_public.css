@@ -104,4 +104,31 @@
         margin-bottom: 1.5rem; /* Espacio consistente debajo del título */
     }
 
+    /* Links de idioma sobre fondo azul */
+.language-link {
+    text-decoration: none;
+    color: #ffffff;             /* texto blanco */
+    padding: 2px 8px;
+    font-weight: 500;
+    border-radius: 4px;
+    transition: background-color 0.2s ease;
+}
+
+/* Separador | puede heredar color blanco */
+.language-switcher .mx-1 {
+    color: #ffffff;
+}
+
+/* Hover: blanco translúcido encima del azul */
+.language-link:hover {
+    background-color: rgba(255, 255, 255, 0.25);
+}
+
+/* Idioma activo: un poco más marcado */
+.language-link.active {
+    background-color: rgba(255, 255, 255, 0.35);
+    font-weight: 700;
+    color: #ffffff;
+}
+
 

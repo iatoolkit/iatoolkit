@@ -13,8 +13,36 @@
         </span>
     {% endif %}
 
-    {# Texto "Powered by" con enlace a iatoolkit.com #}
-    <span class="powered-by">
-        Powered by <a href="{{ url_for('index') }}" rel="noopener noreferrer" class="iatoolkit-link">IAToolkit</a>
-    </span>
+        {# Contenedor derecho: powered-by a la izquierda y selector de idioma a la derecha #}
+    <div class="d-flex align-items-center ms-auto">
+        <div class="me-3 d-flex align-items-center">
+            <span class="powered-by">
+                Powered by <a href="{{ url_for('index', lang=request.args.get('lang', 'en')) }}" rel="noopener noreferrer" class="iatoolkit-link">IAToolkit</a>
+            </span>
+        </div>
+
+        {% set current_lang = request.args.get('lang', 'en') %}
+        {% set has_endpoint = request.endpoint is not none %}
+
+        {% if has_endpoint %}
+          {% if request.view_args %}
+            {% set href_en = url_for(request.endpoint, lang='en', **request.view_args) %}
+            {% set href_es = url_for(request.endpoint, lang='es', **request.view_args) %}
+          {% else %}
+            {% set href_en = url_for(request.endpoint, lang='en') %}
+            {% set href_es = url_for(request.endpoint, lang='es') %}
+          {% endif %}
+        {% else %}
+          {% set href_en = url_for('index', lang='en') %}
+          {% set href_es = url_for('index', lang='es') %}
+        {% endif %}
+
+        <div class="language-switcher d-flex align-items-center">
+            <a href="{{ href_en }}" class="language-link {{ 'active' if current_lang == 'en' else '' }}">EN</a>
+            <span class="mx-1">|</span>
+            <a href="{{ href_es }}" class="language-link {{ 'active' if current_lang == 'es' else '' }}">ES</a>
+        </div>
+    </div>
+
+
 </div>
