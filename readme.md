@@ -72,16 +72,15 @@ and launching the application.
 
 Our documentation is designed for users of all levels, from initial setup to advanced development.
 
-| Guide                                         | Description                                                                                               |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| 🚀 **[Quickstart Guide](./docs/quickstart.md)** | The fastest way to install, configure, and run IAToolkit for the first time.                                |
-| ⚙️ **[Companies & Components](./docs/companies_and_components.md)** | A deep dive into the `company.yaml` file, the core of all configuration.                  |
-| 💻 **[Programming Guide](./docs/programming_guide.md)** | Understand the internal architecture, services, and design patterns to extend the framework.      |
-| ☁️ **[Deployment Guide](./docs/deployment_guide.md)** | Learn how to deploy your IAToolkit application to a production environment.                             |
-| 🗃️ **[Database Guide](./docs/database_guide.md)** | An overview of the core database schema used by the IAToolkit framework itself.                         |
-| 🏛️ **[Foundation Article](./src/iatoolkit/templates/foundation.html)** | An article explaining the "Why" behind IAToolkit's architecture for enterprise-grade assistants. |
-| 🗓️ **[Implementation Plan](./src/iatoolkit/templates/implementation_plan.html)** | A 3-month mini-project plan to deploy a real AI assistant integrated with corporate data. |
-
+| Guide                                                                                       | Description                                                                                               |
+|---------------------------------------------------------------------------------------------| --------------------------------------------------------------------------------------------------------- |
+| 🚀 **[Quickstart Guide](./docs/quickstart.md)**                                             | The fastest way to install, configure, and run IAToolkit for the first time.                                |
+| ⚙️ **[Companies & Components](./docs/companies_and_components.md)**                         | A deep dive into the `company.yaml` file, the core of all configuration.                  |
+| 💻 **[Programming Guide](./docs/programming_guide.md)**                                     | Understand the internal architecture, services, and design patterns to extend the framework.      |
+| ☁️ **[Deployment Guide](./docs/deployment_guide.md)**                                       | Learn how to deploy your IAToolkit application to a production environment.                             |
+| 🗃️ **[Database Guide](./docs/database_guide.md)**                                          | An overview of the core database schema used by the IAToolkit framework itself.                         |
+| 🏛️ **[Foundation Article](https://www.iatoolkit.com/pages/foundation)**           | An article explaining the "Why" behind IAToolkit's architecture for enterprise-grade assistants. |
+| 🗓️ **[Implementation Plan](https://www.iatoolkit.com/pages/implementation_plan)** | A 3-month mini-project plan to deploy a real AI assistant integrated with corporate data. |
 ➡️ **[Explore all documentation](./docs/index.md)**
 
 ## 🤝 Contributing
