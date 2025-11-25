@@ -186,14 +186,7 @@ simply by updating configuration and domain-specific logic, without changing the
     </p>
 
     <ul>
-        <li>
-            <strong><code>config/</code></strong>:
-    Contains the core configuration files for the assistant.
-    The most important is <strong><code>company.yaml</code></strong>, which defines
-    the company’s name, branding, LLM models, SQL connections, tools,
-    document sources, and prompt categories.
-    This file is essentially the “brain” of each Company.
-        </li>
+
       <li>
         <strong><code>context/</code></strong>:
         Markdown files with static knowledge – business rules, procedures, FAQs, company overview.
@@ -229,7 +222,8 @@ simply by updating configuration and domain-specific logic, without changing the
 
     <p>
       At the heart of each Company lies a single file: <code>company.yaml</code>.
-      This is the declarative blueprint for that assistant. Among other things, it defines:
+        This file is essentially the “brain” of each Company.
+      Among other things, it defines:
     </p>
 
     <ul>
