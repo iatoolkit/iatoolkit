@@ -398,3 +398,16 @@ body {
     font-weight: 700;
     color: #ffffff;
 }
+
+.btn-outline-website {
+    border: 2px solid var(--website-primary-color);
+    color: var(--website-primary-color);
+    background-color: transparent;
+    font-weight: 600;
+    transition: 0.2s ease-in-out;
+}
+
+.btn-outline-website:hover {
+    background-color: var(--website-primary-color);
+    color: #fff;
+}
