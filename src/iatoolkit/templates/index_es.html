@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+
+{% block title %}IAToolkit - Framework de IA{% endblock %}
+
+{% block styles %}
+    {# Enlazamos la hoja de estilos del website y los iconos de Bootstrap #}
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles/landing_page.css') }}">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+{% endblock %}
+
+
+{% block content %}
+<div class="container mt-4">
+
+    <!-- 1. Encabezado con una clase 100% propia y única -->
+    <header class="website-header container">
+        <span class="website-brand">IAToolkit</span>
+
+        <div class="language-switcher">
+            <a href="/?lang=en" class="language-link">EN</a>
+            <span class="mx-1">|</span>
+            <a href="/?lang=es" class="language-link active">ES</a>
+        </div>
+    </header>
+
+    <!-- 2. Sección Principal (Hero) -->
+    <section class="hero-section">
+        <div class="container">
+            <div class="row align-items-center g-5 py-5">
+                <div class="col-lg-7">
+                    <h1 class="hero-title gradient-text">Framework de IA Open Source</h1>
+                    <ul class="hero-bullets mt-4">
+                      <li><i class="bi bi-hdd-stack"></i>Integra tus bases de datos SQL y documentos para dar contexto real a tus asistentes.</li>
+                    <li><i class="bi bi-code-slash"></i>Crea un repositorio de prompts validados por tu equipo para estandarizar y acelerar las tareas de IA.</li>
+                    <li><i class="bi bi-shield-lock"></i> Monta la plataforma en tu propia infraestructura con control total sobre el LLM, garantizando la privacidad de los datos.</li>                    </ul>
+                </div>
+                <div class="col-lg-5">
+                    <div class="border rounded-3 p-4 p-md-5 shadow-sm bg-light">
+                        <h3 class="fw-bold text-center mb-3">Prueba la Plataforma</h3>
+                        <p class="text-muted mb-4">
+                            Descubre nuestra demo interactiva, configurada con datos de una empresa de muestra. Explora  las funcionalidades de la plataforma en un entorno práctico.<br>
+                        </p>
+                        <div class="d-grid">
+                            {# Este botón usa la clase .btn-primary, que es estilizada por .hero-section .btn-primary en el CSS #}
+                            <a href="{{ url_for('home', company_short_name='sample_company') }}"
+                               target="_blank"
+                                rel="noopener noreferrer"
+                               class="btn btn-primary btn-lg fw-bold">
+                                Acceder
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- 3. Sección de Características -->
+    <section class="features-section">
+        <div class="container">
+            <div class="row g-4">
+                <div class="col-lg-4 d-flex align-items-stretch">
+                    <div class="opensource-box">
+                        <div>
+                            <div class="opensource-icon"><i class="bi bi-github"></i></div>
+                            <h3>100% Open Source</h3>
+                            <p>Construido en Python, IAToolkit te da control total. Audita el código, adáptalo y contribuye a una comunidad en crecimiento.</p>
+                        </div>
+                        <a href="https://github.com/flibedinsky/iatoolkit" target="_blank" class="btn btn-light mt-auto">
+                            <i class="bi bi-github me-2"></i>Ir a GitHub
+                            {% if iatoolkit_version %}
+                                <span class="badge bg-dark ms-2">{{ iatoolkit_version }}</span>
+                            {% endif %}
+                        </a>
+                    </div>
+                </div>
+                <div class="col-lg-4 d-flex align-items-stretch">
+                    <div class="feature-item">
+                        <div class="feature-icon"><i class="bi bi-hdd-stack"></i></div>
+                        <h3>Conecta tus Datos</h3>
+                        <p>Integra tus bases de datos SQL, documentos (PDFs, TXT) y otros sistemas para que el asistente tenga un contexto real de tu negocio.</p>
+                    </div>
+                </div>
+                <div class="col-lg-4 d-flex align-items-stretch">
+                    <div class="feature-item">
+                        <div class="feature-icon"><i class="bi bi-gem"></i></div>
+                        <h3>Multi-LLM</h3>
+                        <p>No te ates a un solo proveedor. IAToolkit está diseñado para funcionar con diferentes modelos, incluyendo Gemini y OpenAI (GPT).</p>
+                    </div>
+                </div>
+            </div>
+            <div class="row g-4 mt-4">
+                <div class="col-lg-4 d-flex align-items-stretch">
+                    <div class="feature-item">
+                        <div class="feature-icon"><i class="bi bi-magic"></i></div>
+                        <h3>Prompt Manager</h3>
+                        <p>Crea, gestiona y comparte una librería de prompts personalizados para tu empresa, optimizando las tareas repetitivas.</p>
+                    </div>
+                </div>
+                <div class="col-lg-4 d-flex align-items-stretch">
+                    <div class="feature-item">
+                        <div class="feature-icon"><i class="bi bi-palette"></i></div>
+                        <h3>100% Personalizable</h3>
+                        <p>Adapta cada aspecto, desde la apariencia visual hasta las capacidades y herramientas del asistente, para que se alinee con la identidad de tu marca.</p>
+                    </div>
+                </div>
+                <div class="col-lg-4 d-flex align-items-stretch">
+                    <div class="feature-item">
+                        <div class="feature-icon"><i class="bi bi-shield-lock"></i></div>
+                        <h3>Privacidad Primero</h3>
+                        <p>Despliega IAToolkit en tus propios servidores. Tus datos y consultas nunca son compartidos con terceros, garantizando la máxima confidencialidad.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+  <!-- 3.2 Recursos técnicos -->
+<section class="cto-resources-section py-4">
+    <div class="container">
+        <div class="row g-3">
+            <div class="col-md-6 d-flex">
+                <div class="feature-item w-100 p-3">
+                    <h4 class="mb-2"><i class="bi bi-journal-code me-2"></i>Foundation</h4>
+                    <p class="text-muted mb-3" style="font-size: 0.95rem;">
+Una explicación clara de cómo está diseñado IAToolkit como framework para asistentes
+que funcionan en escenarios reales, no solo en demostraciones o pruebas de concepto.                   </p>
+                    <a href="{{ url_for('static_pages', page_name='foundation') }}"
+                       rel="noopener noreferrer"
+                       class="btn btn-outline-primary btn-sm mt-auto">
+                        Leer
+                    </a>
+                </div>
+            </div>
+
+            <div class="col-md-6 d-flex">
+                <div class="feature-item w-100 p-3">
+                    <h4 class="mb-2"><i class="bi bi-calendar3 me-2"></i>Mini-Project</h4>
+                    <p class="text-muted mb-3" style="font-size: 0.95rem;">
+Un plan de 3 meses para crear tu propio “ChatGPT interno”: un asistente corporativo
+capaz de responder con datos reales, documentos internos y prompts predefinidos.                    </p>
+                    <a href="{{ url_for('static_pages', page_name='implementation_plan') }}"
+                       rel="noopener noreferrer"
+                       class="btn btn-outline-primary btn-sm mt-auto">
+                        Ver plan
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+    <!-- 3.5 Sobre el Autor -->
+    <section class="author-section py-5">
+        <div class="container">
+            <div class="author-card p-4">
+                <div class="row align-items-center g-4">
+                    <div class="col-md-2 text-center">
+                        <img src="{{ url_for('static', filename='images/fernando.jpeg') }}" alt="Foto de Fernando Libedinsky" class="img-fluid rounded-circle" style="max-width: 120px;">
+                    </div>
+                    <div class="col-md-10">
+                        <div class="d-flex flex-wrap align-items-center mb-2">
+                            <h5 class="mb-0 me-3">Sobre el autor</h5>
+                            <a href="https://www.linkedin.com/in/fernandolibedinsky" target="_blank" rel="noopener" class="author-linkedin ms-auto">
+                                <i class="bi bi-linkedin me-1"></i> LinkedIn
+                            </a>
+                        </div>
+                        <p class="author-bio mb-0">
+                            Soy <strong>Fernando Libedinsky</strong>, ingeniero de software y creador de <strong>IAToolkit</strong>.
+                            <br>Tras una extensa trayectoria en el desarrollo de software, sigo movido por la misma curiosidad que me llevó a programar por primera vez: aprender, explorar y construir cosas nuevas.
+                            <br>IAToolkit es la continuación de ese impulso, una plataforma creada para conectar rapidamente empresas con la IA.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+</div>
+{% endblock %}

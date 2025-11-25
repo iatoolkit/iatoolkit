@@ -1,6 +1,6 @@
 # iatoolkit/views/index_view.py
 
-from flask import render_template, session
+from flask import render_template, request
 from flask.views import MethodView
 
 
@@ -11,4 +11,9 @@ class IndexView(MethodView):
     """
 
     def get(self):
-        return render_template('index.html')
+        lang = request.args.get("lang", "en")  # default en inglés
+
+        if lang == "es":
+            return render_template("index_es.html")
+
+        return render_template("index.html")
