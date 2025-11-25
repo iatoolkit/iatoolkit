@@ -17,9 +17,10 @@ import logging
 # Wrapper classes to create a common interface for embedding clients
 class EmbeddingClientWrapper:
     """Abstract base class for embedding client wrappers."""
-    def __init__(self, client, model: str):
+    def __init__(self, client, model: str, dimensions: int = 1536):
         self.client = client
         self.model = model
+        self.dimensions = dimensions
 
     def get_embedding(self, text: str) -> list[float]:
         """Generates and returns an embedding for the given text."""
@@ -37,7 +38,9 @@ class OpenAIClientWrapper(EmbeddingClientWrapper):
     def get_embedding(self, text: str) -> list[float]:
         # The OpenAI API expects the input text to be clean
         text = text.replace("\n", " ")
-        response = self.client.embeddings.create(input=[text], model=self.model)
+        response = self.client.embeddings.create(input=[text],
+                                                 model=self.model,
+                                                 dimensions=self.dimensions)
         return response.data[0].embedding
 
 # Factory and Service classes
@@ -68,6 +71,7 @@ class EmbeddingClientFactory:
         if not provider:
             raise ValueError(f"Embedding provider not configured for company '{company_short_name}'.")
         model = embedding_config.get('model')
+        dimensions = int(embedding_config.get('dimensions', "1536"))
 
         api_key_name = embedding_config.get('api_key_name')
         if not api_key_name:
@@ -83,12 +87,12 @@ class EmbeddingClientFactory:
             if not model:
                 model='sentence-transformers/all-MiniLM-L6-v2'
             client = InferenceClient(model=model, token=api_key)
-            wrapper = HuggingFaceClientWrapper(client, model)
+            wrapper = HuggingFaceClientWrapper(client, model, dimensions)
         elif provider == 'openai':
             client = OpenAI(api_key=api_key)
             if not model:
                 model='text-embedding-ada-002'
-            wrapper = OpenAIClientWrapper(client, model)
+            wrapper = OpenAIClientWrapper(client, model, dimensions)
         else:
             raise NotImplementedError(f"Embedding provider '{provider}' is not implemented.")
 
