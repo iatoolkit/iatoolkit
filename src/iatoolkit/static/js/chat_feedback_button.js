@@ -53,7 +53,7 @@ $('#feedbackModal').on('hidden.bs.modal', function () {
     $('.star').removeClass('active');
 });
 
-// Function for the star rating system
+// Tool for the star rating system
 window.gfg = function (rating) {
     $('.star').removeClass('active');
     $('.star').each(function (index) {

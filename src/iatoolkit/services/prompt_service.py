@@ -14,6 +14,12 @@ from iatoolkit.common.exceptions import IAToolkitException
 import importlib.resources
 import logging
 
+# iatoolkit system prompts definitions
+_SYSTEM_PROMPTS = [
+    {'name': 'query_main', 'description': 'iatoolkit main prompt'},
+    {'name': 'format_styles', 'description': 'output format styles'},
+    {'name': 'sql_rules', 'description': 'instructions  for SQL queries'}
+]
 
 class PromptService:
     @inject
@@ -25,6 +31,106 @@ class PromptService:
         self.profile_repo = profile_repo
         self.i18n_service = i18n_service
 
+    def sync_company_prompts(self, company_instance, prompts_config: list, categories_config: list):
+        """
+        Synchronizes prompt categories and prompts from YAML config to Database.
+        Strategies:
+        - Categories: Create or Update existing based on name.
+        - Prompts: Create or Update existing based on name. Soft-delete or Delete unused.
+        """
+        try:
+            # 1. Sync Categories
+            category_map = {}
+
+            for i, category_name in enumerate(categories_config):
+                category_obj = PromptCategory(
+                    company_id=company_instance.company.id,
+                    name=category_name,
+                    order=i + 1
+                )
+                # Persist and get back the object with ID
+                persisted_cat = self.llm_query_repo.create_or_update_prompt_category(category_obj)
+                category_map[category_name] = persisted_cat
+
+            # 2. Sync Prompts
+            defined_prompt_names = set()
+
+            for prompt_data in prompts_config:
+                category_name = prompt_data.get('category')
+                if not category_name or category_name not in category_map:
+                    logging.warning(
+                        f"⚠️  Warning: Prompt '{prompt_data['name']}' has an invalid or missing category. Skipping.")
+                    continue
+
+                prompt_name = prompt_data['name']
+                defined_prompt_names.add(prompt_name)
+
+                category_obj = category_map[category_name]
+                filename = f"{prompt_name}.prompt"
+
+                new_prompt = Prompt(
+                    company_id=company_instance.company.id,
+                    name=prompt_name,
+                    description=prompt_data['description'],
+                    order=prompt_data['order'],
+                    category_id=category_obj.id,
+                    active=prompt_data.get('active', True),
+                    is_system_prompt=False,
+                    filename=filename,
+                    custom_fields=prompt_data.get('custom_fields', [])
+                )
+
+                self.llm_query_repo.create_or_update_prompt(new_prompt)
+
+            # 3. Cleanup: Delete prompts present in DB but not in Config
+            existing_prompts = self.llm_query_repo.get_prompts(company_instance.company)
+            for p in existing_prompts:
+                if p.name not in defined_prompt_names:
+                    # Using hard delete to keep consistent with previous "refresh" behavior
+                    self.llm_query_repo.session.delete(p)
+
+            self.llm_query_repo.commit()
+
+        except Exception as e:
+            self.llm_query_repo.rollback()
+            raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR, str(e))
+
+    def register_system_prompts(self):
+        """
+        Synchronizes system prompts defined in Dispatcher/Code to Database.
+        """
+        try:
+            defined_names = set()
+
+            for i, prompt_data in enumerate(_SYSTEM_PROMPTS):
+                prompt_name = prompt_data['name']
+                defined_names.add(prompt_name)
+
+                new_prompt = Prompt(
+                    company_id=None,  # System prompts have no company
+                    name=prompt_name,
+                    description=prompt_data['description'],
+                    order=i + 1,
+                    category_id=None,
+                    active=True,
+                    is_system_prompt=True,
+                    filename=f"{prompt_name}.prompt",
+                    custom_fields=[]
+                )
+                self.llm_query_repo.create_or_update_prompt(new_prompt)
+
+            # Cleanup old system prompts
+            existing_sys_prompts = self.llm_query_repo.get_system_prompts()
+            for p in existing_sys_prompts:
+                if p.name not in defined_names:
+                    self.llm_query_repo.session.delete(p)
+
+            self.llm_query_repo.commit()
+
+        except Exception as e:
+            self.llm_query_repo.rollback()
+            raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR, str(e))
+
     def create_prompt(self,
                       prompt_name: str,
                       description: str,
@@ -35,7 +141,10 @@ class PromptService:
                       is_system_prompt: bool = False,
                       custom_fields: list = []
                       ):
-
+        """
+            Direct creation method (used by sync or direct calls).
+            Validates file existence before creating DB entry.
+        """
         prompt_filename = prompt_name.lower() + '.prompt'
         if is_system_prompt:
             if not importlib.resources.files('iatoolkit.system_prompts').joinpath(prompt_filename).is_file():
@@ -72,7 +181,7 @@ class PromptService:
             )
 
         try:
-            self.llm_query_repo.create_prompt(prompt)
+            self.llm_query_repo.create_or_update_prompt(prompt)
         except Exception as e:
             raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR,
                                f'error creating prompt "{prompt_name}": {str(e)}')

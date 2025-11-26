@@ -4,7 +4,7 @@
 # IAToolkit is open source software.
 
 from unittest.mock import patch, MagicMock
-from iatoolkit.repositories.models import Company, Function, Document, User, LLMQuery, VSDoc
+from iatoolkit.repositories.models import Company, Tool, Document, User, LLMQuery, VSDoc
 from sqlalchemy.orm import relationship
 
 
@@ -22,7 +22,7 @@ class TestModels:
         self.mock_json = patch('sqlalchemy.JSON', MagicMock()).start()
         self.mock_foreign_key = patch('sqlalchemy.ForeignKey', MagicMock()).start()
 
-        self.model_classes = [Company, Function, Document, User, LLMQuery, VSDoc]
+        self.model_classes = [Company, Tool, Document, User, LLMQuery, VSDoc]
 
     def teardown_method(self):
         patch.stopall()

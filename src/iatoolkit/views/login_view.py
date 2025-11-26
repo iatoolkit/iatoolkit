@@ -10,7 +10,7 @@ from injector import inject
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.jwt_service import JWTService
 from iatoolkit.services.query_service import QueryService
-from iatoolkit.services.prompt_manager_service import PromptService
+from iatoolkit.services.prompt_service import PromptService
 from iatoolkit.services.branding_service import BrandingService
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.i18n_service import I18nService

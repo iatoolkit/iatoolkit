@@ -288,6 +288,14 @@ body {
     margin-top: 15px;
 }
 
+.article-date i {
+    margin-right: 0.35rem;
+    color: #6c757d;
+    font-size: 1rem;
+    position: relative;
+    top: 1px;
+}
+
 .article-content h2 {
     font-family: 'Helvetica Neue', sans-serif;
     font-weight: 600;

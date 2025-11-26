@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch, ANY
 import os
 import base64
 from iatoolkit.services.query_service import QueryService, HistoryHandle
-from iatoolkit.services.prompt_manager_service import PromptService
+from iatoolkit.services.prompt_service import PromptService
 from iatoolkit.services.user_session_context_service import UserSessionContextService
 from iatoolkit.services.company_context_service import CompanyContextService
 from iatoolkit.services.i18n_service import I18nService
@@ -18,6 +18,7 @@ from iatoolkit.repositories.models import Company
 from iatoolkit.common.util import Utility
 from iatoolkit.infra.llm_client import llmClient
 from iatoolkit.services.dispatcher_service import Dispatcher
+from iatoolkit.services.tool_service import ToolService
 
 # --- Constantes para los Tests ---
 MOCK_COMPANY_SHORT_NAME = "test_company"
@@ -45,6 +46,7 @@ class TestQueryService:
         self.mock_dispatcher = MagicMock(spec=Dispatcher)
         self.mock_session_context = MagicMock(spec=UserSessionContextService)
         self.mock_i18n_service = MagicMock(spec=I18nService)
+        self.mock_tool_service = MagicMock(spec=ToolService)
 
         # Mock directo del HistoryManagerService (ya no hay factory)
         self.mock_history_manager = MagicMock(spec=HistoryManagerService)
@@ -62,7 +64,8 @@ class TestQueryService:
             dispatcher=self.mock_dispatcher,
             session_context=self.mock_session_context,
             configuration_service=self.mock_configuration_service,
-            history_manager=self.mock_history_manager
+            history_manager=self.mock_history_manager,
+            tool_service=self.mock_tool_service
         )
 
         self.mock_i18n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"

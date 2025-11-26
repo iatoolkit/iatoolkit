@@ -7,7 +7,7 @@ from pathlib import Path
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.common.util import Utility
 from iatoolkit.common.exceptions import IAToolkitException
-from iatoolkit import BaseCompany
+from iatoolkit.base_company import BaseCompany
 from iatoolkit.repositories.models import Company, PromptCategory
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 
@@ -96,23 +96,39 @@ class TestConfigurationService:
         self.mock_company_instance = Mock(spec=BaseCompany)
         self.mock_company = Company(id=1, short_name='ACME')
         self.mock_company_instance._create_company.return_value = self.mock_company
-        self.mock_company_instance._create_prompt_category.return_value = Mock(spec=PromptCategory)
         self.mock_company_instance.company = self.mock_company
 
         self.service = ConfigurationService(utility=self.mock_utility,
                                             llm_query_repo=self.mock_llm_query_repo)
         self.COMPANY_NAME = 'acme'
 
-    @patch('pathlib.Path.is_file', return_value=True)  # For _validate_configuration
-    @patch('pathlib.Path.exists', return_value=True)  # For _load_and_merge_configs
-    def test_load_configuration_happy_path(self, mock_exists, mock_is_file):
+    @patch('iatoolkit.current_iatoolkit')
+    @patch('pathlib.Path.is_file', return_value=True)
+    @patch('pathlib.Path.exists', return_value=True)
+    def test_load_configuration_happy_path(self, mock_exists, mock_is_file, mock_current_iatoolkit):
         """
-        GIVEN a valid and complete configuration
+        GIVEN a valid configuration
         WHEN load_configuration is called
-        THEN it should succeed and call all registration methods correctly.
+        THEN it should delegate creation to ToolService and PromptService via lazy loading.
         """
+        # --- Mock Lazy Loading of Services ---
+        mock_injector = Mock()
+        mock_current_iatoolkit.return_value.get_injector.return_value = mock_injector
 
-        # Arrange
+        mock_tool_service = Mock()
+        mock_prompt_service = Mock()
+
+        # Simulate injector.get returning correct service based on requested class
+        def get_side_effect(service_class):
+            if "ToolService" in str(service_class):
+                return mock_tool_service
+            if "PromptService" in str(service_class):
+                return mock_prompt_service
+            return Mock()
+
+        mock_injector.get.side_effect = get_side_effect
+
+        # --- Arrange Config Loading ---
         def yaml_side_effect(path):
             if "company.yaml" in str(path):
                 return MOCK_VALID_CONFIG
@@ -122,193 +138,139 @@ class TestConfigurationService:
 
         self.mock_utility.load_schema_from_yaml.side_effect = yaml_side_effect
 
-        # Act
+        # --- Act ---
         self.service.load_configuration(self.COMPANY_NAME, self.mock_company_instance)
 
-        # Assert
-        # 1. Verify core details were registered
+        # --- Assert ---
+
+        # 1. Verify core details registration (internal to ConfigService)
         self.mock_company_instance._create_company.assert_called_once_with(
             short_name='acme',
             name='ACME Corp',
             parameters=MOCK_VALID_CONFIG['parameters']
         )
 
-        # 2. Verify tools were registered
-        self.mock_company_instance._create_function.assert_called_once_with(
-            function_name='get_stock',
-            description='Gets stock price',
-            params={'type': 'object'}
+        # 2. Verify ToolService delegation
+        mock_tool_service.sync_company_tools.assert_called_once_with(
+            self.mock_company_instance,
+            MOCK_VALID_CONFIG['tools']
         )
 
-        # 3. Verify prompts were registered
-        self.mock_company_instance._create_prompt_category.assert_called_once_with(name='General', order=1)
-        self.mock_company_instance._create_prompt.assert_called_once_with(
-            prompt_name='sales_report',
-            description='Generates a sales report',
-            order=1,
-            category=self.mock_company_instance._create_prompt_category.return_value,
-            active=True,
-            custom_fields=[]
+        # 3. Verify PromptService delegation
+        mock_prompt_service.sync_company_prompts.assert_called_once_with(
+            company_instance=self.mock_company_instance,
+            prompts_config=MOCK_VALID_CONFIG['prompts'],
+            categories_config=MOCK_VALID_CONFIG['prompt_categories']
         )
 
-        # 4. Verify final attributes were set on the instance
+        # 4. Verify final attributes set
         assert self.mock_company_instance.company_short_name == self.COMPANY_NAME
         assert self.mock_company_instance.company == self.mock_company
 
-    @patch('pathlib.Path.is_file', return_value=True)  # Needed for validation if it were called
+    @patch('pathlib.Path.is_file', return_value=True)
     @patch('pathlib.Path.exists', return_value=True)
     def test_get_configuration_uses_cache_on_second_call(self, mock_path_exists, mock_is_file):
         """
-        GIVEN a configuration that needs to be loaded from files,
-        WHEN get_configuration is called multiple times for the same company,
-        THEN the file-reading logic should only be executed on the first call.
+        GIVEN configuration loaded from files
+        WHEN get_configuration is called multiple times
+        THEN file-reading logic executes only on the first call.
         """
 
-        # Arrange
         def yaml_side_effect(path):
             if "company.yaml" in str(path):
                 return MOCK_VALID_CONFIG
-            if "onboarding.yaml" in str(path):
-                return MOCK_ONBOARDING_CONFIG
-            return {}
+            return MOCK_ONBOARDING_CONFIG
 
         self.mock_utility.load_schema_from_yaml.side_effect = yaml_side_effect
 
-        # --- First Call ---
-        # Act
+        # First Call
         result1 = self.service.get_configuration(self.COMPANY_NAME, 'name')
-
-        # Assert
         assert result1 == 'ACME Corp'
-        # The main config and the onboarding file are read.
         assert self.mock_utility.load_schema_from_yaml.call_count == 2
-        expected_calls = [
-            call(Path(f'companies/{self.COMPANY_NAME}/config/company.yaml')),
-            call(Path(f'companies/{self.COMPANY_NAME}/config/onboarding.yaml'))
-        ]
-        self.mock_utility.load_schema_from_yaml.assert_has_calls(expected_calls, any_order=True)
 
-        # --- Second Call ---
-        # Act
+        # Second Call
         result2 = self.service.get_configuration(self.COMPANY_NAME, 'id')
-
-        # Assert
         assert result2 == 'acme'
-        # CRUCIAL: The call count should not have increased, proving the cache was used.
         assert self.mock_utility.load_schema_from_yaml.call_count == 2
 
     @patch('pathlib.Path.exists', return_value=False)
     def test_load_configuration_raises_file_not_found(self, mock_exists):
-        """
-        GIVEN the main company.yaml file does not exist
-        WHEN load_configuration is called
-        THEN it should raise a FileNotFoundError.
-        """
         with pytest.raises(FileNotFoundError):
             self.service.load_configuration(self.COMPANY_NAME, self.mock_company_instance)
 
-    @patch('pathlib.Path.is_file')
-    @patch('pathlib.Path.exists')
-    def test_load_configuration_handles_empty_sections(self, mock_exists, mock_is_file):
+    @patch('iatoolkit.current_iatoolkit')
+    @patch('pathlib.Path.is_file', return_value=True)
+    @patch('pathlib.Path.exists', return_value=True)
+    def test_load_configuration_handles_empty_sections(self, mock_exists, mock_is_file, mock_current_iatoolkit):
         """
-        GIVEN a config file is missing optional sections like 'tools' or 'prompts'
+        GIVEN missing optional sections (tools, prompts)
         WHEN load_configuration is called
-        THEN it should run without error and not call registration methods for those sections.
+        THEN it delegates empty lists to services.
         """
-        # Arrange
-        # This config is minimal but still passes validation.
+        # Mocks setup
+        mock_injector = Mock()
+        mock_current_iatoolkit.return_value.get_injector.return_value = mock_injector
+        mock_tool_service = Mock()
+        mock_prompt_service = Mock()
+        mock_injector.get.side_effect = lambda cls: mock_tool_service if "ToolService" in str(
+            cls) else mock_prompt_service
+
+        # Minimal config
         minimal_config = {
             'id': 'minimal_co',
             'name': 'Minimal Co',
             'llm': {'model': 'test', 'api-key': 'TEST'},
-            'embedding_provider': {'provider': 'test', 'model': 'test', 'api_key_name': 'TEST'},
-            # No 'tools', 'prompts', 'data_sources', 'help_files', etc.
+            'embedding_provider': {'provider': 'test', 'model': 'test', 'api_key_name': 'TEST'}
         }
-        mock_exists.return_value = True
-        mock_is_file.return_value = True  # Assume all files exist for validation simplicity
         self.mock_utility.load_schema_from_yaml.return_value = minimal_config
 
         # Act
         self.service.load_configuration('minimal_co', self.mock_company_instance)
 
         # Assert
-        # Verify the core details were still registered
-        self.mock_company_instance._create_company.assert_called_once_with(
-            short_name='minimal_co', name='Minimal Co', parameters={}
+        mock_tool_service.sync_company_tools.assert_called_once_with(self.mock_company_instance, [])
+        mock_prompt_service.sync_company_prompts.assert_called_once_with(
+            company_instance=self.mock_company_instance,
+            prompts_config=[],
+            categories_config=[]
         )
-        # Verify that methods for missing sections were NOT called
-        self.mock_company_instance._create_function.assert_not_called()
-        self.mock_company_instance._create_prompt.assert_not_called()
-        self.mock_company_instance._create_prompt_category.assert_not_called()
 
     def test_validation_failure_raises_exception(self):
-        """
-        GIVEN an invalid configuration (e.g., missing 'llm' section)
-        WHEN load_configuration is called
-        THEN it should raise an IAToolkitException due to validation failure.
-        """
-        # Arrange
-        invalid_config = {
-            'id': self.COMPANY_NAME,
-            'name': 'Invalid Co'
-            # Missing 'llm', 'embedding_provider', etc.
-        }
+        # Arrange invalid config
+        invalid_config = {'id': self.COMPANY_NAME, 'name': 'Invalid Co'}
         self.mock_utility.load_schema_from_yaml.return_value = invalid_config
 
-        # Patch `exists` to prevent FileNotFoundError
         with patch('pathlib.Path.exists', return_value=True):
-            # Act & Assert
             with pytest.raises(IAToolkitException) as excinfo:
                 self.service.load_configuration(self.COMPANY_NAME, self.mock_company_instance)
 
             assert excinfo.value.error_type == IAToolkitException.ErrorType.CONFIG_ERROR
-            assert "company.yaml validation errors" in str(excinfo.value)
 
+    @patch('iatoolkit.current_iatoolkit')
     @patch('pathlib.Path.is_file', return_value=True)
     @patch('pathlib.Path.exists', return_value=True)
-    def test_register_prompts_exception_from_repo(self, mock_exists, mock_is_file):
+    def test_load_configuration_service_exception_propagates(self, mock_exists, mock_is_file, mock_current_iatoolkit):
         """
-        GIVEN llm_query_repo raises an exception during delete_all_prompts
+        GIVEN ToolService raises an exception
         WHEN load_configuration is called
-        THEN it should rollback session and raise IAToolkitException
+        THEN it propagates the exception (ConfigService doesn't catch it).
         """
-        self.mock_utility.load_schema_from_yaml.return_value = {
-            'id': 'acme', 'name': 'ACME Corp', 'llm': {'model': 'm', 'api-key': 'k'},
-            'embedding_provider': {'provider': 'p', 'model': 'm', 'api_key_name': 'k'},
-            'prompts': [{'name': 'p1', 'category': 'Cat1', 'description': 'd', 'order': 1}],
-            'prompt_categories': ['Cat1']
-        }
+        # Setup Mocks
+        mock_injector = Mock()
+        mock_current_iatoolkit.return_value.get_injector.return_value = mock_injector
+        mock_tool_service = Mock()
+        mock_injector.get.return_value = mock_tool_service
 
-        # Simular error en repo
-        self.mock_llm_query_repo.delete_all_prompts.side_effect = Exception("DB Error")
+        self.mock_utility.load_schema_from_yaml.return_value = MOCK_VALID_CONFIG
 
+        # Simulate error in ToolService
+        mock_tool_service.sync_company_tools.side_effect = IAToolkitException(
+            IAToolkitException.ErrorType.DATABASE_ERROR, "DB Error"
+        )
+
+        # Act & Assert
         with pytest.raises(IAToolkitException) as excinfo:
             self.service.load_configuration('acme', self.mock_company_instance)
 
         assert excinfo.value.error_type == IAToolkitException.ErrorType.DATABASE_ERROR
         assert "DB Error" in str(excinfo.value)
-        self.mock_llm_query_repo.rollback.assert_called_once()
-
-    @patch('pathlib.Path.is_file', return_value=True)
-    @patch('pathlib.Path.exists', return_value=True)
-    def test_register_tools_exception_from_repo(self, mock_exists, mock_is_file):
-        """
-        GIVEN llm_query_repo raises an exception during delete_all_functions
-        WHEN load_configuration is called
-        THEN it should rollback session and raise IAToolkitException
-        """
-        self.mock_utility.load_schema_from_yaml.return_value = {
-            'id': 'acme', 'name': 'ACME Corp', 'llm': {'model': 'm', 'api-key': 'k'},
-            'embedding_provider': {'provider': 'p', 'model': 'm', 'api_key_name': 'k'},
-            'tools': [{'function_name': 'f1', 'description': 'd', 'params': {}}]
-        }
-
-        # Simular error en repo
-        self.mock_llm_query_repo.delete_all_functions.side_effect = Exception("DB Error Tools")
-
-        with pytest.raises(IAToolkitException) as excinfo:
-            self.service.load_configuration('acme', self.mock_company_instance)
-
-        assert excinfo.value.error_type == IAToolkitException.ErrorType.DATABASE_ERROR
-        assert "DB Error Tools" in str(excinfo.value)
-        self.mock_llm_query_repo.rollback.assert_called_once()

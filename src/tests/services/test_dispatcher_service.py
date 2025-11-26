@@ -10,13 +10,13 @@ from iatoolkit.services.dispatcher_service import Dispatcher
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.repositories.profile_repo import ProfileRepo
-from iatoolkit.repositories.models import Company, Function
 from iatoolkit.services.excel_service import ExcelService
-from iatoolkit.services.prompt_manager_service import PromptService
+from iatoolkit.services.prompt_service import PromptService
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.mail_service import MailService
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.sql_service import SqlService
+from iatoolkit.services.tool_service import ToolService  # Added ToolService
 from iatoolkit.common.util import Utility
 
 
@@ -47,13 +47,14 @@ class TestDispatcher:
         self.mock_profile_repo = MagicMock(spec=ProfileRepo)
         self.mock_config_service = MagicMock(spec=ConfigurationService)
         self.mock_sql_service = MagicMock(spec=SqlService)
-
+        self.mock_tool_service = MagicMock(spec=ToolService)  # Mock ToolService
 
         # Create a mock injector that will be used for instantiation.
         mock_injector = Injector()
         mock_injector.binder.bind(ProfileRepo, to=self.mock_profile_repo)
         mock_injector.binder.bind(LLMQueryRepo, to=self.mock_llm_query_repo)
         mock_injector.binder.bind(PromptService, to=self.mock_prompt_manager)
+        mock_injector.binder.bind(ToolService, to=self.mock_tool_service)  # Bind ToolService
 
         # Create a mock IAToolkit instance that returns our injector.
         self.toolkit_mock = MagicMock()
@@ -87,13 +88,13 @@ class TestDispatcher:
 
         # Initialize the Dispatcher within the patched context
         self.dispatcher = Dispatcher(
+            config_service=self.mock_config_service,
             prompt_service=self.mock_prompt_manager,
             llmquery_repo=self.mock_llm_query_repo,
             util=self.util,
+            sql_service=self.mock_sql_service,
             excel_service=self.excel_service,
-            mail_service=self.mail_service,
-            config_service=self.mock_config_service,
-            sql_service=self.mock_sql_service
+            mail_service=self.mail_service
         )
 
     def teardown_method(self, method):
@@ -107,7 +108,11 @@ class TestDispatcher:
 
     def test_dispatch_sample_company(self):
         """Tests that dispatch works correctly for a valid company."""
+        # Ensure tool service says it's NOT a system tool
+        self.mock_tool_service.is_system_tool.return_value = False
+
         result = self.dispatcher.dispatch("sample", "some_data", key='a value')
+
         self.mock_sample_company_instance.handle_request.assert_called_once_with("some_data", key='a value')
         assert result == {"result": "sample_company_response"}
 
@@ -119,6 +124,7 @@ class TestDispatcher:
 
     def test_dispatch_method_exception(self):
         """Validates that the dispatcher handles exceptions thrown by companies."""
+        self.mock_tool_service.is_system_tool.return_value = False
         self.mock_sample_company_instance.handle_request.side_effect = Exception("Method error")
 
         with pytest.raises(IAToolkitException) as excinfo:
@@ -128,15 +134,24 @@ class TestDispatcher:
         assert "Method error" in str(excinfo.value)
 
     def test_dispatch_system_function(self):
-        """Tests that dispatch correctly handles system functions."""
-        self.excel_service.excel_generator.return_value = {"file": "test.xlsx"}
+        """Tests that dispatch correctly handles system functions via ToolService."""
+        # Setup mocks for system tool detection
+        self.mock_tool_service.is_system_tool.return_value = True
+
+        # Mock handler returned by ToolService
+        mock_handler = MagicMock(return_value={"file": "test.xlsx"})
+        self.mock_tool_service.get_system_handler.return_value = mock_handler
 
         result = self.dispatcher.dispatch("sample", "iat_generate_excel", filename="test.xlsx")
 
-        self.excel_service.excel_generator.assert_called_once_with("sample", filename="test.xlsx")
+        # Assertions
+        self.mock_tool_service.is_system_tool.assert_called_once_with("iat_generate_excel")
+        self.mock_tool_service.get_system_handler.assert_called_once_with("iat_generate_excel")
+        mock_handler.assert_called_once_with("sample", filename="test.xlsx")
+
+        # Ensure company handler was NOT called
         self.mock_sample_company_instance.handle_request.assert_not_called()
         assert result == {"file": "test.xlsx"}
-
 
     def test_get_company_instance(self):
         """Tests that get_company_instance returns the correct company instance."""
@@ -145,7 +160,6 @@ class TestDispatcher:
 
         instance_none = self.dispatcher.get_company_instance("non_existent")
         assert instance_none is None
-
 
     def test_get_user_info_external_user(self):
         """Tests get_user_info for an external user."""
@@ -171,28 +185,6 @@ class TestDispatcher:
             self.dispatcher.get_user_info("invalid_company", "any_user")
         assert 'company not configured: invalid_company' in str(excinfo.value)
 
-    def test_get_company_services(self):
-        """Tests that get_company_services returns a correctly formatted list of tools."""
-        # Mock Company and Function objects
-        mock_company = MagicMock(spec=Company)
-        mock_function = MagicMock(spec=Function)
-        mock_function.name = "test_function"
-        mock_function.description = "A test function"
-        mock_function.parameters = {"type": "object", "properties": {}}
-
-        self.mock_llm_query_repo.get_company_functions.return_value = [mock_function]
-
-        tools = self.dispatcher.get_company_services(mock_company)
-
-        self.mock_llm_query_repo.get_company_functions.assert_called_once_with(mock_company)
-        assert len(tools) == 1
-        tool = tools[0]
-        assert tool["type"] == "function"
-        assert tool["name"] == "test_function"
-        assert tool["description"] == "A test function"
-        assert tool["parameters"]["additionalProperties"] is False
-        assert tool["strict"] is True
-
     def test_dispatcher_with_no_companies_registered(self):
         """Tests that the dispatcher works if no company is registered."""
         # Stop the current patch first
@@ -207,12 +199,12 @@ class TestDispatcher:
         # Start a new patch for this specific test
         with patch('iatoolkit.iatoolkit.IAToolkit.get_instance', return_value=toolkit_mock):
             dispatcher = Dispatcher(
+                config_service=self.mock_config_service,
                 prompt_service=self.mock_prompt_manager,
                 llmquery_repo=self.mock_llm_query_repo,
                 util=self.util,
                 excel_service=self.excel_service,
                 mail_service=self.mail_service,
-                config_service=self.mock_config_service,
                 sql_service=self.mock_sql_service
             )
 
@@ -227,33 +219,23 @@ class TestDispatcher:
 
     def test_setup_iatoolkit_system_success(self):
         """Test successful setup of system functions and prompts."""
-        # Configure mocks for successful execution
-        self.mock_llm_query_repo.delete_system_functions_and_prompts = MagicMock()
-        self.mock_llm_query_repo.create_function = MagicMock()
-        self.mock_prompt_manager.create_prompt = MagicMock()
-        self.mock_llm_query_repo.commit = MagicMock()
-
         # Call the method under test
         self.dispatcher.setup_iatoolkit_system()
 
-        # Verify deletions were called
-        self.mock_llm_query_repo.delete_system_functions_and_prompts.assert_called_once()
+        # Verify ToolService called
+        self.mock_tool_service.register_system_tools.assert_called_once()
 
-        # Verify system functions creation
-        # Dispatcher defines _FUNCTION_LIST with 3 functions
-        assert self.mock_llm_query_repo.create_function.call_count == 3
+        # Verify PromptService called with system prompts list
+        # Note: Dispatcher defines _SYSTEM_PROMPT internally
+        self.mock_prompt_manager.register_system_prompts.assert_called_once_with()
 
-        # Verify system prompts creation
-        # Dispatcher defines _SYSTEM_PROMPT with 3 prompts
-        assert self.mock_prompt_manager.create_prompt.call_count == 3
-
-        # Verify transaction commit
-        self.mock_llm_query_repo.commit.assert_called_once()
 
     def test_setup_iatoolkit_system_exception(self):
         """Test that setup_iatoolkit_system handles exceptions and rolls back."""
-        # Configure mock to raise an exception
-        self.mock_llm_query_repo.delete_system_functions_and_prompts.side_effect = Exception("DB Error")
+        # Configure mock to raise an exception in ToolService
+        self.mock_tool_service.register_system_tools.side_effect = Exception("DB Error")
+
+        # Configure repo rollback mock
         self.mock_llm_query_repo.rollback = MagicMock()
 
         # Verify exception is raised and wrapped in IAToolkitException
@@ -266,11 +248,10 @@ class TestDispatcher:
         # Verify rollback was called
         self.mock_llm_query_repo.rollback.assert_called_once()
 
-    # ... existing code ...
     def test_load_company_configs_success(self):
         """Test load_company_configs loads configuration for all companies."""
         # Dispatcher uses self.company_instances which is populated by registry.
-        # We have "sample" registered in setup() via register_company("sample", MockSampleCompany)
+        # We have "sample" registered in setup()
 
         # Mock setup_iatoolkit_system
         self.dispatcher.setup_iatoolkit_system = MagicMock()
@@ -285,12 +266,6 @@ class TestDispatcher:
         self.mock_config_service.load_configuration.assert_called_once_with(
             "sample", self.mock_sample_company_instance
         )
-
-        # Verify databases registration logic (indirectly tested via side-effect or mocking internal method if preferred)
-        # Here we rely on the fact that _register_company_databases is called internally.
-        # Since it's internal, we can check its effects: calling sql_service.register_database
-        # But first we need config_service to return something for data_sources
-        # In this basic success test, we assume no DBs to register if we didn't mock config_service response
 
         assert result is True
 

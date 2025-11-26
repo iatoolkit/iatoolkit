@@ -7,7 +7,7 @@ import pytest
 from unittest.mock import MagicMock
 from flask import Flask
 from iatoolkit.views.prompt_api_view import PromptApiView
-from iatoolkit.services.prompt_manager_service import PromptService
+from iatoolkit.services.prompt_service import PromptService
 from iatoolkit.services.auth_service import AuthService
 
 

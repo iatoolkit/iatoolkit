@@ -6,13 +6,14 @@
 from iatoolkit.infra.llm_client import llmClient
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.repositories.profile_repo import ProfileRepo
+from iatoolkit.services.tool_service import ToolService
 from iatoolkit.services.document_service import DocumentService
 from iatoolkit.services.company_context_service import CompanyContextService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.repositories.models import Task
 from iatoolkit.services.dispatcher_service import Dispatcher
-from iatoolkit.services.prompt_manager_service import PromptService
+from iatoolkit.services.prompt_service import PromptService
 from iatoolkit.services.user_session_context_service import UserSessionContextService
 from iatoolkit.services.history_manager_service import HistoryManagerService
 from iatoolkit.common.util import Utility
@@ -39,6 +40,7 @@ class QueryService:
     @inject
     def __init__(self,
                  dispatcher: Dispatcher,
+                 tool_service: ToolService,
                  llm_client: llmClient,
                  profile_service: ProfileService,
                  company_context_service: CompanyContextService,
@@ -55,6 +57,7 @@ class QueryService:
         self.company_context_service = company_context_service
         self.document_service = document_service
         self.profile_repo = profile_repo
+        self.tool_service = tool_service
         self.prompt_service = prompt_service
         self.i18n_service = i18n_service
         self.util = util
@@ -179,7 +182,7 @@ class QueryService:
             question=None,
             client_data=user_profile,
             company=company,
-            service_list=self.dispatcher.get_company_services(company)
+            service_list=self.tool_service.get_tools_for_llm(company)
         )
 
         # get the company context: schemas, database models, .md files
@@ -348,8 +351,8 @@ class QueryService:
             if error_response:
                 return error_response
 
-            # service list for the function calls
-            tools = self.dispatcher.get_company_services(company)
+            # get the tools availables for this company
+            tools = self.tool_service.get_tools_for_llm(company)
 
             # openai structured output instructions
             output_schema = {}

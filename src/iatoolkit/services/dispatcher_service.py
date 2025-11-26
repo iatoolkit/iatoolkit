@@ -4,11 +4,10 @@
 # IAToolkit is open source software.
 
 from iatoolkit.common.exceptions import IAToolkitException
-from iatoolkit.services.prompt_manager_service import PromptService
+from iatoolkit.services.prompt_service import PromptService
 from iatoolkit.services.sql_service import SqlService
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.services.configuration_service import ConfigurationService
-from iatoolkit.repositories.models import Company, Function
 from iatoolkit.services.excel_service import ExcelService
 from iatoolkit.services.mail_service import MailService
 from iatoolkit.common.util import Utility
@@ -34,17 +33,20 @@ class Dispatcher:
         self.sql_service = sql_service
         self.excel_service = excel_service
         self.mail_service = mail_service
-        self.system_functions = _FUNCTION_LIST
-        self.system_prompts = _SYSTEM_PROMPT
 
+        self._tool_service = None
         self._company_registry = None
         self._company_instances = None
 
-        self.tool_handlers = {
-            "iat_generate_excel": self.excel_service.excel_generator,
-            "iat_send_email": self.mail_service.send_mail,
-            "iat_sql_query": self.sql_service.exec_sql
-        }
+
+    @property
+    def tool_service(self):
+        """Lazy-loads and returns the ToolService instance to avoid circular imports."""
+        if self._tool_service is None:
+            from iatoolkit import current_iatoolkit
+            from iatoolkit.services.tool_service import ToolService
+            self._tool_service = current_iatoolkit().get_injector().get(ToolService)
+        return self._tool_service
 
     @property
     def company_registry(self):
@@ -106,36 +108,15 @@ class Dispatcher:
 
     def setup_iatoolkit_system(self):
         try:
-            self.llmquery_repo.delete_system_functions_and_prompts()
+            # Delegate system tools registration
+            self.tool_service.register_system_tools()
 
-            # create system functions
-            for function in self.system_functions:
-                self.llmquery_repo.create_function(
-                    Function(
-                        company_id=None,
-                        system_function=True,
-                        name=function['function_name'],
-                        description= function['description'],
-                        parameters=function['parameters']
-                    )
-                )
+            # Delegate system prompts registration
+            self.prompt_service.register_system_prompts()
 
-            # create the system prompts
-            i = 1
-            for prompt in self.system_prompts:
-                self.prompt_service.create_prompt(
-                    prompt_name=prompt['name'],
-                    description=prompt['description'],
-                    order=1,
-                    is_system_prompt=True,
-                )
-                i += 1
-            self.llmquery_repo.commit()
         except Exception as e:
             self.llmquery_repo.rollback()
             raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR, str(e))
-
-
 
 
     def dispatch(self, company_short_name: str, function_name: str, **kwargs) -> dict:
@@ -148,9 +129,10 @@ class Dispatcher:
                 f"Empresa '{company_short_name}' no configurada. Empresas disponibles: {available_companies}"
             )
 
-        # check if action is a system function
-        if function_name in self.tool_handlers:
-            return  self.tool_handlers[function_name](company_short_name, **kwargs)
+        # check if action is a system function using ToolService
+        if self.tool_service.is_system_tool(function_name):
+            handler = self.tool_service.get_system_handler(function_name)
+            return handler(company_short_name, **kwargs)
 
         company_instance = self.company_instances[company_short_name]
         try:
@@ -163,25 +145,6 @@ class Dispatcher:
             logging.exception(e)
             raise IAToolkitException(IAToolkitException.ErrorType.EXTERNAL_SOURCE_ERROR,
                                f"Error en function call '{function_name}': {str(e)}") from e
-
-    def get_company_services(self, company: Company) -> list[dict]:
-        # create the syntax with openai response syntax, for the company function list
-        tools = []
-        functions = self.llmquery_repo.get_company_functions(company)
-
-        for function in functions:
-            # make sure is always on
-            function.parameters["additionalProperties"] = False
-
-            ai_tool = {
-                "type": "function",
-                "name": function.name,
-                "description": function.description,
-                "parameters": function.parameters,
-                "strict": True
-            }
-            tools.append(ai_tool)
-        return tools
 
     def get_user_info(self, company_name: str, user_identifier: str) -> dict:
         if company_name not in self.company_instances:
@@ -202,116 +165,3 @@ class Dispatcher:
     def get_company_instance(self, company_name: str):
         """Returns the instance for a given company name."""
         return self.company_instances.get(company_name)
-
-
-# iatoolkit system prompts
-_SYSTEM_PROMPT = [
-    {'name': 'query_main', 'description':'iatoolkit main prompt'},
-    {'name': 'format_styles', 'description':'output format styles'},
-    {'name': 'sql_rules', 'description':'instructions  for SQL queries'}
-]
-
-# iatoolkit  built-in functions (Tools)
-_FUNCTION_LIST = [
-    {
-        "function_name": "iat_sql_query",
-        "description": "Servicio SQL de IAToolkit: debes utilizar este servicio para todas las consultas a base de datos.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "database": {
-                    "type": "string",
-                    "description": "nombre de la base de datos a consultar: `database_name`"
-                },
-                "query": {
-                    "type": "string",
-                    "description": "string con la consulta en sql"
-                },
-            },
-            "required": ["database", "query"]
-            }
-    },
-    {
-        "function_name": "iat_generate_excel",
-        "description": "Generador de Excel."
-                    "Genera un archivo Excel (.xlsx) a partir de una lista de diccionarios. "
-                    "Cada diccionario representa una fila del archivo. "
-                    "el archivo se guarda en directorio de descargas."
-                    "retorna diccionario con filename, attachment_token (para enviar archivo por mail)"
-                    "content_type y download_link",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "filename": {
-                    "type": "string",
-                    "description": "Nombre del archivo de salida (ejemplo: 'reporte.xlsx')",
-                    "pattern": "^.+\\.xlsx?$"
-                },
-                "sheet_name": {
-                    "type": "string",
-                    "description": "Nombre de la hoja dentro del Excel",
-                    "minLength": 1
-                },
-                "data": {
-                    "type": "array",
-                    "description": "Lista de diccionarios. Cada diccionario representa una fila.",
-                    "minItems": 1,
-                    "items": {
-                        "type": "object",
-                        "properties": {},
-                        "additionalProperties": {
-                            "anyOf": [
-                                {"type": "string"},
-                                {"type": "number"},
-                                {"type": "boolean"},
-                                {"type": "null"},
-                                {
-                                    "type": "string",
-                                    "format": "date"
-                                }
-                            ]
-                        }
-                    }
-                }
-            },
-            "required": ["filename", "sheet_name", "data"]
-        }
-    },
-    {
-        'function_name': "iat_send_email",
-        'description':  "iatoolkit mail system. "        
-            "envia mails cuando un usuario lo solicita.",
-         'parameters': {
-            "type": "object",
-            "properties": {
-                "recipient": {"type": "string", "description": "email del destinatario"},
-                "subject": {"type": "string", "description": "asunto del email"},
-                "body": {"type": "string", "description": "HTML del email"},
-                "attachments": {
-                    "type": "array",
-                    "description": "Lista de archivos adjuntos codificados en base64",
-                    "items": {
-                      "type": "object",
-                      "properties": {
-                        "filename": {
-                          "type": "string",
-                          "description": "Nombre del archivo con su extensión (ej. informe.pdf)"
-                        },
-                        "content": {
-                          "type": "string",
-                          "description": "Contenido del archivo en b64."
-                        },
-                        "attachment_token": {
-                          "type": "string",
-                          "description": "token para descargar el archivo."
-                        }
-                      },
-                      "required": ["filename", "content", "attachment_token"],
-                      "additionalProperties": False
-                    }
-                }
-            },
-            "required": ["recipient", "subject", "body", "attachments"]
-        }
-     }
-]

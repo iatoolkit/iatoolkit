@@ -5,7 +5,7 @@
 
 from flask import jsonify
 from flask.views import MethodView
-from iatoolkit.services.prompt_manager_service import PromptService
+from iatoolkit.services.prompt_service import PromptService
 from iatoolkit.services.auth_service import AuthService
 from injector import inject
 import logging

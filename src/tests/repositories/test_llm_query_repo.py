@@ -4,7 +4,7 @@
 # IAToolkit is open source software.
 
 from iatoolkit.repositories.database_manager import DatabaseManager
-from iatoolkit.repositories.models import LLMQuery, Function, Company, Prompt, PromptCategory
+from iatoolkit.repositories.models import LLMQuery, Tool, Company, Prompt, PromptCategory
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from datetime import datetime, timedelta
 
@@ -21,10 +21,10 @@ class TestLLMQueryRepo:
                               output='an output',
                               response={'answer': 'an answer'},
                               answer_time=3)
-        self.function = Function(name="function1",
-                                company_id=1,
-                                description="A description",
-                                parameters={'name': 'value'})
+        self.function = Tool(name="function1",
+                             company_id=1,
+                             description="A description",
+                             parameters={'name': 'value'})
         self.company = Company(name='test_company',
                                short_name='test')
         self.session.add(self.company)
@@ -40,18 +40,18 @@ class TestLLMQueryRepo:
 
         self.session.add(self.function)
         self.session.commit()
-        assert len(self.repo.get_company_functions(self.company)) == 1
+        assert len(self.repo.get_company_tools(self.company)) == 1
 
     def test_create_function_when_new_function(self):
         """Test creating a new function with all fields."""
-        new_function = Function(
+        new_tool = Tool(
             name="function1",
             company_id=self.company.id,
             description="A description",
             parameters={'name': 'value'},
             system_function=False
         )
-        result = self.repo.create_function(new_function=new_function)
+        result = self.repo.create_or_update_tool(new_tool=new_tool)
         self.session.commit()  # Commit to persist and check retrieval
 
         assert result.id is not None
@@ -71,7 +71,7 @@ class TestLLMQueryRepo:
             order=5,
             custom_fields=[{'label': 'lbl'}]
         )
-        result = self.repo.create_prompt(new_prompt=new_prompt)
+        result = self.repo.create_or_update_prompt(new_prompt=new_prompt)
         self.session.commit()  # Commit to persist
 
         assert result.id is not None
@@ -84,72 +84,13 @@ class TestLLMQueryRepo:
     def test_create_prompt_category(self):
         """Test creating a new prompt category."""
         new_category = PromptCategory(name="Cat1", order=1, company_id=self.company.id)
-        result = self.repo.create_prompt_category(new_category)
+        result = self.repo.create_or_update_prompt_category(new_category)
         self.session.commit()
 
         assert result.id is not None
         assert result.name == "Cat1"
         assert result.order == 1
         assert result.company_id == self.company.id
-
-    def test_delete_all_functions(self):
-        """Test deleting all functions for a specific company."""
-        # Create functions for the target company
-        f1 = Function(name="f1", company_id=self.company.id, description="d", parameters={})
-        f2 = Function(name="f2", company_id=self.company.id, description="d", parameters={})
-        self.session.add_all([f1, f2])
-
-        # Create function for another company (should not be deleted)
-        other_company = Company(name='other', short_name='other')
-        self.session.add(other_company)
-        self.session.commit()
-        f3 = Function(name="f3", company_id=other_company.id, description="d", parameters={})
-        self.session.add(f3)
-        self.session.commit()
-
-        assert self.session.query(Function).filter_by(company_id=self.company.id).count() == 2
-
-        self.repo.delete_all_functions(self.company)
-        self.session.commit()  # Caller handles commit usually, but here we test the effect
-
-        assert self.session.query(Function).filter_by(company_id=self.company.id).count() == 0
-        assert self.session.query(Function).filter_by(company_id=other_company.id).count() == 1
-
-    def test_delete_all_prompts(self):
-        """Test deleting all prompts and categories for a specific company."""
-        # Setup data for target company
-        cat1 = PromptCategory(name="Cat1", order=1, company_id=self.company.id)
-        self.session.add(cat1)
-        self.session.commit()
-
-        p1 = Prompt(name="p1", company_id=self.company.id, category_id=cat1.id, description="d", filename="f")
-        self.session.add(p1)
-
-        # Setup data for another company
-        other_company = Company(name='other', short_name='other')
-        self.session.add(other_company)
-        self.session.commit()
-
-        cat2 = PromptCategory(name="Cat2", order=1, company_id=other_company.id)
-        self.session.add(cat2)
-        self.session.commit()
-        p2 = Prompt(name="p2", company_id=other_company.id, category_id=cat2.id, description="d", filename="f")
-        self.session.add(p2)
-        self.session.commit()
-
-        assert self.session.query(Prompt).filter_by(company_id=self.company.id).count() == 1
-        assert self.session.query(PromptCategory).filter_by(company_id=self.company.id).count() == 1
-
-        self.repo.delete_all_prompts(self.company)
-        self.session.commit()
-
-        # Verify target company data is gone
-        assert self.session.query(Prompt).filter_by(company_id=self.company.id).count() == 0
-        assert self.session.query(PromptCategory).filter_by(company_id=self.company.id).count() == 0
-
-        # Verify other company data remains
-        assert self.session.query(Prompt).filter_by(company_id=other_company.id).count() == 1
-        assert self.session.query(PromptCategory).filter_by(company_id=other_company.id).count() == 1
 
     def test_get_history_empty_result(self):
         """Test get_history when no queries exist for the user"""

@@ -62,7 +62,7 @@ class Company(Base):
                              back_populates="company",
                              cascade="all, delete-orphan",
                              lazy='dynamic')
-    functions = relationship("Function",
+    tools = relationship("Tool",
                            back_populates="company",
                            cascade="all, delete-orphan")
     vsdocs = relationship("VSDoc",
@@ -125,9 +125,9 @@ class User(Base):
             'companies': [company.to_dict() for company in self.companies]
         }
 
-class Function(Base):
+class Tool(Base):
     """Represents a custom or system function that the LLM can call (tool)."""
-    __tablename__ = 'iat_functions'
+    __tablename__ = 'iat_tools'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     company_id = Column(Integer,
@@ -140,7 +140,7 @@ class Function(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.now)
 
-    company = relationship('Company', back_populates='functions')
+    company = relationship('Company', back_populates='tools')
 
     def to_dict(self):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
