@@ -107,7 +107,7 @@ class Dispatcher:
     def setup_iatoolkit_system(self):
         # create system functions
         for function in self.system_functions:
-            self.llmquery_repo.create_or_update_function(
+            self.llmquery_repo.create_function(
                 Function(
                     company_id=None,
                     system_function=True,

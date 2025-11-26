@@ -5,6 +5,9 @@
 from pathlib import Path
 from iatoolkit.repositories.models import Company
 from iatoolkit.common.exceptions import IAToolkitException
+from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
+from iatoolkit.repositories.database_manager import DatabaseManager
+from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.common.util import Utility
 from injector import inject
 import logging
@@ -17,7 +20,11 @@ class ConfigurationService:
 
     @inject
     def __init__(self,
+                 db_manager: DatabaseManager,
+                 llm_query_repo: LLMQueryRepo,
                  utility: Utility):
+        self.session = db_manager.get_session()
+        self.llm_query_repo = llm_query_repo
         self.utility = utility
         self._loaded_configs = {}   # cache for store loaded configurations
 
@@ -99,42 +106,59 @@ class ConfigurationService:
         )
 
     def _register_tools(self, company_instance, tools_config: list):
-        """Calls _create_function for each tool defined in the YAML."""
-        for tool in tools_config:
-            company_instance._create_function(
-                function_name=tool['function_name'],
-                description=tool['description'],
-                params=tool['params']
-            )
+        """creates in the database each tool defined in the YAML."""
+        try:
+            self.llm_query_repo.delete_all_functions(company_instance.company)
+            for tool in tools_config:
+                company_instance._create_function(
+                    function_name=tool['function_name'],
+                    description=tool['description'],
+                    params=tool['params']
+                )
+
+            # commit the transactions
+            self.session.commit()
+        except Exception as e:
+            self.session.rollback()
+            raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR, str(e))
 
     def _register_prompts(self, company_instance, config: dict):
         """
-        Creates prompt categories first, then creates each prompt and assigns
-        it to its respective category.
+        1. delete all prompts and categories
+        2. Creates prompt categories
+        3. Creates each prompt and assigns it to its respective category.
         """
-        prompts_config = config.get('prompts', [])
-        categories_config = config.get('prompt_categories', [])
+        try:
+            self.llm_query_repo.delete_all_prompts(company_instance.company)
 
-        created_categories = {}
-        for i, category_name in enumerate(categories_config):
-            category_obj = company_instance._create_prompt_category(name=category_name, order=i + 1)
-            created_categories[category_name] = category_obj
+            prompts_config = config.get('prompts', [])
+            categories_config = config.get('prompt_categories', [])
 
-        for prompt_data in prompts_config:
-            category_name = prompt_data.get('category')
-            if not category_name or category_name not in created_categories:
-                logging.info(f"⚠️  Warning: Prompt '{prompt_data['name']}' has an invalid or missing category. Skipping.")
-                continue
+            created_categories = {}
+            for i, category_name in enumerate(categories_config):
+                category_obj = company_instance._create_prompt_category(name=category_name, order=i + 1)
+                created_categories[category_name] = category_obj
 
-            category_obj = created_categories[category_name]
-            company_instance._create_prompt(
-                prompt_name=prompt_data['name'],
-                description=prompt_data['description'],
-                order=prompt_data['order'],
-                category=category_obj,
-                active=prompt_data.get('active', True),
-                custom_fields=prompt_data.get('custom_fields', [])
-            )
+            for prompt_data in prompts_config:
+                category_name = prompt_data.get('category')
+                if not category_name or category_name not in created_categories:
+                    logging.info(f"⚠️  Warning: Prompt '{prompt_data['name']}' has an invalid or missing category. Skipping.")
+                    continue
+
+                category_obj = created_categories[category_name]
+                company_instance._create_prompt(
+                    prompt_name=prompt_data['name'],
+                    description=prompt_data['description'],
+                    order=prompt_data['order'],
+                    category=category_obj,
+                    active=prompt_data.get('active', True),
+                    custom_fields=prompt_data.get('custom_fields', [])
+                )
+            # commit the transactions
+            self.session.commit()
+        except Exception as e:
+            self.session.rollback()
+            raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR, str(e))
 
     def _validate_configuration(self, company_short_name: str, config: dict):
         """

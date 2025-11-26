@@ -37,7 +37,7 @@ class BaseCompany(ABC):
         if not self.company:
             raise ValueError("La compañía debe estar definida antes de crear una función.")
 
-        self.llm_query_repo.create_or_update_function(
+        self.llm_query_repo.create_function(
             Function(
                 company_id=self.company.id,
                 name=function_name,
@@ -52,7 +52,7 @@ class BaseCompany(ABC):
         if not self.company:
             raise ValueError("La compañía debe estar definida antes de crear una categoría.")
 
-        return self.llm_query_repo.create_or_update_prompt_category(
+        return self.llm_query_repo.create_prompt_category(
             PromptCategory(name=name, order=order, company_id=self.company.id)
         )
 

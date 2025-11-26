@@ -72,7 +72,7 @@ class PromptService:
             )
 
         try:
-            self.llm_query_repo.create_or_update_prompt(prompt)
+            self.llm_query_repo.create_prompt(prompt)
         except Exception as e:
             raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR,
                                f'error creating prompt "{prompt_name}": {str(e)}')
