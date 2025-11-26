@@ -8,7 +8,9 @@ from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.common.util import Utility
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit import BaseCompany
-from iatoolkit.repositories.models import Company as CompanyModel, PromptCategory
+from iatoolkit.repositories.models import Company, PromptCategory
+from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
+from iatoolkit.repositories.database_manager import DatabaseManager
 
 # A complete and valid mock configuration, passing all validation rules.
 MOCK_VALID_CONFIG = {
@@ -90,12 +92,18 @@ class TestConfigurationService:
         and instantiate the ConfigurationService.
         """
         self.mock_utility = Mock(spec=Utility)
-        self.mock_company_instance = Mock(spec=BaseCompany)
-        self.mock_company_orm_object = Mock(spec=CompanyModel)
-        self.mock_company_instance._create_company.return_value = self.mock_company_orm_object
-        self.mock_company_instance._create_prompt_category.return_value = Mock(spec=PromptCategory)
+        self.mock_llm_query_repo = Mock(spec=LLMQueryRepo)
+        self.mock_database_manager = Mock(spec=DatabaseManager)
 
-        self.service = ConfigurationService(utility=self.mock_utility)
+        self.mock_company_instance = Mock(spec=BaseCompany)
+        self.mock_company = Company(id=1, short_name='ACME')
+        self.mock_company_instance._create_company.return_value = self.mock_company
+        self.mock_company_instance._create_prompt_category.return_value = Mock(spec=PromptCategory)
+        self.mock_company_instance.company = self.mock_company
+
+        self.service = ConfigurationService(utility=self.mock_utility,
+                                            db_manager=self.mock_database_manager,
+                                            llm_query_repo=self.mock_llm_query_repo)
         self.COMPANY_NAME = 'acme'
 
     @patch('pathlib.Path.is_file', return_value=True)  # For _validate_configuration
@@ -148,7 +156,7 @@ class TestConfigurationService:
 
         # 4. Verify final attributes were set on the instance
         assert self.mock_company_instance.company_short_name == self.COMPANY_NAME
-        assert self.mock_company_instance.company == self.mock_company_orm_object
+        assert self.mock_company_instance.company == self.mock_company
 
     @patch('pathlib.Path.is_file', return_value=True)  # Needed for validation if it were called
     @patch('pathlib.Path.exists', return_value=True)
@@ -258,3 +266,66 @@ class TestConfigurationService:
 
             assert excinfo.value.error_type == IAToolkitException.ErrorType.CONFIG_ERROR
             assert "company.yaml validation errors" in str(excinfo.value)
+
+    @patch('pathlib.Path.is_file', return_value=True)
+    @patch('pathlib.Path.exists', return_value=True)
+    def test_register_prompts_exception_from_repo(self, mock_exists, mock_is_file):
+        """
+        GIVEN llm_query_repo raises an exception during delete_all_prompts
+        WHEN load_configuration is called
+        THEN it should rollback session and raise IAToolkitException
+        """
+        self.mock_utility.load_schema_from_yaml.return_value = {
+            'id': 'acme', 'name': 'ACME Corp', 'llm': {'model': 'm', 'api-key': 'k'},
+            'embedding_provider': {'provider': 'p', 'model': 'm', 'api_key_name': 'k'},
+            'prompts': [{'name': 'p1', 'category': 'Cat1', 'description': 'd', 'order': 1}],
+            'prompt_categories': ['Cat1']
+        }
+
+        # Simular error en repo
+        self.mock_llm_query_repo.delete_all_prompts.side_effect = Exception("DB Error")
+
+        # Mock session para verificar rollback (asumiendo que self.service.session viene de db_manager)
+        mock_session = Mock()
+        self.mock_database_manager.get_session.return_value = mock_session
+        # Re-instanciar service para que tome el mock session
+        service = ConfigurationService(utility=self.mock_utility,
+                                       db_manager=self.mock_database_manager,
+                                       llm_query_repo=self.mock_llm_query_repo)
+
+        with pytest.raises(IAToolkitException) as excinfo:
+            service.load_configuration('acme', self.mock_company_instance)
+
+        assert excinfo.value.error_type == IAToolkitException.ErrorType.DATABASE_ERROR
+        assert "DB Error" in str(excinfo.value)
+        mock_session.rollback.assert_called_once()
+
+    @patch('pathlib.Path.is_file', return_value=True)
+    @patch('pathlib.Path.exists', return_value=True)
+    def test_register_tools_exception_from_repo(self, mock_exists, mock_is_file):
+        """
+        GIVEN llm_query_repo raises an exception during delete_all_functions
+        WHEN load_configuration is called
+        THEN it should rollback session and raise IAToolkitException
+        """
+        self.mock_utility.load_schema_from_yaml.return_value = {
+            'id': 'acme', 'name': 'ACME Corp', 'llm': {'model': 'm', 'api-key': 'k'},
+            'embedding_provider': {'provider': 'p', 'model': 'm', 'api_key_name': 'k'},
+            'tools': [{'function_name': 'f1', 'description': 'd', 'params': {}}]
+        }
+
+        # Simular error en repo
+        self.mock_llm_query_repo.delete_all_functions.side_effect = Exception("DB Error Tools")
+
+        mock_session = Mock()
+        self.mock_database_manager.get_session.return_value = mock_session
+        service = ConfigurationService(utility=self.mock_utility,
+                                       db_manager=self.mock_database_manager,
+                                       llm_query_repo=self.mock_llm_query_repo)
+
+        with pytest.raises(IAToolkitException) as excinfo:
+            service.load_configuration('acme', self.mock_company_instance)
+
+        assert excinfo.value.error_type == IAToolkitException.ErrorType.DATABASE_ERROR
+        assert "DB Error Tools" in str(excinfo.value)
+        mock_session.rollback.assert_called_once()

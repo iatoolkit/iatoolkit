@@ -142,8 +142,8 @@ class TestPromptService:
             custom_fields = [{'data_key': 'key', 'label': ' a label'}]
         )
 
-        self.llm_query_repo.create_or_update_prompt.assert_called_once()
-        call_args = self.llm_query_repo.create_or_update_prompt.call_args[0]
+        self.llm_query_repo.create_prompt.assert_called_once()
+        call_args = self.llm_query_repo.create_prompt.call_args[0]
         prompt_object = call_args[0]
 
         assert isinstance(prompt_object, Prompt)
@@ -182,7 +182,7 @@ class TestPromptService:
     @patch('iatoolkit.services.prompt_manager_service.os.path.exists', return_value=True)
     def test_create_prompt_handles_db_exception(self, mock_exists):
         """Prueba que se maneja una excepción de la base de datos al guardar."""
-        self.llm_query_repo.create_or_update_prompt.side_effect = Exception("DB Unique Constraint Failed")
+        self.llm_query_repo.create_prompt.side_effect = Exception("DB Unique Constraint Failed")
 
         with pytest.raises(IAToolkitException) as exc_info:
             self.prompt_service.create_prompt(

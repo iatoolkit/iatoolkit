@@ -69,30 +69,31 @@ tools:
           description: "Texto o pregunta a buscar en los documentos."
       required: ["query"]
 
+
 # Prompts
 # Defines the ordered list of categories and the prompts available in the UI.
 # Prompts are files in the company prompts/ folder
 # (filename is: prompt_name.prompt).
 # Example: analisis_ventas.prompt
 prompt_categories:
-  - "General"
-  - "Análisis Avanzado"     # sample for adding more categories
+  - "Comercial"
+  - "Financiero"     # sample for adding more categories
 
 prompts:
-  - category: "General"     # assign this prompt to the category "General"
+  - category: "Comercial"     # assign this prompt to the category "General"
     name: "analisis_ventas"
     description: "Analisis de ventas"
     order: 1
-  - category: "General"
+  - category: "Comercial"
     name: "supplier_report"
     description: "Análisis de proveedores"
     order: 2
     custom_fields:
       - data_key: "supplier_id"
         label: "Identificador del Proveedor"
-  - category: "General"
+  - category: "Financiero"
     name: "analisis_despachos"
-    description: "Analisis de despachos"
+    description: "Analisis de despachos de proveedores"
     order: 3
     custom_fields:
       - data_key: "init_date"

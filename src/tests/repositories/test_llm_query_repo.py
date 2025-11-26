@@ -42,71 +42,114 @@ class TestLLMQueryRepo:
         self.session.commit()
         assert len(self.repo.get_company_functions(self.company)) == 1
 
-    def test_create_or_update_function_when_new_function(self):
-        new_function = Function(name="function1",
-                                company_id=1,
-                                description="A description",
-                                parameters={'name': 'value'})
-        result = self.repo.create_or_update_function(new_function=new_function)
+    def test_create_function_when_new_function(self):
+        """Test creating a new function with all fields."""
+        new_function = Function(
+            name="function1",
+            company_id=self.company.id,
+            description="A description",
+            parameters={'name': 'value'},
+            system_function=False
+        )
+        result = self.repo.create_function(new_function=new_function)
+        self.session.commit()  # Commit to persist and check retrieval
+
         assert result.id is not None
         assert result.name == "function1"
         assert result.description == "A description"
+        assert result.parameters == {'name': 'value'}
+        assert result.company_id == self.company.id
 
-    def test_create_or_update_function_when_updating_function(self):
-        # Add an initial function
-        function = Function(name="function1",
-                                company_id=self.company.id,
-                                description="A description",
-                                parameters={'name': 'value'})
-        self.session.add(function)
-        self.session.commit()
+    def test_create_prompt_when_new_prompt(self):
+        """Test creating a new prompt with all fields."""
+        new_prompt = Prompt(
+            name="prompt1",
+            company_id=self.company.id,
+            description="an intelligent prompt",
+            filename='file.prompt',
+            active=True,
+            order=5,
+            custom_fields=[{'label': 'lbl'}]
+        )
+        result = self.repo.create_prompt(new_prompt=new_prompt)
+        self.session.commit()  # Commit to persist
 
-        # Update the description
-        upd_function = Function(name="function1",
-                            company_id=self.company.id,
-                            description="New description",
-                            parameters={'name': 'value 2'})
-        result = self.repo.create_or_update_function(new_function=upd_function)
-        assert result.id == function.id
-        assert result.description == "New description"
-        assert result.parameters['name'] == 'value 2'
-
-    def test_create_or_update_prompt_when_new_prompt(self):
-        new_prompt = Prompt(name="prompt1",
-                                company_id=self.company.id,
-                                description="an intelligent prompt",
-                                filename='')
-        result = self.repo.create_or_update_prompt(new_prompt=new_prompt)
         assert result.id is not None
         assert result.name == "prompt1"
         assert result.description == "an intelligent prompt"
         assert result.active is True
+        assert result.order == 5
+        assert result.custom_fields == [{'label': 'lbl'}]
 
-    def test_create_or_update_prompt_when_updating_prompt(self):
-
-        category = self.repo.create_or_update_prompt_category(PromptCategory(name='Cobranzas', order=6,
-                             company_id=self.company.id))
-        prompt = Prompt(name="prompt1",
-                        company_id=self.company.id,
-                        category_id=category.id,
-                        active=True,
-                        order=1,
-                        description="an intelligent prompt",
-                        filename='')
-        self.session.add(prompt)
+    def test_create_prompt_category(self):
+        """Test creating a new prompt category."""
+        new_category = PromptCategory(name="Cat1", order=1, company_id=self.company.id)
+        result = self.repo.create_prompt_category(new_category)
         self.session.commit()
 
-        # Update the description
-        upd_prompt = Prompt(name="prompt1",
-                            company_id=self.company.id,
-                            category_id=category.id,
-                            active=True,
-                            order=3,
-                            description="a super intelligent prompt",
-                            filename='')
-        result = self.repo.create_or_update_prompt(new_prompt=upd_prompt)
-        assert result.description == "a super intelligent prompt"
-        assert result.id == prompt.id
+        assert result.id is not None
+        assert result.name == "Cat1"
+        assert result.order == 1
+        assert result.company_id == self.company.id
+
+    def test_delete_all_functions(self):
+        """Test deleting all functions for a specific company."""
+        # Create functions for the target company
+        f1 = Function(name="f1", company_id=self.company.id, description="d", parameters={})
+        f2 = Function(name="f2", company_id=self.company.id, description="d", parameters={})
+        self.session.add_all([f1, f2])
+
+        # Create function for another company (should not be deleted)
+        other_company = Company(name='other', short_name='other')
+        self.session.add(other_company)
+        self.session.commit()
+        f3 = Function(name="f3", company_id=other_company.id, description="d", parameters={})
+        self.session.add(f3)
+        self.session.commit()
+
+        assert self.session.query(Function).filter_by(company_id=self.company.id).count() == 2
+
+        self.repo.delete_all_functions(self.company)
+        self.session.commit()  # Caller handles commit usually, but here we test the effect
+
+        assert self.session.query(Function).filter_by(company_id=self.company.id).count() == 0
+        assert self.session.query(Function).filter_by(company_id=other_company.id).count() == 1
+
+    def test_delete_all_prompts(self):
+        """Test deleting all prompts and categories for a specific company."""
+        # Setup data for target company
+        cat1 = PromptCategory(name="Cat1", order=1, company_id=self.company.id)
+        self.session.add(cat1)
+        self.session.commit()
+
+        p1 = Prompt(name="p1", company_id=self.company.id, category_id=cat1.id, description="d", filename="f")
+        self.session.add(p1)
+
+        # Setup data for another company
+        other_company = Company(name='other', short_name='other')
+        self.session.add(other_company)
+        self.session.commit()
+
+        cat2 = PromptCategory(name="Cat2", order=1, company_id=other_company.id)
+        self.session.add(cat2)
+        self.session.commit()
+        p2 = Prompt(name="p2", company_id=other_company.id, category_id=cat2.id, description="d", filename="f")
+        self.session.add(p2)
+        self.session.commit()
+
+        assert self.session.query(Prompt).filter_by(company_id=self.company.id).count() == 1
+        assert self.session.query(PromptCategory).filter_by(company_id=self.company.id).count() == 1
+
+        self.repo.delete_all_prompts(self.company)
+        self.session.commit()
+
+        # Verify target company data is gone
+        assert self.session.query(Prompt).filter_by(company_id=self.company.id).count() == 0
+        assert self.session.query(PromptCategory).filter_by(company_id=self.company.id).count() == 0
+
+        # Verify other company data remains
+        assert self.session.query(Prompt).filter_by(company_id=other_company.id).count() == 1
+        assert self.session.query(PromptCategory).filter_by(company_id=other_company.id).count() == 1
 
     def test_get_history_empty_result(self):
         """Test get_history when no queries exist for the user"""
@@ -337,4 +380,51 @@ class TestLLMQueryRepo:
         assert prompts[0].name == "main_company_prompt"
         assert prompts[0].company_id == self.company.id
 
+    # ... existing code ...
+    def test_get_system_prompts(self):
+        """Test get_system_prompts filters correctly."""
+        # Create regular prompt
+        p1 = Prompt(name="regular", company_id=self.company.id, description="d", filename="f", is_system_prompt=False)
 
+        # Create system prompt (active)
+        sp1 = Prompt(name="sys1", description="sys desc", filename="f", is_system_prompt=True, active=True, order=2)
+
+        # Create system prompt (inactive)
+        sp2 = Prompt(name="sys2", description="sys desc", filename="f", is_system_prompt=True, active=False, order=1)
+
+        # Create system prompt (active, order 1)
+        sp3 = Prompt(name="sys3", description="sys desc", filename="f", is_system_prompt=True, active=True, order=1)
+
+        self.session.add_all([p1, sp1, sp2, sp3])
+        self.session.commit()
+
+        results = self.repo.get_system_prompts()
+
+        # Should return only active system prompts, ordered by 'order'
+        assert len(results) == 2
+        assert results[0].name == "sys3"  # order 1
+        assert results[1].name == "sys1"  # order 2
+
+    def test_get_prompt_by_name(self):
+        """Test get_prompt_by_name returns the correct prompt."""
+        p1 = Prompt(name="target_prompt", company_id=self.company.id, description="d", filename="f")
+        p2 = Prompt(name="other_prompt", company_id=self.company.id, description="d", filename="f")
+
+        # Prompt for another company with same name
+        other_company = Company(name='other', short_name='other')
+        self.session.add(other_company)
+        self.session.commit()
+        p3 = Prompt(name="target_prompt", company_id=other_company.id, description="d", filename="f")
+
+        self.session.add_all([p1, p2, p3])
+        self.session.commit()
+
+        # Should find the prompt for the correct company
+        result = self.repo.get_prompt_by_name(self.company, "target_prompt")
+        assert result is not None
+        assert result.id == p1.id
+        assert result.company_id == self.company.id
+
+        # Should return None if prompt doesn't exist for that company
+        result_none = self.repo.get_prompt_by_name(self.company, "non_existent")
+        assert result_none is None
