@@ -52,9 +52,8 @@ class BaseCompany(ABC):
         if not self.company:
             raise ValueError("La compañía debe estar definida antes de crear una categoría.")
 
-        return self.llm_query_repo.create_prompt_category(
-            PromptCategory(name=name, order=order, company_id=self.company.id)
-        )
+        category = PromptCategory(name=name, order=order, company_id=self.company.id)
+        return self.llm_query_repo.create_prompt_category(category)
 
     def _create_prompt(self, prompt_name: str, description: str, category: PromptCategory, order: int, **kwargs):
         if not self.company:

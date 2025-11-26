@@ -41,6 +41,7 @@ class LLMQueryRepo:
     def create_function(self, new_function: Function):
         # create a new function(tool) associated to a company
         self.session.add(new_function)
+        self.session.flush()
         return new_function
 
     def delete_all_functions(self, company: Company):
@@ -50,10 +51,12 @@ class LLMQueryRepo:
 
     def create_prompt(self, new_prompt: Prompt):
         self.session.add(new_prompt)
+        self.session.flush()
         return new_prompt
 
     def create_prompt_category(self, new_category: PromptCategory):
         self.session.add(new_category)
+        self.session.flush()
         return new_category
 
     def delete_all_prompts(self, company: Company):
