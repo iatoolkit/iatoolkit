@@ -105,16 +105,57 @@
 <p>
   IAToolkit is designed with a clear, layered architecture that keeps concerns separated and makes the system easy to maintain, extend, and reason about. Each part of the framework plays a specific role, ensuring that your assistant remains robust as it grows in complexity.
 </p>
-<div style="text-align: center; margin: 2rem 0;">
-            <img src="{{ url_for('static', filename='images/iatoolkit_core.png') }}"
-                alt="IAToolkit multi-tenant conceptual architecture"
-                style="max-width: 99%; height: auto; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.08);">
-            <p style="color: #6c757d; font-size: 0.9rem; margin-top: 0.5rem;">
-                    Figure: Conceptual architecture of IAToolkit Core and multi-tenant companies.
-            </p>
-        </div>
 
-                <p>
+        <!-- IAToolkit Core Diagram (HTML/CSS Version) -->
+<div class="iat-core-diagram">
+
+  <div class="core-box core-users">
+    <div class="core-title">Users</div>
+    <div class="core-sub">Internal teams · Customers · Agents</div>
+  </div>
+
+  <div class="core-arrow"></div>
+
+  <div class="core-box core-main">
+    <div class="core-main-title">IAToolkit Core</div>
+    <div class="core-main-layers">
+      <div class="core-layer">Interface & Chat</div>
+      <div class="core-layer">Intelligence & Services</div>
+      <div class="core-layer">Connectors & Tools</div>
+    </div>
+  </div>
+
+  <div class="core-arrow-split">
+    <div class="split-line"></div>
+    <div class="split-arrow-left"></div>
+    <div class="split-arrow-right"></div>
+  </div>
+
+  <div class="core-companies-row">
+    <div class="core-box core-company">
+      <div class="core-title">Company A</div>
+      <div class="core-sub">company.yaml · data · tools</div>
+    </div>
+    <div class="core-box core-company">
+      <div class="core-title">Company B</div>
+      <div class="core-sub">company.yaml · data · tools</div>
+    </div>
+  </div>
+
+  <div class="core-arrow"></div>
+
+  <div class="core-box core-data">
+    <div class="core-title">Data & Systems</div>
+    <div class="core-sub">SQL · Documents · Business APIs</div>
+  </div>
+
+</div>
+
+<p style="color:#6c757d; font-size:0.9rem; text-align:center; margin-top:0.5rem;">
+  Figure: Simplified conceptual structure of IAToolkit Core and Company modules.
+</p>
+
+        <p>
     The open-source Core focuses on correctness, clarity, and extensibility. It provides
     all the fundamental building blocks required to implement a real assistant: the
     Intelligence Layer, prompt orchestration, tool execution, data access, and the
