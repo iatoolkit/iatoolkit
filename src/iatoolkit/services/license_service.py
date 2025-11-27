@@ -56,11 +56,11 @@ class LicenseService:
         token = os.getenv('IAT_LICENSE_KEY')
 
         if not token:
-            logging.info("ℹ️  No Enterprise license detected. Using Community limits.")
+            print("ℹ️  No Enterprise license detected. Using Community limits.")
             return default_limits
 
         if not self.public_key:
-            logging.warning("⚠️  Public key missing. Cannot validate license. Fallback to Community limits.")
+            print("⚠️  Public key missing. Cannot validate license. Fallback to Community limits.")
             return default_limits
 
         # 3. Cryptographically validate the license
@@ -69,7 +69,7 @@ class LicenseService:
             payload = jwt.decode(token, self.public_key, algorithms=["ES256"])
 
             # validate some payload data
-            logging.info(f"🚀 Valid Enterprise License: {payload.get('client_name')} ({payload.get('plan')})")
+            print(f"🚀 Valid Enterprise License: {payload.get('client_name')} ({payload.get('plan')})")
             return payload
 
         except jwt.ExpiredSignatureError:
