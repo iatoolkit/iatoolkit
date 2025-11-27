@@ -1,8 +1,15 @@
 # IAToolkit Community Edition License
 
-This edition is licensed under MIT, with the following *usage limits* implemented in code:
+The IAToolkit Community Edition is licensed under the MIT License.
 
-- Max 2 Company
-- Max 3 Tools
-- unlimited SQL data sources
-- Basic RAG only
+This edition includes the full open-source IAToolkit Core, with the following usage scope:
+
+- Support for **one (1) Company**
+- Unlimited Tools within that Company
+- SQL integration
+- Basic RAG (standard retrieval & embeddings)
+- All Components of the open-source Intelligence Layer and Interfaces
+
+No additional technical limits apply beyond the single-Company constraint.
+
+This edition is designed for learning, prototyping, and single-business deployments.

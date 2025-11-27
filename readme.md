@@ -189,7 +189,12 @@ Please read our **[Contributing Guide](./contributing.md)** to get started.
 
 ---
 
-## 📄 License
-The IAToolkit Open Core is licensed under the **[MIT License](./LICENSE)**.
+## 📄 Licensing
 
-Enterprise extensions (if installed) are licensed under a separate commercial agreement.
+IAToolkit is open-core:
+
+- **Community Edition (MIT)** — full open-source Core, limited to one Company  
+- **Enterprise Edition** — multi-Company capabilities and advanced features  
+- Licensing details:  
+  - [MIT License (Community Edition)](LICENSE_COMMUNITY.md)  
+  - [Enterprise License](ENTERPRISE_LICENSE.md)  

@@ -2,44 +2,44 @@
 
 The open-source portions of IAToolkit (the "IAToolkit Open Core") are licensed under the MIT License.
 
-Certain additional features ("IAToolkit Enterprise Features") are licensed under this
-Enterprise License. These features include, but are not limited to:
+The following "IAToolkit Enterprise Features" are licensed under this Enterprise License:
 
-- Advanced RAG pipelines
-- Multi-tenant high-scale capabilities
-- External connectors (S3, SMTP, third-party APIs)
-- Audit & analytics modules
-- SSO integrations
-- Token, rate, and usage expansion beyond community limits
-- Any module whose activation depends on a valid Enterprise License Key (JWT)
+- Multi-Company (multi-tenant) capabilities  
+- Advanced RAG pipelines and extended retrieval logic  
+- External connectors (S3, SMTP, external APIs, file storage)  
+- SSO integrations (Google, Microsoft, Okta, etc.)  
+- Auditing, access control, and operational analytics  
+- Priority support and continuous updates  
+- Any feature or module that requires activation via the Enterprise License Key
 
 ## License Key
 
-Use of Enterprise Features requires a valid Enterprise License Key issued by IAToolkit.
-The software will verify the authenticity, expiration date, and plan details of this key.
+Enterprise Features require a valid Enterprise License Key issued by IAToolkit.
+The software validates the token's authenticity, signature, expiration, and plan details.
 Tampering with or bypassing the license validation mechanism is strictly prohibited.
 
 ## Restrictions
 
 You may not:
 
-- Modify or remove the license validation code for the purpose of enabling Enterprise Features without a valid license.
-- Redistribute any IAToolkit Enterprise package, wheel, or binary.
-- Use Enterprise Features without an active commercial agreement.
-- Attempt to generate or modify a License Key.
+- Modify or remove the license validation code for the purpose of enabling Enterprise Features without a valid license  
+- Redistribute any IAToolkit Enterprise package, wheel, or binary  
+- Use Enterprise Features without an active commercial agreement  
+- Attempt to forge, alter, or reverse-engineer a License Key  
 
 ## Support and Updates
 
-Enterprise customers are entitled to:
-- Updates to the enterprise package during the subscription term,
-- Technical support according to the signed contract,
-- Security notices and priority patches.
+Enterprise customers receive:
+
+- Priority technical support  
+- Updates to the Enterprise package during the subscription term  
+- Security notifications and priority patches  
 
 ## Termination
 
-Upon expiry or termination of the Enterprise Contract, all Enterprise Features must be disabled, and any Enterprise wheels must be removed.
+Upon expiration or termination of the Enterprise Contract, all Enterprise Features must be disabled, and any Enterprise wheels must be removed.
 
 ## Contact
 
-For commercial licenses, please contact:
-support@iatoolkit.com
+For commercial licensing, please contact:  
+**support@iatoolkit.com**
