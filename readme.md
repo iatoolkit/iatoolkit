@@ -169,7 +169,6 @@ Enterprise Edition unlocks **multi-Company** and **multi-tenant** capabilities,
 plus additional features designed for real corporate environments:
 
 - **Unlimited Companies** with isolated configurations  
-- **Unlimited tools per Company**  
 - **Advanced RAG pipelines**  
 - **External connectors** (S3, APIs, emails, file storage)  
 - **Audit logs & activity tracing**  
@@ -178,6 +177,7 @@ plus additional features designed for real corporate environments:
 - **Priority support and onboarding**
 
 These features are exclusive and **not included** in the Community Edition.
+
 ---
 
 ## 🤝 Contributing

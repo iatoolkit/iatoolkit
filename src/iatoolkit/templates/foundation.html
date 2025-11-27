@@ -113,6 +113,20 @@
                     Figure: Conceptual architecture of IAToolkit Core and multi-tenant companies.
             </p>
         </div>
+
+                <p>
+    The open-source Core focuses on correctness, clarity, and extensibility. It provides
+    all the fundamental building blocks required to implement a real assistant: the
+    Intelligence Layer, prompt orchestration, tool execution, data access, and the
+    Company module system.
+
+    <br><br>
+    Enterprise capabilities — such as unlimited multi-tenancy, advanced retrieval logic,
+    connectors to external systems, auditing, and SSO — are implemented outside of this
+    Core and are enabled only when a valid license key is present. This separation
+    preserves the transparency of the MIT-licensed foundation while supporting
+    commercial deployments that require additional scale or governance.
+</p>
 <p>
   The framework organizes its logic into well-defined layers:
 </p>
@@ -151,6 +165,14 @@ simply by updating configuration and domain-specific logic, without changing the
     <!-- Chapter 3 -->
     <h2>3. Building a Multi-Tenant Assistant</h2>
 
+<div style="background:#f8f9fa; padding:1rem 1.25rem; border-left:4px solid #4A55A2; margin:2rem 0;">
+    <strong>IAToolkit Licensing Model</strong><br>
+    The open-source Community Edition (MIT) supports one Company and includes the full Core:
+    Intelligence Layer, Interfaces, SQL orchestration, and basic RAG.
+
+    <br><br>
+    The Enterprise Edition unlocks multi-Company deployments and advanced capabilities.
+</div>
 
     <p>
       One of the most powerful ideas in IAToolkit is the concept of a <strong>Company</strong>.
@@ -183,6 +205,7 @@ simply by updating configuration and domain-specific logic, without changing the
         Figure: How IAToolkit’s Dispatcher connects LLM tool calls to each Company’s configuration and logic.
         </p>
     </div>
+
 
     <h3>3.2 Per-Company Directories: Context, Schema, Prompts</h3>
     <p>
