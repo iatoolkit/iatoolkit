@@ -65,7 +65,6 @@ class LLMQueryRepo:
             prompt.category_id = new_prompt.category_id
             prompt.description = new_prompt.description
             prompt.order = new_prompt.order
-            prompt.active = new_prompt.active
             prompt.is_system_prompt = new_prompt.is_system_prompt
             prompt.filename = new_prompt.filename
             prompt.custom_fields = new_prompt.custom_fields

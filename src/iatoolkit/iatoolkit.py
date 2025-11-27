@@ -18,12 +18,12 @@ from iatoolkit.repositories.database_manager import DatabaseManager
 from werkzeug.middleware.proxy_fix import ProxyFix
 from injector import Binder, Injector, singleton
 from importlib.metadata import version as _pkg_version, PackageNotFoundError
+from iatoolkit.services.license_service import LicenseService
 
-IATOOLKIT_VERSION = "0.81.0"
+IATOOLKIT_VERSION = "0.82.0"
 
 # global variable for the unique instance of IAToolkit
 _iatoolkit_instance: Optional['IAToolkit'] = None
-
 
 class IAToolkit:
     """
@@ -332,6 +332,7 @@ class IAToolkit:
         binder.bind(EmbeddingService, to=EmbeddingService)
         binder.bind(HistoryManagerService, to=HistoryManagerService)
         binder.bind(ToolService, to=ToolService)
+        binder.bind(LicenseService, to=LicenseService)
 
     def _bind_infrastructure(self, binder: Binder):
         from iatoolkit.infra.llm_client import llmClient

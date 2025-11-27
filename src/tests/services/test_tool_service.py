@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import MagicMock, ANY
 from iatoolkit.services.tool_service import ToolService, _SYSTEM_TOOLS
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
+from iatoolkit.services.license_service import LicenseService
 from iatoolkit.repositories.models import Company, Tool
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.sql_service import SqlService
@@ -18,12 +19,14 @@ class TestToolService:
         self.mock_sql_service = MagicMock(spec=SqlService)
         self.mock_excel_service = MagicMock(spec=ExcelService)
         self.mock_mail_service = MagicMock(spec=MailService)
+        self.mock_license_service = MagicMock(spec=LicenseService)
 
         self.service = ToolService(
             llm_query_repo=self.mock_llm_query_repo,
             sql_service=self.mock_sql_service,
             excel_service=self.mock_excel_service,
-            mail_service=self.mock_mail_service
+            mail_service=self.mock_mail_service,
+            license_service=self.mock_license_service
         )
 
         # Mock del modelo de base de datos (Company Model)

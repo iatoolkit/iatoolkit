@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "iatoolkit"
-version = "0.81.0"
+version = "0.82.0"
 requires-python = ">=3.12"
 description = "IAToolkit"
 readme = "readme.md"
@@ -26,4 +26,4 @@ exclude = ["tests*", "*/tests*"]
 dependencies = { file = ["requirements.txt"] }
 
 [tool.setuptools.package-data]
-iatoolkit = ["system_prompts/*.prompt", "templates/**/*", "static/**/*", "locales/*.yaml"]
+iatoolkit = ["public_key.pem", "system_prompts/*.prompt", "templates/**/*", "static/**/*", "locales/*.yaml"]

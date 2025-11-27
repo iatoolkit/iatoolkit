@@ -8,30 +8,19 @@
   </p>
 </div>
 
-![IAToolkit Demo](./docs/assets/iatoolkit-demo.gif)
-
 ---
 
 ## ✨ Why IAToolkit?
 
-IAToolkit is more than a collection of utilities — it is a **structured foundation** for building
-real-world, enterprise-grade AI assistants that run inside your own environment, understand your data,
-and respect your business rules.
+IAToolkit is an **open-source framework** for building real-world, enterprise-grade AI assistants that run
+**inside your environment**, access **your databases and documents**, and execute **your workflows**.
 
 Whether you’re:
 
 - building a production chatbot for your company, or  
 - learning how serious AI applications are architected,
 
-IAToolkit gives you a clean, opinionated architecture:
-
-- a shared **Core** with Interfaces & Chat  
-- an **Intelligence Layer** that orchestrates prompts, tools, RAG, and rules  
-- **Connectors & Tools** to talk to SQL, documents, and APIs  
-- a **Data Access Layer** based on SQLAlchemy  
-- and a multi-tenant design where each **Company** defines its own configuration, context, and tools.
-
-The goal is simple: help you move quickly from “cool demo” to **assistant that actually works in the real world**.
+IAToolkit gives you a structured foundation designed for real business use.
 
 ---
 
@@ -58,8 +47,12 @@ At the heart of IAToolkit is a structured internal architecture:
   Each Company has its own `company.yaml`, context, prompts, tools, and branding, forming a clean
   boundary within a shared IAToolkit Core.
 
-If you want a deeper explanation of the design decisions behind this, see the  
-🏛️ **[Foundation Article](https://www.iatoolkit.com/pages/foundation)**.
+For a deeper explanation of these concepts, see:
+
+- 🏛️ **[Foundation Article](https://www.iatoolkit.com/pages/foundation)**  
+- 🗓️ **[Implementation Plan](https://www.iatoolkit.com/pages/implementation_plan)**
+
+These two documents explain the “why” behind the architecture and how to build a full assistant in 3 months.
 
 ---
 
@@ -146,7 +139,80 @@ your own Companies, tools, and workflows.
 ➡️ **[Explore all documentation](./docs/index.md)**
 
 ---
+## 🆓 Community Edition vs Enterprise Edition
 
+IAToolkit follows a modern **open-core model** similar to GitLab, PostHog, and Airbyte.  
+The Core of the framework is fully open-source under the MIT license — transparent, modifiable, extensible.
+
+### 🟦 Community Edition (MIT License)
+
+The Community Edition is ideal for learning, prototypes, and single-business deployments.  
+It includes:
+
+- full access to the Intelligence Layer  
+- SQL orchestration  
+- RAG (basic)  
+- the full Interfaces & Chat experience  
+- customizable tools  
+- **support for one (1) Company only**
+
+This “single-Company mode” provides a clean separation between Community and Enterprise:  
+the entire system works exactly the same, but is scoped to one business configuration.
+
+Unlimited customization remains possible by forking the MIT-licensed repository, as allowed by open source.
+
+---
+
+### 🟥 Enterprise Edition (Commercial License)
+
+Enterprise Edition unlocks **multi-Company** and **multi-tenant** capabilities, 
+plus additional features designed for real corporate environments:
+
+- **Unlimited Companies** with isolated configurations  
+- **Unlimited tools per Company**  
+- **Advanced RAG pipelines**  
+- **External connectors** (S3, APIs, emails, file storage)  
+- **Audit logs & activity tracing**  
+- **Higher request and token ceilings**  
+- **SSO integrations** (Google, Microsoft, Okta, etc.)  
+- **Priority support and onboarding**
+
+These features are exclusive and **not included** in the Community Edition.
+
+---
+
+### 🔐 Licensing Model (JWT + ES256)
+
+Enterprise features are enabled using a **JWT License Key** signed with ES256.  
+This token includes:
+
+- client ID  
+- plan  
+- enabled features  
+- limits (Companies, tools, tokens/month)  
+- expiration date  
+
+A client activates their license simply by setting:
+
+```bash
+export IAT_LICENSE_KEY="eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9..."---
+
+### 🔐 How Licensing Works
+
+Enterprise activation is simple and secure:
+
+1. The admin runs the official CLI to generate a **signed ES256 JWT** with:  
+   - customer plan  
+   - limits (Companies, tools, tokens/month)  
+   - enabled features  
+   - expiration date
+
+2. The client places the token in their environment:
+
+   ```bash
+   export IAT_LICENSE_KEY="eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9..."
+   ```
+   ---
 ## 🤝 Contributing
 
 We welcome contributions of all kinds — new features, bug fixes, documentation improvements, or ideas
@@ -157,5 +223,6 @@ Please read our **[Contributing Guide](./contributing.md)** to get started.
 ---
 
 ## 📄 License
+The IAToolkit Open Core is licensed under the **[MIT License](./LICENSE)**.
 
-IAToolkit is open-source software licensed under the **[MIT License](./LICENSE)**.
+Enterprise extensions (if installed) are licensed under a separate commercial agreement.

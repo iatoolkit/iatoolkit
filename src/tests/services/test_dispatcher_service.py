@@ -16,7 +16,8 @@ from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.mail_service import MailService
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.sql_service import SqlService
-from iatoolkit.services.tool_service import ToolService  # Added ToolService
+from iatoolkit.services.tool_service import ToolService
+from iatoolkit.services.license_service import LicenseService
 from iatoolkit.common.util import Utility
 
 
@@ -47,7 +48,8 @@ class TestDispatcher:
         self.mock_profile_repo = MagicMock(spec=ProfileRepo)
         self.mock_config_service = MagicMock(spec=ConfigurationService)
         self.mock_sql_service = MagicMock(spec=SqlService)
-        self.mock_tool_service = MagicMock(spec=ToolService)  # Mock ToolService
+        self.mock_tool_service = MagicMock(spec=ToolService)
+        self.mock_license_service = MagicMock(spec=LicenseService)
 
         # Create a mock injector that will be used for instantiation.
         mock_injector = Injector()
@@ -91,10 +93,9 @@ class TestDispatcher:
             config_service=self.mock_config_service,
             prompt_service=self.mock_prompt_manager,
             llmquery_repo=self.mock_llm_query_repo,
+            license_service=self.mock_license_service,
             util=self.util,
             sql_service=self.mock_sql_service,
-            excel_service=self.excel_service,
-            mail_service=self.mail_service
         )
 
     def teardown_method(self, method):
@@ -187,35 +188,23 @@ class TestDispatcher:
 
     def test_dispatcher_with_no_companies_registered(self):
         """Tests that the dispatcher works if no company is registered."""
-        # Stop the current patch first
-        self.get_instance_patcher.stop()
 
-        # Clean registry
-        get_company_registry().clear()
+        # 1. Clear the global registry (simulating no companies registered)
+        registry = get_company_registry()
+        registry.clear()
 
-        toolkit_mock = MagicMock()
-        toolkit_mock.get_injector.return_value = Injector()  # Empty injector
+        # 2. Reset the internal cache of the dispatcher instance created in setup()
+        # This forces it to re-fetch from the (now empty) registry on next access property access
+        self.dispatcher._company_instances = None
 
-        # Start a new patch for this specific test
-        with patch('iatoolkit.iatoolkit.IAToolkit.get_instance', return_value=toolkit_mock):
-            dispatcher = Dispatcher(
-                config_service=self.mock_config_service,
-                prompt_service=self.mock_prompt_manager,
-                llmquery_repo=self.mock_llm_query_repo,
-                util=self.util,
-                excel_service=self.excel_service,
-                mail_service=self.mail_service,
-                sql_service=self.mock_sql_service
-            )
+        # 3. Verify state
+        assert len(self.dispatcher.company_instances) == 0
 
-            assert len(dispatcher.company_instances) == 0
+        # 4. Execute dispatch and expect error
+        with pytest.raises(IAToolkitException) as excinfo:
+            self.dispatcher.dispatch("any_company", "some_action")
 
-            with pytest.raises(IAToolkitException) as excinfo:
-                dispatcher.dispatch("any_company", "some_action")
-            assert "Empresa 'any_company' no configurada" in str(excinfo.value)
-
-        # Restart the main patch for subsequent tests
-        self.get_instance_patcher.start()
+        assert "Empresa 'any_company' no configurada" in str(excinfo.value)
 
     def test_setup_iatoolkit_system_success(self):
         """Test successful setup of system functions and prompts."""
