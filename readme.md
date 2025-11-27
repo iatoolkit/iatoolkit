@@ -178,41 +178,8 @@ plus additional features designed for real corporate environments:
 - **Priority support and onboarding**
 
 These features are exclusive and **not included** in the Community Edition.
-
 ---
 
-### 🔐 Licensing Model (JWT + ES256)
-
-Enterprise features are enabled using a **JWT License Key** signed with ES256.  
-This token includes:
-
-- client ID  
-- plan  
-- enabled features  
-- limits (Companies, tools, tokens/month)  
-- expiration date  
-
-A client activates their license simply by setting:
-
-```bash
-export IAT_LICENSE_KEY="eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9..."---
-
-### 🔐 How Licensing Works
-
-Enterprise activation is simple and secure:
-
-1. The admin runs the official CLI to generate a **signed ES256 JWT** with:  
-   - customer plan  
-   - limits (Companies, tools, tokens/month)  
-   - enabled features  
-   - expiration date
-
-2. The client places the token in their environment:
-
-   ```bash
-   export IAT_LICENSE_KEY="eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9..."
-   ```
-   ---
 ## 🤝 Contributing
 
 We welcome contributions of all kinds — new features, bug fixes, documentation improvements, or ideas
