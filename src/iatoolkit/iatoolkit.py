@@ -20,7 +20,7 @@ import logging
 import os
 
 
-IATOOLKIT_VERSION = "0.84.0"
+IATOOLKIT_VERSION = "0.85.0"
 
 # global variable for the unique instance of IAToolkit
 _iatoolkit_instance: Optional['IAToolkit'] = None
