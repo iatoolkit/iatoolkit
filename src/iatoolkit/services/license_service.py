@@ -19,32 +19,12 @@ class LicenseService:
     """
     @inject
     def __init__(self):
-        self.public_key = self._load_public_key()
         self.limits = self._load_limits()
-
-    def _load_public_key(self) -> str | None:
-        """
-        Loads the public key from the file distributed with the package.
-        Expected location: src/iatoolkit/public_key.pem
-        """
-        try:
-            # Assuming this file is located in iatoolkit/services/
-            # We navigate up to the package root (iatoolkit/)
-            current_dir = Path(__file__).parent.parent
-            key_path = current_dir / 'public_key.pem'
-
-            if not key_path.exists():
-                logging.error(f"❌ Public key file not found at: {key_path}")
-                return None
-
-            return key_path.read_text().strip()
-        except Exception as e:
-            logging.error(f"❌ Error reading public key: {e}")
-            return None
 
     def _load_limits(self):
         # 1. Define default limits (Community Edition)
         default_limits = {
+            "license_type": "Community Edition",
             "plan": "Open Source (Community Edition)",
             "max_companies": 1,
             "max_tools": 3,
@@ -53,35 +33,12 @@ class LicenseService:
                 "rag_advanced": False,
             }
         }
+        return default_limits
 
-        # 2. Look for License Key in environment variable
-        token = os.getenv('IAT_LICENSE_KEY')
-
-        if not token:
-            print("ℹ️  No Enterprise license detected. Using Community limits.")
-            return default_limits
-
-        if not self.public_key:
-            print("⚠️  Public key missing. Cannot validate license. Fallback to Community limits.")
-            return default_limits
-
-        # 3. Cryptographically validate the license
-        try:
-            # Validate signature (RS256) and expiration (exp) automatically
-            payload = jwt.decode(token, self.public_key, algorithms=["ES256"])
-
-            # validate some payload data
-            print(f"🚀 Valid Enterprise License: {payload.get('client_name')} ({payload.get('plan')})")
-            return payload
-
-        except jwt.ExpiredSignatureError:
-            logging.warning("⚠️  Enterprise license has expired. Reverting to Community mode.")
-            return default_limits
-        except jwt.InvalidTokenError as e:
-            logging.error(f"❌ Invalid license: {str(e)}. Reverting to Community mode.")
-            return default_limits
 
     # --- Information Getters ---
+    def get_license_type(self) -> str:
+        return self.limits.get("license_type", "Community Edition")
 
     def get_plan_name(self) -> str:
         return self.limits.get("plan", "Unknown")

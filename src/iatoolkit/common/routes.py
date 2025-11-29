@@ -25,7 +25,7 @@ def register_views(injector, app):
     from iatoolkit.views.prompt_api_view import PromptApiView
     from iatoolkit.views.history_api_view import HistoryApiView
     from iatoolkit.views.help_content_api_view import HelpContentApiView
-    from iatoolkit.views.profile_api_view import UserLanguageApiView  # <-- Importa la nueva vista
+    from iatoolkit.views.profile_api_view import UserLanguageApiView
     from iatoolkit.views.embedding_api_view import EmbeddingApiView
     from iatoolkit.views.login_view import LoginView, FinalizeContextView
     from iatoolkit.views.external_login_view import ExternalLoginView, RedeemTokenApiView

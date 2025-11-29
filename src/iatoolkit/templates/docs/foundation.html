@@ -164,17 +164,13 @@
         </p>
 
         <p>
-            The open-source Core focuses on correctness, clarity, and extensibility. It provides
-            all the fundamental building blocks required to implement a real assistant: the
-            Intelligence Layer, prompt orchestration, tool execution, data access, and the
-            Company module system.
-
-            <br><br>
-            Enterprise capabilities — such as unlimited multi-tenancy, advanced retrieval logic,
-            connectors to external systems, auditing, and SSO — are implemented outside of this
-            Core and are enabled only when a valid license key is present. This separation
-            preserves the transparency of the MIT-licensed foundation while supporting
-            commercial deployments that require additional scale or governance.
+            What the diagram illustrates is more than a visual summary — it represents the architectural contract
+            that keeps IAToolkit predictable as it grows. Rather than mixing prompts, business logic, SQL access,
+            and UI concerns in the same layer (a common issue in early prototypes), the framework establishes a
+            stable separation of responsibilities between the web interface, the intelligence layer, the connectors,
+            and each Company’s domain logic. This structure is what allows developers to onboard new tenants, add
+            tools, introduce new data sources, or upgrade the underlying LLM without destabilizing the rest of the
+            system.
         </p>
         <p>
             The framework organizes its logic into well-defined layers:

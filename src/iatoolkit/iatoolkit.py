@@ -9,18 +9,18 @@ from flask_injector import FlaskInjector
 from flask_bcrypt import Bcrypt
 from flask_cors import CORS
 from iatoolkit.common.exceptions import IAToolkitException
-from urllib.parse import urlparse
-import redis
-import logging
-import os
 from typing import Optional, Dict, Any
 from iatoolkit.repositories.database_manager import DatabaseManager
 from werkzeug.middleware.proxy_fix import ProxyFix
 from injector import Binder, Injector, singleton
 from importlib.metadata import version as _pkg_version, PackageNotFoundError
-from iatoolkit.services.license_service import LicenseService
+from urllib.parse import urlparse
+import redis
+import logging
+import os
 
-IATOOLKIT_VERSION = "0.82.0"
+
+IATOOLKIT_VERSION = "0.83.0"
 
 # global variable for the unique instance of IAToolkit
 _iatoolkit_instance: Optional['IAToolkit'] = None
@@ -53,6 +53,7 @@ class IAToolkit:
         self.db_manager = None
         self._injector = None
         self.version = IATOOLKIT_VERSION    # default version
+        self.license = "free"
 
     @classmethod
     def get_instance(cls) -> 'IAToolkit':
@@ -105,7 +106,10 @@ class IAToolkit:
         # Step 8: define the download_dir for excel's
         self._setup_download_dir()
 
-        logging.info(f"🎉 IAToolkit v{self.version} inicializado correctamente")
+        # Step 9: get the license
+        self._setup_license()
+
+        logging.info(f"🎉 IAToolkit {self.license} ver. {self.version} correctly initialized.")
         self._initialized = True
         return self.app
 
@@ -149,8 +153,7 @@ class IAToolkit:
 
         # Pass the injector to the view registration function
         register_views(self._injector, self.app)
-
-        logging.info("✅ Routes registered.")
+        logging.info("✅ Community routes registered.")
 
     def _create_flask_instance(self):
         static_folder = self._get_config_value('STATIC_FOLDER') or self._get_default_static_folder()
@@ -313,6 +316,7 @@ class IAToolkit:
         from iatoolkit.services.embedding_service import EmbeddingService
         from iatoolkit.services.history_manager_service import HistoryManagerService
         from iatoolkit.services.tool_service import ToolService
+        from iatoolkit.services.license_service import LicenseService
 
         binder.bind(QueryService, to=QueryService)
         binder.bind(TaskService, to=TaskService)
@@ -404,6 +408,7 @@ class IAToolkit:
             return {
                 'url_for': url_for,
                 'iatoolkit_version': self.version,
+                'license': self.license,
                 'app_name': 'IAToolkit',
                 'user_identifier': SessionManager.get('user_identifier'),
                 'company_short_name': SessionManager.get('company_short_name'),
@@ -473,6 +478,12 @@ class IAToolkit:
                 "No se pudo crear el directorio de descarga. Verifique que el directorio existe y tenga permisos de escritura."
             )
         logging.info(f"✅ download dir created in: {download_dir}")
+
+    def _setup_license(self):
+        from iatoolkit.services.license_service import LicenseService
+
+        license_service = self._injector.get(LicenseService)
+        self.license = license_service.get_license_type()
 
 
 def current_iatoolkit() -> IAToolkit:
