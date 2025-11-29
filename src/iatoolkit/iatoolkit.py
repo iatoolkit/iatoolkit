@@ -152,7 +152,7 @@ class IAToolkit:
         from iatoolkit.common.routes import register_views
 
         # Pass the injector to the view registration function
-        register_views(self._injector, self.app)
+        register_views(self.app)
         logging.info("✅ Community routes registered.")
 
     def _create_flask_instance(self):

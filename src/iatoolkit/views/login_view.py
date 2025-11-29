@@ -43,7 +43,14 @@ class LoginView(BaseLoginView):
 
         if not auth_response['success']:
             flash(auth_response["message"], 'error')
-            home_template = self.utility.get_company_template(company_short_name, "home.html")
+
+            # Resolve the correct template name based on language (e.g., home_en.html or home_es.html)
+            template_name = self.utility.get_template_by_language("home")
+            home_template = self.utility.get_company_template(company_short_name, template_name)
+
+            if not home_template:
+                return render_template('error.html',
+                                       message=f'Home template ({template_name}) not found.'), 500
 
             return render_template_string(
                 home_template,

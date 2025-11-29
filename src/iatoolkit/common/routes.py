@@ -8,7 +8,7 @@ from flask import jsonify
 
 
 # this function register all the views
-def register_views(injector, app):
+def register_views(app):
 
     from iatoolkit.views.index_view import IndexView
     from iatoolkit.views.init_context_api_view import InitContextApiView
