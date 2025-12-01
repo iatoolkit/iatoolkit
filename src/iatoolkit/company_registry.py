@@ -41,19 +41,12 @@ class CompanyRegistry:
             )
 
         self._company_classes[company_key] = company_class
-        logging.info(f"Example Company registered: {name}")
+        logging.info(f"Company registered: {name}")
 
     def instantiate_companies(self, injector) -> Dict[str, BaseCompany]:
         """
         intantiate all registered companies using the toolkit injector
         """
-        # Double-check enforcement at instantiation time for robustness
-        if len(self._company_classes) > 1:
-             logging.warning("⚠️ Multiple companies detected in Community Edition. Enforcing single-tenant mode.")
-             # Just in case someone bypassed the register() method via direct dict access
-             first_key = next(iter(self._company_classes))
-             self._company_classes = {first_key: self._company_classes[first_key]}
-
         for company_key, company_class in self._company_classes.items():
             if company_key not in self._company_instances:
                 try:
