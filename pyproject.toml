@@ -11,9 +11,6 @@ readme = "readme.md"
 license = "MIT"
 authors = [{ name = "Fernando Libedinsky" }]
 
-# Si quieres seguir leyendo deps de requirements.txt:
-dynamic = ["dependencies"]
-
 [tool.setuptools]
 package-dir = {"" = "src"}
 
