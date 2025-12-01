@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.repositories.models import Company
-from .iatoolkit import IAToolkit
+from iatoolkit.core import IAToolkit
 
 
 class BaseCompany(ABC):

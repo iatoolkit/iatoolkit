@@ -62,7 +62,7 @@ class TestDispatcher:
 
         # Patch IAToolkit.get_instance() to return our mock toolkit. This must be active
         # BEFORE any code that depends on the IAToolkit singleton is run.
-        self.get_instance_patcher = patch('iatoolkit.iatoolkit.IAToolkit.get_instance',
+        self.get_instance_patcher = patch('iatoolkit.core.IAToolkit.get_instance',
                                           return_value=self.toolkit_mock)
         self.get_instance_patcher.start()
 

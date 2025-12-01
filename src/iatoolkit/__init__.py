@@ -3,12 +3,12 @@
 #
 # IAToolkit is open source software.
 
-__version__ = "0.87.3"
+__version__ = "0.87.4"
 
 # Expose main classes and functions at the top level of the package
 
 # main IAToolkit class
-from .iatoolkit import IAToolkit, create_app, current_iatoolkit
+from iatoolkit.core import IAToolkit, create_app, current_iatoolkit
 
 # for registering the client companies
 from .company_registry import register_company, set_company_registry

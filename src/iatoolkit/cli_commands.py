@@ -5,7 +5,7 @@
 
 import click
 import logging
-from .iatoolkit import IAToolkit
+from iatoolkit.core import IAToolkit
 from iatoolkit.services.profile_service import ProfileService
 
 

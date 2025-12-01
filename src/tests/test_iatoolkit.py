@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch, ANY
 import os
 import pytest
 from flask import Flask
-from iatoolkit.iatoolkit import IAToolkit, current_iatoolkit, create_app
+from iatoolkit.core import IAToolkit, current_iatoolkit, create_app
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.repositories.database_manager import DatabaseManager
 from injector import Injector
@@ -18,16 +18,16 @@ class TestIAToolkit(unittest.TestCase):
         """
         Reset the Singleton instance before each test to ensure isolation.
         """
-        import iatoolkit.iatoolkit as iat_module
+        import iatoolkit.core as iat_module
         iat_module._iatoolkit_instance = None
 
         # Clean environment variables that might interfere
         if 'DATABASE_URI' in os.environ:
             del os.environ['DATABASE_URI']
 
-    @patch('iatoolkit.iatoolkit.DatabaseManager')
-    @patch('iatoolkit.iatoolkit.FlaskInjector')
-    @patch('iatoolkit.iatoolkit.Injector')
+    @patch('iatoolkit.core.DatabaseManager')
+    @patch('iatoolkit.core.FlaskInjector')
+    @patch('iatoolkit.core.Injector')
     def test_create_iatoolkit_initialization(self, mock_injector_cls, mock_flask_injector, mock_db_manager_cls):
         """Test that create_iatoolkit initializes the Flask app and core components correctly."""
 
@@ -130,7 +130,7 @@ class TestIAToolkit(unittest.TestCase):
         with patch.dict(os.environ, {'TEST_KEY': 'env_value_override'}):
             self.assertEqual(toolkit._get_config_value('TEST_KEY'), 'config_value')
 
-    @patch('iatoolkit.iatoolkit.DatabaseManager')
+    @patch('iatoolkit.core.DatabaseManager')
     def test_setup_database_failure_missing_uri(self, mock_db_cls):
         """Test that missing DATABASE_URI raises IAToolkitException."""
         toolkit = IAToolkit({})  # Empty config
@@ -152,8 +152,8 @@ class TestIAToolkit(unittest.TestCase):
         with self.assertRaises(IAToolkitException):
             toolkit.get_database_manager()
 
-    @patch('iatoolkit.iatoolkit.redis.Redis')
-    @patch('iatoolkit.iatoolkit.Session')
+    @patch('iatoolkit.core.redis.Redis')
+    @patch('iatoolkit.core.Session')
     def test_setup_redis_sessions(self, mock_session_cls, mock_redis_cls):
         """Test Redis session setup when REDIS_URL is present."""
         config = {'REDIS_URL': 'redis://localhost:6379/0'}
@@ -190,7 +190,7 @@ class TestIAToolkit(unittest.TestCase):
         self.assertIsInstance(tk, IAToolkit)
         self.assertIs(current_iatoolkit(), tk)
 
-    @patch('iatoolkit.iatoolkit.IAToolkit')
+    @patch('iatoolkit.core.IAToolkit')
     def test_create_app_helper(self, mock_iatoolkit_cls):
         """Test create_app helper function wraps initialization."""
         mock_instance = MagicMock()
@@ -204,7 +204,7 @@ class TestIAToolkit(unittest.TestCase):
         mock_instance.create_iatoolkit.assert_called_once()
         self.assertEqual(app, "flask_app_instance")
 
-    @patch('iatoolkit.iatoolkit.os.makedirs')
+    @patch('iatoolkit.core.os.makedirs')
     def test_setup_download_dir_creates_directory(self, mock_makedirs):
         """Test that the download directory is created."""
         config = {'IATOOLKIT_DOWNLOAD_DIR': '/custom/path'}
@@ -217,7 +217,7 @@ class TestIAToolkit(unittest.TestCase):
         self.assertEqual(toolkit.app.config['IATOOLKIT_DOWNLOAD_DIR'], '/custom/path')
 
     @patch('iatoolkit.company_registry.get_company_registry')
-    @patch('iatoolkit.iatoolkit.CORS')
+    @patch('iatoolkit.core.CORS')
     def test_setup_cors(self, mock_cors, mock_get_registry):
         """Test CORS setup aggregates origins from all companies."""
         toolkit = IAToolkit({})
