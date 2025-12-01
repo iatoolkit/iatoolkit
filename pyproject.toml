@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "iatoolkit"
-version = "0.86.0"
+version = "0.87.0"
 requires-python = ">=3.12"
 description = "IAToolkit"
 readme = "readme.md"
@@ -23,6 +23,7 @@ exclude = ["tests*", "*/tests*"]
 
 
 [tool.setuptools.dynamic]
+version = { attr = "iatoolkit.__version__" }
 dependencies = { file = ["requirements.txt"] }
 
 [tool.setuptools.package-data]

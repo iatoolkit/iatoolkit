@@ -17,7 +17,6 @@ from iatoolkit.services.mail_service import MailService
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.sql_service import SqlService
 from iatoolkit.services.tool_service import ToolService
-from iatoolkit.services.license_service import LicenseService
 from iatoolkit.common.util import Utility
 
 
@@ -49,7 +48,6 @@ class TestDispatcher:
         self.mock_config_service = MagicMock(spec=ConfigurationService)
         self.mock_sql_service = MagicMock(spec=SqlService)
         self.mock_tool_service = MagicMock(spec=ToolService)
-        self.mock_license_service = MagicMock(spec=LicenseService)
 
         # Create a mock injector that will be used for instantiation.
         mock_injector = Injector()
@@ -93,7 +91,6 @@ class TestDispatcher:
             config_service=self.mock_config_service,
             prompt_service=self.mock_prompt_manager,
             llmquery_repo=self.mock_llm_query_repo,
-            license_service=self.mock_license_service,
             util=self.util,
             sql_service=self.mock_sql_service,
         )

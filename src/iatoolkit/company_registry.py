@@ -47,7 +47,6 @@ class CompanyRegistry:
         """
         intantiate all registered companies using the toolkit injector
         """
-
         # Double-check enforcement at instantiation time for robustness
         if len(self._company_classes) > 1:
              logging.warning("⚠️ Multiple companies detected in Community Edition. Enforcing single-tenant mode.")
@@ -72,7 +71,6 @@ class CompanyRegistry:
         return self._company_instances.copy()
 
     def get_all_company_instances(self) -> Dict[str, BaseCompany]:
-        """Devuelve un diccionario con todas las instancias de empresas creadas."""
         return self._company_instances.copy()
 
     def get_registered_companies(self) -> Dict[str, Type[BaseCompany]]:

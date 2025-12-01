@@ -13,14 +13,12 @@ from typing import Optional, Dict, Any
 from iatoolkit.repositories.database_manager import DatabaseManager
 from werkzeug.middleware.proxy_fix import ProxyFix
 from injector import Binder, Injector, singleton
-from importlib.metadata import version as _pkg_version, PackageNotFoundError
 from urllib.parse import urlparse
 import redis
 import logging
 import os
 
-
-IATOOLKIT_VERSION = "0.86.0"
+from iatoolkit import __version__ as IATOOLKIT_VERSION
 
 # global variable for the unique instance of IAToolkit
 _iatoolkit_instance: Optional['IAToolkit'] = None
@@ -53,7 +51,7 @@ class IAToolkit:
         self.db_manager = None
         self._injector = None
         self.version = IATOOLKIT_VERSION    # default version
-        self.license = "free"
+        self.license = "Community Edition"
 
     @classmethod
     def get_instance(cls) -> 'IAToolkit':
@@ -105,9 +103,6 @@ class IAToolkit:
 
         # Step 8: define the download_dir for excel's
         self._setup_download_dir()
-
-        # Step 9: get the license
-        self._setup_license()
 
         logging.info(f"🎉 IAToolkit {self.license} version {self.version} correctly initialized.")
         self._initialized = True
@@ -162,12 +157,6 @@ class IAToolkit:
         self.app = Flask(__name__,
                          static_folder=static_folder,
                          template_folder=template_folder)
-
-        # get the IATOOLKIT_VERSION from the package metadata
-        try:
-            self.version = _pkg_version("iatoolkit")
-        except PackageNotFoundError:
-            pass
 
         self.app.config.update({
             'VERSION': self.version,
@@ -316,7 +305,6 @@ class IAToolkit:
         from iatoolkit.services.embedding_service import EmbeddingService
         from iatoolkit.services.history_manager_service import HistoryManagerService
         from iatoolkit.services.tool_service import ToolService
-        from iatoolkit.services.license_service import LicenseService
 
         binder.bind(QueryService, to=QueryService)
         binder.bind(TaskService, to=TaskService)
@@ -336,7 +324,6 @@ class IAToolkit:
         binder.bind(EmbeddingService, to=EmbeddingService)
         binder.bind(HistoryManagerService, to=HistoryManagerService)
         binder.bind(ToolService, to=ToolService)
-        binder.bind(LicenseService, to=LicenseService)
 
     def _bind_infrastructure(self, binder: Binder):
         from iatoolkit.infra.llm_client import llmClient
@@ -478,12 +465,6 @@ class IAToolkit:
                 "No se pudo crear el directorio de descarga. Verifique que el directorio existe y tenga permisos de escritura."
             )
         logging.info(f"✅ download dir created in: {download_dir}")
-
-    def _setup_license(self):
-        from iatoolkit.services.license_service import LicenseService
-
-        license_service = self._injector.get(LicenseService)
-        self.license = license_service.get_license_type()
 
 
 def current_iatoolkit() -> IAToolkit:

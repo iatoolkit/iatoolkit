@@ -8,7 +8,6 @@ from iatoolkit.services.prompt_service import PromptService
 from iatoolkit.services.sql_service import SqlService
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.services.configuration_service import ConfigurationService
-from iatoolkit.services.license_service import LicenseService
 from iatoolkit.common.util import Utility
 from injector import inject
 import logging
@@ -23,14 +22,12 @@ class Dispatcher:
                  prompt_service: PromptService,
                  llmquery_repo: LLMQueryRepo,
                  util: Utility,
-                 sql_service: SqlService,
-                 license_service: LicenseService):
+                 sql_service: SqlService):
         self.config_service = config_service
         self.prompt_service = prompt_service
         self.llmquery_repo = llmquery_repo
         self.util = util
         self.sql_service = sql_service
-        self.license_service = license_service
 
 
         self._tool_service = None
@@ -63,14 +60,6 @@ class Dispatcher:
         return self._company_instances
 
     def load_company_configs(self):
-        license_info = self.license_service.get_license_info()
-
-        # Use the module logger instead of the root logger
-        logger.info(f"License Status: {license_info}")
-
-        # validate the number of companies in license
-        self.license_service.validate_company_limit(len(self.company_instances))
-
         # initialize the system functions and prompts
         self.setup_iatoolkit_system()
 

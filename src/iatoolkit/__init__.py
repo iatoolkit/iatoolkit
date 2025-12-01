@@ -1,6 +1,9 @@
-"""
-IAToolkit Package
-"""
+# Copyright (c) 2024 Fernando Libedinsky
+# Product: IAToolkit
+#
+# IAToolkit is open source software.
+
+__version__ = "0.87.0"
 
 # Expose main classes and functions at the top level of the package
 

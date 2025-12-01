@@ -10,7 +10,6 @@ from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.sql_service import SqlService
 from iatoolkit.services.excel_service import ExcelService
 from iatoolkit.services.mail_service import MailService
-from iatoolkit.services.license_service import LicenseService
 
 
 _SYSTEM_TOOLS = [
@@ -122,12 +121,10 @@ class ToolService:
     @inject
     def __init__(self,
                  llm_query_repo: LLMQueryRepo,
-                 license_service: LicenseService,
                  sql_service: SqlService,
                  excel_service: ExcelService,
                  mail_service: MailService):
         self.llm_query_repo = llm_query_repo
-        self.license_service = license_service
         self.sql_service = sql_service
         self.excel_service = excel_service
         self.mail_service = mail_service
@@ -166,17 +163,13 @@ class ToolService:
         Synchronizes tools from YAML config to Database (Create/Update/Delete strategy).
         """
         try:
-            # 1. license validation
-            # verify if the number of tools in the YAML exceeds the limit
-            self.license_service.validate_tool_config_limit(tools_config)
-
-            # 12 Get existing tools map for later cleanup
+            # 1. Get existing tools map for later cleanup
             existing_tools = {
                 f.name: f for f in self.llm_query_repo.get_company_tools(company_instance.company)
             }
             defined_tool_names = set()
 
-            # 3. Sync (Create or Update) from Config
+            # 2. Sync (Create or Update) from Config
             for tool_data in tools_config:
                 name = tool_data['function_name']
                 defined_tool_names.add(name)
@@ -194,7 +187,7 @@ class ToolService:
                 # Always call create_or_update. The repo handles checking for existence by name.
                 self.llm_query_repo.create_or_update_tool(tool_obj)
 
-            # 4. Cleanup: Delete tools present in DB but not in Config
+            # 3. Cleanup: Delete tools present in DB but not in Config
             for name, tool in existing_tools.items():
                 # Ensure we don't delete system functions or active tools accidentally if logic changes,
                 # though get_company_tools filters by company_id so system functions shouldn't be here usually.
