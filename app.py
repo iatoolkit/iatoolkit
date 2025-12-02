@@ -12,7 +12,7 @@ src_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src')
 sys.path.insert(0, src_path)
 
 from dotenv import load_dotenv
-from iatoolkit.iatoolkit import IAToolkit
+from iatoolkit.core import IAToolkit
 from iatoolkit.company_registry import register_company
 from companies.sample_company.sample_company import SampleCompany
 

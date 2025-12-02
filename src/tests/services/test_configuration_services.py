@@ -10,6 +10,7 @@ from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.base_company import BaseCompany
 from iatoolkit.repositories.models import Company, PromptCategory
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
+from iatoolkit.repositories.profile_repo import ProfileRepo
 
 # A complete and valid mock configuration, passing all validation rules.
 MOCK_VALID_CONFIG = {
@@ -92,14 +93,16 @@ class TestConfigurationService:
         """
         self.mock_utility = Mock(spec=Utility)
         self.mock_llm_query_repo = Mock(spec=LLMQueryRepo)
+        self.profile_repo = Mock(spec=ProfileRepo)
 
         self.mock_company_instance = Mock(spec=BaseCompany)
         self.mock_company = Company(id=1, short_name='ACME')
-        self.mock_company_instance._create_company.return_value = self.mock_company
+        self.profile_repo.create_company.return_value = self.mock_company
         self.mock_company_instance.company = self.mock_company
 
         self.service = ConfigurationService(utility=self.mock_utility,
-                                            llm_query_repo=self.mock_llm_query_repo)
+                                            llm_query_repo=self.mock_llm_query_repo,
+                                            profile_repo=self.profile_repo)
         self.COMPANY_NAME = 'acme'
 
     @patch('iatoolkit.current_iatoolkit')
@@ -142,13 +145,6 @@ class TestConfigurationService:
         self.service.load_configuration(self.COMPANY_NAME, self.mock_company_instance)
 
         # --- Assert ---
-
-        # 1. Verify core details registration (internal to ConfigService)
-        self.mock_company_instance._create_company.assert_called_once_with(
-            short_name='acme',
-            name='ACME Corp',
-            parameters=MOCK_VALID_CONFIG['parameters']
-        )
 
         # 2. Verify ToolService delegation
         mock_tool_service.sync_company_tools.assert_called_once_with(

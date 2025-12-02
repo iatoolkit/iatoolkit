@@ -8,13 +8,11 @@ from iatoolkit.services.prompt_service import PromptService
 from iatoolkit.services.sql_service import SqlService
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.services.configuration_service import ConfigurationService
-from iatoolkit.services.license_service import LicenseService
 from iatoolkit.common.util import Utility
 from injector import inject
 import logging
 import os
 
-logger = logging.getLogger(__name__)
 
 class Dispatcher:
     @inject
@@ -23,15 +21,12 @@ class Dispatcher:
                  prompt_service: PromptService,
                  llmquery_repo: LLMQueryRepo,
                  util: Utility,
-                 sql_service: SqlService,
-                 license_service: LicenseService):
+                 sql_service: SqlService):
         self.config_service = config_service
         self.prompt_service = prompt_service
         self.llmquery_repo = llmquery_repo
         self.util = util
         self.sql_service = sql_service
-        self.license_service = license_service
-
 
         self._tool_service = None
         self._company_registry = None
@@ -63,14 +58,6 @@ class Dispatcher:
         return self._company_instances
 
     def load_company_configs(self):
-        license_info = self.license_service.get_license_info()
-
-        # Use the module logger instead of the root logger
-        logger.info(f"License Status: {license_info}")
-
-        # validate the number of companies in license
-        self.license_service.validate_company_limit(len(self.company_instances))
-
         # initialize the system functions and prompts
         self.setup_iatoolkit_system()
 
@@ -94,7 +81,7 @@ class Dispatcher:
         Reads the data_sources config for a company and registers each
         database with the central SqlService.
         """
-        logging.info(f"  -> Registering databases for '{company_name}'...")
+        logging.info(f"🛢️ Registering databases for '{company_name}'...")
         data_sources_config = self.config_service.get_configuration(company_name, 'data_sources')
 
         if not data_sources_config or not data_sources_config.get('sql'):
@@ -115,10 +102,10 @@ class Dispatcher:
 
     def setup_iatoolkit_system(self):
         try:
-            # Delegate system tools registration
+            # system tools registration
             self.tool_service.register_system_tools()
 
-            # Delegate system prompts registration
+            # system prompts registration
             self.prompt_service.register_system_prompts()
 
         except Exception as e:
@@ -133,7 +120,7 @@ class Dispatcher:
             available_companies = list(self.company_instances.keys())
             raise IAToolkitException(
                 IAToolkitException.ErrorType.EXTERNAL_SOURCE_ERROR,
-                f"Empresa '{company_short_name}' no configurada. Empresas disponibles: {available_companies}"
+                f"Company '{company_short_name}' not configured. available companies: {available_companies}"
             )
 
         # check if action is a system function using ToolService
@@ -151,23 +138,8 @@ class Dispatcher:
         except Exception as e:
             logging.exception(e)
             raise IAToolkitException(IAToolkitException.ErrorType.EXTERNAL_SOURCE_ERROR,
-                               f"Error en function call '{function_name}': {str(e)}") from e
+                               f"Error in function call '{function_name}': {str(e)}") from e
 
-    def get_user_info(self, company_name: str, user_identifier: str) -> dict:
-        if company_name not in self.company_instances:
-            raise IAToolkitException(IAToolkitException.ErrorType.EXTERNAL_SOURCE_ERROR,
-                                     f"company not configured: {company_name}")
-
-        # source 2: external company user
-        company_instance = self.company_instances[company_name]
-        try:
-            external_user_profile = company_instance.get_user_info(user_identifier)
-        except Exception as e:
-            logging.exception(e)
-            raise IAToolkitException(IAToolkitException.ErrorType.EXTERNAL_SOURCE_ERROR,
-                                     f"Error in get_user_info: {company_name}: {str(e)}") from e
-
-        return external_user_profile
 
     def get_company_instance(self, company_name: str):
         """Returns the instance for a given company name."""

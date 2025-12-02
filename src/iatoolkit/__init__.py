@@ -1,11 +1,14 @@
-"""
-IAToolkit Package
-"""
+# Copyright (c) 2024 Fernando Libedinsky
+# Product: IAToolkit
+#
+# IAToolkit is open source software.
+
+__version__ = "0.88.1"
 
 # Expose main classes and functions at the top level of the package
 
 # main IAToolkit class
-from .iatoolkit import IAToolkit, create_app, current_iatoolkit
+from iatoolkit.core import IAToolkit, create_app, current_iatoolkit
 
 # for registering the client companies
 from .company_registry import register_company, set_company_registry

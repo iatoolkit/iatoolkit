@@ -15,7 +15,6 @@ def register_views(app):
     from iatoolkit.views.llmquery_api_view import LLMQueryApiView
     from iatoolkit.views.tasks_api_view import TaskApiView
     from iatoolkit.views.tasks_review_api_view import TaskReviewApiView
-    from iatoolkit.views.login_simulation_view import LoginSimulationView
     from iatoolkit.views.signup_view import SignupView
     from iatoolkit.views.verify_user_view import VerifyAccountView
     from iatoolkit.views.forgot_password_view import ForgotPasswordView
@@ -28,7 +27,6 @@ def register_views(app):
     from iatoolkit.views.profile_api_view import UserLanguageApiView
     from iatoolkit.views.embedding_api_view import EmbeddingApiView
     from iatoolkit.views.login_view import LoginView, FinalizeContextView
-    from iatoolkit.views.external_login_view import ExternalLoginView, RedeemTokenApiView
     from iatoolkit.views.logout_api_view import LogoutApiView
     from iatoolkit.views.home_view import HomeView
     from iatoolkit.views.static_page_view import StaticPageView
@@ -41,10 +39,6 @@ def register_views(app):
 
     # login for the iatoolkit integrated frontend
     app.add_url_rule('/<company_short_name>/login', view_func=LoginView.as_view('login'))
-
-    # this is the login for external users
-    app.add_url_rule('/<company_short_name>/external_login',
-                     view_func=ExternalLoginView.as_view('external_login'))
 
     # this endpoint is called when onboarding_shell finish the context load
     app.add_url_rule(
@@ -65,10 +59,6 @@ def register_views(app):
     # logout
     app.add_url_rule('/<company_short_name>/api/logout',
                      view_func=LogoutApiView.as_view('logout'))
-
-    # this endpoint is called by the JS for changing the token for a session
-    app.add_url_rule('/<string:company_short_name>/api/redeem_token',
-                     view_func = RedeemTokenApiView.as_view('redeem_token'))
 
     # init (reset) the company context
     app.add_url_rule('/<company_short_name>/api/init-context',
@@ -130,9 +120,6 @@ def register_views(app):
         except FileNotFoundError:
             abort(404)
 
-    # login testing
-    app.add_url_rule('/<company_short_name>/login_test',
-                     view_func=LoginSimulationView.as_view('login_test'))
 
     app.add_url_rule('/version', 'version',
                      lambda: jsonify({"iatoolkit_version": current_app.config.get('VERSION', 'N/A')}))

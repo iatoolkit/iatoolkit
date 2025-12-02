@@ -31,8 +31,7 @@ class CompanyContextService:
         """
         Builds the full context by aggregating three sources:
         1. Static context files (Markdown).
-        2. Static schema files (YAML for APIs, etc.).
-        3. Dynamic SQL database schema from the live connection.
+        2. Static schema files (YAML files for SQL data sources).
         """
         context_parts = []
 
@@ -44,7 +43,7 @@ class CompanyContextService:
         except Exception as e:
             logging.warning(f"Could not load Markdown context for '{company_short_name}': {e}")
 
-        # 2. Context from company-specific Python logic (SQL schemas)
+        # 2. Context from company-specific database schemas (schema/*.yaml files)
         try:
             sql_context = self._get_sql_schema_context(company_short_name)
             if sql_context:

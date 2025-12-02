@@ -4,15 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "iatoolkit"
-version = "0.86.0"
+dynamic = ["version", "dependencies"]
 requires-python = ">=3.12"
 description = "IAToolkit"
 readme = "readme.md"
 license = "MIT"
 authors = [{ name = "Fernando Libedinsky" }]
-
-# Si quieres seguir leyendo deps de requirements.txt:
-dynamic = ["dependencies"]
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -23,6 +20,7 @@ exclude = ["tests*", "*/tests*"]
 
 
 [tool.setuptools.dynamic]
+version = { attr = "iatoolkit.__version__" }
 dependencies = { file = ["requirements.txt"] }
 
 [tool.setuptools.package-data]

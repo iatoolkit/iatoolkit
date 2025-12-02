@@ -4,12 +4,13 @@
 
 from pathlib import Path
 from iatoolkit.repositories.models import Company
-from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
+from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.common.util import Utility
 from injector import inject
 import logging
+
 
 class ConfigurationService:
     """
@@ -20,8 +21,10 @@ class ConfigurationService:
     @inject
     def __init__(self,
                  llm_query_repo: LLMQueryRepo,
+                 profile_repo: ProfileRepo,
                  utility: Utility):
         self.llm_query_repo = llm_query_repo
+        self.profile_repo = profile_repo
         self.utility = utility
         self._loaded_configs = {}   # cache for store loaded configurations
 
@@ -44,7 +47,7 @@ class ConfigurationService:
         config = self._load_and_merge_configs(company_short_name)
 
         # 2. Register core company details and get the database object
-        company_db_object = self._register_core_details(company_instance, config)
+        self._register_core_details(company_instance, config)
 
         # 3. Register tools
         tools_config = config.get('tools', [])
@@ -55,7 +58,6 @@ class ConfigurationService:
 
         # 5. Link the persisted Company object back to the running instance
         company_instance.company_short_name = company_short_name
-        company_instance.company = company_db_object
         company_instance.id = company_instance.company.id
 
         # 6. validate configuration
@@ -96,12 +98,16 @@ class ConfigurationService:
         return config
 
     def _register_core_details(self, company_instance, config: dict) -> Company:
-        """Calls _create_company with data from the merged YAML config."""
-        return company_instance._create_company(
-            short_name=config['id'],
-            name=config['name'],
-            parameters=config.get('parameters', {})
-        )
+        # register the company in the database: create_or_update logic
+
+        company_obj = Company(short_name=config['id'],
+                              name=config['name'],
+                              parameters=config.get('parameters', {}))
+        company = self.profile_repo.create_company(company_obj)
+
+        # save company object with the instance
+        company_instance.company = company
+        return company
 
     def _register_tools(self, company_instance, tools_config: list):
         """creates in the database each tool defined in the YAML."""

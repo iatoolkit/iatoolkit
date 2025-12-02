@@ -8,7 +8,7 @@ from abc import ABC, abstractmethod
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.repositories.models import Company
-from .iatoolkit import IAToolkit
+from iatoolkit.core import IAToolkit
 
 
 class BaseCompany(ABC):
@@ -20,21 +20,6 @@ class BaseCompany(ABC):
         self.company: Company | None = None
         self.company_short_name = ''
 
-    def _create_company(self,
-                        short_name: str,
-                        name: str,
-                        parameters: dict | None = None,
-                        ) -> Company:
-        company_obj = Company(short_name=short_name,
-                              name=name,
-                              parameters=parameters)
-        self.company = self.profile_repo.create_company(company_obj)
-        return self.company
-
-    @abstractmethod
-    # get context specific for this company
-    def get_user_info(self, user_identifier: str) -> dict:
-        raise NotImplementedError("La subclase debe implementar el método get_user_info()")
 
     @abstractmethod
     # execute the specific action configured in the intent table
@@ -47,7 +32,6 @@ class BaseCompany(ABC):
         optional method for a company definition of it's cli commands
         """
         pass
-
 
     def unsupported_operation(self, tag):
         raise NotImplementedError(f"La operación '{tag}' no está soportada por esta empresa.")
