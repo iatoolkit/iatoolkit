@@ -64,7 +64,7 @@ class ProfileService:
 
             # 1. Build the local user profile dictionary here.
             # the user_profile variables are used on the LLM templates also (see in query_main.prompt)
-            user_identifier = user.email             # no longer de ID
+            user_identifier = user.email
             user_profile = {
                 "user_email": user.email,
                 "user_fullname": f'{user.first_name} {user.last_name}',
@@ -81,25 +81,6 @@ class ProfileService:
         except Exception as e:
             logging.error(f"Error in login: {e}")
             return {'success': False, "message": str(e)}
-
-    def create_external_user_profile_context(self, company: Company, user_identifier: str):
-        """
-        Public method for views to create a user profile context for an external user.
-        """
-        # 1. Fetch the external user profile via Dispatcher.
-        external_user_profile = self.dispatcher.get_user_info(
-            company_name=company.short_name,
-            user_identifier=user_identifier
-        )
-
-        # 2. Call the session creation helper with external_user_id as user_identifier
-        self.save_user_profile(
-            company=company,
-            user_identifier=user_identifier,
-            user_profile=external_user_profile)
-
-        # 3. make sure the flask session is clean
-        SessionManager.clear()
 
     def save_user_profile(self, company: Company, user_identifier: str, user_profile: dict):
         """

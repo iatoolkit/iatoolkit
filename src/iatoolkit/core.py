@@ -87,13 +87,16 @@ class IAToolkit:
         # and other integrations, as views are handled manually.
         FlaskInjector(app=self.app, injector=self._injector)
 
-        # Step 6: initialize dispatcher and registered companies
-        self._init_dispatcher_and_company_instances()
+        # Step 6: initialize registered companies
+        self._instantiate_company_instances()
 
         # Re-apply logging configuration in case it was modified by company-specific code
         self._setup_logging()
 
-        # Step 7: Finalize setup within the application context
+        # Step 7: load company configuration file
+        self._load_company_configuration()
+
+        # Step 8: Finalize setup within the application context
         self._setup_redis_sessions()
         self._setup_cors()
         self._setup_additional_services()
@@ -101,11 +104,12 @@ class IAToolkit:
         self._setup_request_globals()
         self._setup_context_processors()
 
-        # Step 8: define the download_dir for excel's
+        # Step 9: define the download_dir
         self._setup_download_dir()
 
         logging.info(f"🎉 IAToolkit {self.license} version {self.version} correctly initialized.")
         self._initialized = True
+
         return self.app
 
     def _get_config_value(self, key: str, default=None):
@@ -186,7 +190,7 @@ class IAToolkit:
 
         self.db_manager = DatabaseManager(database_uri)
         self.db_manager.create_all()
-        logging.info("✅ Base de datos configurada correctamente")
+        logging.info("✅ Database configured successfully")
 
         @self.app.teardown_appcontext
         def remove_session(exception=None):
@@ -219,11 +223,11 @@ class IAToolkit:
             })
 
             Session(self.app)
-            logging.info("✅ Redis y sesiones configurados correctamente")
+            logging.info("✅ Redis and sessions configured successfully")
 
         except Exception as e:
-            logging.error(f"❌ Error configurando Redis: {e}")
-            logging.warning("⚠️ Continuando sin Redis")
+            logging.error(f"❌ Error configuring Redis: {e}")
+            raise e
 
     def _setup_cors(self):
         """🌐 Configura CORS"""
@@ -250,7 +254,7 @@ class IAToolkit:
              ],
              methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 
-        logging.info(f"✅ CORS configurado para: {all_origins}")
+        logging.info(f"✅ CORS configured for: {all_origins}")
 
     def _configure_core_dependencies(self, binder: Binder):
         """⚙️ Configures all system dependencies."""
@@ -264,13 +268,13 @@ class IAToolkit:
             self._bind_services(binder)
             self._bind_infrastructure(binder)
 
-            logging.info("✅ Dependencias configuradas correctamente")
+            logging.info("✅ Dependencies configured successfully")
 
         except Exception as e:
-            logging.error(f"❌ Error configurando dependencias: {e}")
+            logging.error(f"❌ Error configuring dependencies: {e}")
             raise IAToolkitException(
                 IAToolkitException.ErrorType.CONFIG_ERROR,
-                f"❌ Error configurando dependencias: {e}"
+                f"❌ Error configuring dependencies: {e}"
             )
 
     def _bind_repositories(self, binder: Binder):
@@ -343,12 +347,14 @@ class IAToolkit:
     def _setup_additional_services(self):
         Bcrypt(self.app)
 
-    def _init_dispatcher_and_company_instances(self):
+    def _instantiate_company_instances(self):
         from iatoolkit.company_registry import get_company_registry
-        from iatoolkit.services.dispatcher_service import Dispatcher
 
         # instantiate all the registered companies
         get_company_registry().instantiate_companies(self._injector)
+
+    def _load_company_configuration(self):
+        from iatoolkit.services.dispatcher_service import Dispatcher
 
         # use the dispatcher to load the company config.yaml file and prepare the execution
         dispatcher = self._injector.get(Dispatcher)
@@ -367,7 +373,8 @@ class IAToolkit:
             # Iterate through the registered company names
             all_company_instances = get_company_registry().get_all_company_instances()
             for company_name, company_instance in all_company_instances.items():
-                company_instance.register_cli_commands(self.app)
+                if hasattr(company_instance, "register_cli_commands"):
+                    company_instance.register_cli_commands(self.app)
 
         except Exception as e:
             logging.error(f"❌ error while registering company commands: {e}")

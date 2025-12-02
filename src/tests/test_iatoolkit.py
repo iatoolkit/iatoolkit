@@ -43,7 +43,7 @@ class TestIAToolkit(unittest.TestCase):
 
         # Mock internal methods that depend on complex external logic or I/O
         with patch.object(toolkit, '_register_routes') as mock_register_routes, \
-                patch.object(toolkit, '_init_dispatcher_and_company_instances') as mock_init_companies, \
+                patch.object(toolkit, '_instantiate_company_instances') as mock_init_companies, \
                 patch.object(toolkit, '_setup_redis_sessions') as mock_setup_redis, \
                 patch.object(toolkit, '_setup_cors') as mock_setup_cors, \
                 patch.object(toolkit, '_setup_cli_commands') as mock_setup_cli, \
@@ -92,7 +92,8 @@ class TestIAToolkit(unittest.TestCase):
                 patch.object(tk1, '_setup_database'), \
                 patch.object(tk1, '_configure_core_dependencies'), \
                 patch.object(tk1, '_register_routes'), \
-                patch.object(tk1, '_init_dispatcher_and_company_instances'), \
+                patch.object(tk1, '_instantiate_company_instances'), \
+                patch.object(tk1, '_load_company_configuration'), \
                 patch.object(tk1, '_setup_redis_sessions'), \
                 patch.object(tk1, '_setup_cors'), \
                 patch.object(tk1, '_setup_additional_services'), \

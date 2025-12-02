@@ -21,6 +21,7 @@ class SampleCompany(BaseCompany):
         self.sql_service = sql_service
         self.search_service = search_service
         self.load_document_service = load_document_service
+        logging.info('companies: ok')
 
     def handle_request(self, action: str, **kwargs) -> str:
         if action == "document_search":
@@ -28,16 +29,6 @@ class SampleCompany(BaseCompany):
             return self.search_service.search(self.company_short_name, query_string)
         else:
             return self.unsupported_operation(action)
-
-
-    def get_user_info(self, user_identifier: str) -> dict:
-        user_data = {
-            "id": user_identifier,
-            "user_email": 'sample@sample_company.com',
-            "user_fullname": 'Sample User',
-            "extras": {}
-        }
-        return user_data
 
 
     def register_cli_commands(self, app):

@@ -24,8 +24,6 @@ from iatoolkit.common.util import Utility
 class MockSampleCompany(BaseCompany):
     def handle_request(self, tag: str, params: dict) -> dict: return {"result": "sample_company_response"}
 
-    def get_user_info(self, user_identifier: str): pass
-
     def register_cli_commands(self, app): pass
 
 
@@ -73,7 +71,6 @@ class TestDispatcher:
         self.mock_sample_company_instance.register_company = MagicMock()
         self.mock_sample_company_instance.handle_request = MagicMock(return_value={"result": "sample_company_response"})
         self.mock_sample_company_instance.get_company_context = MagicMock(return_value="Company Context for Sample")
-        self.mock_sample_company_instance.get_user_info = MagicMock(return_value={"user_email": "test@user.com"})
         self.mock_sample_company_instance.get_metadata_from_filename = MagicMock(return_value={"meta": "data"})
 
         # Register the mock company class
@@ -118,7 +115,7 @@ class TestDispatcher:
         """Tests that dispatch raises an exception for an unconfigured company."""
         with pytest.raises(IAToolkitException) as excinfo:
             self.dispatcher.dispatch("invalid_company", "some_tag")
-        assert "Empresa 'invalid_company' no configurada" in str(excinfo.value)
+        assert "Company 'invalid_company' not configured." in str(excinfo.value)
 
     def test_dispatch_method_exception(self):
         """Validates that the dispatcher handles exceptions thrown by companies."""
@@ -128,7 +125,7 @@ class TestDispatcher:
         with pytest.raises(IAToolkitException) as excinfo:
             self.dispatcher.dispatch("sample", "some_data")
 
-        assert "Error en function call 'some_data'" in str(excinfo.value)
+        assert "Error in function call 'some_data'" in str(excinfo.value)
         assert "Method error" in str(excinfo.value)
 
     def test_dispatch_system_function(self):
@@ -159,30 +156,6 @@ class TestDispatcher:
         instance_none = self.dispatcher.get_company_instance("non_existent")
         assert instance_none is None
 
-    def test_get_user_info_external_user(self):
-        """Tests get_user_info for an external user."""
-        user_identifier = "ext_user_123"
-        expected_user_data = {"user_email": "external@example.com"}
-        self.mock_sample_company_instance.get_user_info.return_value = expected_user_data
-
-        result = self.dispatcher.get_user_info("sample", user_identifier)
-
-        self.mock_sample_company_instance.get_user_info.assert_called_once_with(user_identifier)
-        assert result["user_email"] == "external@example.com"
-
-    def test_get_user_info_external_user_company_exception(self):
-        """Tests get_user_info for an external user when the company method fails."""
-        self.mock_sample_company_instance.get_user_info.side_effect = Exception("DB error")
-        with pytest.raises(IAToolkitException) as excinfo:
-            self.dispatcher.get_user_info("sample", "ext_user_123")
-        assert "Error in get_user_info" in str(excinfo.value)
-
-    def test_get_user_info_invalid_company(self):
-        """Tests get_user_info with an invalid company."""
-        with pytest.raises(IAToolkitException) as excinfo:
-            self.dispatcher.get_user_info("invalid_company", "any_user")
-        assert 'company not configured: invalid_company' in str(excinfo.value)
-
     def test_dispatcher_with_no_companies_registered(self):
         """Tests that the dispatcher works if no company is registered."""
 
@@ -201,7 +174,7 @@ class TestDispatcher:
         with pytest.raises(IAToolkitException) as excinfo:
             self.dispatcher.dispatch("any_company", "some_action")
 
-        assert "Empresa 'any_company' no configurada" in str(excinfo.value)
+        assert "Company 'any_company' not configured" in str(excinfo.value)
 
     def test_setup_iatoolkit_system_success(self):
         """Test successful setup of system functions and prompts."""

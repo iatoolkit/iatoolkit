@@ -31,10 +31,6 @@ class BaseCompany(ABC):
         self.company = self.profile_repo.create_company(company_obj)
         return self.company
 
-    @abstractmethod
-    # get context specific for this company
-    def get_user_info(self, user_identifier: str) -> dict:
-        raise NotImplementedError("La subclase debe implementar el método get_user_info()")
 
     @abstractmethod
     # execute the specific action configured in the intent table

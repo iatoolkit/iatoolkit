@@ -3,7 +3,7 @@
 #
 # IAToolkit is open source software.
 
-from typing import Dict, Type, Any
+from typing import Dict, Type, Any, Optional
 from .base_company import BaseCompany
 import logging
 
@@ -58,13 +58,15 @@ class CompanyRegistry:
 
                 except Exception as e:
                     logging.error(f"Error while creating company instance for {company_key}: {e}")
-                    logging.exception(e)
-                    raise
+                    raise e
 
         return self._company_instances.copy()
 
     def get_all_company_instances(self) -> Dict[str, BaseCompany]:
         return self._company_instances.copy()
+
+    def get_company_instance(self, company_name: str) -> Optional[BaseCompany]:
+        return self._company_instances.get(company_name.lower())
 
     def get_registered_companies(self) -> Dict[str, Type[BaseCompany]]:
         return self._company_classes.copy()
