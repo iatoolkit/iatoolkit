@@ -96,8 +96,8 @@ Ready to go to production? Follow the **[Deployment Guide](./deployment_guide.md
 Ready to build your AI assistant? **[Let's get started! →](./quickstart.md)** 🚀
 ## Additional Resources
 
-- **GitHub Repository**: [github.com/flibedinsky/iatoolkit](https://github.com/flibedinsky/iatoolkit)
-- **Issues & Support**: [GitHub Issues](https://github.com/flibedinsky/iatoolkit/issues)
+- **GitHub Repository**: [github.com/iatoolkit/iatoolkit](https://github.com/iatoolkit/iatoolkit)
+- **Issues & Support**: [GitHub Issues](https://github.com/iatoolkit/iatoolkit/issues)
 - **Website**: [www.iatoolkit.com](https://www.iatoolkit.com)
 
 ---
