@@ -25,7 +25,7 @@ First, set up your local environment and install the necessary dependencies.
 
 1.  **Clone the Repository**:
     ```bash
-    git clone https://github.com/flibedinsky/iatoolkit
+    git clone https://github.com/iatoolkit/iatoolkit
     cd iatoolkit
     ```
 
@@ -77,16 +77,19 @@ you will see something like this:
 
 ```bash
 (venv) iatoolkit %flask run
-2025-11-19 13:30:41,137 - IATOOLKIT - root - INFO - ✅ Base de datos configurada correctamente
-2025-11-19 13:30:41,143 - IATOOLKIT - root - INFO - ✅ Dependencias configuradas correctamente
-2025-11-19 13:30:41,156 - IATOOLKIT - root - INFO - ✅ Routes registered.
-2025-11-19 13:30:41,227 - IATOOLKIT - root - INFO - ✅ Redis y sesiones configurados correctamente
-2025-11-19 13:30:41,227 - IATOOLKIT - root - INFO - ✅ CORS configurado para: ['https://portal-interno.empresa_de_ejemplo.cl']
-2025-11-19 13:30:41,227 - IATOOLKIT - root - INFO - ✅ Comandos CLI del núcleo registrados.
-2025-11-19 13:30:41,227 - IATOOLKIT - root - INFO - ✅ download dir created in: /Users/fernando/Documents/software/iatoolkit/iatoolkit-downloads
-2025-11-19 13:30:41,227 - IATOOLKIT - root - INFO - 🎉 IAToolkit v0.73.1 inicializado correctamente
+2025-12-02 19:18:44,472 - IATOOLKIT - root - INFO - ✅ Database configured successfully
+2025-12-02 19:18:44,480 - IATOOLKIT - root - INFO - ✅ Dependencies configured successfully
+2025-12-02 19:18:44,494 - IATOOLKIT - root - INFO - ✅ Community routes registered.
+2025-12-02 19:18:44,632 - IATOOLKIT - root - INFO - ⚙️  Starting configuration for company 'sample_company'...
+2025-12-02 19:18:44,659 - IATOOLKIT - root - INFO - ✅ Company 'sample_company' configured successfully.
+2025-12-02 19:18:44,659 - IATOOLKIT - root - INFO - 🛢️ Registering databases for 'sample_company'...
+2025-12-02 19:18:44,674 - IATOOLKIT - root - INFO - ✅ Redis and sessions configured successfully
+2025-12-02 19:18:44,674 - IATOOLKIT - root - INFO - ✅ CORS configured for: ['https://portal-interno.empresa_de_ejemplo.cl']
+2025-12-02 19:18:44,674 - IATOOLKIT - root - INFO - ✅ Core CLI commands registered.
+2025-12-02 19:18:44,674 - IATOOLKIT - root - INFO - ✅ download dir created in: /Users/fernando/Documents/software/iatoolkit/iatoolkit-downloads
+2025-12-02 19:18:44,674 - IATOOLKIT - root - INFO - 🎉 IAToolkit Community Edition version 0.88.1 correctly initialized.
  * Debug mode: off
-2025-11-19 13:30:41,229 - IATOOLKIT - werkzeug - INFO - WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
+2025-12-02 19:18:44,676 - IATOOLKIT - werkzeug - INFO - WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
  * Running on http://127.0.0.1:5000
 ```
 Open the application in your browser (`http://127.0.0.1:5000/sample_company/home`), 
