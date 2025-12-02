@@ -20,17 +20,6 @@ class BaseCompany(ABC):
         self.company: Company | None = None
         self.company_short_name = ''
 
-    def _create_company(self,
-                        short_name: str,
-                        name: str,
-                        parameters: dict | None = None,
-                        ) -> Company:
-        company_obj = Company(short_name=short_name,
-                              name=name,
-                              parameters=parameters)
-        self.company = self.profile_repo.create_company(company_obj)
-        return self.company
-
 
     @abstractmethod
     # execute the specific action configured in the intent table
@@ -43,7 +32,6 @@ class BaseCompany(ABC):
         optional method for a company definition of it's cli commands
         """
         pass
-
 
     def unsupported_operation(self, tag):
         raise NotImplementedError(f"La operación '{tag}' no está soportada por esta empresa.")

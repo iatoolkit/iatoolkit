@@ -102,10 +102,10 @@ class Dispatcher:
 
     def setup_iatoolkit_system(self):
         try:
-            # Delegate system tools registration
+            # system tools registration
             self.tool_service.register_system_tools()
 
-            # Delegate system prompts registration
+            # system prompts registration
             self.prompt_service.register_system_prompts()
 
         except Exception as e:
