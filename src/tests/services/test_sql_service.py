@@ -45,10 +45,10 @@ class TestSqlService:
         THEN it should instantiate DatabaseManager and cache the instance.
         """
         # Act
-        self.service.register_database(DB_NAME_SUCCESS, DUMMY_URI)
+        self.service.register_database(DUMMY_URI, DB_NAME_SUCCESS, 'an_schema')
 
         # Assert
-        MockDatabaseManager.assert_called_once_with(DUMMY_URI, register_pgvector=False)
+        MockDatabaseManager.assert_called_once_with(DUMMY_URI, schema='an_schema',register_pgvector=False)
         assert DB_NAME_SUCCESS in self.service._db_connections
         assert self.service._db_connections[DB_NAME_SUCCESS] == MockDatabaseManager.return_value
 
@@ -60,8 +60,8 @@ class TestSqlService:
         THEN it should not create a new DatabaseManager instance.
         """
         # Act
-        self.service.register_database(DB_NAME_SUCCESS, DUMMY_URI)
-        self.service.register_database(DB_NAME_SUCCESS, 'another_uri')  # Call again
+        self.service.register_database(DUMMY_URI, DB_NAME_SUCCESS)
+        self.service.register_database('another_uri', DB_NAME_SUCCESS)  # Call again
 
         # Assert
         MockDatabaseManager.assert_called_once()  # Still only called once
@@ -96,7 +96,7 @@ class TestSqlService:
         mock_result_proxy.fetchall.return_value = [(1, 'Alice'), (2, 'Bob')]
 
         # Arrange: Register the database
-        self.service.register_database(DB_NAME_SUCCESS, DUMMY_URI)
+        self.service.register_database(DUMMY_URI, DB_NAME_SUCCESS)
 
         # Act
         sql_statement = "SELECT id, name FROM users"
@@ -127,7 +127,7 @@ class TestSqlService:
         mock_result_proxy.keys.return_value = ['event_time']
         mock_result_proxy.fetchall.return_value = [(original_datetime,)]
 
-        self.service.register_database(DB_NAME_SUCCESS, DUMMY_URI)
+        self.service.register_database(DUMMY_URI, DB_NAME_SUCCESS )
 
         # Act
         result_json = self.service.exec_sql('temp_company', DB_NAME_SUCCESS, "SELECT event_time FROM events")
@@ -161,7 +161,7 @@ class TestSqlService:
         db_error = Exception("Table not found")
         session_mock.execute.side_effect = db_error
 
-        self.service.register_database(DB_NAME_SUCCESS, DUMMY_URI)
+        self.service.register_database(DUMMY_URI, DB_NAME_SUCCESS)
 
         # Act & Assert
         with pytest.raises(IAToolkitException) as exc_info:

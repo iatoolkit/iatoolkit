@@ -70,7 +70,6 @@ class TestDatabaseManager:
 
         result = self.db_manager.get_table_schema('test_table')
 
-        # Verificar que el resultado contiene la información esperada
         assert "{'table': 'test_table', 'description': 'Definición de la tabla test_table.', 'fields': [{'name': 'id', 'type': 'INTEGER'}, {'name': 'name', 'type': 'VARCHAR'}]}" == result.strip()
 
     def test_get_table_schema_table_not_exists(self):
@@ -80,4 +79,4 @@ class TestDatabaseManager:
         with pytest.raises(RuntimeError) as exc_info:
             self.db_manager.get_table_schema('non_existent_table')
 
-        assert "Table 'non_existent_table' does not exist." in str(exc_info.value)
+        assert "Table 'non_existent_table' does not exist" in str(exc_info.value)

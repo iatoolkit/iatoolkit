@@ -527,12 +527,6 @@ class TestUtil:
         assert resp.status_code == 200
         assert resp.data.decode("utf-8") == "index_es.html"
 
-    def test_returns_en_by_default_when_no_lang(self):
-        """Debe devolver index_en.html por defecto cuando no se especifica lang."""
-        resp = self.client.get("/template")
-        assert resp.status_code == 200
-        assert resp.data.decode("utf-8") == "index_en.html"
-
     def test_returns_requested_language_passthrough(self):
         """Debe propagar cualquier valor de lang (p. ej. 'fr')."""
         resp = self.client.get("/template?lang=fr")

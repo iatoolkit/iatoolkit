@@ -27,7 +27,21 @@ class SampleCompanyDatabase:
             statements = [s.strip() for s in sql_script.split(';') if s.strip()]
 
         with self.db_manager.get_connection() as connection:
-            with connection.begin():  # Manages the transaction (commit/rollback)
+            backend_name = self.db_manager.url.get_backend_name()
+            is_postgres = backend_name in ('postgresql', 'postgres')
+
+            # create the schema if it doesn't exist'
+            with connection.begin():
+                if self.db_manager.schema and is_postgres:
+                    print(f"⚙️  Creating schema '{self.db_manager.schema}'...")
+
+                    # 1. create the schema and confirm
+                    connection.execute(text(f"CREATE SCHEMA IF NOT EXISTS {self.db_manager.schema}"))
+
+                    # 2. Force the search_path in the same transaction
+                    connection.execute(text(f"SET search_path TO {self.db_manager.schema}, public"))
+
+                # 3. execute the table script (inherit the search_path from above)
                 for statement in statements:
                     connection.execute(text(statement))
 
@@ -103,13 +117,14 @@ class SampleCompanyDatabase:
                             df.drop_duplicates(subset=deduplicate_on, keep='first', inplace=True)
 
                         # This intersection will now work perfectly.
-                        db_columns = [col['name'] for col in inspector.get_columns(table_name)]
+                        db_columns = [col['name'] for col in inspector.get_columns(table_name, schema=self.db_manager.schema)]
                         df_filtered = df[[col for col in db_columns if col in df.columns]].copy()
 
                         if not df_filtered.empty:
                             df_filtered.to_sql(
                                 table_name,
                                 con=connection,
+                                schema=self.db_manager.schema,
                                 if_exists='append',
                                 index=False,
                                 method='multi'

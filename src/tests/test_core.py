@@ -56,7 +56,7 @@ class TestIAToolkit(unittest.TestCase):
             self.assertTrue(toolkit._initialized)
 
             # Assert - Database
-            mock_db_manager_cls.assert_called_once_with('sqlite:///:memory:')
+            mock_db_manager_cls.assert_called_once_with(database_url='sqlite:///:memory:', schema='iatoolkit')
             mock_db_instance.create_all.assert_called_once()
 
             # Assert - Dependency Injection

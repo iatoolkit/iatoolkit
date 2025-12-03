@@ -30,7 +30,7 @@ class SqlService:
         # Cache for database connections
         self._db_connections: dict[str, DatabaseManager] = {}
 
-    def register_database(self, db_name: str, db_uri: str):
+    def register_database(self, db_uri: str, db_name: str, schema: str | None = None):
         """
         Creates and caches a DatabaseManager instance for a given database name and URI.
         If a database with the same name is already registered, it does nothing.
@@ -38,10 +38,10 @@ class SqlService:
         if db_name in self._db_connections:
             return
 
-        logging.debug(f"Registering and creating connection for database: '{db_name}'")
+        logging.info(f"Registering and creating connection for database: '{db_name}' (schema: {schema})")
 
         # create the database connection and save it on the cache
-        db_manager = DatabaseManager(db_uri, register_pgvector=False)
+        db_manager = DatabaseManager(db_uri, schema=schema, register_pgvector=False)
         self._db_connections[db_name] = db_manager
 
     def get_database_manager(self, db_name: str) -> DatabaseManager:

@@ -10,6 +10,7 @@ from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.common.util import Utility
 from injector import inject
 import logging
+import os
 
 
 class ConfigurationService:
@@ -27,6 +28,14 @@ class ConfigurationService:
         self.profile_repo = profile_repo
         self.utility = utility
         self._loaded_configs = {}   # cache for store loaded configurations
+
+    def _ensure_config_loaded(self, company_short_name: str):
+        """
+        Checks if the configuration for a company is in the cache.
+        If not, it loads it from files and stores it.
+        """
+        if company_short_name not in self._loaded_configs:
+            self._loaded_configs[company_short_name] = self._load_and_merge_configs(company_short_name)
 
     def get_configuration(self, company_short_name: str, content_key: str):
         """
@@ -49,29 +58,24 @@ class ConfigurationService:
         # 2. Register core company details and get the database object
         self._register_core_details(company_instance, config)
 
-        # 3. Register tools
-        tools_config = config.get('tools', [])
-        self._register_tools(company_instance, tools_config)
+        # 3. Register databases
+        self._register_data_sources(company_short_name, config)
 
-        # 4. Register prompt categories and prompts
+        # 4. Register tools
+        self._register_tools(company_instance, config)
+
+        # 5. Register prompt categories and prompts
         self._register_prompts(company_instance, config)
 
-        # 5. Link the persisted Company object back to the running instance
+        # 6. Link the persisted Company object back to the running instance
         company_instance.company_short_name = company_short_name
         company_instance.id = company_instance.company.id
 
-        # 6. validate configuration
+        # Final step: validate the configuration against platform
         self._validate_configuration(company_short_name, config)
 
         logging.info(f"✅ Company '{company_short_name}' configured successfully.")
 
-    def _ensure_config_loaded(self, company_short_name: str):
-        """
-        Checks if the configuration for a company is in the cache.
-        If not, it loads it from files and stores it.
-        """
-        if company_short_name not in self._loaded_configs:
-            self._loaded_configs[company_short_name] = self._load_and_merge_configs(company_short_name)
 
     def _load_and_merge_configs(self, company_short_name: str) -> dict:
         """
@@ -109,13 +113,48 @@ class ConfigurationService:
         company_instance.company = company
         return company
 
-    def _register_tools(self, company_instance, tools_config: list):
+    def _register_data_sources(self, company_short_name: str, config: dict):
+        """
+        Reads the data_sources config and registers databases with SqlService.
+        Uses Lazy Loading to avoid circular dependency.
+        """
+        # Lazy import to avoid circular dependency: ConfigService -> SqlService -> I18n -> ConfigService
+        from iatoolkit import current_iatoolkit
+        from iatoolkit.services.sql_service import SqlService
+        sql_service = current_iatoolkit().get_injector().get(SqlService)
+
+        data_sources = config.get('data_sources', {})
+        sql_sources = data_sources.get('sql', [])
+
+        if not sql_sources:
+            return
+
+        logging.info(f"🛢️ Registering databases for '{company_short_name}'...")
+
+        for db_config in sql_sources:
+            db_name = db_config.get('database')
+            db_schema = db_config.get('schema', 'public')
+            db_env_var = db_config.get('connection_string_env')
+
+            # resolve the URI
+            db_uri = os.getenv(db_env_var) if db_env_var else None
+
+            if not db_uri:
+                logging.error(
+                    f"-> Skipping DB '{db_name}' for '{company_short_name}': missing URI in env '{db_env_var}'.")
+                continue
+
+            # Register with the SQL service
+            sql_service.register_database(db_uri, db_name, db_schema)
+
+    def _register_tools(self, company_instance, config: dict):
         """creates in the database each tool defined in the YAML."""
         # Lazy import and resolve ToolService locally
         from iatoolkit import current_iatoolkit
         from iatoolkit.services.tool_service import ToolService
         tool_service = current_iatoolkit().get_injector().get(ToolService)
 
+        tools_config = config.get('tools', [])
         tool_service.sync_company_tools(company_instance, tools_config)
 
     def _register_prompts(self, company_instance, config: dict):
@@ -135,7 +174,6 @@ class ConfigurationService:
             prompts_config=prompts_config,
             categories_config=categories_config
         )
-
 
     def _validate_configuration(self, company_short_name: str, config: dict):
         """
