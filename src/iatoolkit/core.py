@@ -185,10 +185,10 @@ class IAToolkit:
         if not database_uri:
             raise IAToolkitException(
                 IAToolkitException.ErrorType.CONFIG_ERROR,
-                "DATABASE_URI es requerida (config dict o variable de entorno)"
+                "DATABASE_URI is requires (config dict or env. variable)"
             )
 
-        self.db_manager = DatabaseManager(database_uri)
+        self.db_manager = DatabaseManager(database_url=database_uri, schema='iatoolkit')
         self.db_manager.create_all()
         logging.info("✅ Database configured successfully")
 
@@ -204,7 +204,7 @@ class IAToolkit:
     def _setup_redis_sessions(self):
         redis_url = self._get_config_value('REDIS_URL')
         if not redis_url:
-            logging.warning("⚠️ REDIS_URL no configurada, usando sesiones en memoria")
+            logging.warning("⚠️ REDIS_URL not configured, will use memory sessions")
             return
 
         try:

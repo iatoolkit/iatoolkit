@@ -117,6 +117,10 @@ class CompanyContextService:
             # 2. get the global settings and overrides.
             global_exclude_columns = source.get('exclude_columns', [])
             table_prefix = source.get('table_prefix')
+
+            # get the global schema definition, for this source.
+            global_schema_name = source.get('schema')
+
             table_overrides = source.get('tables', {})
 
             # 3. iterate over the tables.
@@ -129,12 +133,16 @@ class CompanyContextService:
                     # Priority 1: Explicit override from the 'tables' map.
                     schema_name = table_config.get('schema_name')
 
+                    # Priority 2: Global schema defined in the source.
+                    if not schema_name and global_schema_name:
+                        schema_name = global_schema_name
+
                     if not schema_name:
-                        # Priority 2: Automatic prefix stripping.
+                        # Priority 3: Automatic prefix stripping.
                         if table_prefix and table_name.startswith(table_prefix):
                             schema_name = table_name[len(table_prefix):]
                         else:
-                            # Priority 3: Default to the table name itself.
+                            # Priority 4: Default to the table name itself.
                             schema_name = table_name
 
                     # 6. define the list of columns to exclude, (local vs. global).

@@ -15,7 +15,6 @@ from iatoolkit.services.prompt_service import PromptService
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.mail_service import MailService
 from iatoolkit.services.configuration_service import ConfigurationService
-from iatoolkit.services.sql_service import SqlService
 from iatoolkit.services.tool_service import ToolService
 from iatoolkit.common.util import Utility
 
@@ -44,7 +43,6 @@ class TestDispatcher:
         self.util = MagicMock(spec=Utility)
         self.mock_profile_repo = MagicMock(spec=ProfileRepo)
         self.mock_config_service = MagicMock(spec=ConfigurationService)
-        self.mock_sql_service = MagicMock(spec=SqlService)
         self.mock_tool_service = MagicMock(spec=ToolService)
 
         # Create a mock injector that will be used for instantiation.
@@ -89,7 +87,6 @@ class TestDispatcher:
             prompt_service=self.mock_prompt_manager,
             llmquery_repo=self.mock_llm_query_repo,
             util=self.util,
-            sql_service=self.mock_sql_service,
         )
 
     def teardown_method(self, method):
@@ -239,46 +236,3 @@ class TestDispatcher:
             self.dispatcher.load_company_configs()
 
         assert "Config Error" in str(excinfo.value)
-
-    def test_register_company_databases_success(self):
-        """Test _register_company_databases registers databases correctly."""
-        company_name = "test_company"
-
-        # Mock configuration with databases
-        self.mock_config_service.get_configuration.return_value = {
-            "sql": [
-                {"database": "db1", "connection_string_env": "DB1_URI"},
-                {"database": "db2", "connection_string_env": "DB2_URI"}
-            ]
-        }
-
-        # Mock environment variables
-        with patch.dict("os.environ", {"DB1_URI": "sqlite:///db1.db", "DB2_URI": "sqlite:///db2.db"}):
-            self.dispatcher._register_company_databases(company_name)
-
-        # Verify SqlService calls
-        assert self.mock_sql_service.register_database.call_count == 2
-        self.mock_sql_service.register_database.assert_any_call("db1", "sqlite:///db1.db")
-        self.mock_sql_service.register_database.assert_any_call("db2", "sqlite:///db2.db")
-
-    def test_register_company_databases_no_config(self):
-        """Test _register_company_databases does nothing if no config."""
-        self.mock_config_service.get_configuration.return_value = None
-
-        self.dispatcher._register_company_databases("test_company")
-
-        self.mock_sql_service.register_database.assert_not_called()
-
-    def test_register_company_databases_missing_env_var(self):
-        """Test _register_company_databases skips if env var is missing."""
-        company_name = "test_company"
-
-        self.mock_config_service.get_configuration.return_value = {
-            "sql": [{"database": "db1", "connection_string_env": "MISSING_ENV_VAR"}]
-        }
-
-        # Ensure env var is not set
-        with patch.dict("os.environ", {}, clear=True):
-            self.dispatcher._register_company_databases(company_name)
-
-        self.mock_sql_service.register_database.assert_not_called()

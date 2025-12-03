@@ -5,7 +5,6 @@
 
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.prompt_service import PromptService
-from iatoolkit.services.sql_service import SqlService
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.common.util import Utility
@@ -20,13 +19,11 @@ class Dispatcher:
                  config_service: ConfigurationService,
                  prompt_service: PromptService,
                  llmquery_repo: LLMQueryRepo,
-                 util: Utility,
-                 sql_service: SqlService):
+                 util: Utility,):
         self.config_service = config_service
         self.prompt_service = prompt_service
         self.llmquery_repo = llmquery_repo
         self.util = util
-        self.sql_service = sql_service
 
         self._tool_service = None
         self._company_registry = None
@@ -67,38 +64,11 @@ class Dispatcher:
                 # read company configuration from company.yaml
                 self.config_service.load_configuration(company_name, company_instance)
 
-                # register the company databases
-                self._register_company_databases(company_name)
-
             except Exception as e:
                 logging.error(f"❌ Failed to register configuration for '{company_name}': {e}")
                 raise e
 
         return True
-
-    def _register_company_databases(self, company_name: str):
-        """
-        Reads the data_sources config for a company and registers each
-        database with the central SqlService.
-        """
-        logging.info(f"🛢️ Registering databases for '{company_name}'...")
-        data_sources_config = self.config_service.get_configuration(company_name, 'data_sources')
-
-        if not data_sources_config or not data_sources_config.get('sql'):
-            return
-
-        for db_config in data_sources_config['sql']:
-            db_name = db_config.get('database')
-            db_env_var = db_config.get('connection_string_env')
-
-            # resolve the URI connection string from the environment variable
-            db_uri = os.getenv(db_env_var) if db_env_var else None
-            if not db_uri:
-                logging.error(
-                    f"-> Skipping database registration for '{company_name}' due to missing 'database' name or invalid connection URI.")
-                return
-
-            self.sql_service.register_database(db_name, db_uri)
 
     def setup_iatoolkit_system(self):
         try:

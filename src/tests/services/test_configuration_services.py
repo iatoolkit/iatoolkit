@@ -29,7 +29,8 @@ MOCK_VALID_CONFIG = {
     'data_sources': {
         'sql': [{
             'database': 'test_db',
-            'connection_string_env': 'TEST_DB_URI'
+            'connection_string_env': 'TEST_DB_URI',
+            'schema': 'sample_db'
         }]
     },
     'tools': [{
@@ -120,6 +121,7 @@ class TestConfigurationService:
 
         mock_tool_service = Mock()
         mock_prompt_service = Mock()
+        mock_sql_service = Mock()
 
         # Simulate injector.get returning correct service based on requested class
         def get_side_effect(service_class):
@@ -127,6 +129,8 @@ class TestConfigurationService:
                 return mock_tool_service
             if "PromptService" in str(service_class):
                 return mock_prompt_service
+            if "SqlService" in str(service_class):  # Nuevo caso
+                return mock_sql_service
             return Mock()
 
         mock_injector.get.side_effect = get_side_effect

@@ -24,7 +24,8 @@ llm:
 data_sources:
   sql:
     - database: "sample_database"
-      connection_string_env: "SAMPLE_DATABASE_URI"
+      schema: "sample_db"
+      connection_string_env: "DATABASE_URI"
       description: |
         This is Sample Company’s main database.
         It contains all of the company’s commercial and operational information.

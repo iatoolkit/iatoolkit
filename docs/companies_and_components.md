@@ -155,6 +155,7 @@ company.yaml
 ├── Data Sources                   # Structured data sources (SQL databases)
 │   └── sql[]                      # List of SQL data source definitions
 │       ├── database               # Logical name for this database
+│       ├── schema                 # name of the schema within the database
 │       ├── connection_string_env  # Env var name with the DB connection URI
 │       ├── description            # Natural-language description of what this DB contains
 │       ├── include_all_tables     # If true, auto-load all tables from this DB
@@ -265,6 +266,7 @@ SQL translation without manual schema mapping.
 data_sources:
   sql:
     - database: "sample_database"
+      schema: "sample_db"
       connection_string_env: "SAMPLE_DATABASE_URI"
       description: |
         This is Sample Company’s main database.
@@ -301,6 +303,7 @@ data_sources:
 ```
 
 *   **`database`**: A logical name for this database.
+*   **`schema`**: The name of a schema within this database (postgres only)
 *   **`connection_string_env`**: The name of the environment variable containing the database connection URI.
 *   **`description`**: A crucial high-level summary that helps the AI understand when to use this database.
 *   **`include_all_tables`**: If `true`, IAToolkit will automatically inspect the database and load all table schemas.
