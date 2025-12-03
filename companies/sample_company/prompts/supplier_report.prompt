@@ -16,18 +16,7 @@ envuelta en su propio `<div class="categoria">`.
 
 	•	Ingresos asociados a los productos de este proveedor
 	•	Unidades vendidas y ticket promedio por orden (solo líneas de este proveedor).
-	•	Descuento promedio aplicado en esas líneas.
-	•	Top 10 productos del proveedor por ingresos y por cantidad.
-	•	Evolución mensual (series por mes de ingresos y unidades).
 
 ### **Sección : Clientes que compran sus productos**
 
 	•	Top 10 clientes por ingresos (CompanyName de Customers).
-	•	Distribución por país de esos clientes.
-
-### **Sección : Señales y recomendaciones**
-
-	•	Señala productos “estrella” (alto ingreso y alta rotación).
-	•	Señala productos de baja rotación (poca venta, alto stock).
-	•	Sugerencias de promociones o packs con productos complementarios (si existe evidencia por co-ocurrencia en Order Details).
-	•	Recomendaciones de reabastecimiento para los items bajo su ReorderLevel.

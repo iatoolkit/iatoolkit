@@ -6,7 +6,7 @@
 # General Company Information
 id: "sample_company"
 name: "Sample Company"
-locale: "en_ES"
+locale: "es_ES"
 
 # Default Language Model and api-key for provider
 # Can be overridden in the API call: llm_query_api_view and init_context_api_view
@@ -90,7 +90,7 @@ prompts:
     order: 2
     custom_fields:
       - data_key: "supplier_id"
-        label: "Identificador del Proveedor"
+        label: "Identificador del Proveedor (ejemplo: cascadia, andean foods, ...)"
   - category: "Financiero"
     name: "analisis_despachos"
     description: "Analisis de despachos de proveedores"

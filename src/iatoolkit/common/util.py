@@ -101,7 +101,8 @@ class Utility:
 
     def get_template_by_language(self, template_name: str) -> str:
         # english is default
-        lang = request.args.get("lang", "en")
+        default_langueage = 'es'
+        lang = request.args.get("lang", default_langueage)
         return f'{template_name}_{lang}.html'
 
     def serialize(self, obj):
