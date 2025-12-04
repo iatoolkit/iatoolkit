@@ -99,9 +99,8 @@ class Utility:
             logging.exception(e)
             return None
 
-    def get_template_by_language(self, template_name: str) -> str:
+    def get_template_by_language(self, template_name: str, default_langueage: str = 'en') -> str:
         # english is default
-        default_langueage = 'es'
         lang = request.args.get("lang", default_langueage)
         return f'{template_name}_{lang}.html'
 

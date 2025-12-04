@@ -109,7 +109,7 @@ Ejemplo incorrecto: SUM(value->>'monto')::NUMERIC
 - Usa `TO_DATE(...)` para convertir el string a fecha:
 ```sql
 TO_DATE(jsonb_credit->>'created', 'DD-MM-YYYY')
-´´´
+```
 
 - antes de comparar con `CURRENT_DATE` un campo de tipo jsonb,
 **siempre** castea explícitamente
@@ -123,6 +123,37 @@ TO_CHAR('buyer__date' , 'DD-MM-YYYY')
 TO_DATE(jsonb_guarantee->>'created_date', 'DD-MM-YYYY')
 - Evitar comparar campos de tipo DATE o TIMESTAMP con strings generados por TO_CHAR.
 Usar funciones como date_trunc() o INTERVAL directamente.
+
+🎯 Regla para fechas que pueden venir vacías (solo TEXT / JSONB)
+
+- Usa `TO_DATE()` ÚNICAMENTE cuando el valor de fecha sea un string:
+  - campos de tipo TEXT o VARCHAR
+  - o valores extraídos de JSONB con `->>` (por ejemplo `jsonb_credit->>'created'`).
+
+- Si el campo de fecha es TEXTO y puede venir vacío (`''`), utiliza este patrón:
+    TO_DATE(NULLIF(campo_texto, ''), 'DD-MM-YYYY')
+
+  donde `campo_texto` debe ser SIEMPRE:
+    - un TEXT/VARCHAR, o
+    - una expresión de JSONB como `jsonb_column->>'field'`.
+
+- **NUNCA** uses este patrón sobre columnas que ya son de tipo DATE o TIMESTAMP.
+  Ejemplos prohibidos:
+    - TO_DATE(NULLIF(bc.init_date, ''), 'DD-MM-YYYY')
+    - TO_DATE(NULLIF(c.init_date, ''), 'DD-MM-YYYY')
+    - TO_DATE(bc.init_date, 'DD-MM-YYYY')
+    - TO_DATE(c.init_date, 'DD-MM-YYYY')
+
+- Para columnas DATE del esquema BCU (como ejemplo):
+  - `bcu_certificate.init_date`
+  - `bcu_certificate.end_date`
+  - `bcu_tender.adjudication_date`
+  - `bcu_tender.closing_date`
+
+  **Nunca** las envuelvas en `TO_DATE()` ni en `NULLIF(columna, '')`.
+  Deben usarse directamente:
+    - ORDER BY bc.init_date DESC NULLS LAST
+    - ORDER BY t.adjudication_date DESC NULLS LAST
 
 - Cuando necesites construir fechas a partir de valores numéricos
 (por ejemplo, año y mes), utiliza TO_DATE() con un string en formato 'YYYY-MM-DD',
