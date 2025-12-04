@@ -114,10 +114,6 @@ TO_DATE(jsonb_credit->>'created', 'DD-MM-YYYY')
 - antes de comparar con `CURRENT_DATE` un campo de tipo jsonb,
 **siempre** castea explícitamente
 
-- No utilices TO_DATE si la columna ya es de tipo DATE o TIMESTAMP.
-Úsala solo si el campo es tipo TEXT o VARCHAR, y asegúrate de castearlo explícitamente si es necesario.
-TO_DATE espera un string, no una fecha ya en formato DATE, y causará un error de tipo de datos.
-
 - Si comparas fechas, asegúrate que ambos lados sean del mismo tipo.
 ejemplo:
 ```sql
@@ -132,9 +128,16 @@ Usar funciones como date_trunc() o INTERVAL directamente.
 (por ejemplo, año y mes), utiliza TO_DATE() con un string en formato 'YYYY-MM-DD',
 no uses concatenación sobre literales de tipo DATE.
 
-- Si el campo de fecha puede venir vacío (''), usa:
-    TO_DATE(NULLIF(campo, ''), 'DD-MM-YYYY')
-    Esto evita errores de conversión cuando la fecha está ausente o mal registrada.
+- No utilices TO_DATE si la columna ya es de tipo DATE o TIMESTAMP.
+  Úsala solo si el campo es tipo TEXT o VARCHAR (por ejemplo, campos que vienen de JSONB con `->>`),
+  y siempre recuerda que TO_DATE espera un string.
+
+- Si el campo de fecha **es texto** y puede venir vacío (`''`), usa:
+    TO_DATE(NULLIF(campo_texto, ''), 'DD-MM-YYYY')
+  Esto solo aplica cuando `campo_texto` es `TEXT`/`VARCHAR` o viene de `jsonb->>'campo'`.
+  **Nunca** uses este patrón sobre columnas que ya son DATE o TIMESTAMP
+  (en esos casos simplemente ordena o filtra con la columna tal cual, usando
+  `ORDER BY columna_fecha DESC NULLS LAST`).
 
 ### operaciones sobre campos de tipo JSONB
 - Cuando uses SUM o alguna otra función agregada sobre un valor extraído
