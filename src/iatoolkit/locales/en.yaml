@@ -2,7 +2,7 @@
 ui:
   login_widget:
     title: "Sign In"
-    welcome_message: "Enter your credentials or register to access Sample Company’s AI platform."
+    welcome_message: "Enter your credentials or register to access this platform."
     email_placeholder: "Email address"
     password_placeholder: "Password"
     login_button: "Login"

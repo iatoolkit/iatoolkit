@@ -208,9 +208,7 @@ class ConfigurationService:
                 add_error("llm", "Missing required key: 'api-key'")
 
         # 3. Embedding Provider
-        if not isinstance(config.get("embedding_provider"), dict):
-            add_error("embedding_provider", "Missing or invalid 'embedding_provider' section.")
-        else:
+        if isinstance(config.get("embedding_provider"), dict):
             if not config.get("embedding_provider", {}).get("provider"):
                 add_error("embedding_provider", "Missing required key: 'provider'")
             if not config.get("embedding_provider", {}).get("model"):

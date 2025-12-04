@@ -2,7 +2,7 @@
 ui:
   login_widget:
     title: "Iniciar Sesión"
-    welcome_message: "Ingresa tus credenciales o registrate para acceder a la plataforma IA de Sample Company."
+    welcome_message: "Ingresa tus credenciales o registrate para acceder a la plataforma."
     email_placeholder: "Correo electrónico"
     login_button: "Acceder"
     forgot_password_link: "¿Olvidaste tu contraseña?"

@@ -57,7 +57,7 @@ class SqlService:
                 f"Database '{db_name}' is not registered with the SqlService."
             )
 
-    def exec_sql(self, company_short_name: str, database: str, query: str) -> str:
+    def exec_sql(self, company_short_name: str, database: str, query: str, format: str ='json'):
         """
         Executes a raw SQL statement against a registered database and returns the result as a JSON string.
         """
@@ -69,8 +69,10 @@ class SqlService:
             result = db_manager.get_session().execute(text(query))
             cols = result.keys()
             rows_context = [dict(zip(cols, row)) for row in result.fetchall()]
+            if format == 'dict':
+                return rows_context
 
-            # seialize the result
+            # serialize the result
             sql_result_json = json.dumps(rows_context, default=self.util.serialize)
 
             return sql_result_json

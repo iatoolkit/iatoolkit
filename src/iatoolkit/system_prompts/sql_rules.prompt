@@ -5,6 +5,7 @@
 - Todas las consultas deben ser **sintácticamente correctas** y compatibles con PostgreSQL.
 
 ## 🔍 Uso correcto de campos JSONB
+## 🔍 Uso correcto de campos JSONB
 
 ### Regla central: ¡NO ASUMAS QUE LAS CLAVES JSONB SON COLUMNAS!
 
@@ -120,10 +121,10 @@ TO_DATE espera un string, no una fecha ya en formato DATE, y causará un error d
 - Si comparas fechas, asegúrate que ambos lados sean del mismo tipo.
 ejemplo:
 ```sql
--- Si 'init_date' es DATE:
-TO_CHAR(init_date, 'DD-MM-YYYY') = ...
--- Si 'created' es texto en formato 'DD-MM-YYYY':
-TO_DATE(jsonb_guarantee->>'created', 'DD-MM-YYYY')
+-- Si 'buyer__date' es DATE:
+TO_CHAR('buyer__date' , 'DD-MM-YYYY')
+-- Si 'created_date' es texto en formato 'DD-MM-YYYY':
+TO_DATE(jsonb_guarantee->>'created_date', 'DD-MM-YYYY')
 - Evitar comparar campos de tipo DATE o TIMESTAMP con strings generados por TO_CHAR.
 Usar funciones como date_trunc() o INTERVAL directamente.
 

@@ -17,7 +17,7 @@
     <div class="d-flex align-items-center ms-auto">
         <div class="me-3 d-flex align-items-center">
             <span class="powered-by">
-                Powered by <a href="{{ url_for('index', lang=request.args.get('lang', 'en')) }}" rel="noopener noreferrer" class="iatoolkit-link">IAToolkit</a>
+                Powered by <a href="http://www.iatoolkit.com" rel="noopener noreferrer" class="iatoolkit-link">IAToolkit</a>
             </span>
         </div>
 
@@ -32,9 +32,6 @@
             {% set href_en = url_for(request.endpoint, lang='en') %}
             {% set href_es = url_for(request.endpoint, lang='es') %}
           {% endif %}
-        {% else %}
-          {% set href_en = url_for('index', lang='en') %}
-          {% set href_es = url_for('index', lang='es') %}
         {% endif %}
 
         <div class="language-switcher d-flex align-items-center">
