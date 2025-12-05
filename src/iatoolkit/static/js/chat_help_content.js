@@ -59,7 +59,7 @@ $(document).ready(function () {
                 cat.questions.forEach(q => contentHtml += `<li>${q}</li>`);
                 contentHtml += `</ul>`;
             });
-            accordionHtml += createAccordionItem('examples', 'Preguntas de Ejemplo', contentHtml, true);
+            accordionHtml += createAccordionItem('examples', 'Sample questions', contentHtml, true);
         }
 
         if (data.data_sources) {
@@ -68,7 +68,7 @@ $(document).ready(function () {
                 contentHtml += `<dt>${p.source}</dt><dd>${p.description}</dd>`;
             });
             contentHtml += `</dl>`;
-            accordionHtml += createAccordionItem('sources', 'Datos disponibles', contentHtml );
+            accordionHtml += createAccordionItem('sources', 'Data available', contentHtml );
         }
 
         if (data.best_practices) {
@@ -81,7 +81,7 @@ $(document).ready(function () {
                 contentHtml += `</dd>`;
             });
             contentHtml += `</dl>`;
-            accordionHtml += createAccordionItem('practices', 'Mejores Prácticas', contentHtml);
+            accordionHtml += createAccordionItem('practices', 'Best practices', contentHtml);
         }
 
         if (data.capabilities) {
@@ -89,7 +89,7 @@ $(document).ready(function () {
             contentHtml += `<div class="col-md-6"><h6 class="fw-bold">Puede hacer:</h6><ul>${data.capabilities.can_do.map(item => `<li>${item}</li>`).join('')}</ul></div>`;
             contentHtml += `<div class="col-md-6"><h6 class="fw-bold">No puede hacer:</h6><ul>${data.capabilities.cannot_do.map(item => `<li>${item}</li>`).join('')}</ul></div>`;
             contentHtml += `</div>`;
-            accordionHtml += createAccordionItem('capabilities', 'Capacidades y Límites', contentHtml);
+            accordionHtml += createAccordionItem('capabilities', 'Capabilities and limits', contentHtml);
         }
 
         container.html(accordionHtml);

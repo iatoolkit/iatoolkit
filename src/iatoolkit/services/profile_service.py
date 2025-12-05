@@ -69,6 +69,7 @@ class ProfileService:
                 "user_email": user.email,
                 "user_fullname": f'{user.first_name} {user.last_name}',
                 "user_is_local": True,
+                "user_id": user.id,
                 "extras": {}
             }
 

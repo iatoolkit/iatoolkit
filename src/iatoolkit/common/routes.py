@@ -10,7 +10,6 @@ from flask import jsonify
 # this function register all the views
 def register_views(app):
 
-    from iatoolkit.views.index_view import IndexView
     from iatoolkit.views.init_context_api_view import InitContextApiView
     from iatoolkit.views.llmquery_api_view import LLMQueryApiView
     from iatoolkit.views.tasks_api_view import TaskApiView
@@ -30,9 +29,10 @@ def register_views(app):
     from iatoolkit.views.logout_api_view import LogoutApiView
     from iatoolkit.views.home_view import HomeView
     from iatoolkit.views.static_page_view import StaticPageView
+    from iatoolkit.views.root_redirect_view import RootRedirectView
 
-    # iatoolkit home page
-    app.add_url_rule('/', view_func=IndexView.as_view('index'))
+    # assign root '/' to our new redirect logic
+    app.add_url_rule('/home', view_func=RootRedirectView.as_view('root_redirect'))
 
     # company home view
     app.add_url_rule('/<company_short_name>/home', view_func=HomeView.as_view('home'))
@@ -125,9 +125,5 @@ def register_views(app):
                      lambda: jsonify({"iatoolkit_version": current_app.config.get('VERSION', 'N/A')}))
 
 
-    # make the root '/' goes to index
-    @app.route('/')
-    def root_redirect():
-        return redirect(url_for('index'))
 
 

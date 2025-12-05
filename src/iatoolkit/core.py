@@ -401,7 +401,7 @@ class IAToolkit:
 
             return {
                 'url_for': url_for,
-                'iatoolkit_version': self.version,
+                'iatoolkit_version': f'{self.version}',
                 'license': self.license,
                 'app_name': 'IAToolkit',
                 'user_identifier': SessionManager.get('user_identifier'),
