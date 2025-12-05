@@ -116,19 +116,20 @@ class DatabaseManager:
 
     def get_table_schema(self,
                          table_name: str,
+                         db_schema: str,
                          schema_name: str | None = None,
                          exclude_columns: list[str] | None = None) -> str:
         inspector = inspect(self._engine)
 
         # search the table in the specified schema
-        if table_name not in inspector.get_table_names(schema=schema_name):
-            raise RuntimeError(f"Table '{table_name}' does not exist in schema '{schema_name}'.")
+        if table_name not in inspector.get_table_names(schema=db_schema):
+            raise RuntimeError(f"Table '{table_name}' does not exist in database schema '{db_schema}'.")
 
         if exclude_columns is None:
             exclude_columns = []
 
-        # get all thre table columns
-        columns = inspector.get_columns(table_name, schema=schema_name)
+        # get all the table columns
+        columns = inspector.get_columns(table_name, schema=db_schema)
 
         # construct a json dictionary with the table definition
         json_dict = {
@@ -137,8 +138,11 @@ class DatabaseManager:
             "fields": []
         }
         if schema_name:
-            json_dict["schema"] = schema_name
-            json_dict["description"] += f" Pertenece al esquema **`{schema_name}`**."
+            json_dict["description"] += f"Los detalles de cada campo están en el objeto **`{schema_name}`**."
+
+        if db_schema:
+            json_dict["schema"] = db_schema
+            json_dict["description"] += f" Pertenece al esquema **`{db_schema}`**."
 
         # now add every column to the json dictionary
         for col in columns:

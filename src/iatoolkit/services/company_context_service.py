@@ -152,6 +152,7 @@ class CompanyContextService:
                     # 7. get the table schema definition.
                     table_definition = db_manager.get_table_schema(
                         table_name=table_name,
+                        db_schema=db_manager.schema,
                         schema_name=schema_name,
                         exclude_columns=final_exclude_columns
                     )
