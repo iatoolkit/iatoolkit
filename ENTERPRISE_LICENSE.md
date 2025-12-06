@@ -6,6 +6,7 @@ The following "IAToolkit Enterprise Features" are licensed under this Enterprise
 
 - Multi-Company (multi-tenant) capabilities  
 - Advanced RAG pipelines and extended retrieval logic  
+- Payment services integration 
 - External connectors (S3, SMTP, external APIs, file storage)  
 - SSO integrations (Google, Microsoft, Okta, etc.)  
 - Auditing, access control, and operational analytics  
