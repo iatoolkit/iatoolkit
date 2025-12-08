@@ -11,7 +11,6 @@ from iatoolkit.services.document_service import DocumentService
 from iatoolkit.services.company_context_service import CompanyContextService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.services.configuration_service import ConfigurationService
-from iatoolkit.repositories.models import Task
 from iatoolkit.services.dispatcher_service import Dispatcher
 from iatoolkit.services.prompt_service import PromptService
 from iatoolkit.services.user_session_context_service import UserSessionContextService
@@ -310,7 +309,6 @@ class QueryService:
     def llm_query(self,
                   company_short_name: str,
                   user_identifier: str,
-                  task: Optional[Task] = None,
                   prompt_name: str = None,
                   question: str = '',
                   client_data: dict = {},

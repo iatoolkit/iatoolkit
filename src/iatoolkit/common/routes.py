@@ -12,8 +12,6 @@ def register_views(app):
 
     from iatoolkit.views.init_context_api_view import InitContextApiView
     from iatoolkit.views.llmquery_api_view import LLMQueryApiView
-    from iatoolkit.views.tasks_api_view import TaskApiView
-    from iatoolkit.views.tasks_review_api_view import TaskReviewApiView
     from iatoolkit.views.signup_view import SignupView
     from iatoolkit.views.verify_user_view import VerifyAccountView
     from iatoolkit.views.forgot_password_view import ForgotPasswordView
@@ -82,10 +80,6 @@ def register_views(app):
     app.add_url_rule('/<company_short_name>/api/feedback', view_func=UserFeedbackApiView.as_view('feedback'))
     app.add_url_rule('/<company_short_name>/api/history', view_func=HistoryApiView.as_view('history'))
     app.add_url_rule('/<company_short_name>/api/help-content', view_func=HelpContentApiView.as_view('help-content'))
-
-    # tasks management endpoints: create task, and review answer
-    app.add_url_rule('/tasks', view_func=TaskApiView.as_view('tasks'))
-    app.add_url_rule('/tasks/review/<int:task_id>', view_func=TaskReviewApiView.as_view('tasks-review'))
 
     # this endpoint is for upload documents into the vector store (api-key)
     app.add_url_rule('/api/load-document', view_func=LoadDocumentApiView.as_view('load-document'), methods=['POST'])

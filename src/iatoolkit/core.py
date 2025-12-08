@@ -282,17 +282,14 @@ class IAToolkit:
         from iatoolkit.repositories.profile_repo import ProfileRepo
         from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
         from iatoolkit.repositories.vs_repo import VSRepo
-        from iatoolkit.repositories.tasks_repo import TaskRepo
 
         binder.bind(DocumentRepo, to=DocumentRepo)
         binder.bind(ProfileRepo, to=ProfileRepo)
         binder.bind(LLMQueryRepo, to=LLMQueryRepo)
         binder.bind(VSRepo, to=VSRepo)
-        binder.bind(TaskRepo, to=TaskRepo)
 
     def _bind_services(self, binder: Binder):
         from iatoolkit.services.query_service import QueryService
-        from iatoolkit.services.tasks_service import TaskService
         from iatoolkit.services.benchmark_service import BenchmarkService
         from iatoolkit.services.document_service import DocumentService
         from iatoolkit.services.prompt_service import PromptService
@@ -311,7 +308,6 @@ class IAToolkit:
         from iatoolkit.services.tool_service import ToolService
 
         binder.bind(QueryService, to=QueryService)
-        binder.bind(TaskService, to=TaskService)
         binder.bind(BenchmarkService, to=BenchmarkService)
         binder.bind(DocumentService, to=DocumentService)
         binder.bind(PromptService, to=PromptService)

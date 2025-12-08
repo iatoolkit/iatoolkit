@@ -78,7 +78,6 @@ class Company(Base):
                             back_populates="company",
                             cascade="all, delete-orphan")
 
-    tasks = relationship("Task", back_populates="company")
     feedbacks = relationship("UserFeedback",
                                back_populates="company",
                                cascade="all, delete-orphan")
@@ -184,7 +183,6 @@ class LLMQuery(Base):
     created_at = Column(DateTime, default=datetime.now)
 
     company = relationship("Company", back_populates="llm_queries")
-    tasks = relationship("Task", back_populates="llm_query")
 
     def to_dict(self):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
@@ -210,52 +208,6 @@ class VSDoc(Base):
     def to_dict(self):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
 
-class TaskStatus(PyEnum):
-    """Enumeration for the possible statuses of a Task."""
-    pendiente = "pendiente"  # task created and waiting to be executed.
-    ejecutado = "ejecutado"  # the IA algorithm has been executed.
-    aprobada = "aprobada"  # validated and approved by human.
-    rechazada = "rechazada"  # validated and rejected by human.
-    fallida = "fallida"  # error executing the IA algorithm.
-
-class TaskType(Base):
-    """Defines a type of task that can be executed, including its prompt template."""
-    __tablename__ = 'iat_task_types'
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    name = Column(String(100), unique=True, nullable=False)
-    prompt_template = Column(String(100), nullable=True)  # Plantilla de prompt por defecto.
-    template_args = Column(JSON, nullable=True)  # Argumentos/prefijos de configuración para el template.
-
-class Task(Base):
-    """Represents an asynchronous task to be executed by the system, often involving an LLM."""
-    __tablename__ = 'iat_tasks'
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    company_id = Column(Integer, ForeignKey("iat_companies.id"))
-
-    user_id = Column(Integer, nullable=True, default=0)
-    task_type_id = Column(Integer, ForeignKey('iat_task_types.id'), nullable=False)
-    status = Column(Enum(TaskStatus, name="task_status_enum"),
-                    default=TaskStatus.pendiente, nullable=False)
-    client_data = Column(JSON, nullable=True, default={})
-    company_task_id = Column(Integer, nullable=True, default=0)
-    execute_at = Column(DateTime, default=datetime.now, nullable=True)
-    llm_query_id = Column(Integer, ForeignKey('iat_queries.id'), nullable=True)
-    callback_url = Column(String(512), default=None, nullable=True)
-    files = Column(JSON, default=[], nullable=True)
-
-    review_user = Column(String(128), nullable=True, default='')
-    review_date = Column(DateTime, nullable=True)
-    comment = Column(Text, nullable=True)
-    approved = Column(Boolean, nullable=False, default=False)
-
-    created_at = Column(DateTime, default=datetime.now)
-    updated_at = Column(DateTime, default=datetime.now)
-
-    task_type = relationship("TaskType")
-    llm_query = relationship("LLMQuery", back_populates="tasks", uselist=False)
-    company = relationship("Company", back_populates="tasks")
 
 class UserFeedback(Base):
     """Stores feedback and ratings submitted by users for specific interactions."""

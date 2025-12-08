@@ -31,9 +31,6 @@ At a high level, IAToolkit’s internal database can be thought of in terms of f
    - Uploaded documents and metadata
    - Vector chunks and embeddings
 
-4. **Tasks & Background Jobs**
-   - Asynchronous jobs (e.g., document ingestion, long-running analyses)
-
 In addition to the **core IAToolkit schema**, each Company can connect to its **own business database** via the `data_sources.sql` section in `company.yaml`. 
 Those external databases are **not owned** by IAToolkit; instead, they are *described* using YAML schemas in `companies/<company>/schema/`.
 
