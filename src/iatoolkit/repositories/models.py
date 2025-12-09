@@ -9,9 +9,6 @@ from sqlalchemy.orm import relationship, class_mapper, declarative_base
 from sqlalchemy.sql import func
 from datetime import datetime
 from pgvector.sqlalchemy import Vector
-from enum import Enum as PyEnum
-import secrets
-import enum
 
 
 # base class for the ORM
@@ -36,7 +33,7 @@ class ApiKey(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     company_id = Column(Integer, ForeignKey('iat_companies.id', ondelete='CASCADE'), nullable=False)
-    key = Column(String(128), unique=True, nullable=False, index=True) # La API Key en sí
+    key = Column(String, unique=True, nullable=False, index=True) # La API Key en sí
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.now)
     last_used_at = Column(DateTime, nullable=True) # Opcional: para rastrear uso
@@ -49,8 +46,8 @@ class Company(Base):
     __tablename__ = 'iat_companies'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    short_name = Column(String(20), nullable=False, unique=True, index=True)
-    name = Column(String(256), nullable=False)
+    short_name = Column(String, nullable=False, unique=True, index=True)
+    name = Column(String, nullable=False)
 
     # encrypted api-key
     openai_api_key = Column(String, nullable=True)
@@ -94,13 +91,13 @@ class User(Base):
     __tablename__ = 'iat_users'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    email = Column(String(80), unique=True, nullable=False)
-    first_name = Column(String(50), nullable=False)
-    last_name = Column(String(50), nullable=False)
+    email = Column(String, unique=True, nullable=False)
+    first_name = Column(String, nullable=False)
+    last_name = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.now)
     password = Column(String, nullable=False)
     verified = Column(Boolean, nullable=False, default=False)
-    preferred_language = Column(String(5), nullable=True)
+    preferred_language = Column(String, nullable=True)
     verification_url = Column(String, nullable=True)
     temp_code = Column(String, nullable=True)
 
@@ -132,7 +129,7 @@ class Tool(Base):
     company_id = Column(Integer,
                         ForeignKey('iat_companies.id',ondelete='CASCADE'),
                         nullable=True)
-    name = Column(String(255), nullable=False)
+    name = Column(String, nullable=False)
     system_function = Column(Boolean, default=False)
     description = Column(Text, nullable=False)
     parameters = Column(JSON, nullable=False)
@@ -152,7 +149,7 @@ class Document(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     company_id = Column(Integer, ForeignKey('iat_companies.id',
                     ondelete='CASCADE'), nullable=False)
-    filename = Column(String(256), nullable=False, index=True)
+    filename = Column(String, nullable=False, index=True)
     meta = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     content = Column(Text, nullable=False)
@@ -171,7 +168,7 @@ class LLMQuery(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     company_id = Column(Integer, ForeignKey('iat_companies.id',
                             ondelete='CASCADE'), nullable=False)
-    user_identifier = Column(String(128), nullable=False)
+    user_identifier = Column(String, nullable=False)
     task_id = Column(Integer, default=0, nullable=True)
     query = Column(Text, nullable=False)
     output = Column(Text, nullable=False)
@@ -216,7 +213,7 @@ class UserFeedback(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     company_id = Column(Integer, ForeignKey('iat_companies.id',
                                             ondelete='CASCADE'), nullable=False)
-    user_identifier = Column(String(128), default='', nullable=True)
+    user_identifier = Column(String, default='', nullable=True)
     message = Column(Text, nullable=False)
     rating = Column(Integer, nullable=False)
     created_at = Column(DateTime, default=datetime.now)
@@ -245,9 +242,9 @@ class Prompt(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     company_id = Column(Integer, ForeignKey('iat_companies.id',
                                             ondelete='CASCADE'), nullable=True)
-    name = Column(String(64), nullable=False)
-    description = Column(String(256), nullable=False)
-    filename = Column(String(256), nullable=False)
+    name = Column(String, nullable=False)
+    description = Column(String, nullable=False)
+    filename = Column(String, nullable=False)
     active = Column(Boolean, default=True)
     is_system_prompt = Column(Boolean, default=False)
     order = Column(Integer, nullable=False, default=0)  # Nuevo campo para el orden
@@ -266,18 +263,18 @@ class AccessLog(Base):
     id = Column(BigInteger, primary_key=True, autoincrement=True)
 
     timestamp = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
-    company_short_name = Column(String(100), nullable=False, index=True)
-    user_identifier = Column(String(255), index=True)
+    company_short_name = Column(String, nullable=False, index=True)
+    user_identifier = Column(String, index=True)
 
     # Cómo y el Resultado
-    auth_type = Column(String(20), nullable=False) # 'local', 'external_api', 'redeem_token', etc.
-    outcome = Column(String(10), nullable=False)   # 'success' o 'failure'
-    reason_code = Column(String(50))               # Causa de fallo, ej: 'INVALID_CREDENTIALS'
+    auth_type = Column(String, nullable=False) # 'local', 'external_api', 'redeem_token', etc.
+    outcome = Column(String, nullable=False)   # 'success' o 'failure'
+    reason_code = Column(String)               # Causa de fallo, ej: 'INVALID_CREDENTIALS'
 
     # Contexto de la Petición
-    source_ip = Column(String(45), nullable=False)
-    user_agent_hash = Column(String(16))           # Hash corto del User-Agent
-    request_path = Column(String(255), nullable=False)
+    source_ip = Column(String, nullable=False)
+    user_agent_hash = Column(String)           # Hash corto del User-Agent
+    request_path = Column(String, nullable=False)
 
     def __repr__(self):
         return (f"<AccessLog(id={self.id}, company='{self.company_short_name}', "
