@@ -18,6 +18,7 @@ from iatoolkit.common.util import Utility
 from iatoolkit.services.llm_client_service import llmClient
 from iatoolkit.services.dispatcher_service import Dispatcher
 from iatoolkit.services.tool_service import ToolService
+from iatoolkit.common.model_registry import ModelRegistry
 
 # --- Constantes para los Tests ---
 MOCK_COMPANY_SHORT_NAME = "test_company"
@@ -46,6 +47,7 @@ class TestQueryService:
         self.mock_session_context = MagicMock(spec=UserSessionContextService)
         self.mock_i18n_service = MagicMock(spec=I18nService)
         self.mock_tool_service = MagicMock(spec=ToolService)
+        self.model_registry = MagicMock(spec=ModelRegistry)
 
         # Mock directo del HistoryManagerService (ya no hay factory)
         self.mock_history_manager = MagicMock(spec=HistoryManagerService)
@@ -64,7 +66,8 @@ class TestQueryService:
             session_context=self.mock_session_context,
             configuration_service=self.mock_configuration_service,
             history_manager=self.mock_history_manager,
-            tool_service=self.mock_tool_service
+            tool_service=self.mock_tool_service,
+            model_registry=self.model_registry
         )
 
         self.mock_i18n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"

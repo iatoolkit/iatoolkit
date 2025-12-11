@@ -12,6 +12,7 @@ from iatoolkit.infra.llm_providers.deepseek_adapter import DeepseekAdapter
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.common.util import Utility
 from iatoolkit.infra.llm_response import LLMResponse
+from iatoolkit.common.model_registry import ModelRegistry
 
 from openai import OpenAI         # For OpenAI and xAI (OpenAI-compatible)
 # from anthropic import Anthropic  # For Claude (Anthropic)
@@ -43,6 +44,7 @@ class LLMProxy:
         self,
         util: Utility,
         configuration_service: ConfigurationService,
+        model_registry: ModelRegistry,
     ):
         """
         Init a new instance of the proxy. It can be a base factory or a working instance with configured clients.
@@ -50,6 +52,7 @@ class LLMProxy:
         """
         self.util = util
         self.configuration_service = configuration_service
+        self.model_registry = model_registry
 
         # adapter cache por provider
         self.adapters: Dict[str, Any] = {}
@@ -89,15 +92,17 @@ class LLMProxy:
         Determine which provider must be used for a given model name.
         This uses Utility helper methods, so you can keep all naming logic in one place.
         """
-        if self.util.is_openai_model(model):
+        provider_key = self.model_registry.get_provider(model)
+
+        if provider_key == "openai":
             return self.PROVIDER_OPENAI
-        if self.util.is_gemini_model(model):
+        if provider_key == "gemini":
             return self.PROVIDER_GEMINI
-        if self.util.is_deepseek_model(model):
+        if provider_key == "deepseek":
             return self.PROVIDER_DEEPSEEK
-        if hasattr(self.util, "is_xai_model") and self.util.is_xai_model(model):
+        if provider_key == "xai":
             return self.PROVIDER_XAI
-        if hasattr(self.util, "is_anthropic_model") and self.util.is_anthropic_model(model):
+        if provider_key == "anthropic":
             return self.PROVIDER_ANTHROPIC
 
         raise IAToolkitException(

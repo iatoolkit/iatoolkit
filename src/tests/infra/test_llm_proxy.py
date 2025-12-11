@@ -5,7 +5,7 @@ from unittest.mock import patch, MagicMock
 from iatoolkit.infra.llm_proxy import LLMProxy
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.configuration_service import ConfigurationService
-
+from iatoolkit.common.model_registry import ModelRegistry
 
 class TestLLMProxy:
     def setup_method(self):
@@ -13,6 +13,7 @@ class TestLLMProxy:
         # Utility y configuration_service mockeados
         self.util_mock = MagicMock()
         self.config_service_mock = MagicMock(spec=ConfigurationService)
+        self.model_registry_mock = MagicMock(spec=ModelRegistry)
 
         # Empresa base
         self.company_short_name = "test_company"
@@ -44,6 +45,7 @@ class TestLLMProxy:
         self.proxy = LLMProxy(
             util=self.util_mock,
             configuration_service=self.config_service_mock,
+            model_registry=self.model_registry_mock
         )
 
         # Aseguramos que el cache global esté limpio para cada test
@@ -87,15 +89,17 @@ class TestLLMProxy:
         Si ninguna API key está configurada (get_configuration devuelve None o no tiene 'api-key'),
         create_response debe lanzar una IAToolkitException indicando que no hay API configurada.
         """
+        # Simular que no hay configuración de LLM para la compañía
         self.config_service_mock.get_configuration.return_value = None
-        # Forzamos que el modelo se resuelva como OpenAI para que llegue a leer la config
-        self.util_mock.is_openai_model.return_value = True
+
+        # Forzar que el modelo se resuelva como OpenAI para que llegue a leer la config
+        self.model_registry_mock.get_provider.return_value = "openai"
 
         with patch.dict(os.environ, {}, clear=True):
             with pytest.raises(IAToolkitException, match="doesn't have an API key configured"):
                 self.proxy.create_response(
                     company_short_name=self.company_short_name,
-                    model="gpt-4",
+                    model="gpt-5",
                     input=[],
                 )
 
@@ -115,10 +119,18 @@ class TestLLMProxy:
 
     def test_routing_to_correct_adapter(self):
         """create_response debe rutear al adaptador correcto según el modelo."""
-        # Configuramos los helpers de Utility
-        self.util_mock.is_openai_model.side_effect = lambda m: "gpt" in m
-        self.util_mock.is_gemini_model.side_effect = lambda m: "gemini" in m
-        self.util_mock.is_deepseek_model.side_effect = lambda m: "deepseek" in m
+
+        # Configure model -> provider mapping for this test
+        def provider_side_effect(model: str):
+            if "gpt" in model:
+                return "openai"
+            if "gemini" in model:
+                return "gemini"
+            if "deepseek" in model:
+                return "deepseek"
+            return "unknown"
+
+        self.model_registry_mock.get_provider.side_effect = provider_side_effect
 
         # Config común para que _get_api_key_from_config funcione
         self.config_service_mock.get_configuration.return_value = {"api-key": "LLM_KEY"}

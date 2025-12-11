@@ -340,21 +340,3 @@ class Utility:
             logging.exception(e)
             raise IAToolkitException(IAToolkitException.ErrorType.FILE_IO_ERROR,
                                f'Error al buscar archivos en el directorio {directory}: {str(e)}') from e
-
-    def is_openai_model(self, model: str) -> bool:
-        openai_models = [
-            'gpt-5', 'gpt'
-        ]
-        return any(openai_model in model.lower() for openai_model in openai_models)
-
-    def is_gemini_model(self, model: str) -> bool:
-        gemini_models = [
-            'gemini', 'gemini-2.5-pro', 'gemini-3'
-        ]
-        return any(gemini_model in model.lower() for gemini_model in gemini_models)
-
-    def is_deepseek_model(self, model: str) -> bool:
-        deepsek_models = [
-            'deepseek',
-        ]
-        return any(deepsek_models in model.lower() for deepsek_models in deepsek_models)

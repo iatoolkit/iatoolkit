@@ -12,12 +12,13 @@ from iatoolkit.repositories.models import Company, LLMQuery
 from dataclasses import dataclass
 
 
-@dataclass
 class MockHistoryHandle:
-    company_short_name: str
-    user_identifier: str
-    type: str
-    request_params: dict = None
+    def __init__(self, company_short_name, user_identifier, type_, model=None):
+        self.company_short_name = company_short_name
+        self.user_identifier = user_identifier
+        self.type = type_
+        self.model = model
+        self.request_params = {}
 
 
 class TestHistoryManager(unittest.TestCase):
@@ -58,10 +59,13 @@ class TestHistoryManager(unittest.TestCase):
 
         # Assertions
         self.mock_session_context.clear_llm_history.assert_called_once_with(self.company_short_name,
-                                                                            self.user_identifier)
+                                                                            self.user_identifier,
+                                                                            model=model)
         self.mock_llm_client.set_company_context.assert_called_once()
         self.mock_session_context.save_last_response_id.assert_called_with(self.company_short_name,
-                                                                           self.user_identifier, fake_response_id)
+                                                                           self.user_identifier,
+                                                                           fake_response_id,
+                                                                           model=model)
         self.assertEqual(result, {'response_id': fake_response_id})
 
     def test_initialize_context_client_side(self):
@@ -78,7 +82,7 @@ class TestHistoryManager(unittest.TestCase):
         self.mock_session_context.clear_llm_history.assert_called_once()
         expected_history = [{"role": "user", "content": prepared_context}]
         self.mock_session_context.save_context_history.assert_called_with(self.company_short_name, self.user_identifier,
-                                                                          expected_history)
+                                                                          expected_history,model=model)
         self.assertEqual(result, {})
 
     # --- populate_request_params Tests ---
@@ -176,18 +180,25 @@ class TestHistoryManager(unittest.TestCase):
 
     def test_update_history_server_side(self):
         """Test updating history for server-side (saves new ID)."""
-        handle = MockHistoryHandle(self.company_short_name, self.user_identifier, HistoryManager.TYPE_SERVER_SIDE)
+        handle = MockHistoryHandle(self.company_short_name,
+                                   self.user_identifier,
+                                   HistoryManager.TYPE_SERVER_SIDE,
+                                   model="gpt-4")
         response = {"response_id": "new_id_999"}
 
         self.manager.update_history(handle, "Prompt", response)
 
         self.mock_session_context.save_last_response_id.assert_called_with(
-            self.company_short_name, self.user_identifier, "new_id_999"
+            self.company_short_name, self.user_identifier, "new_id_999", model="gpt-4"
         )
 
     def test_update_history_client_side(self):
         """Test updating history for client-side (appends model response)."""
-        handle = MockHistoryHandle(self.company_short_name, self.user_identifier, HistoryManagerService.TYPE_CLIENT_SIDE)
+        handle = MockHistoryHandle(self.company_short_name,
+                                   self.user_identifier,
+                                   HistoryManagerService.TYPE_CLIENT_SIDE,
+                                   model="deepseek_chat",
+                                   )
 
         # Current history in session (System prompt only)
         initial_history = [{"role": "user", "content": "System"}]
@@ -205,7 +216,7 @@ class TestHistoryManager(unittest.TestCase):
         ]
 
         self.mock_session_context.save_context_history.assert_called_with(
-            self.company_short_name, self.user_identifier, expected_saved_history
+            self.company_short_name, self.user_identifier, expected_saved_history, model="deepseek_chat"
         )
 
     # --- get_full_history Tests ---

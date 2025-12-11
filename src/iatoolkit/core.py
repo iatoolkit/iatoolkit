@@ -307,6 +307,7 @@ class IAToolkit:
         from iatoolkit.services.history_manager_service import HistoryManagerService
         from iatoolkit.services.tool_service import ToolService
         from iatoolkit.services.llm_client_service import llmClient
+        from iatoolkit.services.auth_service import AuthService
 
 
         binder.bind(QueryService, to=QueryService)
@@ -327,20 +328,20 @@ class IAToolkit:
         binder.bind(HistoryManagerService, to=HistoryManagerService)
         binder.bind(ToolService, to=ToolService)
         binder.bind(llmClient, to=llmClient)
-
+        binder.bind(AuthService, to=AuthService)
 
     def _bind_infrastructure(self, binder: Binder):
         from iatoolkit.infra.llm_proxy import LLMProxy
         from iatoolkit.infra.google_chat_app import GoogleChatApp
         from iatoolkit.infra.brevo_mail_app import BrevoMailApp
-        from iatoolkit.services.auth_service import AuthService
         from iatoolkit.common.util import Utility
+        from iatoolkit.common.model_registry import ModelRegistry
 
         binder.bind(LLMProxy, to=LLMProxy)
         binder.bind(GoogleChatApp, to=GoogleChatApp)
         binder.bind(BrevoMailApp, to=BrevoMailApp)
-        binder.bind(AuthService, to=AuthService)
         binder.bind(Utility, to=Utility)
+        binder.bind(ModelRegistry, to=ModelRegistry)
 
     def _setup_additional_services(self):
         Bcrypt(self.app)
