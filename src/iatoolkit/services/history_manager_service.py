@@ -1,3 +1,9 @@
+# Copyright (c) 2024 Fernando Libedinsky
+# Product: IAToolkit
+#
+# IAToolkit is open source software.
+
+
 import logging
 import json
 from typing import Dict, Any, Optional
@@ -47,7 +53,7 @@ class HistoryManagerService:
         Initializes a new conversation history.
         """
         # 1. Clear existing history
-        self.session_context.clear_llm_history(company_short_name, user_identifier)
+        self.session_context.clear_llm_history(company_short_name, user_identifier, model=model)
 
         if history_type == self.TYPE_SERVER_SIDE:
             # OpenAI: Send system prompt to API and store the resulting ID
@@ -56,14 +62,14 @@ class HistoryManagerService:
                 company_base_context=prepared_context,
                 model=model
             )
-            self.session_context.save_last_response_id(company_short_name, user_identifier, response_id)
-            self.session_context.save_initial_response_id(company_short_name, user_identifier, response_id)
+            self.session_context.save_last_response_id(company_short_name, user_identifier, response_id, model=model)
+            self.session_context.save_initial_response_id(company_short_name, user_identifier, response_id, model=model)
             return {'response_id': response_id}
 
         elif history_type == self.TYPE_CLIENT_SIDE:
             # Gemini: Store system prompt as the first message in the list
             context_history = [{"role": "user", "content": prepared_context}]
-            self.session_context.save_context_history(company_short_name, user_identifier, context_history)
+            self.session_context.save_context_history(company_short_name, user_identifier, context_history, model=model)
             return {}
 
         return {}
@@ -76,14 +82,18 @@ class HistoryManagerService:
         Populates the request_params within the HistoryHandle.
         Returns True if a rebuild is needed, False otherwise.
         """
+        model = getattr(handle, "model", None)
+
         if handle.type == self.TYPE_SERVER_SIDE:
             previous_response_id = None
             if ignore_history:
-                previous_response_id = self.session_context.get_initial_response_id(handle.company_short_name,
-                                                                                    handle.user_identifier)
+                previous_response_id = self.session_context.get_initial_response_id(
+                    handle.company_short_name,handle.user_identifier,model=model)
+
             else:
-                previous_response_id = self.session_context.get_last_response_id(handle.company_short_name,
-                                                                                 handle.user_identifier)
+                previous_response_id = self.session_context.get_last_response_id(
+                    handle.company_short_name,handle.user_identifier,model=model)
+
 
             if not previous_response_id:
                 handle.request_params = {}
@@ -93,8 +103,8 @@ class HistoryManagerService:
             return False
 
         elif handle.type == self.TYPE_CLIENT_SIDE:
-            context_history = self.session_context.get_context_history(handle.company_short_name,
-                                                                       handle.user_identifier) or []
+            context_history = self.session_context.get_context_history(
+                handle.company_short_name,handle.user_identifier,model=model) or []
 
             if not context_history:
                 handle.request_params = {}
@@ -125,15 +135,22 @@ class HistoryManagerService:
         history_type = history_handle.type
         company_short_name = history_handle.company_short_name
         user_identifier = history_handle.user_identifier
+        model = getattr(history_handle, "model", None)
 
         if history_type == self.TYPE_SERVER_SIDE:
             if "response_id" in response:
-                self.session_context.save_last_response_id(company_short_name, user_identifier,
-                                                               response["response_id"])
+                self.session_context.save_last_response_id(
+                    company_short_name,
+                    user_identifier,
+                    response["response_id"],
+                    model=model)
 
         elif history_type == self.TYPE_CLIENT_SIDE:
-            context_history = self.session_context.get_context_history(company_short_name,
-                                                                       user_identifier) or []
+            context_history = self.session_context.get_context_history(
+                company_short_name,
+                user_identifier,
+                model=model) or []
+
             # Ensure the user prompt is recorded if not already.
             # We check content equality to handle the case where the previous message was
             # also 'user' (e.g., System Prompt) but different content.
@@ -145,7 +162,11 @@ class HistoryManagerService:
             if response.get('answer'):
                 context_history.append({"role": "model", "content": response['answer']})
 
-            self.session_context.save_context_history(company_short_name, user_identifier, context_history)
+            self.session_context.save_context_history(
+                company_short_name,
+                user_identifier,
+                context_history,
+                model=model)
 
     def _trim_context_history(self, context_history: list):
         """Internal helper to keep token usage within limits for client-side history."""

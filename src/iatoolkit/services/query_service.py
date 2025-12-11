@@ -15,6 +15,7 @@ from iatoolkit.services.dispatcher_service import Dispatcher
 from iatoolkit.services.prompt_service import PromptService
 from iatoolkit.services.user_session_context_service import UserSessionContextService
 from iatoolkit.services.history_manager_service import HistoryManagerService
+from iatoolkit.common.model_registry import ModelRegistry
 from iatoolkit.common.util import Utility
 from injector import inject
 import base64
@@ -32,6 +33,7 @@ class HistoryHandle:
     company_short_name: str
     user_identifier: str
     type: str
+    model: str | None = None
     request_params: dict = None
 
 
@@ -51,6 +53,7 @@ class QueryService:
                  configuration_service: ConfigurationService,
                  history_manager: HistoryManagerService,
                  util: Utility,
+                 model_registry: ModelRegistry
                  ):
         self.profile_service = profile_service
         self.company_context_service = company_context_service
@@ -65,6 +68,7 @@ class QueryService:
         self.configuration_service = configuration_service
         self.llm_client = llm_client
         self.history_manager = history_manager
+        self.model_registry = model_registry
 
 
     def _resolve_model(self, company_short_name: str, model: Optional[str]) -> str:
@@ -77,8 +81,11 @@ class QueryService:
         return effective_model
 
     def _get_history_type(self, model: str) -> str:
-        return HistoryManagerService.TYPE_SERVER_SIDE if self.util.is_openai_model(
-            model) else HistoryManagerService.TYPE_CLIENT_SIDE
+        history_type_str = self.model_registry.get_history_type(model)
+        if history_type_str == "server_side":
+            return HistoryManagerService.TYPE_SERVER_SIDE
+        else:
+            return HistoryManagerService.TYPE_CLIENT_SIDE
 
 
     def _build_user_facing_prompt(self, company, user_identifier: str,
@@ -123,9 +130,12 @@ class QueryService:
 
         return user_turn_prompt, effective_question
 
-    def _ensure_valid_history(self, company, user_identifier: str,
-                              effective_model: str, user_turn_prompt: str,
-                              ignore_history: bool) -> tuple[Optional[HistoryHandle], Optional[dict]]:
+    def _ensure_valid_history(self, company,
+                              user_identifier: str,
+                              effective_model: str,
+                              user_turn_prompt: str,
+                              ignore_history: bool
+                              ) -> tuple[Optional[HistoryHandle], Optional[dict]]:
         """
             Manages the history strategy and rebuilds context if necessary.
             Returns: (HistoryHandle, error_response)
@@ -136,7 +146,8 @@ class QueryService:
         handle = HistoryHandle(
             company_short_name=company.short_name,
             user_identifier=user_identifier,
-            type=history_type
+            type=history_type,
+            model=effective_model
         )
 
         # pass the handle to populate request_params
@@ -196,22 +207,35 @@ class QueryService:
     def init_context(self, company_short_name: str,
                      user_identifier: str,
                      model: str = None) -> dict:
+        """
+        Forces a context rebuild for a given user and (optionally) model.
 
-        # 1. Execute the forced rebuild sequence using the unified identifier.
-        self.session_context.clear_all_context(company_short_name, user_identifier)
-        logging.info(f"Context for {company_short_name}/{user_identifier} has been cleared.")
+        - Clears LLM-related context for the resolved model.
+        - Regenerates the static company/user context.
+        - Sends the context to the LLM for that model.
+        """
 
-        # 2. LLM context is clean, now we can load it again
+        # 1. Resolve the effective model for this user/company
+        effective_model = self._resolve_model(company_short_name, model)
+
+        # 2. Clear only the LLM-related context for this model
+        self.session_context.clear_all_context(company_short_name, user_identifier,model=effective_model)
+        logging.info(
+            f"Context for {company_short_name}/{user_identifier} "
+            f"(model={effective_model}) has been cleared."
+        )
+
+        # 3. Static LLM context is now clean, we can prepare it again (model-agnostic)
         self.prepare_context(
             company_short_name=company_short_name,
             user_identifier=user_identifier
         )
 
-        # 3. communicate the new context to the LLM
+        # 4. Communicate the new context to the specific LLM model
         response = self.set_context_for_llm(
             company_short_name=company_short_name,
             user_identifier=user_identifier,
-            model=model
+            model=effective_model
         )
 
         return response
@@ -256,8 +280,10 @@ class QueryService:
                             company_short_name: str,
                             user_identifier: str,
                             model: str = ''):
-
-        # This service takes a pre-built context and send to the LLM
+        """
+        Takes a pre-built static context and sends it to the LLM for the given model.
+        Also initializes the model-specific history through HistoryManagerService.
+        """
         company = self.profile_repo.get_company_by_short_name(company_short_name)
         if not company:
             logging.error(f"Company not found: {company_short_name} in set_context_for_llm")
@@ -266,8 +292,8 @@ class QueryService:
         # --- Model Resolution ---
         effective_model = self._resolve_model(company_short_name, model)
 
-        # blocking logic to avoid multiple requests for the same user/company at the same time
-        lock_key = f"lock:context:{company_short_name}/{user_identifier}"
+        # Lock per (company, user, model) to avoid concurrent rebuilds for the same model
+        lock_key = f"lock:context:{company_short_name}/{user_identifier}/{effective_model}"
         if not self.session_context.acquire_lock(lock_key, expire_seconds=60):
             logging.warning(
                 f"try to rebuild context for user {user_identifier} while is still in process, ignored.")
