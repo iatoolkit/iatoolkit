@@ -45,7 +45,7 @@
       if (elTitle) elTitle.textContent = c.title || '';
       if (elText) elText.innerHTML = c.text || '';
       if (elExample && c.example) {
-          elExample.innerHTML = (t_js('example') + ': ' + c.example) || '';
+          elExample.innerHTML = ('Example ' + ': ' + c.example) || '';
       }
       else
           elExample.innerHTML = '';
