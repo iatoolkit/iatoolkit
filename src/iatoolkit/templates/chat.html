@@ -28,7 +28,8 @@
                   title="Powered by IAToolkit {{ license }} ver. {{ iatoolkit_version }}">
                 <i class="bi bi-info-circle" style="color: {{ branding.header_text_color }}; opacity: 0.7; font-size: 0.9rem;"></i>
             </span>
-        </div>
+
+            </div>
 
         <!-- Contenedor para la derecha que agrupa ID de usuario y botones -->
         <div class="d-flex flex-column flex-md-row align-items-center">
@@ -38,14 +39,39 @@
                 {{ user_identifier }}
             </span>
 
+
             <!-- Separador Vertical (Solo visible en Desktop) -->
             <div class="vr mx-3 d-none d-md-block"></div>
 
             <!-- Fila 3 (Móvil) / Parte 2 de la Columna Derecha (Desktop): Iconos de Acción -->
             <div class="d-flex align-items-center">
+                <!-- Selector de modelo LLM -->
+                <button type="button"
+                        id="llm-model-button"
+                        class="btn btn-sm py-1 px-3"
+                        style="border-radius: 0.4rem; border: 1px solid rgba(255,255,255,0.7); background: rgba(0,0,0,0.08); color: {{ branding.header_text_color }};">
+                    <i class="bi bi-cpu me-1"></i>
+                    <span id="llm-model-button-label">
+                        {{ (llm_available_models[0].label if llm_available_models and llm_available_models[0].label else llm_default_model) or 'Modelo IA' }}
+                    </span>
+                </button>
+                <!-- Popup simple para selección de modelo -->
+                <div id="llm-model-popup"
+                     class="card shadow-sm llm-model-popup"
+                     style="position: absolute; z-index: 9999; display: none; min-width: 260px;">
+                    <div class="card-body py-2">
+                        <div class="small mb-1 fw-bold">Modelo de IA</div>
+                        <div class="small mb-2 llm-model-subtitle">
+                            Este modelo se usará en las próximas consultas.
+                        </div>
+                        <div id="llm-model-list" class="list-group list-group-flush">
+                            {# El contenido se inyecta vía JavaScript con window.availableLlmModels #}
+                        </div>
+                    </div>
+                </div>
                 <a href="javascript:void(0);"
                    id="history-button"
-                   class="action-icon-style" title="{{ t('ui.tooltips.history') }}"
+                   class="ms-3 action-icon-style" title="{{ t('ui.tooltips.history') }}"
                    style="color: {{ branding.header_text_color }};">
                     <i class="bi bi-clock-history"></i>
                 </a>
@@ -227,6 +253,11 @@
     window.onboardingCards = {{ onboarding_cards | tojson }};
     window.sendButtonColor = "{{ branding.send_button_color }}";
 
+    // LLM configuration from backend
+    window.defaultLlmModel = {{ llm_default_model | tojson }};
+    window.availableLlmModels = {{ llm_available_models | tojson }};
+
+
     // JS translations helper
     window.i18n = {{ js_translations | tojson }};
     function t_js(key) {
@@ -245,6 +276,7 @@
     <script src="{{ url_for('static', filename='js/chat_logout_button.js', _external=True) }}"></script>
     <script src="{{ url_for('static', filename='js/chat_prompt_manager.js', _external=True) }}"></script>
     <script src="{{ url_for('static', filename='js/chat_filepond.js', _external=True) }}"></script>
+    <script src="{{ url_for('static', filename='js/chat_model_selector.js', _external=True) }}"></script>
     <script src="{{ url_for('static', filename='js/chat_main.js', _external=True) }}"></script>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>

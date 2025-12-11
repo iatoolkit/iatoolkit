@@ -74,6 +74,20 @@ class BaseLoginView(MethodView):
             )
         else:
             # --- FAST PATH: Render the chat page directly ---
+            # LLM configuration: default model and availables
+            # LLM configuration: default model and available models
+            llm_config = self.config_service.get_llm_configuration(company_short_name) or {}
+            default_llm_model = llm_config.get('model')
+            available_llm_models = llm_config.get('available_models') or []
+
+            # Fallback: si no hay lista explícita, usar solo el modelo por defecto
+            if not available_llm_models and default_llm_model:
+                available_llm_models = [{
+                    "id": default_llm_model,
+                    "label": default_llm_model,
+                    "description": "Modelo por defecto configurado para esta compañía."
+                }]
+
             prompts = self.prompt_service.get_user_prompts(company_short_name)
 
             # Get the entire 'js_messages' block in the correct language.
@@ -87,5 +101,7 @@ class BaseLoginView(MethodView):
                 branding=branding_data,
                 onboarding_cards=onboarding_cards,
                 js_translations=js_translations,
-                redeem_token=redeem_token
-            )
+                redeem_token=redeem_token,
+                llm_default_model=default_llm_model,
+                llm_available_models = available_llm_models,
+                )

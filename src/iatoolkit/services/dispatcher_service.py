@@ -97,9 +97,8 @@ class Dispatcher:
         if self.tool_service.is_system_tool(function_name):
             # this is the system function to be executed.
             handler = self.tool_service.get_system_handler(function_name)
-
             logging.info(
-                f"Calling system handler '{function_name}' "
+                f"Calling system handler [{function_name}] "
                 f"with company_short_name={company_short_name} "
                 f"and kwargs={kwargs}"
             )

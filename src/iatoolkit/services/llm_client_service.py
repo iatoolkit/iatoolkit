@@ -84,7 +84,7 @@ class llmClient:
 
         try:
             start_time = time.time()
-            logging.info(f"calling llm model '{model}' with {self.count_tokens(context)} tokens...")
+            logging.info(f"calling llm model '{model}' with {self.count_tokens(context, context_history)} tokens...")
 
             # this is the first call to the LLM on the iteration
             try:
@@ -136,7 +136,6 @@ class llmClient:
                         raise
                     logging.debug(f"[Dispatcher] Parsed args = {args}")
 
-                    logging.info(f"start execution fcall: {function_name}")
                     try:
                         result = self.dispatcher.dispatch(
                             company_short_name=company.short_name,
@@ -429,7 +428,7 @@ class llmClient:
         html_answer = markdown2.markdown(answer).replace("\n", "")
         return html_answer
 
-    def count_tokens(self, text):
+    def count_tokens(self, text, history = []):
         # Codifica el texto y cuenta la cantidad de tokens
-        tokens = self.encoding.encode(text)
+        tokens = self.encoding.encode(text + json.dumps(history))
         return len(tokens)

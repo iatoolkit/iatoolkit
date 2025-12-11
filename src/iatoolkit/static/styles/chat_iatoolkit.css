@@ -499,5 +499,45 @@ li {
     cursor: pointer;
 }
 
+   /* Popup de selección de modelo LLM, usando colores de brand */
+    .llm-model-popup {
+        background-color: var(--brand-secondary-color, #ffffff);
+        border-radius: 0.5rem;
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        color: var(--brand-text-on-secondary, #000000);
+    }
+
+    .llm-model-popup .card-body {
+        padding-left: 0.9rem;
+        padding-right: 0.9rem;
+    }
+
+    .llm-model-popup .llm-model-subtitle {
+        color: rgba(255, 255, 255, 0.85);
+    }
+
+    .llm-model-popup .list-group-item {
+        border: none;
+        padding-top: 0.4rem;
+        padding-bottom: 0.4rem;
+        background-color: transparent;
+        color: inherit;
+    }
+
+    .llm-model-popup .list-group-item:hover {
+        background-color: rgba(0, 0, 0, 0.08);
+    }
+
+    .llm-model-popup .list-group-item.active {
+        background-color: var(--brand-primary-color, #4C6A8D);
+        color: var(--brand-text-on-primary, #ffffff);
+        border-color: transparent;
+    }
+
+    .llm-model-popup .list-group-item.active .text-muted {
+        color: rgba(255, 255, 255, 0.85) !important;
+    }
+
+
 
 

@@ -14,9 +14,21 @@ llm:
   model: "deepseek-chat"
   api-key: "DEEP_SEEK_API_KEY"     # the name of the api-key in the .env file
 
-  # Example configuration for Gemini
-  # model: "gemini-2.5-pro"
-  # api-key: "GEMINI_API_KEY"
+  available_models:
+    - id: "gpt-5"
+      label: "gpt"
+      description: "Rápido, recomendado para la mayoría de las consultas."
+    - id: "deepseek-chat"
+      label: "DeepSeek"
+      description: "Rápido y económico. "
+    - id: "gemini-2.5-pro"
+      label: "Gemini"
+      description: "Mejor razonamiento y capacidad multimodal."
+
+  provider_api_keys:
+    openai: "OPENAI_API_KEY"
+    gemini: "GEMINI_API_KEY"
+    deepseek: "DEEP_SEEK_API_KEY"
 
 
 # Data Sources

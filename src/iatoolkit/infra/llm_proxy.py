@@ -124,7 +124,7 @@ class LLMProxy:
             return self.adapters[provider]
 
         # Otherwise, create a low-level client from configuration
-        api_key = self._get_api_key_from_config(company_short_name)
+        api_key = self._get_api_key_from_config(company_short_name, provider)
         client = self._get_or_create_client(provider, api_key)
 
         # Wrap client with the correct adapter
@@ -220,20 +220,49 @@ class LLMProxy:
     # -------------------------------------------------------------------------
     # Configuration helpers
     # -------------------------------------------------------------------------
-
-    def _get_api_key_from_config(self, company_short_name: str) -> str:
+    def _get_api_key_from_config(self, company_short_name: str, provider: str) -> str:
         """
         Read the LLM API key from company configuration and environment variables.
+
+        Resolución de prioridad:
+        1. llm.provider_api_keys[provider] -> env var específica por proveedor.
+        2. llm.api-key                      -> env var global (compatibilidad hacia atrás).
         """
         llm_config = self.configuration_service.get_configuration(company_short_name, "llm")
 
-        # get API key name from config (company.yaml)
-        if llm_config and llm_config.get("api-key"):
-            api_key_env_var = llm_config["api-key"]
-            decrypted_api_key = os.getenv(api_key_env_var, "")
-            return decrypted_api_key
+        if not llm_config:
+            # Mantener compatibilidad con los tests: el mensaje debe indicar
+            # que no hay API key configurada.
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.API_KEY,
+                f"Company '{company_short_name}' doesn't have an API key configured."
+            )
 
-        raise IAToolkitException(
-            IAToolkitException.ErrorType.API_KEY,
-            f"Company '{company_short_name}' doesn't have an API key configured."
-        )
+        provider_keys = llm_config.get("provider_api_keys") or {}
+        env_var_name = None
+
+        # 1) Intentar api-key específica por proveedor (si existe el bloque provider_api_keys)
+        if provider_keys and isinstance(provider_keys, dict):
+            env_var_name = provider_keys.get(provider)
+
+        # 2) Fallback: usar api-key global si no hay específica
+        if not env_var_name and llm_config.get("api-key"):
+            env_var_name = llm_config["api-key"]
+
+        if not env_var_name:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.API_KEY,
+                f"Company '{company_short_name}' doesn't have an API key configured "
+                f"for provider '{provider}'."
+            )
+
+        api_key_value = os.getenv(env_var_name, "")
+
+        if not api_key_value:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.API_KEY,
+                f"Environment variable '{env_var_name}' for company '{company_short_name}' "
+                f"and provider '{provider}' is not set or is empty."
+            )
+
+        return api_key_value

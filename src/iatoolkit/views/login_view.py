@@ -5,7 +5,7 @@
 
 from flask.views import MethodView
 from flask import (request, redirect, render_template, url_for,
-                   render_template_string, flash)
+                   render_template_string, flash, make_response)
 from injector import inject
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.jwt_service import JWTService
@@ -133,6 +133,17 @@ class FinalizeContextView(MethodView):
                             message="Empresa no encontrada"), 404
             branding_data = self.branding_service.get_company_branding(company_short_name)
 
+            # --- LLM configuration: modelo por defecto y modelos disponibles ---
+            llm_config = self.config_service.get_llm_configuration(company_short_name) or {}
+            default_llm_model = llm_config.get('model')
+            available_llm_models = llm_config.get('available_models') or []
+            if not available_llm_models and default_llm_model:
+                available_llm_models = [{
+                    "id": default_llm_model,
+                    "label": default_llm_model,
+                    "description": "Modelo por defecto configurado para esta compañía."
+                }]
+
             # 2. Finalize the context rebuild (the heavy task).
             self.query_service.set_context_for_llm(
                 company_short_name=company_short_name,
@@ -146,6 +157,8 @@ class FinalizeContextView(MethodView):
             # Get the entire 'js_messages' block in the correct language.
             js_translations = self.i18n_service.get_translation_block('js_messages')
 
+            # Importante: no envolver con make_response; dejar que Flask gestione
+            # tanto strings como tuplas (string, status) que pueda devolver render_template
             return render_template(
                 "chat.html",
                 company_short_name=company_short_name,
@@ -154,7 +167,9 @@ class FinalizeContextView(MethodView):
                 prompts=prompts,
                 onboarding_cards=onboarding_cards,
                 js_translations=js_translations,
-                redeem_token=token
+                redeem_token=token,
+                llm_default_model=default_llm_model,
+                llm_available_models=available_llm_models,
             )
 
         except Exception as e:
@@ -162,4 +177,3 @@ class FinalizeContextView(MethodView):
                                    company_short_name=company_short_name,
                                    branding=branding_data,
                                    message=f"An unexpected error occurred during context loading: {str(e)}"), 500
-

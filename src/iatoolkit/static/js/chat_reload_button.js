@@ -18,7 +18,10 @@ $(document).ready(function () {
 
         // 2. prepare the api parameters
         const apiPath = '/api/init-context';
-        const payload = {'user_identifier': window.user_identifier};
+        const payload = {
+            'user_identifier': window.user_identifier,
+            'model': (window.currentLlmModel || window.defaultLlmModel || '')
+            };
 
         // 3. make the call to callToolkit
         const data = await callToolkit(apiPath, payload, 'POST');

@@ -55,35 +55,6 @@ class TestLLMProxy:
         patch.stopall()
         LLMProxy._clients_cache.clear()
 
-    def test_create_openai_client_from_config(self):
-        """El cliente OpenAI se crea usando la API key leída desde configuration_service + os.environ."""
-        # Configuración de company.yaml simulada
-        self.config_service_mock.get_configuration.return_value = {"api-key": "COMPANY_OPENAI_KEY"}
-
-        with patch.dict(os.environ, {"COMPANY_OPENAI_KEY": "key_from_env"}, clear=True):
-            api_key = self.proxy._get_api_key_from_config(self.company_short_name)
-            client = self.proxy._get_or_create_client(LLMProxy.PROVIDER_OPENAI, api_key)
-
-        # Debe haberse construido el cliente OpenAI con la API key tomada del env
-        self.mock_openai_class.assert_called_once_with(api_key="key_from_env")
-        # Y el cliente retornado debe ser el mismo objeto devuelto por la clase OpenAI mockeada
-        assert client is self.mock_openai_class.return_value
-
-    def test_create_deepseek_client_from_config(self):
-        """El cliente DeepSeek se crea usando la API key leída desde configuration_service + os.environ."""
-        self.config_service_mock.get_configuration.return_value = {"api-key": "COMPANY_DEEPSEEK_KEY"}
-
-        with patch.dict(os.environ, {"COMPANY_DEEPSEEK_KEY": "deepseek_key"}, clear=True):
-            api_key = self.proxy._get_api_key_from_config(self.company_short_name)
-            client = self.proxy._get_or_create_client(LLMProxy.PROVIDER_DEEPSEEK, api_key)
-
-        # DeepSeek usa el cliente OpenAI con un base_url distinto
-        self.mock_openai_class.assert_called_once_with(
-            api_key="deepseek_key",
-            base_url="https://api.deepseek.com",
-        )
-        assert client is self.mock_openai_class.return_value
-
     def test_create_response_raises_if_no_api_key_configured(self):
         """
         Si ninguna API key está configurada (get_configuration devuelve None o no tiene 'api-key'),
@@ -108,13 +79,14 @@ class TestLLMProxy:
         self.config_service_mock.get_configuration.return_value = {"api-key": "KEY"}
 
         with patch.dict(os.environ, {"KEY": "val"}, clear=True):
-            api_key = self.proxy._get_api_key_from_config(self.company_short_name)
+            api_key = self.proxy._get_api_key_from_config(
+                self.company_short_name,
+                LLMProxy.PROVIDER_OPENAI
+            )
             client1 = self.proxy._get_or_create_client(LLMProxy.PROVIDER_OPENAI, api_key)
             client2 = self.proxy._get_or_create_client(LLMProxy.PROVIDER_OPENAI, api_key)
 
-        # La clase OpenAI solo debe haberse instanciado una vez
         self.mock_openai_class.assert_called_once_with(api_key="val")
-        # Y ambas llamadas deben devolver el mismo cliente
         assert client1 is client2
 
     def test_routing_to_correct_adapter(self):

@@ -45,6 +45,16 @@ class ConfigurationService:
         self._ensure_config_loaded(company_short_name)
         return self._loaded_configs[company_short_name].get(content_key)
 
+    def get_llm_configuration(self, company_short_name: str) -> dict | None:
+        """
+        Convenience helper to obtain the 'llm' configuration block for a company.
+        Kept separate from get_configuration() to avoid coupling tests that
+        assert the number of calls to get_configuration().
+        """
+        self._ensure_config_loaded(company_short_name)
+        llm_config = self._loaded_configs[company_short_name].get("llm")
+        return llm_config if isinstance(llm_config, dict) else None
+
     def load_configuration(self, company_short_name: str, company_instance):
         """
         Main entry point for configuring a company instance.
