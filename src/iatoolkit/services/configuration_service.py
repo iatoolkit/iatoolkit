@@ -168,7 +168,7 @@ class ConfigurationService:
                 continue
 
             # Register with the SQL service
-            sql_service.register_database(db_uri, db_name, db_schema)
+            sql_service.register_database(company_short_name, db_uri, db_name, db_schema)
 
     def _register_tools(self, company_instance, config: dict):
         """creates in the database each tool defined in the YAML."""

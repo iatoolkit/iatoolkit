@@ -28,44 +28,46 @@ class SqlService:
         self.util = util
         self.i18n_service = i18n_service
 
-        # Cache for database connections
-        self._db_connections: dict[str, DatabaseManager] = {}
+        # Cache for database connections. Key is tuple: (company_short_name, db_name)
+        self._db_connections: dict[tuple[str, str], DatabaseManager] = {}
 
-    def register_database(self, db_uri: str, db_name: str, schema: str | None = None):
+    def register_database(self, company_short_name: str, db_uri: str, db_name: str, schema: str | None = None):
         """
-        Creates and caches a DatabaseManager instance for a given database name and URI.
-        If a database with the same name is already registered, it does nothing.
+        Creates and caches a DatabaseManager instance for a given company, database name and URI.
+        Composite key avoids collisions between companies using the same logical db name.
         """
-        if db_name in self._db_connections:
+        key = (company_short_name, db_name)
+
+        if key in self._db_connections:
             return
 
-        logging.info(f"Registering and creating connection for database: '{db_name}' (schema: {schema})")
+        logging.info(f"Registering DB '{db_name}' for company '{company_short_name}' (schema: {schema})")
 
-        # create the database connection and save it on the cache
+        # Create the database connection and save it on the cache
         db_manager = DatabaseManager(db_uri, schema=schema, register_pgvector=False)
-        self._db_connections[db_name] = db_manager
+        self._db_connections[key] = db_manager
 
-    def get_db_names(self):
-        db_names = []
-        for key in self._db_connections:
-            db_names.append(key)
-        return db_names
+    def get_db_names(self, company_short_name: str) -> list[str]:
+        """
+        Returns list of logical database names available ONLY for the specified company.
+        This is used to populate the tool definition enum for the LLM.
+        """
+        return [db for (co, db) in self._db_connections.keys() if co == company_short_name]
 
-    def get_database_manager(self, db_name: str) -> DatabaseManager:
+    def get_database_manager(self, company_short_name: str, db_name: str) -> DatabaseManager:
         """
-        Retrieves a registered DatabaseManager instance from the cache.
+        Retrieves a registered DatabaseManager instance using the composite key.
         """
+        key = (company_short_name, db_name)
         try:
-            return self._db_connections[db_name]
+            return self._db_connections[key]
         except KeyError:
             logging.error(
-                f"Attempted to access unregistered database: '{db_name}'"
-                f"Registered databases: {list(self._db_connections.keys())}"
+                f"Attempted to access unregistered database: '{db_name}' for company '{company_short_name}'"
             )
-
             raise IAToolkitException(
                 IAToolkitException.ErrorType.DATABASE_ERROR,
-                f"Database '{db_name}' is not registered with the SqlService."
+                f"Database '{db_name}' is not registered for this company."
             )
 
     def exec_sql(self, company_short_name: str, **kwargs):
@@ -96,7 +98,7 @@ class SqlService:
 
         try:
             # 1. Get the database manager from the cache
-            db_manager = self.get_database_manager(database_name)
+            db_manager = self.get_database_manager(company_short_name, database_name)
             session = db_manager.get_session()
 
             # 2. Execute the SQL statement
@@ -126,9 +128,13 @@ class SqlService:
             raise
         except Exception as e:
             # Attempt to rollback if a session was active
-            db_manager = self.get_database_manager(database_name)
-            if db_manager:
-                db_manager.get_session().rollback()
+            try:
+                db_manager = self.get_database_manager(company_short_name, database_name)
+                if db_manager:
+                    db_manager.get_session().rollback()
+            except Exception:
+                pass            # Ignore rollback errors during error handling
+
 
             error_message = str(e)
             if 'timed out' in str(e):
@@ -138,22 +144,19 @@ class SqlService:
             raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR,
                                      error_message) from e
 
-    def commit(self, database_name: str):
+    def commit(self, company_short_name: str, database_name: str):
         """
-        Commits the current transaction for a registered database.
-        Useful when multiple exec_sql calls are part of a single transaction.
+        Commits the current transaction for a registered database (scoped to company).
         """
-
-        # Get the database manager from the cache
-        db_manager = self.get_database_manager(database_name)
+        db_manager = self.get_database_manager(company_short_name, database_name)
         try:
             db_manager.get_session().commit()
         except SQLAlchemyError as db_error:
             db_manager.get_session().rollback()
-            logging.error(f"Error de base de datos: {str(db_error)}")
+            logging.error(f"Database error: {str(db_error)}")
             raise db_error
         except Exception as e:
-            logging.error(f"error while commiting sql: '{str(e)}'")
+            logging.error(f"Error while commiting sql: '{str(e)}'")
             raise IAToolkitException(
                 IAToolkitException.ErrorType.DATABASE_ERROR, str(e)
             )

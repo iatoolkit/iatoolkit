@@ -11,9 +11,8 @@ from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.common.util import Utility
 from iatoolkit.common.exceptions import IAToolkitException
 
-# No es necesario importar DatabaseManager aquí, ya que se mockea
-
 # Constantes para nombres de BD para evitar typos
+COMPANY_SHORT_NAME = 'test_company'
 DB_NAME_SUCCESS = 'test_db'
 DB_NAME_UNREGISTERED = 'unregistered_db'
 DUMMY_URI = 'sqlite:///:memory:'
@@ -22,7 +21,7 @@ DUMMY_URI = 'sqlite:///:memory:'
 class TestSqlService:
     """
     Unit tests for the refactored SqlService, which now manages a cache of
-    named DatabaseManager instances.
+    named DatabaseManager instances scoped by company.
     """
 
     @pytest.fixture(autouse=True)
@@ -42,26 +41,28 @@ class TestSqlService:
         """
         GIVEN an empty SqlService
         WHEN register_database is called with a new name and URI
-        THEN it should instantiate DatabaseManager and cache the instance.
+        THEN it should instantiate DatabaseManager and cache the instance using (company, db_name) key.
         """
         # Act
-        self.service.register_database(DUMMY_URI, DB_NAME_SUCCESS, 'an_schema')
+        self.service.register_database(COMPANY_SHORT_NAME, DUMMY_URI, DB_NAME_SUCCESS, 'an_schema')
 
         # Assert
-        MockDatabaseManager.assert_called_once_with(DUMMY_URI, schema='an_schema',register_pgvector=False)
-        assert DB_NAME_SUCCESS in self.service._db_connections
-        assert self.service._db_connections[DB_NAME_SUCCESS] == MockDatabaseManager.return_value
+        MockDatabaseManager.assert_called_once_with(DUMMY_URI, schema='an_schema', register_pgvector=False)
+
+        expected_key = (COMPANY_SHORT_NAME, DB_NAME_SUCCESS)
+        assert expected_key in self.service._db_connections
+        assert self.service._db_connections[expected_key] == MockDatabaseManager.return_value
 
     @patch('iatoolkit.services.sql_service.DatabaseManager')
     def test_register_database_skips_if_already_exists(self, MockDatabaseManager):
         """
-        GIVEN a database is already registered
-        WHEN register_database is called again with the same name
+        GIVEN a database is already registered for a company
+        WHEN register_database is called again with the same name and company
         THEN it should not create a new DatabaseManager instance.
         """
         # Act
-        self.service.register_database(DUMMY_URI, DB_NAME_SUCCESS)
-        self.service.register_database('another_uri', DB_NAME_SUCCESS)  # Call again
+        self.service.register_database(COMPANY_SHORT_NAME, DUMMY_URI, DB_NAME_SUCCESS)
+        self.service.register_database(COMPANY_SHORT_NAME, 'another_uri', DB_NAME_SUCCESS)  # Call again
 
         # Assert
         MockDatabaseManager.assert_called_once()  # Still only called once
@@ -69,14 +70,34 @@ class TestSqlService:
     def test_get_database_manager_raises_exception_if_not_found(self):
         """
         GIVEN an empty SqlService
-        WHEN get_database_manager is called with an unregistered name
+        WHEN get_database_manager is called with an unregistered name/company pair
         THEN it should raise an IAToolkitException.
         """
         with pytest.raises(IAToolkitException) as exc_info:
-            self.service.get_database_manager(DB_NAME_UNREGISTERED)
+            self.service.get_database_manager(COMPANY_SHORT_NAME, DB_NAME_UNREGISTERED)
 
         assert exc_info.value.error_type == IAToolkitException.ErrorType.DATABASE_ERROR
         assert f"Database '{DB_NAME_UNREGISTERED}' is not registered" in str(exc_info.value)
+
+    def test_get_db_names_filters_by_company(self):
+        """
+        GIVEN databases registered for multiple companies
+        WHEN get_db_names is called for a specific company
+        THEN it should return only the database names for that company.
+        """
+        # Arrange
+        with patch('iatoolkit.services.sql_service.DatabaseManager'):
+            self.service.register_database('company_A', DUMMY_URI, 'db_sales')
+            self.service.register_database('company_A', DUMMY_URI, 'db_hr')
+            self.service.register_database('company_B', DUMMY_URI, 'db_sales')  # Same name, different company
+
+        # Act
+        db_names_A = self.service.get_db_names('company_A')
+        db_names_B = self.service.get_db_names('company_B')
+
+        # Assert
+        assert set(db_names_A) == {'db_sales', 'db_hr'}
+        assert set(db_names_B) == {'db_sales'}
 
     # --- Tests for exec_sql ---
 
@@ -94,19 +115,25 @@ class TestSqlService:
 
         mock_result_proxy.keys.return_value = ['id', 'name']
         mock_result_proxy.fetchall.return_value = [(1, 'Alice'), (2, 'Bob')]
+        mock_result_proxy.returns_rows = True
 
         # Arrange: Register the database
-        self.service.register_database(DUMMY_URI, DB_NAME_SUCCESS)
+        self.service.register_database(COMPANY_SHORT_NAME, DUMMY_URI, DB_NAME_SUCCESS)
 
         # Act
         sql_statement = "SELECT id, name FROM users"
-        result_json = self.service.exec_sql(company_short_name='temp_company',
+        result_json = self.service.exec_sql(company_short_name=COMPANY_SHORT_NAME,
                                             database_key=DB_NAME_SUCCESS,
                                             query=sql_statement)
 
         # Assert
-        mock_db_manager.get_session.assert_called_once()
+        # Verify get_database_manager used the composite key implicitly
+        expected_key = (COMPANY_SHORT_NAME, DB_NAME_SUCCESS)
+        assert self.service._db_connections[expected_key] == mock_db_manager
+
+        mock_db_manager.get_session.assert_called()
         session_mock.execute.assert_called_once()
+
         expected_json = json.dumps([{'id': 1, 'name': 'Alice'}, {'id': 2, 'name': 'Bob'}])
         assert result_json == expected_json
         self.util_mock.serialize.assert_not_called()
@@ -128,11 +155,12 @@ class TestSqlService:
 
         mock_result_proxy.keys.return_value = ['event_time']
         mock_result_proxy.fetchall.return_value = [(original_datetime,)]
+        mock_result_proxy.returns_rows = True
 
-        self.service.register_database(DUMMY_URI, DB_NAME_SUCCESS )
+        self.service.register_database(COMPANY_SHORT_NAME, DUMMY_URI, DB_NAME_SUCCESS)
 
         # Act
-        result_json = self.service.exec_sql(company_short_name='temp_company',
+        result_json = self.service.exec_sql(company_short_name=COMPANY_SHORT_NAME,
                                             database_key=DB_NAME_SUCCESS,
                                             query="SELECT event_time FROM events")
 
@@ -148,7 +176,7 @@ class TestSqlService:
         THEN it should raise an IAToolkitException.
         """
         with pytest.raises(IAToolkitException) as exc_info:
-            self.service.exec_sql(company_short_name='temp_company',
+            self.service.exec_sql(company_short_name=COMPANY_SHORT_NAME,
                                   database_key=DB_NAME_UNREGISTERED,
                                   query="SELECT 1")
 
@@ -167,11 +195,11 @@ class TestSqlService:
         db_error = Exception("Table not found")
         session_mock.execute.side_effect = db_error
 
-        self.service.register_database(DUMMY_URI, DB_NAME_SUCCESS)
+        self.service.register_database(COMPANY_SHORT_NAME, DUMMY_URI, DB_NAME_SUCCESS)
 
         # Act & Assert
         with pytest.raises(IAToolkitException) as exc_info:
-            self.service.exec_sql(company_short_name='temp_company',
+            self.service.exec_sql(company_short_name=COMPANY_SHORT_NAME,
                                   database_key=DB_NAME_SUCCESS,
                                   query="SELECT * from non_existing_table")
 

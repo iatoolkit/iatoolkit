@@ -108,7 +108,7 @@ class CompanyContextService:
                 continue
 
             try:
-                db_manager = self.sql_service.get_database_manager(db_name)
+                db_manager = self.sql_service.get_database_manager(company_short_name, db_name)
             except IAToolkitException as e:
                 logging.warning(f"Could not get DB manager for '{db_name}': {e}")
                 continue

@@ -223,7 +223,7 @@ class ToolService:
                 "strict": True
             }
             if function.name == 'iat_sql_query':
-                params['properties']['database_key']['enum'] = self.sql_service.get_db_names()
+                params['properties']['database_key']['enum'] = self.sql_service.get_db_names(company.short_name)
 
             tools.append(ai_tool)
         return tools

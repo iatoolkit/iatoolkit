@@ -1,4 +1,4 @@
-order:
+orders:
   description: "Tabla de Pedidos o ventas: Contiene la información principal de cada pedido realizado por un cliente."
   OrderID:
     description: "Identificador único para cada pedido. Es la clave primaria."

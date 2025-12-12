@@ -35,6 +35,8 @@ class LLMQueryRepo:
                     Tool.system_function.is_(True)
                 )
             )
+            # Ordenamos descendente: True (System) va primero, False (Company) va después
+            .order_by(Tool.system_function.desc())
             .all()
         )
 

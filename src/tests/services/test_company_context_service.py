@@ -188,4 +188,4 @@ class TestCompanyContextService:
 
         # Assert
         assert full_context == ""
-        self.mock_sql_service.get_database_manager.assert_called_once_with('down_db')
+        self.mock_sql_service.get_database_manager.assert_called_once_with(self.COMPANY_NAME, 'down_db')
