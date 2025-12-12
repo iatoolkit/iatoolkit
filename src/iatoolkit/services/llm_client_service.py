@@ -8,6 +8,7 @@ from iatoolkit.repositories.models import Company, LLMQuery
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from sqlalchemy.exc import SQLAlchemyError, OperationalError
 from iatoolkit.common.util import Utility
+from iatoolkit.common.model_registry import ModelRegistry
 from injector import inject
 import time
 import markdown2
@@ -31,10 +32,12 @@ class llmClient:
     def __init__(self,
                  llmquery_repo: LLMQueryRepo,
                  llm_proxy: LLMProxy,
+                 model_registry: ModelRegistry,
                  util: Utility
                  ):
         self.llmquery_repo = llmquery_repo
         self.llm_proxy = llm_proxy
+        self.model_registry = model_registry
         self.util = util
         self._dispatcher = None # Cache for the lazy-loaded dispatcher
 
@@ -73,14 +76,11 @@ class llmClient:
         response = None
         sql_retry_count = 0
         force_tool_name = None
-        reasoning = {}
 
-        if model in ('gpt-5', 'gpt-5-mini'):
-            text['verbosity'] = "low"
-            reasoning = {"effort": 'minimal'}
-        elif model == 'gpt-5.1':
-            text['verbosity'] = "low"
-            reasoning = {"effort": 'low'}
+        # Resolve per-model defaults and apply overrides (without mutating inputs).
+        request_params = self.model_registry.resolve_request_params(model=model, text=text)
+        text_payload = request_params["text"]
+        reasoning = request_params["reasoning"]
 
         try:
             start_time = time.time()
@@ -100,7 +100,7 @@ class llmClient:
                     previous_response_id=previous_response_id,
                     context_history=context_history,
                     tools=tools,
-                    text=text,
+                    text=text_payload,
                     reasoning=reasoning,
                 )
                 stats = self.get_stats(response)
@@ -197,7 +197,7 @@ class llmClient:
                     reasoning=reasoning,
                     tool_choice=tool_choice_value,
                     tools=tools,
-                    text=text
+                    text=text_payload,
                 )
                 stats_fcall = self.add_stats(stats_fcall, self.get_stats(response))
 

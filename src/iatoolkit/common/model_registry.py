@@ -72,6 +72,57 @@ class ModelRegistry:
 
         return "unknown"
 
+    def get_request_defaults(self, model: str) -> dict:
+        """
+        Return per-model request defaults to keep model-specific policy centralized.
+
+        Notes:
+        - This should only include keys that are supported by the target provider.
+        - Callers should merge these defaults with user-provided params (do not mutate inputs).
+        """
+        model_lower = (model or "").lower()
+        provider = self.get_provider(model_lower)
+
+        # Conservative defaults: do not send provider-specific knobs unless we know they are supported.
+        defaults = {"text": {}, "reasoning": {}}
+
+        # OpenAI/xAI (OpenAI-compatible) support 'text.verbosity' and 'reasoning.effort' in our current integration.
+        if provider in ("openai", "xai"):
+            defaults["text"] = {"verbosity": "low"}
+
+            # Fine-grained per-model tuning.
+            if model_lower in ("gpt-5", "gpt-5-mini"):
+                defaults["reasoning"] = {"effort": "minimal"}
+            elif model_lower == "gpt-5.1":
+                defaults["reasoning"] = {"effort": "low"}
+
+        # Gemini/DeepSeek/unknown: keep defaults empty to avoid sending unsupported parameters.
+        return defaults
+
+    def resolve_request_params(self, model: str, text: dict | None = None, reasoning: dict | None = None) -> dict:
+        """
+        Resolve provider/model defaults and merge them with caller-provided overrides.
+
+        Rules:
+        - Defaults come from get_request_defaults(model).
+        - Caller overrides win over defaults.
+        - Input dictionaries are never mutated.
+        """
+        defaults = self.get_request_defaults(model)
+
+        merged_text: dict = {}
+        merged_text.update(defaults.get("text") or {})
+        merged_text.update(text or {})
+
+        merged_reasoning: dict = {}
+        merged_reasoning.update(defaults.get("reasoning") or {})
+        merged_reasoning.update(reasoning or {})
+
+        return {
+            "text": merged_text,
+            "reasoning": merged_reasoning,
+        }
+
     def get_history_type(self, model: str) -> HistoryType:
         """
         Returns the history strategy for a given model.

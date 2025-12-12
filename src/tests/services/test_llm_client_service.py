@@ -3,6 +3,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
 from iatoolkit.services.llm_client_service import llmClient
+from iatoolkit.common.model_registry import ModelRegistry
 from iatoolkit.infra.llm_response import LLMResponse, ToolCall, Usage
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.repositories.models import Company
@@ -16,6 +17,7 @@ class TestLLMClient:
         self.dispatcher_mock = MagicMock()
         self.llmquery_repo = MagicMock()
         self.util_mock = MagicMock()
+        self.model_registry_mock = MagicMock(spec=ModelRegistry)
         self.mock_proxy = MagicMock()
         self.injector_mock = MagicMock()
 
@@ -35,7 +37,8 @@ class TestLLMClient:
         self.client = llmClient(
             llmquery_repo=self.llmquery_repo,
             util=self.util_mock,
-            llm_proxy=self.mock_proxy
+            llm_proxy=self.mock_proxy,
+            model_registry=self.model_registry_mock
         )
 
         # Respuesta mock estándar del LLM
