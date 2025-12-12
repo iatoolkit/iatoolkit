@@ -107,7 +107,7 @@ class UserSessionContextService:
         """Reads and deserializes the context history for this user/model combination."""
         session_key = self._get_session_key(company_short_name, user_identifier, model=model)
         if not session_key:
-            return None
+            return []
 
         history_json = RedisSessionManager.hget(session_key, "context_history")
         if not history_json:

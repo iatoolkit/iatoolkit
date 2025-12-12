@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Any
 
 from iatoolkit.infra.llm_response import LLMResponse, ToolCall, Usage
 from iatoolkit.common.exceptions import IAToolkitException
-
+import json
 
 class DeepseekAdapter:
     """
@@ -85,6 +85,7 @@ class DeepseekAdapter:
             if tool_choice:
                 call_kwargs["tool_choice"] = tool_choice
 
+            logging.debug(f"[DeepseekAdapter] Calling DeepSeek chat.completions API...: {json.dumps(messages, indent=2)}")
             response = self.client.chat.completions.create(**call_kwargs)
 
             return self._map_deepseek_chat_response(response)
@@ -140,10 +141,6 @@ class DeepseekAdapter:
             if role == "tool":
                 logging.warning(f"[DeepseekAdapter] Skipping tool-role message: {item}")
                 continue
-
-            # Map internal 'model' role to 'assistant'
-            if role == "model":
-                role = "assistant"
 
             if not role:
                 logging.warning(f"[DeepseekAdapter] Skipping message without role: {item}")

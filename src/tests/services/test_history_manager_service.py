@@ -212,7 +212,7 @@ class TestHistoryManager(unittest.TestCase):
         expected_saved_history = [
             {"role": "user", "content": "System"},
             {"role": "user", "content": user_turn},
-            {"role": "model", "content": "Model Answer"}
+            {"role": "assistant", "content": "Model Answer"}
         ]
 
         self.mock_session_context.save_context_history.assert_called_with(

@@ -402,11 +402,11 @@ class QueryService:
 
             if not response.get('valid_response'):
                 response['error'] = True
-            else:
-                # save history using the manager passing the handle
-                self.history_manager.update_history(
-                    history_handle, user_turn_prompt, response
-                )
+
+            # save history using the manager passing the handle
+            self.history_manager.update_history(
+                history_handle, user_turn_prompt, response
+            )
 
             return response
         except Exception as e:

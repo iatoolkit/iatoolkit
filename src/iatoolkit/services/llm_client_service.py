@@ -178,7 +178,7 @@ class llmClient:
                     f_calls.append(f_call_identity)
                     f_call_time += elapsed
 
-                    logging.info(f"[{company.short_name}] Tool end execution: {function_name} in {elapsed:.1f} secs.")
+                    logging.info(f"[{company.short_name}] end execution of tool: {function_name} in {elapsed:.1f} secs.")
 
                 if not function_calls:
                     break           # no more function calls, the answer to send back to llm

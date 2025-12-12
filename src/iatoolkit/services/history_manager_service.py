@@ -149,7 +149,7 @@ class HistoryManagerService:
             context_history = self.session_context.get_context_history(
                 company_short_name,
                 user_identifier,
-                model=model) or []
+                model=model)
 
             # Ensure the user prompt is recorded if not already.
             # We check content equality to handle the case where the previous message was
@@ -160,7 +160,7 @@ class HistoryManagerService:
                 context_history.append({"role": "user", "content": user_turn_prompt})
 
             if response.get('answer'):
-                context_history.append({"role": "model", "content": response['answer']})
+                context_history.append({"role": "assistant", "content": response.get('answer', '')})
 
             self.session_context.save_context_history(
                 company_short_name,

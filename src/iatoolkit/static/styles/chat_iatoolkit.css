@@ -499,15 +499,14 @@ li {
     cursor: pointer;
 }
 
-   /* Popup de selección de modelo LLM, usando colores de brand */
-     .llm-model-popup {
-            /* Usamos el color de cabecera de la marca como fondo */
-            background-color: var(--brand-header-bg);
-            border-radius: 0.5rem;
-            border: 1px solid rgba(0, 0, 0, 0.08);
-            /* Texto siguiendo el color de cabecera (normalmente blanco) */
-            color: var(--brand-header-text, #ffffff);
-        }
+  /* Popup de selección de modelo LLM - versión minimalista, sin branding de fondo */
+    .llm-model-popup {
+        background-color: #f9fafb;           /* Fondo claro neutro */
+        border-radius: 0.5rem;
+        border: 1px solid #e5e7eb;          /* Borde gris muy suave */
+        color: #111827;                     /* Texto principal en gris casi negro */
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12); /* Sombra suave y limpia */
+    }
 
     .llm-model-popup .card-body {
         padding-left: 0.9rem;
@@ -515,7 +514,8 @@ li {
     }
 
     .llm-model-popup .llm-model-subtitle {
-        color: var(--brand-header-text, #ffffff);
+        font-size: 0.8rem;
+        color: #6b7280;                     /* Gris medio para el subtítulo */
     }
 
     .llm-model-popup .list-group-item {
@@ -524,32 +524,36 @@ li {
         padding-bottom: 0.4rem;
         background-color: transparent;
         color: inherit;
-        transition: background-color 0.15s ease-in-out, transform 0.1s ease-in-out;
+        border-radius: 0.35rem;
+        transition:
+            background-color 0.15s ease-in-out,
+            transform 0.1s ease-in-out,
+            box-shadow 0.15s ease-in-out;
     }
 
+    /* Descripción del modelo: mismo color que el nombre, pero un poco más suave */
     .llm-model-popup .list-group-item .text-muted {
-            color: currentColor !important;
-            opacity: 0.85;
-        }
+        color: currentColor !important;
+        opacity: 0.75;
+        font-size: 0.8rem;
+    }
 
-    /* Hover más marcado dentro del popup */
-        .llm-model-popup .list-group-item:hover {
-            background-color: rgba(255, 255, 255, 0.16);
-            transform: translateX(2px);
-        }
+    /* Hover más visible, pero manteniendo el estilo minimalista */
+    .llm-model-popup .list-group-item:hover {
+        background-color: #e5e7eb;          /* Gris claro para resaltar bien */
+        transform: translateX(2px);
+        box-shadow: 0 2px 6px rgba(15, 23, 42, 0.12);
+    }
 
-        /* Nuevo estilo del modelo seleccionado:
-           "pastilla" clara sobre fondo de marca */
-        .llm-model-popup .list-group-item.active {
-            background-color: #ffffff;
-            color: var(--brand-primary-color, #4C6A8D);
-            border-radius: 0.4rem;
-            border: 1px solid rgba(255, 255, 255, 0.7);
-        }
+    /* Item activo: resalta con el primario, pero fondo muy claro */
+    .llm-model-popup .list-group-item.active {
+        background-color: #eef2ff;          /* Azul/gris muy claro tipo focus */
+        color: var(--brand-primary-color, #4C6A8D);
+        border: 1px solid var(--brand-primary-color, #4C6A8D);
+        box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.2);
+    }
 
-        .llm-model-popup .list-group-item.active .text-muted {
-            color: currentColor !important;
-            opacity: 0.9;
-        }
-
-
+    .llm-model-popup .list-group-item.active .text-muted {
+        color: currentColor !important;
+        opacity: 0.85;
+    }

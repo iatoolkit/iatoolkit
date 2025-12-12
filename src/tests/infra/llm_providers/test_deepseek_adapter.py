@@ -58,7 +58,7 @@ class TestDeepseekAdapter:
 
         context_history = [
             {"role": "user", "content": "Hi"},
-            {"role": "model", "content": "Hello there"},  # should become assistant
+            {"role": "assistant", "content": "Hello there"},  # should become assistant
         ]
         input_data = [{"role": "user", "content": "How are you?"}]
 
