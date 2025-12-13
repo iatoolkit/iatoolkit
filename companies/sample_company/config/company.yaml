@@ -16,13 +16,13 @@ llm:
   available_models:
     - id: "gpt-5"
       label: "gpt"
-      description: "Rápido, recomendado para la mayoría de las consultas."
+      description: "Fast, recommended for general purpose tasks."
     - id: "deepseek-chat"
       label: "DeepSeek"
-      description: "Rápido y económico. "
+      description: "Fast and cheap."
     - id: "gemini-2.5-pro"
       label: "Gemini"
-      description: "Mejor razonamiento y capacidad multimodal."
+      description: "Better reasoning and more accurate results."
 
   provider_api_keys:
     openai: "OPENAI_API_KEY"
@@ -89,31 +89,31 @@ tools:
 # (filename is: prompt_name.prompt).
 # Example: analisis_ventas.prompt
 prompt_categories:
-  - "Comercial"
-  - "Financiero"     # sample for adding more categories
+  - "Sales"
+  - "Finance"     # sample for adding more categories
 
 prompts:
-  - category: "Comercial"     # assign this prompt to the category "General"
+  - category: "Sales"     # assign this prompt to the category "General"
     name: "analisis_ventas"
-    description: "Analisis de ventas"
+    description: "Sales Analysis"
     order: 1
-  - category: "Comercial"
+  - category: "Sales"
     name: "supplier_report"
-    description: "Análisis de proveedores"
+    description: "Suppliers Report"
     order: 2
     custom_fields:
       - data_key: "supplier_id"
-        label: "Identificador del Proveedor (ejemplo: cascadia, andean foods, ...)"
-  - category: "Financiero"
+        label: "Provider ID (example: cascadia, andean foods, ...)"
+  - category: "Finance"
     name: "analisis_despachos"
-    description: "Analisis de despachos de proveedores"
+    description: "Supply Chain Analysis"
     order: 3
     custom_fields:
       - data_key: "init_date"
-        label: "Fecha desde"
+        label: "from date"
         type: "date"
       - data_key: "end_date"
-        label: "Fecha hasta"
+        label: "to date"
         type: "date"
 
 # Company-specific Parameters
