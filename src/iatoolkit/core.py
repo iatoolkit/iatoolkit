@@ -410,7 +410,7 @@ class IAToolkit:
                 'iatoolkit_base_url': request.url_root,
                 'flashed_messages': get_flashed_messages(with_categories=True),
                 't': translate_for_template,
-                'google_analytics_id': self._get_config_value('GOOGLE_ANALYTICS_ID', 'GTM-PP8NTVN6'),
+                'google_analytics_id': 'G-96G1XCM2CC',
             }
 
     def _get_default_static_folder(self) -> str:
