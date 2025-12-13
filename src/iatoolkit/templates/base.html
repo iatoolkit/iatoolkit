@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    {% block google_analytics %}{% endblock %}
+    {% block google_analytics_head %}{% endblock %}
 
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -21,6 +21,8 @@
     {% block styles %}{% endblock %}
 </head>
 <body>
+    {% block google_analytics_body %}{% endblock %}
+
     <!-- El "Ancla": Envolvemos el contenido en un div con un ID y estilo. -->
     <div id="page-content-wrapper" style="position: relative;">
         {% block content %}{% endblock %}
