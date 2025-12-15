@@ -286,6 +286,7 @@ class IAToolkit:
         if self._initialized:
              logging.warning("⚠️ set_asset_repository_implementation called AFTER initialization. This might have no effect.")
         self._asset_repository_class = repo_class
+        # print(f"asset_repository_implementation is {repo_class.__name__}. ")
 
     def _bind_repositories(self, binder: Binder):
         from iatoolkit.repositories.document_repo import DocumentRepo

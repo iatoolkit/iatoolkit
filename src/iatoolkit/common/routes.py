@@ -26,6 +26,7 @@ def register_views(app):
     from iatoolkit.views.login_view import LoginView, FinalizeContextView
     from iatoolkit.views.logout_api_view import LogoutApiView
     from iatoolkit.views.home_view import HomeView
+    from iatoolkit.views.chat_view import ChatView
     from iatoolkit.views.static_page_view import StaticPageView
     from iatoolkit.views.root_redirect_view import RootRedirectView
 
@@ -37,6 +38,10 @@ def register_views(app):
 
     # login for the iatoolkit integrated frontend
     app.add_url_rule('/<company_short_name>/login', view_func=LoginView.as_view('login'))
+
+    # Chat Route (Direct Access)
+    app.add_url_rule('/<company_short_name>/chat',
+                     view_func=ChatView.as_view('chat'))
 
     # this endpoint is called when onboarding_shell finish the context load
     app.add_url_rule(
