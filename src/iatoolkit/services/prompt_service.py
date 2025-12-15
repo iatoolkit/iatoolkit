@@ -4,6 +4,7 @@
 # IAToolkit is open source software.
 
 from injector import inject
+from iatoolkit.common.asset_storage import AssetRepository, AssetType
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.repositories.profile_repo import ProfileRepo
@@ -24,9 +25,11 @@ _SYSTEM_PROMPTS = [
 class PromptService:
     @inject
     def __init__(self,
+                 asset_repo: AssetRepository,
                  llm_query_repo: LLMQueryRepo,
                  profile_repo: ProfileRepo,
                  i18n_service: I18nService):
+        self.asset_repo = asset_repo
         self.llm_query_repo = llm_query_repo
         self.profile_repo = profile_repo
         self.i18n_service = i18n_service
@@ -38,6 +41,9 @@ class PromptService:
         - Categories: Create or Update existing based on name.
         - Prompts: Create or Update existing based on name. Soft-delete or Delete unused.
         """
+        if not prompts_config:
+            return
+
         try:
             # 1. Sync Categories
             category_map = {}
@@ -151,12 +157,9 @@ class PromptService:
                 raise IAToolkitException(IAToolkitException.ErrorType.INVALID_NAME,
                                 f'missing system prompt file: {prompt_filename}')
         else:
-            template_dir = f'companies/{company.short_name}/prompts'
-
-            relative_prompt_path = os.path.join(template_dir, prompt_filename)
-            if not os.path.exists(relative_prompt_path):
+            if not self.asset_repo.exists(company.short_name, AssetType.PROMPT, prompt_filename):
                 raise IAToolkitException(IAToolkitException.ErrorType.INVALID_NAME,
-                               f'missing prompt file: {relative_prompt_path}')
+                               f'missing prompt file: {prompt_filename} in prompts/')
 
         if custom_fields:
             for f in custom_fields:
@@ -188,33 +191,28 @@ class PromptService:
 
     def get_prompt_content(self, company: Company, prompt_name: str):
         try:
-            user_prompt_content = []
-            execution_dir = os.getcwd()
-
             # get the user prompt
             user_prompt = self.llm_query_repo.get_prompt_by_name(company, prompt_name)
             if not user_prompt:
                 raise IAToolkitException(IAToolkitException.ErrorType.DOCUMENT_NOT_FOUND,
                                    f"prompt not found '{prompt_name}' for company '{company.short_name}'")
 
-            prompt_file = f'companies/{company.short_name}/prompts/{user_prompt.filename}'
-            absolute_filepath = os.path.join(execution_dir, prompt_file)
-            if not os.path.exists(absolute_filepath):
-                raise IAToolkitException(IAToolkitException.ErrorType.FILE_IO_ERROR,
-                                   f"prompt file '{prompt_name}' does not exist: {absolute_filepath}")
-
             try:
-                with open(absolute_filepath, 'r', encoding='utf-8') as f:
-                    user_prompt_content = f.read()
+                user_prompt_content = self.asset_repo.read_text(
+                    company.short_name,
+                    AssetType.PROMPT,
+                    user_prompt.filename
+                )
+            except FileNotFoundError:
+                raise IAToolkitException(IAToolkitException.ErrorType.FILE_IO_ERROR,
+                                         f"prompt file '{user_prompt.filename}' does not exist for company '{company.short_name}'")
             except Exception as e:
                 raise IAToolkitException(IAToolkitException.ErrorType.FILE_IO_ERROR,
-                                   f"error while reading prompt: '{prompt_name}' in this pathname {absolute_filepath}: {e}")
+                                         f"error while reading prompt: '{prompt_name}': {e}")
 
             return user_prompt_content
 
         except IAToolkitException:
-            # Vuelve a lanzar las IAToolkitException que ya hemos manejado
-            # para que no sean capturadas por el siguiente bloque.
             raise
         except Exception as e:
             logging.exception(
@@ -260,7 +258,7 @@ class PromptService:
             # get all the prompts
             all_prompts = self.llm_query_repo.get_prompts(company)
 
-            # Agrupar prompts por categoría
+            # group by category
             prompts_by_category = defaultdict(list)
             for prompt in all_prompts:
                 if prompt.active:
@@ -268,14 +266,13 @@ class PromptService:
                         cat_key = (prompt.category.order, prompt.category.name)
                         prompts_by_category[cat_key].append(prompt)
 
-            # Ordenar los prompts dentro de cada categoría
+            # sort each category by order
             for cat_key in prompts_by_category:
                 prompts_by_category[cat_key].sort(key=lambda p: p.order)
 
-            # Crear la estructura de respuesta final, ordenada por la categoría
             categorized_prompts = []
 
-            # Ordenar las categorías por su 'order'
+            # sort categories by order
             sorted_categories = sorted(prompts_by_category.items(), key=lambda item: item[0][0])
 
             for (cat_order, cat_name), prompts in sorted_categories:

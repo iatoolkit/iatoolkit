@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import MagicMock, patch, call
 from iatoolkit.services.company_context_service import CompanyContextService
 from iatoolkit.services.configuration_service import ConfigurationService
+from iatoolkit.common.asset_storage import AssetRepository, AssetType
 from iatoolkit.services.sql_service import SqlService
 from iatoolkit.common.util import Utility
 from iatoolkit.repositories.database_manager import DatabaseManager
@@ -60,6 +61,7 @@ class TestCompanyContextService:
         self.mock_sql_service = MagicMock(spec=SqlService)
         self.mock_utility = MagicMock(spec=Utility)
         self.mock_config_service = MagicMock(spec=ConfigurationService)
+        self.mock_asset_repo = MagicMock(spec=AssetRepository) # <--- Mock Repo
 
         # Setup a default mock for the DatabaseManager
         self.mock_db_manager = MagicMock(spec=DatabaseManager)
@@ -69,7 +71,8 @@ class TestCompanyContextService:
         self.context_service = CompanyContextService(
             sql_service=self.mock_sql_service,
             utility=self.mock_utility,
-            config_service=self.mock_config_service
+            config_service=self.mock_config_service,
+            asset_repo=self.mock_asset_repo
         )
         self.COMPANY_NAME = 'acme'
 
@@ -147,28 +150,84 @@ class TestCompanyContextService:
 
     # --- Existing Tests (can be kept as they test other parts) ---
 
-    @patch('os.path.exists')
-    def test_build_context_with_only_static_files(self, mock_exists):
+    def test_build_context_with_only_static_files(self):
         """
-        GIVEN only static markdown files provide context
+        GIVEN only static markdown files provide context in the repo
         WHEN get_company_context is called
         THEN it should return only the markdown context.
         """
-
         # Arrange
-        def exists_side_effect(path): return 'context' in path
+        # 1. Mock Markdown files
+        self.mock_asset_repo.list_files.side_effect = lambda company, asset_type, extension: \
+            ['info.md'] if asset_type == AssetType.CONTEXT else []
 
-        mock_exists.side_effect = exists_side_effect
-        self.mock_utility.get_files_by_extension.return_value = ['info.md']
-        self.mock_utility.load_markdown_context.return_value = "STATIC_INFO"
-        self.mock_config_service.get_configuration.return_value = None  # No SQL config
+        self.mock_asset_repo.read_text.return_value = "STATIC_INFO"
+
+        # 2. No SQL config
+        self.mock_config_service.get_configuration.return_value = None
 
         # Act
         full_context = self.context_service.get_company_context(self.COMPANY_NAME)
 
         # Assert
-        assert full_context == "STATIC_INFO"
+        assert "STATIC_INFO" in full_context
+
+        # Verify repository calls
+        self.mock_asset_repo.list_files.assert_any_call(self.COMPANY_NAME, AssetType.CONTEXT, extension='.md')
+        self.mock_asset_repo.read_text.assert_any_call(self.COMPANY_NAME, AssetType.CONTEXT, 'info.md')
+
+        # Verify SQL service was NOT called
         self.mock_sql_service.get_database_manager.assert_not_called()
+
+    def test_build_context_with_yaml_schemas(self):
+        """
+        GIVEN yaml schema files in the repo
+        WHEN get_company_context is called
+        THEN it should parse them and include them in context.
+        """
+
+        # Arrange
+        # 1. Mock YAML files
+        def list_files_side_effect(company, asset_type, extension):
+            if asset_type == AssetType.SCHEMA: return ['orders.yaml']
+            return []
+
+        self.mock_asset_repo.list_files.side_effect = list_files_side_effect
+
+        # 2. Mock Content and Parsing
+        self.mock_asset_repo.read_text.return_value = "yaml_content"
+        self.mock_utility.load_yaml_from_string.return_value = {"orders": {"description": "Order table"}}
+        self.mock_utility.generate_schema_table.return_value = "Parsed Order Schema"
+
+        # 3. No SQL config
+        self.mock_config_service.get_configuration.return_value = None
+
+        # Act
+        full_context = self.context_service.get_company_context(self.COMPANY_NAME)
+
+        # Assert
+        assert "Parsed Order Schema" in full_context
+
+        # Verify flow
+        self.mock_asset_repo.read_text.assert_called_with(self.COMPANY_NAME, AssetType.SCHEMA, 'orders.yaml')
+        self.mock_utility.load_yaml_from_string.assert_called_with("yaml_content")
+        self.mock_utility.generate_schema_table.assert_called_with({"orders": {"description": "Order table"}})
+
+    def test_gracefully_handles_repo_exceptions(self):
+        """
+        GIVEN the repository raises an exception when listing/reading
+        WHEN get_company_context is called
+        THEN it should log warnings but continue (return empty strings for those parts).
+        """
+        # Arrange
+        self.mock_asset_repo.list_files.side_effect = Exception("Repo Down")
+        self.mock_config_service.get_configuration.return_value = None
+
+        # Act
+        full_context = self.context_service.get_company_context(self.COMPANY_NAME)
+
+        # Assert
+        assert full_context == ""  # Should result in empty string, not crash
 
     def test_gracefully_handles_db_manager_exception(self):
         """

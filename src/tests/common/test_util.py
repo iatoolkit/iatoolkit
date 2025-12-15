@@ -104,6 +104,18 @@ class TestUtil:
 
         assert str(excinfo.value).startswith("Type <class")
 
+    def test_load_yaml_from_string_valid(self):
+        yaml_content = "key: value\nlist:\n  - item1"
+        result = self.util.load_yaml_from_string(yaml_content)
+        assert result == {'key': 'value', 'list': ['item1']}
+
+    def test_load_yaml_from_string_invalid(self):
+        # Usamos tabuladores (\t) que son ilegales en YAML para indentación
+        yaml_content = "key: value\n\tinvalid_tab"
+        result = self.util.load_yaml_from_string(yaml_content)
+
+        assert result == {}
+
     def test_load_schema_from_yaml(self):
         mock_yaml_content = """
         field1: "Descripción del campo 1"

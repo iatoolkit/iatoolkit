@@ -5,6 +5,7 @@
 
 from iatoolkit.common.util import Utility
 from iatoolkit.services.configuration_service import ConfigurationService
+from iatoolkit.common.asset_storage import AssetRepository, AssetType
 from iatoolkit.services.sql_service import SqlService
 from iatoolkit.common.exceptions import IAToolkitException
 import logging
@@ -22,10 +23,12 @@ class CompanyContextService:
     def __init__(self,
                  sql_service: SqlService,
                  utility: Utility,
-                 config_service: ConfigurationService):
+                 config_service: ConfigurationService,
+                 asset_repo: AssetRepository):
         self.sql_service = sql_service
         self.utility = utility
         self.config_service = config_service
+        self.asset_repo = asset_repo
 
     def get_company_context(self, company_short_name: str) -> str:
         """
@@ -63,31 +66,54 @@ class CompanyContextService:
         return "\n\n---\n\n".join(context_parts)
 
     def _get_static_file_context(self, company_short_name: str) -> str:
-        # Get context from .md and .yaml schema files.
+        # Get context from .md files using the repository
         static_context = ''
 
-        # Markdown context files
-        context_dir = f'companies/{company_short_name}/context'
-        if os.path.exists(context_dir):
-            context_files = self.utility.get_files_by_extension(context_dir, '.md', return_extension=True)
-            for file in context_files:
-                filepath = os.path.join(context_dir, file)
-                static_context += self.utility.load_markdown_context(filepath)
+        try:
+            # 1. List markdown files in the context "folder"
+            # Note: The repo handles where this folder actually is (FS or DB)
+            md_files = self.asset_repo.list_files(company_short_name, AssetType.CONTEXT, extension='.md')
+
+            for filename in md_files:
+                try:
+                    # 2. Read content
+                    content = self.asset_repo.read_text(company_short_name, AssetType.CONTEXT, filename)
+                    static_context += content + "\n"  # Append content
+                except Exception as e:
+                    logging.warning(f"Error reading context file {filename}: {e}")
+
+        except Exception as e:
+            # If listing fails (e.g. folder doesn't exist), just log and return empty
+            logging.warning(f"Error listing context files for {company_short_name}: {e}")
 
         return static_context
 
     def _get_yaml_schema_context(self, company_short_name: str) -> str:
-        # Get context from .md and .yaml schema files.
+        # Get context from .yaml schema files using the repository
         yaml_schema_context = ''
 
-        # YAML schema files
-        schema_dir = f'companies/{company_short_name}/schema'
-        if os.path.exists(schema_dir):
-            schema_files = self.utility.get_files_by_extension(schema_dir, '.yaml', return_extension=True)
-            for file in schema_files:
-                schema_name = file.split('.')[0]  # Use full filename as entity name
-                filepath = os.path.join(schema_dir, file)
-                yaml_schema_context += self.utility.generate_context_for_schema(schema_name, filepath)
+        try:
+            # 1. List yaml files in the schema "folder"
+            schema_files = self.asset_repo.list_files(company_short_name, AssetType.SCHEMA, extension='.yaml')
+
+            for filename in schema_files:
+                try:
+                    # 2. Read content
+                    content = self.asset_repo.read_text(company_short_name, AssetType.SCHEMA, filename)
+
+                    # 3. Parse YAML content into a dict
+                    schema_dict = self.utility.load_yaml_from_string(content)
+
+                    # 4. Generate markdown description from the dict
+                    if schema_dict:
+                        # We use generate_schema_table which accepts a dict directly
+                        yaml_schema_context += self.utility.generate_schema_table(schema_dict)
+
+                except Exception as e:
+                    logging.warning(f"Error processing schema file {filename}: {e}")
+
+        except Exception as e:
+            logging.warning(f"Error listing schema files for {company_short_name}: {e}")
 
         return yaml_schema_context
 

@@ -4,6 +4,7 @@
 
 from pathlib import Path
 from iatoolkit.repositories.models import Company
+from iatoolkit.common.asset_storage import AssetRepository, AssetType
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.common.exceptions import IAToolkitException
@@ -21,9 +22,11 @@ class ConfigurationService:
 
     @inject
     def __init__(self,
+                 asset_repo: AssetRepository,
                  llm_query_repo: LLMQueryRepo,
                  profile_repo: ProfileRepo,
                  utility: Utility):
+        self.asset_repo = asset_repo
         self.llm_query_repo = llm_query_repo
         self.profile_repo = profile_repo
         self.utility = utility
@@ -92,43 +95,58 @@ class ConfigurationService:
 
         # 6. Link the persisted Company object back to the running instance
         company_instance.company_short_name = company_short_name
-        company_instance.id = company_instance.company.id
+        company_instance.id = company_instance.company.id if company_instance.company else None
 
         # Final step: validate the configuration against platform
         self._validate_configuration(company_short_name, config)
 
         logging.info(f"✅ Company '{company_short_name}' configured successfully.")
-
+        return config
 
     def _load_and_merge_configs(self, company_short_name: str) -> dict:
         """
         Loads the main company.yaml and merges data from supplementary files
-        specified in the 'content_files' section.
+        specified in the 'content_files' section using AssetRepository.
         """
-        config_dir = Path("companies") / company_short_name / "config"
-        main_config_path = config_dir / "company.yaml"
+        main_config_filename = "company.yaml"
 
-        if not main_config_path.exists():
-            raise FileNotFoundError(f"Main configuration file not found: {main_config_path}")
+        # verify existence of the main configuration file
+        if not self.asset_repo.exists(company_short_name, AssetType.CONFIG, main_config_filename):
+            # raise FileNotFoundError(f"Main configuration file not found: {main_config_filename}")
+            logging.exception(f"Main configuration file not found: {main_config_filename}")
 
-        config = self.utility.load_schema_from_yaml(main_config_path)
+            # return the minimal configuration needed for starting the IAToolkit
+            # this is a for solving a chicken/egg problem when trying to migrate the configuration
+            # from filesystem to database in enterprise installation
+            # see create_assets cli command in enterprise-iatoolkit)
+            return {
+                'id': company_short_name,
+                'name': company_short_name,
+                'llm': {'model': 'gpt-5', 'provider_api_keys': {'openai':''} },
+                }
+
+        # read text and parse
+        yaml_content = self.asset_repo.read_text(company_short_name, AssetType.CONFIG, main_config_filename)
+        config = self.utility.load_yaml_from_string(yaml_content)
 
         # Load and merge supplementary content files (e.g., onboarding_cards)
-        for key, file_path in config.get('help_files', {}).items():
-            supplementary_path = config_dir / file_path
-            if supplementary_path.exists():
-                config[key] = self.utility.load_schema_from_yaml(supplementary_path)
+        for key, filename in config.get('help_files', {}).items():
+            if self.asset_repo.exists(company_short_name, AssetType.CONFIG, filename):
+                supp_content = self.asset_repo.read_text(company_short_name, AssetType.CONFIG, filename)
+                config[key] = self.utility.load_yaml_from_string(supp_content)
             else:
-                logging.warning(f"⚠️  Warning: Content file not found: {supplementary_path}")
-                config[key] = None  # Ensure the key exists but is empty
+                logging.warning(f"⚠️  Warning: Content file not found: {filename}")
+                config[key] = None
 
         return config
 
     def _register_core_details(self, company_instance, config: dict) -> Company:
         # register the company in the database: create_or_update logic
+        if not config:
+            return None
 
-        company_obj = Company(short_name=config['id'],
-                              name=config['name'],
+        company_obj = Company(short_name=config.get('id'),
+                              name=config.get('name'),
                               parameters=config.get('parameters', {}))
         company = self.profile_repo.create_company(company_obj)
 
@@ -205,8 +223,6 @@ class ConfigurationService:
         Raises IAToolkitException if any validation error is found.
         """
         errors = []
-        config_dir = Path("companies") / company_short_name / "config"
-        prompts_dir = Path("companies") / company_short_name / "prompts"
 
         # Helper to collect errors
         def add_error(section, message):
@@ -265,9 +281,9 @@ class ConfigurationService:
             if not prompt_name:
                 add_error(f"prompts[{i}]", "Missing required key: 'name'")
             else:
-                prompt_file = prompts_dir / f"{prompt_name}.prompt"
-                if not prompt_file.is_file():
-                    add_error(f"prompts/{prompt_name}:", f"Prompt file not found: {prompt_file}")
+                prompt_filename = f"{prompt_name}.prompt"
+                if not self.asset_repo.exists(company_short_name, AssetType.PROMPT, prompt_filename):
+                    add_error(f"prompts/{prompt_name}:", f"Prompt file not found: {prompt_filename}")
 
                 prompt_description = prompt.get("description")
                 if not prompt_description:
@@ -312,9 +328,9 @@ class ConfigurationService:
             if not filename:
                 add_error(f"help_files.{key}", "Filename cannot be empty.")
                 continue
-            help_file_path = config_dir / filename
-            if not help_file_path.is_file():
-                add_error(f"help_files.{key}", f"Help file not found: {help_file_path}")
+            if not self.asset_repo.exists(company_short_name, AssetType.CONFIG, filename):
+                add_error(f"help_files.{key}", f"Help file not found: {filename}")
+
 
         # If any errors were found, log all messages and raise an exception
         if errors:

@@ -24,6 +24,7 @@ user_company = Table('iat_user_company',
                      Column('company_id', Integer,
                             ForeignKey('iat_companies.id',ondelete='CASCADE'),
                                 primary_key=True),
+                     Column('role', String, nullable=True, default='user'),
                      Column('created_at', DateTime, default=datetime.now)
                      )
 
@@ -49,9 +50,6 @@ class Company(Base):
     short_name = Column(String, nullable=False, unique=True, index=True)
     name = Column(String, nullable=False)
 
-    # encrypted api-key
-    openai_api_key = Column(String, nullable=True)
-    gemini_api_key = Column(String, nullable=True)
     parameters = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 

@@ -157,6 +157,16 @@ class Utility:
             schema = yaml.safe_load(f)
         return schema
 
+    def load_yaml_from_string(self, yaml_content: str) -> dict:
+        """
+        Parses a YAML string into a dictionary securely.
+        """
+        try:
+            return yaml.safe_load(yaml_content) or {}
+        except yaml.YAMLError as e:
+            logging.error(f"Error parsing YAML string: {e}")
+            return {}
+
     def generate_context_for_schema(self, entity_name: str, schema_file: str = None, schema: dict = {}) -> str:
         if not schema_file and not schema:
             raise IAToolkitException(IAToolkitException.ErrorType.FILE_IO_ERROR,

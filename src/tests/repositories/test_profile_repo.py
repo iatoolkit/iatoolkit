@@ -128,7 +128,7 @@ class TestProfileRepo:
         self.session.add(self.company)
         self.session.commit()
 
-        result = self.repo.create_company(Company(name='opensoft'))
+        result = self.repo.create_company(Company(short_name='open'))
 
         assert result.id == self.company.id
         assert result.name == self.company.name

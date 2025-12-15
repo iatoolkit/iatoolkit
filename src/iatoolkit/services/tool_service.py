@@ -162,6 +162,9 @@ class ToolService:
         """
         Synchronizes tools from YAML config to Database (Create/Update/Delete strategy).
         """
+        if not tools_config:
+            return
+
         try:
             # 1. Get existing tools map for later cleanup
             existing_tools = {

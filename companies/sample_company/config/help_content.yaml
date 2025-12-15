@@ -1,40 +1,39 @@
-# ===================================================================
-# Onboarding Cards Content for: sample_company
-# Location: companies/sample_company/config/onboarding_cards.yaml
-# ===================================================================
-# This file contains the list of cards displayed to the user upon
-# their first visit or when the chat history is empty.
+# Help and training content for Sample Company
 
-- icon: "fas fa-database"
-  title: "Welcome to Sample Company"
-  text: |
-    This is a fictional company designed to show you how to interact with AI.
-    The available data represents a typical product-based business that manages purchase orders, suppliers, and employees.
+example_questions:
+  - category: "Sales Queries"
+    questions:
+      - "What was the total sales in Germany during the first quarter of 2025?"
+      - "Show me the last 3 shipments from the supplier 'Atlantic Seafood BV'."
+      - "Generate a table with a sales summary by country for the year 2025: number of orders and total amount."
+  - category: "Sample Company Staff Queries"
+    questions:
+      - "How many employees work in Canada?"
+      - "How many employees joined the company in the current year?"
+      - "Give me a table with a summary of salaries by department and position."
 
-- icon: "fas fa-database"
-  title: "Query Your Data"
-  text: "I know data about customers, products, sales, employees, territories, and more."
-  example: "What was the best-selling product in Germany in 2024?"
+data_sources:
+  - source: "Customer Information"
+    description: "Names, addresses, purchase orders (2023–2025), shipments, etc."
+  - source: "Supplier Information"
+    description: "Supplier and shipper data."
+  - source: "Employee Information"
+    description: "Names, job titles, countries, territories, contracts, salaries, etc."
 
-- icon: "fas fa-file-alt"
-  title: "Search Internal Documents"
-  text: "I can search manuals, contracts, and legal documents to find the information you need."
-  example: "What is the procedure to request vacation time?"
+best_practices:
+  - title: "Be Specific"
+    description: "The more detailed your question, the better the answer will be. Include dates, names, regions, etc."
+  - title: "Request Formats"
+    description: "Feel free to ask for the information in 'a table', 'a list', or 'a summary'. This will help you better visualize the data."
 
-- icon: "fas fa-cogs"
-  title: "Run SQL Analysis"
-  text: "You can ask me to run SQL queries directly on the database and I will return the results."
-  example: "SQL: SELECT * FROM Orders WHERE ShipCountry = 'France' LIMIT 5"
-
-- icon: "fas fa-table"
-  title: "Request Tables and Excel Files"
-  text: "You can ask for answers to be formatted as tables or exported to an Excel file."
-  example: "Give me a table with the 10 most expensive products."
-
-- icon: "fas fa-wand-magic-sparkles" # Updated icon for better representation
-  title: "Use Predefined Prompts"
-  text: "Use the magic wand ✨ to explore and run complex analyses that I have prepared for you."
-
-- icon: "fas fa-shield-alt"
-  title: "Security and Confidentiality"
-  text: "All your information is processed securely and confidentially within our protected environment."
+capabilities:
+  can_do:
+    - "Access Sales, HR, and Supplier databases."
+    - "Read PDF and TXT documents that have been uploaded."
+    - "Generate summaries and aggregate data."
+    - "Generate Excel spreadsheets as answers to questions."
+    - "Send emails with answers to questions."
+  cannot_do:
+    - "Browse the internet or access real-time information."
+    - "Perform actions such as sending emails or scheduling meetings."
+    - "Give opinions or predict future events."

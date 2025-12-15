@@ -3,7 +3,7 @@
 #
 # IAToolkit is open source software.
 
-from iatoolkit.repositories.models import User, Company, ApiKey, UserFeedback
+from iatoolkit.repositories.models import User, Company, user_company, ApiKey, UserFeedback
 from injector import inject
 from iatoolkit.repositories.database_manager import DatabaseManager
 from sqlalchemy.orm import joinedload # Para cargar la relación eficientemente
@@ -69,8 +69,22 @@ class ProfileRepo:
     def get_companies(self) -> list[Company]:
         return self.session.query(Company).all()
 
+    def get_companies_by_user_identifier(self, user_identifier: str) -> list[Company]:
+        """
+        Return all the companies to which the user belongs (by email),
+        and where also he has admin role in the iat_user_company table.
+        """
+        return (
+            self.session.query(Company)
+            .join(user_company, Company.id == user_company.c.company_id)
+            .join(User, User.id == user_company.c.user_id)
+            .filter(User.email == user_identifier)
+            .filter(user_company.c.role == "admin")
+            .all()
+        )
+
     def create_company(self, new_company: Company):
-        company = self.session.query(Company).filter_by(name=new_company.name).first()
+        company = self.session.query(Company).filter_by(short_name=new_company.short_name).first()
         if company:
             if company.parameters != new_company.parameters:
                 company.parameters = new_company.parameters

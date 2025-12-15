@@ -9,10 +9,12 @@ from flask_injector import FlaskInjector
 from flask_bcrypt import Bcrypt
 from flask_cors import CORS
 from iatoolkit.common.exceptions import IAToolkitException
-from typing import Optional, Dict, Any
 from iatoolkit.repositories.database_manager import DatabaseManager
+from iatoolkit.common.asset_storage import AssetRepository
+from iatoolkit.repositories.filesystem_asset_repository import FileSystemAssetRepository
 from werkzeug.middleware.proxy_fix import ProxyFix
 from injector import Binder, Injector, singleton
+from typing import Optional, Dict, Any
 from urllib.parse import urlparse
 import redis
 import logging
@@ -50,7 +52,8 @@ class IAToolkit:
         self.app = None
         self.db_manager = None
         self._injector = None
-        self.version = IATOOLKIT_VERSION    # default version
+        self._asset_repository_class = FileSystemAssetRepository
+        self.version = IATOOLKIT_VERSION
         self.license = "Community Edition"
 
     @classmethod
@@ -98,6 +101,7 @@ class IAToolkit:
 
         # Step 8: Finalize setup within the application context
         self._setup_redis_sessions()
+
         self._setup_cors()
         self._setup_additional_services()
         self._setup_cli_commands()
@@ -277,6 +281,12 @@ class IAToolkit:
                 f"❌ Error configuring dependencies: {e}"
             )
 
+    def set_asset_repository_implementation(self, repo_class):
+        """Permite configurar la implementación del AssetRepository antes de inicializar."""
+        if self._initialized:
+             logging.warning("⚠️ set_asset_repository_implementation called AFTER initialization. This might have no effect.")
+        self._asset_repository_class = repo_class
+
     def _bind_repositories(self, binder: Binder):
         from iatoolkit.repositories.document_repo import DocumentRepo
         from iatoolkit.repositories.profile_repo import ProfileRepo
@@ -287,6 +297,7 @@ class IAToolkit:
         binder.bind(ProfileRepo, to=ProfileRepo)
         binder.bind(LLMQueryRepo, to=LLMQueryRepo)
         binder.bind(VSRepo, to=VSRepo)
+        binder.bind(AssetRepository, to=self._asset_repository_class)
 
     def _bind_services(self, binder: Binder):
         from iatoolkit.services.query_service import QueryService

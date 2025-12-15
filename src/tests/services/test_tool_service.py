@@ -130,9 +130,12 @@ class TestToolService:
         THEN it should rollback and raise exception.
         """
         self.mock_llm_query_repo.get_company_tools.side_effect = Exception("Sync Error")
+        tools_config = [
+            {'function_name': 'existing_keep', 'description': 'Updated Desc', 'params': {'p': 1}},
+        ]
 
         with pytest.raises(IAToolkitException) as excinfo:
-            self.service.sync_company_tools(self.mock_company_instance, [])
+            self.service.sync_company_tools(self.mock_company_instance, tools_config)
 
         assert excinfo.value.error_type == IAToolkitException.ErrorType.DATABASE_ERROR
         self.mock_llm_query_repo.rollback.assert_called_once()
