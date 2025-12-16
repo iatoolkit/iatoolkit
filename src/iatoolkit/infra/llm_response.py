@@ -32,9 +32,14 @@ class LLMResponse:
     output_text: str
     output: List[ToolCall]  # lista de tool calls
     usage: Usage
+    reasoning_content: str = None # campo opcional para Chain of Thought
+
 
     def __post_init__(self):
         """Asegura que output sea una lista"""
         if self.output is None:
             self.output = []
+
+        if self.reasoning_content is None:
+            self.reasoning_content = ""
 

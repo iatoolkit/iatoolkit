@@ -11,18 +11,18 @@ locale: "en_ES"
 # Default Language Model and api-key for provider
 # Can be overridden in the API call: llm_query_api_view and init_context_api_view
 llm:
-  model: "deepseek"    # default model
+  model: "deepseek-reasoner"    # default model
 
   available_models:
     - id: "gpt-5"
-      label: "gpt"
+      label: "gpt-5"
       description: "Fast, recommended for general purpose tasks."
     - id: "deepseek-chat"
-      label: "DeepSeek"
+      label: "deepseek-chat"
       description: "Fast and cheap."
-    - id: "gemini-2.5-pro"
-      label: "Gemini"
-      description: "Better reasoning and more accurate results."
+    - id: "deepseek-reasoner"
+      label: "deepseek-reasoner"
+      description: "Fast and cheap."
 
   provider_api_keys:
     openai: "OPENAI_API_KEY"

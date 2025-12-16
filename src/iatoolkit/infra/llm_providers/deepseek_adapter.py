@@ -128,7 +128,7 @@ class DeepseekAdapter:
 
                 messages.append(
                     {
-                        "role": "assistant",
+                        "role": "user",
                         "content": f"Tool result:\n{output}",
                     }
                 )
@@ -227,13 +227,19 @@ class DeepseekAdapter:
             total_tokens=getattr(getattr(response, "usage", None), "total_tokens", 0) or 0,
         )
 
-        tool_calls_out: List[ToolCall] = []
-        status = "completed"
-        output_text = ""
+        # Capture reasoning content (specific to deepseek-reasoner)
+        reasoning_content = getattr(message, "reasoning_content", "") or ""
 
-        # If the model produced tool calls:
+        # If the model produced tool calls, fills this list
+        tool_calls_out: List[ToolCall] = []
+
         tool_calls = getattr(message, "tool_calls", None) or []
-        if tool_calls:
+        if not tool_calls:
+            # No tool calls: standard assistant message
+            output_text = getattr(message, "content", "") or ""
+            status = "completed"
+
+        else:
             logging.debug(f"[DeepSeek] RAW tool_calls: {tool_calls}")
 
             for tc in tool_calls:
@@ -261,11 +267,6 @@ class DeepseekAdapter:
             status = "tool_calls"
             output_text = ""  # caller will inspect tool_calls in .output
 
-        else:
-            # No tool calls: standard assistant message
-            output_text = getattr(message, "content", "") or ""
-            status = "completed"
-
         return LLMResponse(
             id=getattr(response, "id", "deepseek-unknown"),
             model=getattr(response, "model", "deepseek-unknown"),
@@ -273,4 +274,5 @@ class DeepseekAdapter:
             output_text=output_text,
             output=tool_calls_out,
             usage=usage,
+            reasoning_content=reasoning_content
         )

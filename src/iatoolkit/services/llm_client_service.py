@@ -209,6 +209,9 @@ class llmClient:
             # decode the LLM response
             decoded_response = self.decode_response(response)
 
+            # Extract reasoning from the final response object
+            final_reasoning = getattr(response, 'reasoning_content', '')
+
             # save the query and response
             query = LLMQuery(user_identifier=user_identifier,
                              company_id=company.id,
@@ -235,6 +238,7 @@ class llmClient:
                 'response_id': response.id,
                 'query_id': query.id,
                 'model': model,
+                'reasoning_content': final_reasoning,
             }
         except SQLAlchemyError as db_error:
             # rollback

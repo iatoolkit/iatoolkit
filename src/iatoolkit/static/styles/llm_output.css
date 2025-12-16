@@ -113,3 +113,36 @@
 .nowrap {
     white-space: nowrap;
   }
+
+/* =========================================================
+   REASONING BLOCK (LLM)
+   ========================================================= */
+
+.reasoning-block {
+  margin-top: 8px;
+}
+
+/* Botón de mostrar razonamiento */
+.reasoning-toggle {
+  font-size: 13px;
+  color: #6c757d; /* text-secondary */
+}
+
+.reasoning-toggle:hover {
+  color: #495057;
+  text-decoration: underline;
+}
+
+/* Contenedor del reasoning */
+.reasoning-card {
+  background-color: #f8f9fa;            /* bg-light */
+  border-left: 3px solid #6c757d;        /* border-secondary */
+  padding: 10px 14px;
+  font-size: 14px;                      /* consistente con llm-output */
+  line-height: 1.5;
+  color: #555;
+  white-space: pre-wrap;
+  max-height: 300px;
+  overflow-y: auto;
+  font-family: inherit;                 /* 👈 clave: usa la misma fuente base */
+}

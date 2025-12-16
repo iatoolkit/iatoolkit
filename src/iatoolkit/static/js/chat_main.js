@@ -117,8 +117,41 @@ const handleChatMessage = async function () {
 
         const responseData = await callToolkit("/api/llm_query", data, "POST");
         if (responseData && responseData.answer) {
-            const answerSection = $('<div>').addClass('answer-section llm-output').append(responseData.answer);
-            displayBotMessage(answerSection);
+                // CAMBIO:  contenedor principal para la respuesta del bot
+                const botMessageContainer = $('<div>').addClass('bot-message-container');
+
+                // 1. Si hay reasoning_content, agregar el acordeón colapsable
+                if (responseData.reasoning_content) {
+                    const uniqueId = 'reasoning-' + Date.now(); // ID único para el collapse
+
+                    const reasoningBlock = $(`
+                            <div class="reasoning-block mb-3">
+                                <button class="reasoning-toggle btn btn-sm btn-link text-decoration-none p-0"
+                                    type="button"
+                                    data-bs-toggle="collapse"
+                                    data-bs-target="#${uniqueId}"
+                                    aria-expanded="false"
+                                    aria-controls="${uniqueId}">
+                                    <i class="bi bi-lightbulb me-1"></i> ${t_js('show_reasoning')}
+                                </button>
+                        
+                                <div class="collapse mt-2" id="${uniqueId}">
+                                    <div class="reasoning-card">
+                                        ${responseData.reasoning_content}
+                                    </div>
+                                </div>
+                            </div>
+                        `);
+                    botMessageContainer.append(reasoningBlock);
+                }
+
+                // 2. Agregar la respuesta final
+                const answerSection = $('<div>').addClass('answer-section llm-output').append(responseData.answer);
+                botMessageContainer.append(answerSection);
+
+                // 3. Mostrar el contenedor completo
+                displayBotMessage(botMessageContainer);
+
         }
     } catch (error) {
         if (error.name === 'AbortError') {

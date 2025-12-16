@@ -46,6 +46,8 @@ ui:
     init_context: "Inicializando el contexto de la IA ..."
 
 
+
+
   tooltips:
     history: "Historial con mis consultas"
     reload_context: "Forzar Recarga de Contexto"
@@ -170,4 +172,5 @@ js_messages:
   reload_init: "Iniciando recarga de contexto en segundo plano..."
   no_history_found: "No existe historial de consultas."
   example: "Ejemplo:"
+  show_reasoning: "Ver razonamiento"
 

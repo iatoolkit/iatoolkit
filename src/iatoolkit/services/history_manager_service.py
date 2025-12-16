@@ -146,6 +146,7 @@ class HistoryManagerService:
                     model=model)
 
         elif history_type == self.TYPE_CLIENT_SIDE:
+            # get the history for this company/user/model
             context_history = self.session_context.get_context_history(
                 company_short_name,
                 user_identifier,

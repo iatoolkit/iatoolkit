@@ -177,7 +177,7 @@ class TestDeepseekAdapter:
 
         assert len(messages) == 2
         assert messages[0] == {"role": "user", "content": "question"}
-        assert messages[1]["role"] == "assistant"
+        assert messages[1]["role"] == "user"
         assert "Tool result:" in messages[1]["content"]
         assert '{"rows": [{"id": 1, "name": "Alice"}]}' in messages[1]["content"]
 
@@ -215,7 +215,7 @@ class TestDeepseekAdapter:
         # Messages should still include the tool result as assistant message
         messages = call_kwargs["messages"]
         assert len(messages) == 2
-        assert messages[1]["role"] == "assistant"
+        assert messages[1]["role"] == "user"
         assert "Tool result:" in messages[1]["content"]
 
     # ------------------------------------------------------------------

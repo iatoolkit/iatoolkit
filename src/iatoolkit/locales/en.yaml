@@ -46,6 +46,7 @@ ui:
     prompts_available: "Available prompts"
     init_context: "Initializing the context ..."
 
+
   tooltips:
     history: "History of my queries"
     reload_context: "Force Context Reload"
@@ -173,4 +174,5 @@ js_messages:
   reload_init: "init reloading context in background..."
   no_history_found: "No query history found."
   example: "Example:"
+  show_reasoning: "Show reasoning"
 
