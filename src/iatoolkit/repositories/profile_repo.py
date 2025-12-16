@@ -69,7 +69,7 @@ class ProfileRepo:
     def get_companies(self) -> list[Company]:
         return self.session.query(Company).all()
 
-    def get_companies_by_user_identifier(self, user_identifier: str) -> list[Company]:
+    def get_admin_companies_by_user_identifier(self, user_identifier: str) -> list[Company]:
         """
         Return all the companies to which the user belongs (by email),
         and where also he has admin role in the iat_user_company table.
