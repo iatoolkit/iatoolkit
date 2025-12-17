@@ -38,7 +38,6 @@ class LoadCompanyConfigurationApiView(MethodView):
             if 'company' in config:
                 config.pop('company')
 
-
             status_code = 200 if not errors else 400
             return {'config': config, 'errors': [errors]}, status_code
         except Exception as e:

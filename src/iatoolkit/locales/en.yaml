@@ -202,5 +202,7 @@ js_messages:
   not_saved: 'Could not save'
   saved_ok: "Saved successfully"
   invalid_file_name: "Invalid filename. Use only letters, numbers, underscores, hyphens, and dots."
+  config_loaded: "Configuration loaded successfully."
+  config_load_error: "Error loading configuration."
 
 

@@ -64,11 +64,13 @@ class Dispatcher:
                 # read company configuration from company.yaml
                 config, errors = self.config_service.load_configuration(company_short_name)
 
+                '''
                 if errors:
                     raise IAToolkitException(
                         IAToolkitException.ErrorType.CONFIG_ERROR,
                         'company.yaml validation errors'
                     )
+                '''
 
                 # complement the instance self data
                 company_instance.company_short_name = company_short_name

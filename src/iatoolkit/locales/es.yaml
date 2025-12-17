@@ -203,5 +203,9 @@ js_messages:
   delete_ok: "Archivo eliminado correctamente"
   not_saved: 'No puede guardar'
   invalid_file_name: "Nombre de archivo no válido. Usa solo letras, números, guiones bajos, guiones y puntos."
+  config_loaded: "Configuración cargada correctamente."
+  config_load_error: "Error cargando confguración."
+
+
 
 
