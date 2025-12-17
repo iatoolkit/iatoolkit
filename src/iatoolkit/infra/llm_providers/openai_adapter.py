@@ -76,11 +76,16 @@ class OpenAIAdapter:
             total_tokens=openai_response.usage.total_tokens if openai_response.usage else 0
         )
 
+        message = openai_response.message
+        # Capture reasoning content (specific to deepseek-reasoner)
+        reasoning_content = getattr(message, "reasoning_content", "") or ""
+
         return LLMResponse(
             id=openai_response.id,
             model=openai_response.model,
             status=openai_response.status,
             output_text=getattr(openai_response, 'output_text', ''),
             output=tool_calls,
-            usage=usage
+            usage=usage,
+            reasoning_content=reasoning_content
         )

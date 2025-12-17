@@ -46,6 +46,26 @@ ui:
     prompts_available: "Available prompts"
     init_context: "Initializing the context ..."
 
+  admin:
+    resources: "Resources"
+    configuration: "Configuration"
+    prompts: "Prompts"
+    schemas: "Schemas"
+    context: "Context"
+    files: "Files"
+    select_file: "Select a file for editing"
+    select_category: "Select a category"
+    editing: "Editing"
+    no_file_selected: "No file selected"
+    new: "New"
+    confirm: "Confirm"
+    cancel: "Cancel"
+    new_file: "New file"
+    delete_file: "Delete file"
+    save_file: "Save"
+    credentials: "Email and password required for login."
+    saved_ok: "Saved successfully"
+    deleted_ok: "Deleted successfully"
 
   tooltips:
     history: "History of my queries"
@@ -90,11 +110,11 @@ errors:
     authentication_required: "Authentication required. No session cookie or API Key provided."
     invalid_api_key: "Invalid or inactive API Key."
     no_user_identifier_api: "No user_identifier provided for API call."
+    no_company_permissions: "Do not have permissions to admin this company."
   templates:
     company_not_found: "Company not found."
     home_template_not_found: "The home page template for the company '{company_short_name}' is not configured."
     template_not_found: "Template not found: '{template_name}'."
-
     processing_error: "An error occurred while processing the custom home page template: {error}"
   general:
     unexpected_error: "An unexpected error has occurred. Please contact support."
@@ -137,7 +157,6 @@ errors:
     cannot_read_excel: "Cannot read Excel file"
     cannot_read_csv: "Cannot read CSV file"
 
-
 api_responses:
   context_reloaded_success: "The context has been successfully reloaded."
 
@@ -175,4 +194,13 @@ js_messages:
   no_history_found: "No query history found."
   example: "Example:"
   show_reasoning: "Show reasoning"
+  unsaved: "Modified (unsaved)"
+  select_file: "Select a file from the list"
+  no_file_selected: "No file selected"
+  select_company: "Select company"
+  delete_ok: "File deleted successfully"
+  not_saved: 'Could not save'
+  saved_ok: "Saved successfully"
+  invalid_file_name: "Invalid filename. Use only letters, numbers, underscores, hyphens, and dots."
+
 

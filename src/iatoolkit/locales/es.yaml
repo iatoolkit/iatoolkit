@@ -45,7 +45,28 @@ ui:
     prompts_available: "Prompts disponibles"
     init_context: "Inicializando el contexto de la IA ..."
 
-
+  admin:
+    resources: "Recursos"
+    configuration: "Configuración"
+    prompts: "Prompts"
+    schemas: "Schemas"
+    context: "Contexto"
+    files: "Archivos"
+    select_file: "Seleccione un archivo a editar"
+    select_categpry: "Seleccione una categoría"
+    editing: "Editando"
+    no_file_selected: "Seleccione un archivo"
+    new: "Nuevo"
+    confirm: "Confirmar"
+    cancel: "Cancelar"
+    new_file: "Nuevo archivo"
+    delete_file: "Borrar archivo"
+    save_file: "Guardar"
+    credentials: "Email y password son requeridos."
+    saved_ok: "Guardado correctamente"
+    deleted_ok: "Eliminado correctamente"
+    company: "Empresa"
+    admin_page_title: "Acceso de admiistración"
 
 
   tooltips:
@@ -90,6 +111,8 @@ errors:
     authentication_required: "Autenticación requerida. No se proporcionó cookie de sesión o clave de API."
     invalid_api_key: "Clave de API inválida o inactiva."
     no_user_identifier_api: "No se proporcionó user_identifier para la llamada a la API."
+    no_company_permissions: "No tiene permisos para administrar esta empresa."
+
   templates:
     company_not_found: "Empresa no encontrada."
     home_template_not_found: "La plantilla de la página de inicio para la empresa '{company_short_name}' no está configurada."
@@ -173,4 +196,12 @@ js_messages:
   no_history_found: "No existe historial de consultas."
   example: "Ejemplo:"
   show_reasoning: "Ver razonamiento"
+  unsaved: "Modificado (no guardado)"
+  select_file: "Seleccione un archivo de la lista"
+  no_file_selected: "No hay archivo seleccionado"
+  select_company: "Seleccione empresa"
+  delete_ok: "Archivo eliminado correctamente"
+  not_saved: 'No puede guardar'
+  invalid_file_name: "Nombre de archivo no válido. Usa solo letras, números, guiones bajos, guiones y puntos."
+
 

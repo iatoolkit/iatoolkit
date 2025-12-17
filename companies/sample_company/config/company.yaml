@@ -8,8 +8,7 @@ id: "sample_company"
 name: "Sample Company"
 locale: "en_ES"
 
-# Default Language Model and api-key for provider
-# Can be overridden in the API call: llm_query_api_view and init_context_api_view
+# Default Language Model
 llm:
   model: "deepseek-reasoner"    # default model
 
@@ -22,7 +21,7 @@ llm:
       description: "Fast and cheap."
     - id: "deepseek-reasoner"
       label: "deepseek-reasoner"
-      description: "Fast and cheap."
+      description: "Detail reasoning."
 
   provider_api_keys:
     openai: "OPENAI_API_KEY"
