@@ -125,7 +125,7 @@ const handleChatMessage = async function () {
                     const uniqueId = 'reasoning-' + Date.now(); // ID único para el collapse
 
                     const reasoningBlock = $(`
-                            <div class="reasoning-block mb-3">
+                            <div class="reasoning-block">
                                 <button class="reasoning-toggle btn btn-sm btn-link text-decoration-none p-0"
                                     type="button"
                                     data-bs-toggle="collapse"
