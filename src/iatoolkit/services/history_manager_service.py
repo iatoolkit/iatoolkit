@@ -85,11 +85,9 @@ class HistoryManagerService:
         model = getattr(handle, "model", None)
 
         if handle.type == self.TYPE_SERVER_SIDE:
-            previous_response_id = None
             if ignore_history:
                 previous_response_id = self.session_context.get_initial_response_id(
                     handle.company_short_name,handle.user_identifier,model=model)
-
             else:
                 previous_response_id = self.session_context.get_last_response_id(
                     handle.company_short_name,handle.user_identifier,model=model)
@@ -114,7 +112,7 @@ class HistoryManagerService:
                 # Keep only system prompt
                 context_history = [context_history[0]]
 
-            # For Gemini, we append the current user turn to the context sent to the API
+            # Append the current user turn to the context sent to the API
             context_history.append({"role": "user", "content": user_turn_prompt})
 
             self._trim_context_history(context_history)
@@ -191,8 +189,7 @@ class HistoryManagerService:
             except IndexError:
                 break
 
-    # --- Database History Management (Legacy HistoryService) ---
-
+    # --- this is for the history popup in the chat page
     def get_full_history(self, company_short_name: str, user_identifier: str) -> dict:
         """Retrieves the full persisted history from the database."""
         try:

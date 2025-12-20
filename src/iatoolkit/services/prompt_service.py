@@ -4,16 +4,16 @@
 # IAToolkit is open source software.
 
 from injector import inject
-from iatoolkit.common.asset_storage import AssetRepository, AssetType
+from iatoolkit.common.interfaces.asset_storage import AssetRepository, AssetType
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from collections import defaultdict
 from iatoolkit.repositories.models import Prompt, PromptCategory, Company
-import os
 from iatoolkit.common.exceptions import IAToolkitException
 import importlib.resources
 import logging
+import os
 
 # iatoolkit system prompts definitions
 _SYSTEM_PROMPTS = [

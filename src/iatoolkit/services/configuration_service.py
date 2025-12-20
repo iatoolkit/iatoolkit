@@ -2,12 +2,10 @@
 # Copyright (c) 2024 Fernando Libedinsky
 # Product: IAToolkit
 
-from pathlib import Path
 from iatoolkit.repositories.models import Company
-from iatoolkit.common.asset_storage import AssetRepository, AssetType
+from iatoolkit.common.interfaces.asset_storage import AssetRepository, AssetType
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.repositories.profile_repo import ProfileRepo
-from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.common.util import Utility
 from injector import inject
 import logging
@@ -170,21 +168,35 @@ class ConfigurationService:
 
         logging.info(f"🛢️ Registering databases for '{company_short_name}'...")
 
-        for db_config in sql_sources:
-            db_name = db_config.get('database')
-            db_schema = db_config.get('schema', 'public')
-            db_env_var = db_config.get('connection_string_env')
+        for source in sql_sources:
+            db_name = source.get('database')
+            if not db_name:
+                continue
 
-            # resolve the URI
-            db_uri = os.getenv(db_env_var) if db_env_var else None
+            # Prepare the config dictionary for the factory
+            db_config = {
+                'schema': source.get('schema', 'public'),
+                'connection_type': source.get('connection_type', 'direct'),
+                # Pass through keys needed for Bridge or other plugins
+                'bridge_id': source.get('bridge_id'),
+                'timeout': source.get('timeout')
+            }
 
-            if not db_uri:
+            # Resolve URI if env var is present (Required for 'direct', optional for others)
+            db_env_var = source.get('connection_string_env')
+            if db_env_var:
+                db_uri = os.getenv(db_env_var)
+                if db_uri:
+                    db_config['db_uri'] = db_uri
+
+            # Validation: 'direct' connections MUST have a URI
+            if db_config['connection_type'] == 'direct' and not db_config.get('db_uri'):
                 logging.error(
                     f"-> Skipping DB '{db_name}' for '{company_short_name}': missing URI in env '{db_env_var}'.")
                 continue
 
             # Register with the SQL service
-            sql_service.register_database(company_short_name, db_uri, db_name, db_schema)
+            sql_service.register_database(company_short_name, db_name, db_config)
 
     def _register_tools(self, company_short_name: str, config: dict):
         """creates in the database each tool defined in the YAML."""

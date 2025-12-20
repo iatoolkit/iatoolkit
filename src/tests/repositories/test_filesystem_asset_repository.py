@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 from pathlib import Path
 from iatoolkit.repositories.filesystem_asset_repository import FileSystemAssetRepository
-from iatoolkit.common.asset_storage import AssetType
+from iatoolkit.common.interfaces.asset_storage import AssetType
 
 
 class TestFileSystemAssetRepository:

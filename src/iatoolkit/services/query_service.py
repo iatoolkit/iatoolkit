@@ -90,7 +90,7 @@ class QueryService:
 
     def _build_user_facing_prompt(self, company, user_identifier: str,
                                   client_data: dict, files: list,
-                                  prompt_name: Optional[str], question: str) -> str:
+                                  prompt_name: Optional[str], question: str):
         # get the user profile data from the session context
         user_profile = self.profile_service.get_profile_by_identifier(company.short_name, user_identifier)
 

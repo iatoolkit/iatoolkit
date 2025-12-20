@@ -5,12 +5,11 @@
 
 from iatoolkit.common.util import Utility
 from iatoolkit.services.configuration_service import ConfigurationService
-from iatoolkit.common.asset_storage import AssetRepository, AssetType
+from iatoolkit.common.interfaces.asset_storage import AssetRepository, AssetType
 from iatoolkit.services.sql_service import SqlService
 from iatoolkit.common.exceptions import IAToolkitException
 import logging
 from injector import inject
-import os
 
 
 class CompanyContextService:
@@ -88,35 +87,6 @@ class CompanyContextService:
 
         return static_context
 
-    def _get_yaml_schema_context(self, company_short_name: str) -> str:
-        # Get context from .yaml schema files using the repository
-        yaml_schema_context = ''
-
-        try:
-            # 1. List yaml files in the schema "folder"
-            schema_files = self.asset_repo.list_files(company_short_name, AssetType.SCHEMA, extension='.yaml')
-
-            for filename in schema_files:
-                try:
-                    # 2. Read content
-                    content = self.asset_repo.read_text(company_short_name, AssetType.SCHEMA, filename)
-
-                    # 3. Parse YAML content into a dict
-                    schema_dict = self.utility.load_yaml_from_string(content)
-
-                    # 4. Generate markdown description from the dict
-                    if schema_dict:
-                        # We use generate_schema_table which accepts a dict directly
-                        yaml_schema_context += self.utility.generate_schema_table(schema_dict)
-
-                except Exception as e:
-                    logging.warning(f"Error processing schema file {filename}: {e}")
-
-        except Exception as e:
-            logging.warning(f"Error listing schema files for {company_short_name}: {e}")
-
-        return yaml_schema_context
-
     def _get_sql_schema_context(self, company_short_name: str) -> str:
         """
         Generates the SQL schema context by inspecting live database connections
@@ -134,9 +104,9 @@ class CompanyContextService:
                 continue
 
             try:
-                db_manager = self.sql_service.get_database_manager(company_short_name, db_name)
+                db_provider = self.sql_service.get_database_provider(company_short_name, db_name)
             except IAToolkitException as e:
-                logging.warning(f"Could not get DB manager for '{db_name}': {e}")
+                logging.warning(f"Could not get DB provider for '{db_name}': {e}")
                 continue
 
             db_description = source.get('description', '')
@@ -161,7 +131,7 @@ class CompanyContextService:
             # 1. get the list of tables to process.
             tables_to_process = []
             if source.get('include_all_tables', False):
-                all_tables = db_manager.get_all_table_names()
+                all_tables = db_provider.get_all_table_names()
                 tables_to_exclude = set(source.get('exclude_tables', []))
                 tables_to_process = [t for t in all_tables if t not in tables_to_exclude]
             elif 'tables' in source:
@@ -200,9 +170,9 @@ class CompanyContextService:
                     final_exclude_columns = local_exclude_columns if local_exclude_columns is not None else global_exclude_columns
 
                     # 7. get the table schema definition.
-                    table_definition = db_manager.get_table_schema(
+                    table_definition = db_provider.get_table_schema(
                         table_name=table_name,
-                        db_schema=db_manager.schema,
+                        db_schema=db_provider.schema,
                         schema_object_name=schema_object_name,
                         exclude_columns=final_exclude_columns
                     )
@@ -213,3 +183,32 @@ class CompanyContextService:
         if sql_context:
             sql_context = "These are the SQL databases you can query using the **`iat_sql_service`**: \n" + sql_context
         return sql_context
+
+    def _get_yaml_schema_context(self, company_short_name: str) -> str:
+        # Get context from .yaml schema files using the repository
+        yaml_schema_context = ''
+
+        try:
+            # 1. List yaml files in the schema "folder"
+            schema_files = self.asset_repo.list_files(company_short_name, AssetType.SCHEMA, extension='.yaml')
+
+            for filename in schema_files:
+                try:
+                    # 2. Read content
+                    content = self.asset_repo.read_text(company_short_name, AssetType.SCHEMA, filename)
+
+                    # 3. Parse YAML content into a dict
+                    schema_dict = self.utility.load_yaml_from_string(content)
+
+                    # 4. Generate markdown description from the dict
+                    if schema_dict:
+                        # We use generate_schema_table which accepts a dict directly
+                        yaml_schema_context += self.utility.generate_schema_table(schema_dict)
+
+                except Exception as e:
+                    logging.warning(f"Error processing schema file {filename}: {e}")
+
+        except Exception as e:
+            logging.warning(f"Error listing schema files for {company_short_name}: {e}")
+
+        return yaml_schema_context

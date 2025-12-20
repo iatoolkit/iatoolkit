@@ -5,6 +5,7 @@
 
 from unittest.mock import patch, MagicMock
 from iatoolkit.repositories.database_manager import DatabaseManager
+from iatoolkit.common.interfaces.database_provider import DatabaseProvider
 import pytest
 
 class TestDatabaseManager:
@@ -44,6 +45,10 @@ class TestDatabaseManager:
         for patcher in self.patchers:
             patcher.stop()
 
+    def test_implements_interface(self):
+        """Verify that DatabaseManager implements DatabaseProvider"""
+        assert isinstance(self.db_manager, DatabaseProvider)
+
     def test_get_session_returns_scoped_session(self):
         session = self.db_manager.get_session()
         assert session == self.mock_scoped_session()
@@ -80,3 +85,67 @@ class TestDatabaseManager:
             self.db_manager.get_table_schema('non_existent_table', db_schema='public')
 
         assert "Table 'non_existent_table' does not exist" in str(exc_info.value)
+
+    # --- Tests for Execution Methods (New Interface) ---
+
+    def test_execute_query_returns_rows_as_dict(self):
+        """
+        GIVEN a SELECT query
+        WHEN execute_query is called
+        THEN it should return a list of dictionaries.
+        """
+        # Arrange
+        mock_session = self.mock_scoped_session.return_value
+        mock_result = mock_session.execute.return_value
+        mock_result.returns_rows = True
+        mock_result.keys.return_value = ['id', 'val']
+        mock_result.fetchall.return_value = [(1, 'a'), (2, 'b')]
+
+        # Act
+        result = self.db_manager.execute_query("SELECT * FROM t")
+
+        # Assert
+        assert result == [{'id': 1, 'val': 'a'}, {'id': 2, 'val': 'b'}]
+        mock_session.execute.assert_called_once()
+
+    def test_execute_query_no_rows_returns_rowcount(self):
+        """
+        GIVEN an UPDATE/DELETE query
+        WHEN execute_query is called
+        THEN it should return {'rowcount': N}.
+        """
+        # Arrange
+        mock_session = self.mock_scoped_session.return_value
+        mock_result = mock_session.execute.return_value
+        mock_result.returns_rows = False
+        mock_result.rowcount = 5
+
+        # Act
+        result = self.db_manager.execute_query("UPDATE t SET val='x'")
+
+        # Assert
+        assert result == {'rowcount': 5}
+
+    def test_execute_query_with_commit(self):
+        """
+        GIVEN commit=True
+        WHEN execute_query is called
+        THEN it should call session.commit().
+        """
+        mock_session = self.mock_scoped_session.return_value
+        mock_result = mock_session.execute.return_value
+        mock_result.returns_rows = False
+
+        self.db_manager.execute_query("INSERT INTO ...", commit=True)
+
+        mock_session.commit.assert_called_once()
+
+    def test_commit_and_rollback(self):
+        """Test wrapper methods"""
+        mock_session = self.mock_scoped_session.return_value
+
+        self.db_manager.commit()
+        mock_session.commit.assert_called()
+
+        self.db_manager.rollback()
+        mock_session.rollback.assert_called()
