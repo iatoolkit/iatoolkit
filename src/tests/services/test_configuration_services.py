@@ -1,15 +1,14 @@
 # tests/services/test_configuration_services.py
 
 import pytest
-from unittest.mock import Mock, patch, call
-from pathlib import Path
+from unittest.mock import Mock, patch
 
 from iatoolkit.services.configuration_service import ConfigurationService
-from iatoolkit.common.asset_storage import AssetRepository, AssetType
+from iatoolkit.common.interfaces.asset_storage import AssetRepository, AssetType
 from iatoolkit.common.util import Utility
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.base_company import BaseCompany
-from iatoolkit.repositories.models import Company, PromptCategory
+from iatoolkit.repositories.models import Company
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.repositories.profile_repo import ProfileRepo
 

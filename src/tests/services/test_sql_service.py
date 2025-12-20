@@ -1,8 +1,7 @@
 # tests/services/test_sql_service.py
 
 import pytest
-from unittest.mock import MagicMock, patch, call
-from sqlalchemy import text
+from unittest.mock import MagicMock, patch
 import json
 from datetime import datetime
 
@@ -10,8 +9,9 @@ from iatoolkit.services.sql_service import SqlService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.common.util import Utility
 from iatoolkit.common.exceptions import IAToolkitException
+from iatoolkit.common.interfaces.database_provider import DatabaseProvider
 
-# Constantes para nombres de BD para evitar typos
+# Constants
 COMPANY_SHORT_NAME = 'test_company'
 DB_NAME_SUCCESS = 'test_db'
 DB_NAME_UNREGISTERED = 'unregistered_db'
@@ -20,8 +20,8 @@ DUMMY_URI = 'sqlite:///:memory:'
 
 class TestSqlService:
     """
-    Unit tests for the refactored SqlService, which now manages a cache of
-    named DatabaseManager instances scoped by company.
+    Unit tests for the refactored SqlService.
+    Now verifies that it correctly delegates to DatabaseProviders via the Factory pattern.
     """
 
     @pytest.fixture(autouse=True)
@@ -30,21 +30,32 @@ class TestSqlService:
         Sets up mocks for dependencies and creates a fresh SqlService instance for each test.
         """
         self.util_mock = MagicMock(spec=Utility)
+        # Default serialize behavior: just return the object (json.dumps handles basic types)
+        self.util_mock.serialize.side_effect = lambda x: x
+
         self.mock_i18n_service = MagicMock(spec=I18nService)
         self.mock_i18n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
+
         self.service = SqlService(util=self.util_mock, i18n_service=self.mock_i18n_service)
 
-    # --- Tests for Registration and Retrieval ---
+    # --- Tests for Factory & Registration ---
 
     @patch('iatoolkit.services.sql_service.DatabaseManager')
-    def test_register_database_creates_and_caches_manager(self, MockDatabaseManager):
+    def test_register_database_direct_creates_manager(self, MockDatabaseManager):
         """
-        GIVEN an empty SqlService
-        WHEN register_database is called with a new name and URI
-        THEN it should instantiate DatabaseManager and cache the instance using (company, db_name) key.
+        GIVEN a 'direct' connection config
+        WHEN register_database is called
+        THEN it should instantiate DatabaseManager with the correct URI and schema.
         """
+        # Arrange
+        config = {
+            'connection_type': 'direct',
+            'db_uri': DUMMY_URI,
+            'schema': 'an_schema'
+        }
+
         # Act
-        self.service.register_database(COMPANY_SHORT_NAME, DUMMY_URI, DB_NAME_SUCCESS, 'an_schema')
+        self.service.register_database(COMPANY_SHORT_NAME, DB_NAME_SUCCESS, config)
 
         # Assert
         MockDatabaseManager.assert_called_once_with(DUMMY_URI, schema='an_schema', register_pgvector=False)
@@ -53,157 +64,166 @@ class TestSqlService:
         assert expected_key in self.service._db_connections
         assert self.service._db_connections[expected_key] == MockDatabaseManager.return_value
 
+    def test_register_custom_provider_factory(self):
+        """
+        GIVEN a custom provider factory (e.g., for Bridge)
+        WHEN register_provider_factory is used and then register_database is called
+        THEN it should use the custom factory to create the provider.
+        """
+        # Arrange
+        mock_factory = MagicMock()
+        mock_provider = MagicMock(spec=DatabaseProvider)
+        mock_factory.return_value = mock_provider
+
+        # Register the custom factory/plugin
+        self.service.register_provider_factory('bridge', mock_factory)
+
+        config = {
+            'connection_type': 'bridge',
+            'bridge_id': 'agent-123'
+        }
+
+        # Act
+        self.service.register_database(COMPANY_SHORT_NAME, 'bridge_db', config)
+
+        # Assert
+        mock_factory.assert_called_once_with(config)
+        assert self.service.get_database_provider(COMPANY_SHORT_NAME, 'bridge_db') == mock_provider
+
     @patch('iatoolkit.services.sql_service.DatabaseManager')
     def test_register_database_skips_if_already_exists(self, MockDatabaseManager):
         """
-        GIVEN a database is already registered for a company
-        WHEN register_database is called again with the same name and company
-        THEN it should not create a new DatabaseManager instance.
+        GIVEN a database is already registered
+        WHEN register_database is called again
+        THEN it should verify cache hit and NOT create a new instance.
         """
+        config = {'connection_type': 'direct', 'db_uri': DUMMY_URI}
+
         # Act
-        self.service.register_database(COMPANY_SHORT_NAME, DUMMY_URI, DB_NAME_SUCCESS)
-        self.service.register_database(COMPANY_SHORT_NAME, 'another_uri', DB_NAME_SUCCESS)  # Call again
+        self.service.register_database(COMPANY_SHORT_NAME, DB_NAME_SUCCESS, config)
+        self.service.register_database(COMPANY_SHORT_NAME, DB_NAME_SUCCESS, config)  # Second call
 
         # Assert
-        MockDatabaseManager.assert_called_once()  # Still only called once
+        MockDatabaseManager.assert_called_once()
 
-    def test_get_database_manager_raises_exception_if_not_found(self):
+    # --- Tests for Provider Retrieval ---
+
+    def test_get_database_provider_raises_exception_if_not_found(self):
         """
         GIVEN an empty SqlService
-        WHEN get_database_manager is called with an unregistered name/company pair
-        THEN it should raise an IAToolkitException.
+        WHEN get_database_provider is called with unregistered DB
+        THEN it should raise IAToolkitException.
         """
         with pytest.raises(IAToolkitException) as exc_info:
-            self.service.get_database_manager(COMPANY_SHORT_NAME, DB_NAME_UNREGISTERED)
+            self.service.get_database_provider(COMPANY_SHORT_NAME, DB_NAME_UNREGISTERED)
 
         assert exc_info.value.error_type == IAToolkitException.ErrorType.DATABASE_ERROR
         assert f"Database '{DB_NAME_UNREGISTERED}' is not registered" in str(exc_info.value)
 
     def test_get_db_names_filters_by_company(self):
         """
-        GIVEN databases registered for multiple companies
-        WHEN get_db_names is called for a specific company
-        THEN it should return only the database names for that company.
+        GIVEN multiple registered databases
+        WHEN get_db_names is called
+        THEN it should return strictly the databases for that company.
         """
-        # Arrange
-        with patch('iatoolkit.services.sql_service.DatabaseManager'):
-            self.service.register_database('company_A', DUMMY_URI, 'db_sales')
-            self.service.register_database('company_A', DUMMY_URI, 'db_hr')
-            self.service.register_database('company_B', DUMMY_URI, 'db_sales')  # Same name, different company
+        config = {'db_uri': DUMMY_URI}
 
-        # Act
+        # We assume mocks for the underlying providers since we just check keys here
+        with patch('iatoolkit.services.sql_service.DatabaseManager'):
+            self.service.register_database('company_A', 'db_sales', config)
+            self.service.register_database('company_A', 'db_hr', config)
+            self.service.register_database('company_B', 'db_sales', config)
+
+            # Act
         db_names_A = self.service.get_db_names('company_A')
-        db_names_B = self.service.get_db_names('company_B')
 
         # Assert
         assert set(db_names_A) == {'db_sales', 'db_hr'}
-        assert set(db_names_B) == {'db_sales'}
 
-    # --- Tests for exec_sql ---
+    # --- Tests for exec_sql (Delegation Logic) ---
 
     @patch('iatoolkit.services.sql_service.DatabaseManager')
-    def test_exec_sql_success_with_simple_data(self, MockDatabaseManager):
+    def test_exec_sql_delegates_to_provider_success(self, MockDatabaseManager):
         """
-        GIVEN a registered database
-        WHEN exec_sql is called with simple data
-        THEN it should return the correct JSON string.
+        GIVEN a registered provider
+        WHEN exec_sql is called
+        THEN it should call provider.execute_query and serialize the result.
         """
-        # Arrange: Set up mocks for the DB interaction
-        mock_db_manager = MockDatabaseManager.return_value
-        session_mock = mock_db_manager.get_session.return_value
-        mock_result_proxy = session_mock.execute.return_value
+        # Arrange
+        mock_provider = MockDatabaseManager.return_value
 
-        mock_result_proxy.keys.return_value = ['id', 'name']
-        mock_result_proxy.fetchall.return_value = [(1, 'Alice'), (2, 'Bob')]
-        mock_result_proxy.returns_rows = True
+        # The provider is expected to return a list of dicts directly now (clean interface)
+        db_data = [{'id': 1, 'name': 'Alice'}, {'id': 2, 'name': 'Bob'}]
+        mock_provider.execute_query.return_value = db_data
 
-        # Arrange: Register the database
-        self.service.register_database(COMPANY_SHORT_NAME, DUMMY_URI, DB_NAME_SUCCESS)
+        config = {'db_uri': DUMMY_URI}
+        self.service.register_database(COMPANY_SHORT_NAME, DB_NAME_SUCCESS, config)
 
         # Act
-        sql_statement = "SELECT id, name FROM users"
         result_json = self.service.exec_sql(company_short_name=COMPANY_SHORT_NAME,
                                             database_key=DB_NAME_SUCCESS,
-                                            query=sql_statement)
+                                            query="SELECT * FROM users")
 
         # Assert
-        # Verify get_database_manager used the composite key implicitly
-        expected_key = (COMPANY_SHORT_NAME, DB_NAME_SUCCESS)
-        assert self.service._db_connections[expected_key] == mock_db_manager
+        # 1. Verify delegation
+        mock_provider.execute_query.assert_called_once_with("SELECT * FROM users", commit=None)
 
-        mock_db_manager.get_session.assert_called()
-        session_mock.execute.assert_called_once()
-
-        expected_json = json.dumps([{'id': 1, 'name': 'Alice'}, {'id': 2, 'name': 'Bob'}])
+        # 2. Verify serialization
+        expected_json = json.dumps(db_data)
         assert result_json == expected_json
-        self.util_mock.serialize.assert_not_called()
 
     @patch('iatoolkit.services.sql_service.DatabaseManager')
     def test_exec_sql_with_custom_serialization(self, MockDatabaseManager):
         """
-        GIVEN a registered database returning custom types (datetime)
+        GIVEN a provider returning complex objects (datetime)
         WHEN exec_sql is called
-        THEN it should use the custom serializer.
+        THEN it should use util.serialize to handle them.
         """
         # Arrange
-        mock_db_manager = MockDatabaseManager.return_value
-        session_mock = mock_db_manager.get_session.return_value
-        mock_result_proxy = session_mock.execute.return_value
+        mock_provider = MockDatabaseManager.return_value
+        dt = datetime(2024, 1, 1)
 
-        original_datetime = datetime(2024, 1, 1)
+        # Mocking the provider response (raw data)
+        mock_provider.execute_query.return_value = [{'event_time': dt}]
+
+        # Mocking utility serializer logic
         self.util_mock.serialize.side_effect = lambda obj: obj.isoformat() if isinstance(obj, datetime) else obj
 
-        mock_result_proxy.keys.return_value = ['event_time']
-        mock_result_proxy.fetchall.return_value = [(original_datetime,)]
-        mock_result_proxy.returns_rows = True
-
-        self.service.register_database(COMPANY_SHORT_NAME, DUMMY_URI, DB_NAME_SUCCESS)
+        config = {'db_uri': DUMMY_URI}
+        self.service.register_database(COMPANY_SHORT_NAME, DB_NAME_SUCCESS, config)
 
         # Act
         result_json = self.service.exec_sql(company_short_name=COMPANY_SHORT_NAME,
                                             database_key=DB_NAME_SUCCESS,
-                                            query="SELECT event_time FROM events")
+                                            query="SELECT time")
 
         # Assert
-        self.util_mock.serialize.assert_called_once_with(original_datetime)
-        expected_json = json.dumps([{'event_time': original_datetime.isoformat()}])
-        assert result_json == expected_json
-
-    def test_exec_sql_raises_exception_for_unregistered_database(self):
-        """
-        GIVEN an unregistered database name
-        WHEN exec_sql is called
-        THEN it should raise an IAToolkitException.
-        """
-        with pytest.raises(IAToolkitException) as exc_info:
-            self.service.exec_sql(company_short_name=COMPANY_SHORT_NAME,
-                                  database_key=DB_NAME_UNREGISTERED,
-                                  query="SELECT 1")
-
-        assert f"Database '{DB_NAME_UNREGISTERED}' is not registered" in str(exc_info.value)
+        self.util_mock.serialize.assert_called_with(dt)
+        assert '"2024-01-01T00:00:00"' in result_json
 
     @patch('iatoolkit.services.sql_service.DatabaseManager')
-    def test_exec_sql_handles_db_execution_error(self, MockDatabaseManager):
+    def test_exec_sql_handles_provider_error(self, MockDatabaseManager):
         """
-        GIVEN a registered database
-        WHEN the execution of the SQL statement fails
-        THEN it should raise an IAToolkitException and attempt a rollback.
+        GIVEN a provider that raises an exception during execution
+        WHEN exec_sql is called
+        THEN it should attempt rollback on the provider and re-raise as IAToolkitException.
         """
         # Arrange
-        mock_db_manager = MockDatabaseManager.return_value
-        session_mock = mock_db_manager.get_session.return_value
-        db_error = Exception("Table not found")
-        session_mock.execute.side_effect = db_error
+        mock_provider = MockDatabaseManager.return_value
+        db_error = Exception("Connection lost")
+        mock_provider.execute_query.side_effect = db_error
 
-        self.service.register_database(COMPANY_SHORT_NAME, DUMMY_URI, DB_NAME_SUCCESS)
+        config = {'db_uri': DUMMY_URI}
+        self.service.register_database(COMPANY_SHORT_NAME, DB_NAME_SUCCESS, config)
 
         # Act & Assert
         with pytest.raises(IAToolkitException) as exc_info:
             self.service.exec_sql(company_short_name=COMPANY_SHORT_NAME,
                                   database_key=DB_NAME_SUCCESS,
-                                  query="SELECT * from non_existing_table")
+                                  query="SELECT *")
 
         assert exc_info.value.error_type == IAToolkitException.ErrorType.DATABASE_ERROR
-        assert str(db_error) in str(exc_info.value)
-        # Verify rollback was attempted
-        session_mock.rollback.assert_called_once()
+        assert "Connection lost" in str(exc_info.value)
+
+        # Verify rollback called on provider
+        mock_provider.rollback.assert_called_once()

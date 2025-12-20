@@ -10,7 +10,7 @@ locale: "en_ES"
 
 # Default Language Model
 llm:
-  model: "deepseek-reasoner"    # default model
+  model: "gpt-5"    # default model
 
   available_models:
     - id: "gpt-5"

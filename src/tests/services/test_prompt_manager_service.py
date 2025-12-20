@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 from iatoolkit.services.prompt_service import PromptService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
-from iatoolkit.common.asset_storage import AssetRepository, AssetType
+from iatoolkit.common.interfaces.asset_storage import AssetRepository, AssetType
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.repositories.models import Prompt, PromptCategory, Company
 from iatoolkit.common.exceptions import IAToolkitException

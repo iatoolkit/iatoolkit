@@ -1,13 +1,14 @@
+
 # tests/services/test_company_context_service.py
 
 import pytest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call
 from iatoolkit.services.company_context_service import CompanyContextService
 from iatoolkit.services.configuration_service import ConfigurationService
-from iatoolkit.common.asset_storage import AssetRepository, AssetType
+from iatoolkit.common.interfaces.asset_storage import AssetRepository, AssetType
 from iatoolkit.services.sql_service import SqlService
-from iatoolkit.common.util import Utility
 from iatoolkit.repositories.database_manager import DatabaseManager
+from iatoolkit.common.util import Utility
 from iatoolkit.common.exceptions import IAToolkitException
 
 # --- Mock Data for different test scenarios ---
@@ -52,7 +53,8 @@ MOCK_CONFIG_COMPLEX = {
 
 class TestCompanyContextService:
     """
-    Unit tests for the CompanyContextService, updated for the new data_sources schema.
+    Unit tests for the CompanyContextService, updated for the new data_sources schema
+    and the DatabaseProvider interface.
     """
 
     @pytest.fixture(autouse=True)
@@ -63,10 +65,12 @@ class TestCompanyContextService:
         self.mock_config_service = MagicMock(spec=ConfigurationService)
         self.mock_asset_repo = MagicMock(spec=AssetRepository) # <--- Mock Repo
 
-        # Setup a default mock for the DatabaseManager
-        self.mock_db_manager = MagicMock(spec=DatabaseManager)
-        self.mock_db_manager.schema = 'public'
-        self.mock_sql_service.get_database_manager.return_value = self.mock_db_manager
+        # Setup a default mock for the DatabaseProvider (implemented by DatabaseManager)
+        self.mock_db_provider = MagicMock(spec=DatabaseManager)
+        self.mock_db_provider.schema = 'public'
+
+        # Configure the factory method to return this mock
+        self.mock_sql_service.get_database_provider.return_value = self.mock_db_provider
 
         self.context_service = CompanyContextService(
             sql_service=self.mock_sql_service,
@@ -82,23 +86,23 @@ class TestCompanyContextService:
         """
         GIVEN config has 'include_all_tables: true'
         WHEN _get_sql_schema_context is called
-        THEN it should process all tables returned by the db_manager.
+        THEN it should process all tables returned by the db_provider.
         """
         # Arrange
         self.mock_config_service.get_configuration.return_value = MOCK_CONFIG_INCLUDE_ALL
-        self.mock_db_manager.get_all_table_names.return_value = ['users', 'products']
-        self.mock_db_manager.schema = 'public'
+        self.mock_db_provider.get_all_table_names.return_value = ['users', 'products']
+        self.mock_db_provider.schema = 'public'
 
         # Act
         self.context_service._get_sql_schema_context(self.COMPANY_NAME)
 
         # Assert
-        self.mock_db_manager.get_all_table_names.assert_called_once()
+        self.mock_db_provider.get_all_table_names.assert_called_once()
         expected_calls = [
             call(table_name='users', db_schema='public', schema_object_name='users', exclude_columns=[]),
             call(table_name='products', db_schema='public', schema_object_name='products', exclude_columns=[])
         ]
-        self.mock_db_manager.get_table_schema.assert_has_calls(expected_calls, any_order=True)
+        self.mock_db_provider.get_table_schema.assert_has_calls(expected_calls, any_order=True)
 
     def test_sql_context_with_explicit_table_map(self):
         """
@@ -113,13 +117,13 @@ class TestCompanyContextService:
         self.context_service._get_sql_schema_context(self.COMPANY_NAME)
 
         # Assert
-        self.mock_db_manager.get_all_table_names.assert_not_called()
-        assert self.mock_db_manager.get_table_schema.call_count == 2
+        self.mock_db_provider.get_all_table_names.assert_not_called()
+        assert self.mock_db_provider.get_table_schema.call_count == 2
         expected_calls = [
             call(table_name='products', db_schema='public', schema_object_name='products', exclude_columns=[]),
             call(table_name='customers', db_schema='public', schema_object_name='customers', exclude_columns=[])
         ]
-        self.mock_db_manager.get_table_schema.assert_has_calls(expected_calls, any_order=True)
+        self.mock_db_provider.get_table_schema.assert_has_calls(expected_calls, any_order=True)
 
     def test_sql_context_with_complex_overrides(self):
         """
@@ -130,14 +134,14 @@ class TestCompanyContextService:
         # Arrange
         self.mock_config_service.get_configuration.return_value = MOCK_CONFIG_COMPLEX
         # DB has 'users', 'user_profiles', and 'logs'. 'logs' should be excluded.
-        self.mock_db_manager.get_all_table_names.return_value = ['users', 'user_profiles', 'logs']
+        self.mock_db_provider.get_all_table_names.return_value = ['users', 'user_profiles', 'logs']
 
         # Act
         self.context_service._get_sql_schema_context(self.COMPANY_NAME)
 
         # Assert
         # Check call count first
-        assert self.mock_db_manager.get_table_schema.call_count == 2
+        assert self.mock_db_provider.get_table_schema.call_count == 2
 
         # Check calls with correct, final parameters
         expected_calls = [
@@ -146,7 +150,7 @@ class TestCompanyContextService:
             # 'user_profiles' should use the global exclude_columns and its local schema_object_name override
             call(table_name='user_profiles', db_schema='public', schema_object_name='profiles', exclude_columns=['id', 'created_at'])
         ]
-        self.mock_db_manager.get_table_schema.assert_has_calls(expected_calls, any_order=True)
+        self.mock_db_provider.get_table_schema.assert_has_calls(expected_calls, any_order=True)
 
     # --- Existing Tests (can be kept as they test other parts) ---
 
@@ -177,7 +181,7 @@ class TestCompanyContextService:
         self.mock_asset_repo.read_text.assert_any_call(self.COMPANY_NAME, AssetType.CONTEXT, 'info.md')
 
         # Verify SQL service was NOT called
-        self.mock_sql_service.get_database_manager.assert_not_called()
+        self.mock_sql_service.get_database_provider.assert_not_called()
 
     def test_build_context_with_yaml_schemas(self):
         """
@@ -231,14 +235,16 @@ class TestCompanyContextService:
 
     def test_gracefully_handles_db_manager_exception(self):
         """
-        GIVEN retrieving a database manager throws an exception
+        GIVEN retrieving a database provider throws an exception
         WHEN get_company_context is called
         THEN it should log a warning and return context from other sources.
         """
         # Arrange
         self.mock_utility.get_files_by_extension.return_value = []  # No static context
         self.mock_config_service.get_configuration.return_value = {'sql': [{'database': 'down_db'}]}
-        self.mock_sql_service.get_database_manager.side_effect = IAToolkitException(
+
+        # Configure the exception on get_database_provider
+        self.mock_sql_service.get_database_provider.side_effect = IAToolkitException(
             IAToolkitException.ErrorType.DATABASE_ERROR, "DB is down"
         )
 
@@ -247,4 +253,4 @@ class TestCompanyContextService:
 
         # Assert
         assert full_context == ""
-        self.mock_sql_service.get_database_manager.assert_called_once_with(self.COMPANY_NAME, 'down_db')
+        self.mock_sql_service.get_database_provider.assert_called_once_with(self.COMPANY_NAME, 'down_db')

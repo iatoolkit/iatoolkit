@@ -10,7 +10,7 @@ from flask_bcrypt import Bcrypt
 from flask_cors import CORS
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.repositories.database_manager import DatabaseManager
-from iatoolkit.common.asset_storage import AssetRepository
+from iatoolkit.common.interfaces.asset_storage import AssetRepository
 from iatoolkit.repositories.filesystem_asset_repository import FileSystemAssetRepository
 from werkzeug.middleware.proxy_fix import ProxyFix
 from injector import Binder, Injector, singleton

@@ -35,8 +35,8 @@ class SampleCompany(BaseCompany):
         @app.cli.command("create-sample-db")
         def create_sample_db():
             # get the handler to the database
-            sample_db_manager = self.sql_service.get_database_manager('sample_company', 'sample_database')
-            self.sample_database = SampleCompanyDatabase(sample_db_manager)
+            sample_db_provider = self.sql_service.get_database_provider('sample_company', 'sample_database')
+            self.sample_database = SampleCompanyDatabase(sample_db_provider)
 
             """📦 create and populate the database."""
             if not self.sample_database:

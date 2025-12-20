@@ -10,9 +10,10 @@ from sqlalchemy.engine.url import make_url
 from iatoolkit.repositories.models import Base
 from injector import inject
 from pgvector.psycopg2 import register_vector
+from iatoolkit.common.interfaces.database_provider import DatabaseProvider
 
 
-class DatabaseManager:
+class DatabaseManager(DatabaseProvider):
     @inject
     def __init__(self,
                  database_url: str,
@@ -91,9 +92,6 @@ class DatabaseManager:
     def get_connection(self):
         return self._engine.connect()
 
-    def get_engine(self):
-        return self._engine
-
     def create_all(self):
         # if there is a schema defined, make sure it exists before creating tables
         backend = self.url.get_backend_name()
@@ -109,6 +107,32 @@ class DatabaseManager:
     def remove_session(self):
         self.scoped_session.remove()
 
+    # -- execution methods ----
+
+    def execute_query(self, query: str, commit: bool = False) -> list[dict] | dict:
+        """
+        Implementation for Direct SQLAlchemy connection.
+        """
+        session = self.get_session()
+        result = session.execute(text(query))
+
+        if commit:
+            session.commit()
+
+        if result.returns_rows:
+            # Convert SQLAlchemy rows to list of dicts immediately
+            cols = result.keys()
+            return [dict(zip(cols, row)) for row in result.fetchall()]
+
+        return {'rowcount': result.rowcount}
+
+    def commit(self):
+        self.get_session().commit()
+
+    def rollback(self):
+        self.get_session().rollback()
+
+    # -- schema methods ----
     def get_all_table_names(self) -> list[str]:
         # Returns a list of all table names in the database
         inspector = inspect(self._engine)
