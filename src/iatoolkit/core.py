@@ -198,11 +198,11 @@ class IAToolkit:
             os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
     def _setup_database(self):
-        database_uri = self._get_config_value('DATABASE_URI')
+        database_uri = self._get_config_value('DATABASE_URI') or self._get_config_value('DATABASE_URL')
         if not database_uri:
             raise IAToolkitException(
                 IAToolkitException.ErrorType.CONFIG_ERROR,
-                "DATABASE_URI is requires (config dict or env. variable)"
+                "DATABASE_URI is required (config dict or env. variable)"
             )
 
         self.db_manager = DatabaseManager(database_url=database_uri, schema='iatoolkit')
