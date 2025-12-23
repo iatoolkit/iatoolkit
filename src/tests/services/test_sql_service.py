@@ -5,6 +5,8 @@ from unittest.mock import MagicMock, patch
 import json
 from datetime import datetime
 
+from oauthlib.uri_validate import query
+
 from iatoolkit.services.sql_service import SqlService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.common.util import Utility
@@ -156,7 +158,7 @@ class TestSqlService:
         db_data = [{'id': 1, 'name': 'Alice'}, {'id': 2, 'name': 'Bob'}]
         mock_provider.execute_query.return_value = db_data
 
-        config = {'DATABASE_URI': DUMMY_URI}
+        config = {'DATABASE_URI': DUMMY_URI, 'schema': 'web_db'}
         self.service.register_database(COMPANY_SHORT_NAME, DB_NAME_SUCCESS, config)
 
         # Act
@@ -166,7 +168,10 @@ class TestSqlService:
 
         # Assert
         # 1. Verify delegation
-        mock_provider.execute_query.assert_called_once_with("SELECT * FROM users", commit=None)
+        mock_provider.execute_query.assert_called_once_with(
+                    db_schema='web_db',
+                    query="SELECT * FROM users",
+            commit=None)
 
         # 2. Verify serialization
         expected_json = json.dumps(db_data)

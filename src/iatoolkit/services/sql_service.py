@@ -32,6 +32,9 @@ class SqlService:
         # Value is the abstract interface DatabaseProvider
         self._db_connections: dict[tuple[str, str], DatabaseProvider] = {}
 
+        # cache for database schemas. Key is tuple: (company_short_name, db_name)
+        self._db_schemas: dict[tuple[str, str], str] = {}
+
         # Registry of factory functions.
         # Format: {'connection_type': function(config_dict) -> DatabaseProvider}
         self._provider_factories: dict[str, Callable[[dict], DatabaseProvider]] = {}
@@ -73,6 +76,9 @@ class SqlService:
             # Create the provider using the appropriate factory
             provider_instance = factory(config)
             self._db_connections[key] = provider_instance
+
+            # save the db_schema
+            self._db_schemas[key] = config.get('schema', 'public')
         except Exception as e:
             logging.error(f"Failed to register DB '{db_name}': {e}")
             # We don't raise here to allow other DBs to load if one fails
@@ -117,10 +123,11 @@ class SqlService:
         try:
             # 1. Get the abstract provider (could be Direct or Bridge)
             provider = self.get_database_provider(company_short_name, database_name)
+            db_schema = self._db_schemas[(company_short_name, database_name)]
 
             # 2. Delegate execution
             # The provider returns a clean List[Dict] or Dict result
-            result_data = provider.execute_query(query, commit=commit)
+            result_data = provider.execute_query(db_schema=db_schema, query=query, commit=commit)
 
             # 3. Handle Formatting (Service layer responsibility)
             if format == 'dict':
