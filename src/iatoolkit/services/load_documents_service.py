@@ -75,6 +75,7 @@ class LoadDocumentsService:
                 # Prepare the context for the callback function.
                 context = {
                     'company': company,
+                    'collection': source_config.get('metadata', {}).get('collection'),
                     'metadata': source_config.get('metadata', {})
                 }
 
@@ -131,6 +132,7 @@ class LoadDocumentsService:
                 company=company,
                 filename=filename,
                 content=content,
+                collection=predefined_metadata.get('collection'),
                 metadata=predefined_metadata
             )
 

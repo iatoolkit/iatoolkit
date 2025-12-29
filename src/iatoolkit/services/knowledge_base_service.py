@@ -166,7 +166,7 @@ class KnowledgeBaseService:
             # F. Finalize
             document.status = DocumentStatus.ACTIVE
             session.commit()
-            logging.info(f"Successfully ingested document {document.id} ({document.filename}) with {len(chunks)} chunks.")
+            logging.info(f"Successfully ingested document {document.id} ({document.collection_type.name}, {document.filename}) with {len(chunks)} chunks.")
 
         except Exception as e:
             session.rollback()

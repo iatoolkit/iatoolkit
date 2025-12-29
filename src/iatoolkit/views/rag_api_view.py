@@ -92,12 +92,12 @@ class RagApiView(MethodView):
                 response_list.append({
                     'id': doc.id,
                     'filename': doc.filename,
-                    'collection': doc.collection_type,
                     'user_identifier': doc.user_identifier,
                     'status': doc.status.value if hasattr(doc.status, 'value') else str(doc.status),
                     'created_at': doc.created_at.isoformat() if doc.created_at else None,
                     'metadata': doc.meta,
-                    'error_message': doc.error_message
+                    'error_message': doc.error_message,
+                    'collection': doc.collection_type.name,
                 })
 
             return jsonify({

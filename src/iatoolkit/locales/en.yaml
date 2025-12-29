@@ -285,7 +285,7 @@ js_messages:
   db_filename: "Filename"
   db_user: "User"
   db_status: "Status"
-  db_created: "Created"
+  db_collection: "Collection"
   editor_no_file_selected: "No file selected"
   error_loading: "Error loading file content"
   cant_load_company: "Could not load company.yaml"

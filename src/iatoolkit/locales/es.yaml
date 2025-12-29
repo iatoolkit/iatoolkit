@@ -276,7 +276,7 @@ js_messages:
   db_user: "Usuario"
   db_role: "Rol"
   db_verified: "Verificado"
-  db_created: "Ingreso"
+  db_collection: "Colección"
   db_last_access: "ultimo acceso"
   db_filename: "Nombre de archivo"
   db_user: "Usuario"
