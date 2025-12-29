@@ -66,6 +66,7 @@ class RagApiView(MethodView):
             keyword = data.get('filename_keyword')
             from_date_str = data.get('from_date')
             to_date_str = data.get('to_date')
+            collection = data.get('collection', '')
             limit = int(data.get('limit', 100))
             offset = int(data.get('offset', 0))
 
@@ -76,6 +77,7 @@ class RagApiView(MethodView):
             documents = self.knowledge_base_service.list_documents(
                 company_short_name=company_short_name,
                 status=status,
+                collection=collection,
                 filename_keyword=keyword,
                 user_identifier=user_identifier,
                 from_date=from_date,
@@ -90,6 +92,7 @@ class RagApiView(MethodView):
                 response_list.append({
                     'id': doc.id,
                     'filename': doc.filename,
+                    'collection': doc.collection_type,
                     'user_identifier': doc.user_identifier,
                     'status': doc.status.value if hasattr(doc.status, 'value') else str(doc.status),
                     'created_at': doc.created_at.isoformat() if doc.created_at else None,
@@ -186,6 +189,7 @@ class RagApiView(MethodView):
             data = request.get_json() or {}
             query = data.get('query')
             n_results = int(data.get('k', 5))
+            collection = data.get('collection')
             metadata_filter = data.get('metadata_filter')
 
             if not query:
@@ -197,7 +201,8 @@ class RagApiView(MethodView):
                 company_short_name=company_short_name,
                 query=query,
                 n_results=n_results,
-                metadata_filter=metadata_filter
+                collection=collection,
+                metadata_filter=metadata_filter,
             )
 
             return jsonify({

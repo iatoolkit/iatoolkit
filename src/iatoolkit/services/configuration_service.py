@@ -82,14 +82,14 @@ class ConfigurationService:
             # 2. create/update company in database
             self._register_company_database(config)
 
-            # 3. Register config databases with db manager
-            # self.register_data_sources(company_short_name, config=config)
-
-            # 4. Register tools
+            # 3. Register tools
             self._register_tools(company_short_name, config)
 
-            # 5. Register prompt categories and prompts
+            # 4. Register prompt categories and prompts
             self._register_prompts(company_short_name, config)
+
+            # 5. Register Knowledge base information
+            self._register_knowledge_base(company_short_name, config)
 
         # Final step: validate the configuration against platform
         errors = self._validate_configuration(company_short_name, config)
@@ -247,6 +247,19 @@ class ConfigurationService:
             prompts_config=prompts_config,
             categories_config=categories_config
         )
+
+    def _register_knowledge_base(self, company_short_name: str, config: dict):
+        # Lazy import to avoid circular dependency
+        from iatoolkit import current_iatoolkit
+        from iatoolkit.services.knowledge_base_service import KnowledgeBaseService
+        knowledge_base = current_iatoolkit().get_injector().get(KnowledgeBaseService)
+
+        kb_config = config.get('knowledge_base', {})
+        categories_config = kb_config.get('collections', [])
+
+        # sync collection types in database
+        knowledge_base.sync_collection_types(company_short_name, categories_config)
+
 
     def _validate_configuration(self, company_short_name: str, config: dict):
         """

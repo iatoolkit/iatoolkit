@@ -7,6 +7,7 @@
 from iatoolkit.repositories.models import Document, VSDoc, Company, DocumentStatus
 from iatoolkit.repositories.document_repo import DocumentRepo
 from iatoolkit.repositories.vs_repo import VSRepo
+from iatoolkit.repositories.models import CollectionType
 from iatoolkit.services.document_service import DocumentService
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.i18n_service import I18nService
@@ -48,7 +49,13 @@ class KnowledgeBaseService:
             separators=["\n\n", "\n", ".", " ", ""]
         )
 
-    def ingest_document_sync(self, company: Company, filename: str, content: bytes, user_identifier: str = None, metadata: dict = None) -> Document:
+    def ingest_document_sync(self,
+                             company: Company,
+                             filename: str,
+                             content: bytes,
+                             user_identifier: str = None,
+                             metadata: dict = None,
+                             collection: str = None) -> Document:
         """
         Synchronously processes a document through the entire RAG pipeline:
         1. Saves initial metadata and raw content (base64) to the SQL Document table.
@@ -69,6 +76,11 @@ class KnowledgeBaseService:
         if not metadata:
             metadata = {}
 
+        # --- Logic for Collection ---
+        # priority: 1. method parameter 2. metadata
+        collection_name = collection or metadata.get('collection')
+        collection_type_id = self._get_collection_type_id(company.id, collection_name)
+
         # 1. Calculate SHA-256 hash of the content
         file_hash = hashlib.sha256(content).hexdigest()
 
@@ -88,6 +100,7 @@ class KnowledgeBaseService:
 
             new_doc = Document(
                 company_id=company.id,
+                collection_type_id=collection_type_id,
                 filename=filename,
                 hash=file_hash,
                 user_identifier=user_identifier,
@@ -210,7 +223,12 @@ class KnowledgeBaseService:
 
         return search_context
 
-    def search_raw(self, company_short_name: str, query: str, n_results: int = 5, metadata_filter: dict = None) -> List[Dict]:
+    def search_raw(self,
+                   company_short_name: str,
+                   query: str, n_results: int = 5,
+                   collection: str = None,
+                   metadata_filter: dict = None
+                   ) -> List[Dict]:
         """
         Performs a semantic search and returns the list of Document objects (chunks).
         Useful for UI displays where structured data is needed instead of a raw string context.
@@ -230,12 +248,21 @@ class KnowledgeBaseService:
             logging.warning(f"Company {company_short_name} not found during raw search.")
             return []
 
+        # If collection name provided, resolve to ID or handle in VSRepo
+        collection_id = None
+        if collection:
+            collection_id = self._get_collection_type_id(company.id, collection)
+            if not collection_id:
+                logging.warning(f"Collection '{collection}' not found. Searching all.")
+
+
         # Queries VSRepo directly
         chunk_list = self.vs_repo.query(
             company_short_name=company_short_name,
             query_text=query,
             n_results=n_results,
-            metadata_filter=metadata_filter
+            metadata_filter=metadata_filter,
+            collection_id=collection_id,
         )
 
         return chunk_list
@@ -244,6 +271,7 @@ class KnowledgeBaseService:
                        company_short_name: str,
                        status: Optional[Union[str, List[str]]] = None,
                        user_identifier: Optional[str] = None,
+                       collection: str = None,
                        filename_keyword: Optional[str] = None,
                        from_date: Optional[datetime] = None,
                        to_date: Optional[datetime] = None,
@@ -277,6 +305,10 @@ class KnowledgeBaseService:
                 query = query.filter(Document.status.in_(status))
             else:
                 query = query.filter(Document.status == status)
+
+        # filter by collection
+        if collection:
+            query = query.join(CollectionType).filter(CollectionType.name == collection)
 
         # Filter by user identifier
         if user_identifier:
@@ -344,4 +376,37 @@ class KnowledgeBaseService:
         except Exception as e:
             session.rollback()
             logging.error(f"Error deleting document {document_id}: {e}")
-            raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR, f"Error deleting document: {e}")
+            raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR,
+                                     f"Error deleting document: {e}")
+
+    def sync_collection_types(self, company_short_name: str, categories_config: list):
+        """
+        This should be called during company initialization or configuration reload.
+        """
+        company = self.profile_service.get_company_by_short_name(company_short_name)
+        if not company:
+            raise IAToolkitException(IAToolkitException.ErrorType.INVALID_NAME,
+                            f'Company {company_short_name} not found')
+
+
+        session = self.document_repo.session
+        existing_types = session.query(CollectionType).filter_by(company_id=company.id).all()
+        existing_names = {ct.name: ct for ct in existing_types}
+
+        for cat_name in categories_config:
+            if cat_name not in existing_names:
+                new_type = CollectionType(company_id=company.id, name=cat_name)
+                session.add(new_type)
+
+        # Opcional: Eliminar los que ya no están en el config?
+        # Por seguridad de datos, mejor no borrar automáticamente, o marcarlos inactivos.
+
+        session.commit()
+
+    def _get_collection_type_id(self, company_id: int, collection_name: str) -> Optional[int]:
+        """Helper to get ID by name"""
+        if not collection_name:
+            return None
+        session = self.document_repo.session
+        ct = session.query(CollectionType).filter_by(company_id=company_id, name=collection_name).first()
+        return ct.id if ct else None

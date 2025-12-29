@@ -5,8 +5,9 @@
 
 from sqlalchemy import Column, Integer, BigInteger, String, DateTime, Enum, Text, JSON, Boolean, ForeignKey, Table
 from sqlalchemy.orm import DeclarativeBase
-from sqlalchemy.orm import relationship, class_mapper, declarative_base
+from sqlalchemy.orm import relationship, class_mapper
 from sqlalchemy.sql import func
+from sqlalchemy import UniqueConstraint
 from datetime import datetime
 from pgvector.sqlalchemy import Vector
 import enum
@@ -81,6 +82,12 @@ class Company(Base):
     prompts = relationship("Prompt",
                              back_populates="company",
                              cascade="all, delete-orphan")
+    collection_types = relationship(
+        "CollectionType",
+        back_populates="company",
+        cascade="all, delete-orphan"
+    )
+
 
     def to_dict(self):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
@@ -149,6 +156,22 @@ class DocumentStatus(str, enum.Enum):
     FAILED = "failed"
 
 
+class CollectionType(Base):
+    """Defines the available document collections/categories for a company."""
+    __tablename__ = 'iat_collection_types'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey('iat_companies.id', ondelete='CASCADE'), nullable=False)
+    name = Column(String, nullable=False)  # e.g., "Contracts", "Manuals"
+
+    # description - optional for the LLM to understand what's inside'
+    description = Column(Text, nullable=True)
+
+    __table_args__ = (UniqueConstraint('company_id', 'name', name='uix_company_collection_name'),)
+
+    company = relationship("Company", back_populates="collection_types")
+    documents = relationship("Document", back_populates="collection_type")
+
 class Document(Base):
     """Represents a file or document uploaded by a company for context."""
     __tablename__ = 'iat_documents'
@@ -156,6 +179,8 @@ class Document(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     company_id = Column(Integer, ForeignKey('iat_companies.id',
                     ondelete='CASCADE'), nullable=False)
+    collection_type_id = Column(Integer, ForeignKey('iat_collection_types.id', ondelete='SET NULL'), nullable=True)
+
     user_identifier = Column(String, nullable=True)
     filename = Column(String, nullable=False, index=True)
     status = Column(Enum(DocumentStatus), default=DocumentStatus.PENDING, nullable=False)
@@ -171,6 +196,7 @@ class Document(Base):
     hash = Column(String(64), index=True, nullable=True)
 
     company = relationship("Company", back_populates="documents")
+    collection_type = relationship("CollectionType", back_populates="documents")
 
     def to_dict(self):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}

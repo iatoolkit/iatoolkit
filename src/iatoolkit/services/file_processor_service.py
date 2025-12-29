@@ -74,9 +74,6 @@ class FileProcessor:
                 if not self._apply_filters(file_name):
                     continue
 
-                if self.config.echo:
-                    print(f'loading: {file_name}')
-
                 content = self.connector.get_file_content(file_path)
 
                 # execute the callback function
@@ -86,8 +83,6 @@ class FileProcessor:
                                      content=content,
                                      context=self.config.context)
                 self.processed_files += 1
-
-                logging.info(f"Successfully processed file: {file_path}")
 
             except Exception as e:
                 logging.error(f"Error processing {file_path}: {e}")

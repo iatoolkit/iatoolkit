@@ -158,6 +158,9 @@ help_files:
 # Knowledge Base (RAG)
 # Defines the sources of unstructured documents for indexing.
 knowledge_base:
+  collections:
+    - "supplier_manual"
+    - "employee_contract"
 
   # Connectors
   # Defines how to connect to the document storage for different environments.
@@ -181,24 +184,24 @@ knowledge_base:
       path: "companies/sample_company/sample_data/supplier_manuals"
       # Metadatos que se aplicarán a todos los documentos de esta fuente.
       metadata:
-        type: "supplier_manual"
+        collection: "supplier_manual"
 
     employee_contracts:
       path: "companies/sample_company/sample_data/employee_contracts"
       metadata:
-        type: "employee_contract"
+        collection: "employee_contract"
 
 # Embeddings configuration
 # You should define a 'provider', supported only openai and huggingface.
 embedding_provider:
-  provider: "openai"
-  model: "text-embedding-ada-002"
-  api_key_name: "OPENAI_API_KEY"
+  # provider: "openai"
+  # model: "text-embedding-ada-002"
+  # api_key_name: "OPENAI_API_KEY"
 
   # Here is an example in case you use huggingface:
-  #  provider: "huggingface"
-  #  model: "sentence-transformers/all-MiniLM-L6-v2"
-  #  api_key_name: "huggingface_token"
+  provider: "huggingface"
+  model: "sentence-transformers/all-MiniLM-L6-v2"
+  api_key_name: "HF_TOKEN"
 
 
 # Email / Mail Provider configuration

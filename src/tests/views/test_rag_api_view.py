@@ -120,6 +120,7 @@ class TestRagApiView:
             status='active',
             user_identifier='fl',
             filename_keyword=None,
+            collection='',
             from_date=None,
             to_date=None,
             limit=10,
@@ -238,7 +239,53 @@ class TestRagApiView:
             company_short_name=self.company_short_name,
             query="how to install",
             n_results=3,
+            collection=None,
             metadata_filter=None
+        )
+
+    def test_list_files_with_collection_filter(self):
+        """Should pass collection filter to service."""
+        # Arrange
+        self.mock_kb_service.list_documents.return_value = []
+        payload = {
+            "collection": "Legal"
+        }
+
+        # Act
+        self.client.post(f'/api/rag/{self.company_short_name}/files', json=payload)
+
+        # Assert
+        self.mock_kb_service.list_documents.assert_called_with(
+            company_short_name=self.company_short_name,
+            status=[],
+            user_identifier=None,
+            filename_keyword=None,
+            from_date=None,
+            to_date=None,
+            limit=100,
+            offset=0,
+            collection="Legal" # Verify new param
+        )
+
+    def test_search_raw_with_collection(self):
+        """Should pass collection filter to service search."""
+        # Arrange
+        self.mock_kb_service.search_raw.return_value = []
+        payload = {
+            "query": "test",
+            "collection": "Technical"
+        }
+
+        # Act
+        self.client.post(f'/api/rag/{self.company_short_name}/search', json=payload)
+
+        # Assert
+        self.mock_kb_service.search_raw.assert_called_with(
+            company_short_name=self.company_short_name,
+            query="test",
+            n_results=5,
+            metadata_filter=None,
+            collection="Technical" # Verify new param
         )
 
     def test_search_missing_query(self):

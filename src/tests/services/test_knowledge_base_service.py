@@ -14,7 +14,8 @@ from iatoolkit.repositories.vs_repo import VSRepo
 from iatoolkit.services.document_service import DocumentService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.services.profile_service import ProfileService
-from iatoolkit.repositories.models import Company, Document, DocumentStatus, VSDoc
+from iatoolkit.repositories.models import (Company, Document,
+                                           DocumentStatus, CollectionType)
 from iatoolkit.common.exceptions import IAToolkitException
 
 
@@ -134,6 +135,51 @@ class TestKnowledgeBaseService:
         # Verify rollback was called for the processing transaction
         self.mock_session.rollback.assert_called()
 
+    def test_ingest_document_assigns_collection_id(self):
+        """
+        GIVEN metadata contains a valid collection name
+        WHEN ingest_document_sync is called
+        THEN the created document should have the correct collection_type_id.
+        """
+        # Arrange
+        metadata = {'collection': 'Legal'}
+
+        # Mock finding the collection ID
+        mock_collection_type = CollectionType(id=55, name='Legal')
+        self.mock_session.query.return_value.filter_by.return_value.first.return_value = mock_collection_type
+
+        # Mock processing
+        self.mock_doc_service.file_to_txt.return_value = "content"
+        self.mock_doc_repo.get_by_hash.return_value = None
+
+        # Act
+        new_doc = self.service.ingest_document_sync(self.company, "file.pdf", b"data", metadata=metadata)
+
+        # Assert
+        self.mock_doc_repo.insert.assert_called()
+        inserted_doc = self.mock_doc_repo.insert.call_args[0][0]
+        assert inserted_doc.collection_type_id == 55
+
+    def test_ingest_document_ignores_invalid_collection(self):
+        """
+        GIVEN metadata contains a non-existent collection name
+        WHEN ingest_document_sync is called
+        THEN collection_type_id should be None.
+        """
+        # Arrange
+        metadata = {'collection': 'Unknown'}
+        # Mock finding nothing
+        self.mock_session.query.return_value.filter_by.return_value.first.return_value = None
+        self.mock_doc_service.file_to_txt.return_value = "content"
+        self.mock_doc_repo.get_by_hash.return_value = None
+
+        # Act
+        new_doc = self.service.ingest_document_sync(self.company, "file.pdf", b"data", metadata=metadata)
+
+        # Assert
+        inserted_doc = self.mock_doc_repo.insert.call_args[0][0]
+        assert inserted_doc.collection_type_id is None
+
     # --- Search Tests ---
 
     def test_search_returns_formatted_context(self):
@@ -192,7 +238,8 @@ class TestKnowledgeBaseService:
             company_short_name='acme',
             query_text="my query",
             n_results=10,
-            metadata_filter=None
+            metadata_filter=None,
+            collection_id=None,
         )
 
     def test_search_raw_returns_empty_if_company_not_found(self):
@@ -210,6 +257,31 @@ class TestKnowledgeBaseService:
         # Assert
         assert result == []
         self.mock_vs_repo.query.assert_not_called()
+
+    def test_search_raw_passes_collection_id(self):
+        """
+        GIVEN a search request with a collection name
+        WHEN search_raw is called
+        THEN it should resolve the ID and pass it to vs_repo.
+        """
+        # Arrange
+        self.mock_profile_service.get_company_by_short_name.return_value = self.company
+
+        # Mock resolving 'Legal' -> ID 55
+        mock_collection_type = CollectionType(id=55, name='Legal')
+        self.mock_session.query.return_value.filter_by.return_value.first.return_value = mock_collection_type
+
+        # Act
+        self.service.search_raw('acme', "query", collection='Legal')
+
+        # Assert
+        self.mock_vs_repo.query.assert_called_with(
+            company_short_name='acme',
+            query_text="query",
+            n_results=5,
+            metadata_filter=None,
+            collection_id=55  # New param check
+        )
 
     # --- List Documents Tests ---
 
@@ -250,6 +322,29 @@ class TestKnowledgeBaseService:
         # 3. Check pagination
         mock_query.limit.assert_called_with(10)
         mock_query.offset.assert_called_with(0)
+
+    def test_list_documents_filters_by_collection(self):
+        """
+        GIVEN list_documents is called with a collection name
+        THEN it should join with CollectionType and filter by name.
+        """
+        # Arrange mocks for query chaining
+        mock_query = self.mock_session.query.return_value
+        mock_query.join.return_value = mock_query
+        mock_query.filter.return_value = mock_query
+        mock_query.order_by.return_value = mock_query
+        mock_query.limit.return_value = mock_query
+        mock_query.offset.return_value = mock_query
+        mock_query.all.return_value = []
+
+        # Act
+        self.service.list_documents('acme', collection='Legal')
+
+        # Assert
+        # Verify join called (we expect at least 2 joins: Company and CollectionType)
+        assert mock_query.join.call_count >= 2
+        # Verify filtering logic (hard to check exact args with chained mocks, but ensure it filters)
+        assert mock_query.filter.call_count >= 1
 
     # --- Delete Tests ---
 
@@ -351,3 +446,28 @@ class TestKnowledgeBaseService:
             self.service.get_document_content(1)
 
         assert exc.value.error_type == IAToolkitException.ErrorType.FILE_FORMAT_ERROR
+
+    def test_sync_collection_types_creates_new_types(self):
+        """
+        GIVEN configuration has collection categories
+        WHEN sync_collection_types is called
+        THEN it should create missing CollectionType records in DB.
+        """
+        # Arrange
+        self.mock_profile_service.get_company_by_short_name.return_value = self.company
+
+        # Simulate that 'Legal' already exists but 'Technical' does not
+        existing_type = CollectionType(name='Legal', company_id=self.company.id)
+        self.mock_session.query.return_value.filter_by.return_value.all.return_value = [existing_type]
+
+        # Act
+        self.service.sync_collection_types('test_company', ['Legal', 'Technical'])
+
+        # Assert
+        # Should add 'Technical'
+        self.mock_session.add.assert_called_once()
+        added_obj = self.mock_session.add.call_args[0][0]
+        assert isinstance(added_obj, CollectionType)
+        assert added_obj.name == 'Technical'
+        assert added_obj.company_id == self.company.id
+        self.mock_session.commit.assert_called()

@@ -39,7 +39,8 @@ class VSRepo:
               company_short_name: str,
               query_text: str,
               n_results=5,
-              metadata_filter=None
+              metadata_filter=None,
+              collection_id: int = None
               ) -> list[Dict]:
         """
         search documents similar to the query for a company
@@ -90,6 +91,10 @@ class VSRepo:
                 "n_results": n_results
             }
 
+            # Filter by Collection ID
+            if collection_id:
+                sql_query_parts.append(" AND iat_documents.collection_type_id = :collection_id")
+                params['collection_id'] = collection_id
 
             # add metadata filter, if exists
             if metadata_filter and isinstance(metadata_filter, dict):
