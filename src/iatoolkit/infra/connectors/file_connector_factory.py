@@ -40,6 +40,7 @@ class FileConnectorFactory:
             return S3Connector(
                 bucket=config['bucket'],
                 prefix=config.get('prefix', ''),
+                folder=config.get('folder', ''),
                 auth=auth
             )
 

@@ -166,9 +166,10 @@ knowledge_base:
   # Defines how to connect to the document storage for different environments.
   # El comando 'load' usará el conector apropiado según el FLASK_ENV.
   connectors:
+    # development:
+    #  type: "local"
+    #production:
     development:
-      type: "local"
-    production:
       type: "s3"
       bucket: "iatoolkit"
       prefix: "sample_company"
@@ -181,15 +182,16 @@ knowledge_base:
   # Cada clave es un tipo de fuente, que contiene su ubicación y metadatos.
   document_sources:
     supplier_manuals:
+      collection: "supplier_manual"
       path: "companies/sample_company/sample_data/supplier_manuals"
-      # Metadatos que se aplicarán a todos los documentos de esta fuente.
+      folder: "supplier_manuals"
       metadata:
-        collection: "supplier_manual"
 
     employee_contracts:
+      collection: "employee_contract"
       path: "companies/sample_company/sample_data/employee_contracts"
-      metadata:
-        collection: "employee_contract"
+      folder: "employee_contracts"
+
 
 # Embeddings configuration
 # You should define a 'provider', supported only openai and huggingface.

@@ -21,6 +21,7 @@ class TestS3Connector(unittest.TestCase):
         # Configuración básica
         self.bucket = "test-bucket"
         self.prefix = "test-prefix/"
+        self.folder = "test-folder/"
         self.auth = {
             "aws_access_key_id": "mock-key",
             "aws_secret_access_key": "mock-secret",
@@ -28,7 +29,7 @@ class TestS3Connector(unittest.TestCase):
         }
 
         # Crear una instancia del conector con los mocks
-        self.connector = S3Connector(bucket=self.bucket, prefix=self.prefix, auth=self.auth)
+        self.connector = S3Connector(bucket=self.bucket, prefix=self.prefix, folder=self.folder, auth=self.auth)
 
     def tearDown(self):
         self.boto3_client_patch.stop()
@@ -37,7 +38,7 @@ class TestS3Connector(unittest.TestCase):
         self.mock_boto3_client.side_effect = Exception("Failed to create boto3 client")
 
         with self.assertRaises(Exception) as context:
-            S3Connector(bucket=self.bucket, prefix=self.prefix, auth=self.auth)
+            S3Connector(bucket=self.bucket, prefix=self.prefix, folder=self.folder, auth=self.auth)
 
         # Validar que el mensaje de la excepción coincide
         self.assertEqual(str(context.exception), "Failed to create boto3 client")

@@ -9,14 +9,16 @@ from typing import List
 
 
 class S3Connector(FileConnector):
-    def __init__(self, bucket: str, prefix: str, auth: dict):
+    def __init__(self, bucket: str, prefix: str, folder: str, auth: dict):
         self.bucket = bucket
         self.prefix = prefix
+        self.folder = folder
         self.s3 = boto3.client('s3', **auth)
 
     def list_files(self) -> List[dict]:
         # list all the files as dictionaries, with keys:  'path', 'name' y 'metadata'.
-        response = self.s3.list_objects_v2(Bucket=self.bucket, Prefix=self.prefix)
+        prefix = f'{self.prefix}/{self.folder}/'
+        response = self.s3.list_objects_v2(Bucket=self.bucket, Prefix=prefix)
         files = response.get('Contents', [])
 
         return [

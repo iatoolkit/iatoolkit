@@ -65,17 +65,24 @@ class LoadDocumentsService:
                 logging.warning(f"Source '{source_name}' not found in configuration for company '{company.short_name}'. Skipping.")
                 continue
 
+            collection = source_config.get('collection')
+            if not collection:
+                logging.warning(
+                    f"Document Source '{source_name}' missing collection definition en company.yaml, Skipping.")
+                continue
+
             try:
-                logging.info(f"Processing source '{source_name}' for company '{company.short_name}'...")
+                logging.info(f"company {company.short_name}: loading source '{source_name}' into collection '{collection}'...")
 
                 # Combine the base connector configuration with the specific path from the source.
                 full_connector_config = base_connector_config.copy()
                 full_connector_config['path'] = source_config.get('path')
+                full_connector_config['folder'] = source_config.get('folder')
 
                 # Prepare the context for the callback function.
                 context = {
                     'company': company,
-                    'collection': source_config.get('metadata', {}).get('collection'),
+                    'collection': collection,
                     'metadata': source_config.get('metadata', {})
                 }
 
@@ -132,7 +139,7 @@ class LoadDocumentsService:
                 company=company,
                 filename=filename,
                 content=content,
-                collection=predefined_metadata.get('collection'),
+                collection=context.get('collection'),
                 metadata=predefined_metadata
             )
 
