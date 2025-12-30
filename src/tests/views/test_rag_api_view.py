@@ -44,7 +44,7 @@ class TestRagApiView:
 
         # 1. List Files
         self.app.add_url_rule(
-            '/api/rag/<company_short_name>/files',
+            '/<company_short_name>/api/rag/files',
             view_func=rag_view,
             methods=['POST'],
             defaults={'action': 'list_files'}
@@ -52,7 +52,7 @@ class TestRagApiView:
 
         # 2. Delete File
         self.app.add_url_rule(
-            '/api/rag/<company_short_name>/files/<int:document_id>',
+            '/<company_short_name>/api/rag/files/<int:document_id>',
             view_func=rag_view,
             methods=['DELETE'],
             defaults={'action': 'delete_file'}
@@ -60,7 +60,7 @@ class TestRagApiView:
 
         # 3. Search
         self.app.add_url_rule(
-            '/api/rag/<company_short_name>/search',
+            '/<company_short_name>/api/rag/search',
             view_func=rag_view,
             methods=['POST'],
             defaults={'action': 'search'}
@@ -68,7 +68,7 @@ class TestRagApiView:
 
         # 4. Get Content (New route)
         self.app.add_url_rule(
-            '/api/rag/<company_short_name>/files/<int:document_id>/content',
+            '/<company_short_name>/api/rag/files/<int:document_id>/content',
             view_func=rag_view,
             methods=['GET'],
             defaults={'action': 'get_file_content'}
@@ -105,7 +105,7 @@ class TestRagApiView:
         }
 
         # Act
-        response = self.client.post(f'/api/rag/{self.company_short_name}/files', json=payload)
+        response = self.client.post(f'/{self.company_short_name}/api/rag/files', json=payload)
 
         # Assert
         assert response.status_code == 200
@@ -136,7 +136,7 @@ class TestRagApiView:
             "error_message": "Auth failed"
         }
 
-        response = self.client.post(f'/api/rag/{self.company_short_name}/files', json={})
+        response = self.client.post(f'/{self.company_short_name}/api/rag/files', json={})
 
         assert response.status_code == 401
         assert response.get_json()['error_message'] == 'Auth failed'
@@ -152,7 +152,7 @@ class TestRagApiView:
         self.mock_kb_service.get_document_content.return_value = (file_bytes, filename)
 
         # Act
-        response = self.client.get(f'/api/rag/{self.company_short_name}/files/10/content')
+        response = self.client.get(f'/{self.company_short_name}/api/rag/files/10/content')
 
         # Assert
         assert response.status_code == 200
@@ -170,7 +170,7 @@ class TestRagApiView:
         self.mock_kb_service.get_document_content.return_value = (None, None)
 
         # Act
-        response = self.client.get(f'/api/rag/{self.company_short_name}/files/999/content')
+        response = self.client.get(f'/{self.company_short_name}/api/rag/files/999/content')
 
         # Assert
         assert response.status_code == 404
@@ -180,7 +180,7 @@ class TestRagApiView:
         """Should return 401 if auth fails."""
         self.mock_auth_service.verify.return_value = {"success": False, "status_code": 401}
 
-        response = self.client.get(f'/api/rag/{self.company_short_name}/files/10/content')
+        response = self.client.get(f'/{self.company_short_name}/api/rag/files/10/content')
 
         assert response.status_code == 401
         self.mock_kb_service.get_document_content.assert_not_called()
@@ -191,7 +191,7 @@ class TestRagApiView:
         """Should return success message when document is deleted."""
         self.mock_kb_service.delete_document.return_value = True
 
-        response = self.client.delete(f'/api/rag/{self.company_short_name}/files/123')
+        response = self.client.delete(f'/{self.company_short_name}/api/rag/files/123')
 
         assert response.status_code == 200
         assert 'translated:rag.management.delete_success' in  response.get_json()['message']
@@ -201,7 +201,7 @@ class TestRagApiView:
         """Should return 404 if document does not exist."""
         self.mock_kb_service.delete_document.return_value = False
 
-        response = self.client.delete(f'/api/rag/{self.company_short_name}/files/999')
+        response = self.client.delete(f'/{self.company_short_name}/api/rag/files/999')
 
         assert response.status_code == 404
         assert response.get_json()['result'] == 'error'
@@ -227,7 +227,7 @@ class TestRagApiView:
         }
 
         # Act
-        response = self.client.post(f'/api/rag/{self.company_short_name}/search', json=payload)
+        response = self.client.post(f'/{self.company_short_name}/api/rag/search', json=payload)
 
         # Assert
         assert response.status_code == 200
@@ -252,7 +252,7 @@ class TestRagApiView:
         }
 
         # Act
-        self.client.post(f'/api/rag/{self.company_short_name}/files', json=payload)
+        self.client.post(f'/{self.company_short_name}/api/rag/files', json=payload)
 
         # Assert
         self.mock_kb_service.list_documents.assert_called_with(
@@ -277,7 +277,7 @@ class TestRagApiView:
         }
 
         # Act
-        self.client.post(f'/api/rag/{self.company_short_name}/search', json=payload)
+        self.client.post(f'/{self.company_short_name}/api/rag/search', json=payload)
 
         # Assert
         self.mock_kb_service.search_raw.assert_called_with(
@@ -290,7 +290,7 @@ class TestRagApiView:
 
     def test_search_missing_query(self):
         """Should return 400 if query is missing."""
-        response = self.client.post(f'/api/rag/{self.company_short_name}/search', json={"k": 5})
+        response = self.client.post(f'/{self.company_short_name}/api/rag/search', json={"k": 5})
         assert response.status_code == 400
         assert 'translated:rag.search.query_required' in response.get_json()['message']
 
@@ -299,7 +299,7 @@ class TestRagApiView:
         self.mock_kb_service.search_raw.side_effect = Exception("Vector DB Down")
 
         response = self.client.post(
-            f'/api/rag/{self.company_short_name}/search',
+            f'/{self.company_short_name}/api/rag/search',
             json={"query": "test"}
         )
 

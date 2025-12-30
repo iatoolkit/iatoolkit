@@ -100,6 +100,7 @@ class TestLoadDocumentsService:
             company=self.company,
             filename=filename,
             content=content,
+            collection=None,
             metadata={'type': 'manual'}
         )
 

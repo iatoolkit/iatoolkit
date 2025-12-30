@@ -201,6 +201,10 @@ class Document(Base):
     def to_dict(self):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
 
+    @property
+    def description(self):
+        collection_type = self.collection_type.name if self.collection_type else None
+        return f"Document ID {self.id}: {self.filename} ({collection_type})"
 
 class LLMQuery(Base):
     """Logs a query made to the LLM, including input, output, and metadata."""
