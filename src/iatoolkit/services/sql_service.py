@@ -172,3 +172,20 @@ class SqlService:
             raise IAToolkitException(
                 IAToolkitException.ErrorType.DATABASE_ERROR, str(e)
             )
+
+    def get_database_structure(self, company_short_name: str, db_name: str) -> dict:
+        """
+        Introspects the specified database and returns its structure (Tables & Columns).
+        Used for the Schema Editor 2.0
+        """
+        try:
+            provider = self.get_database_provider(company_short_name, db_name)
+            return provider.get_database_structure()
+        except IAToolkitException:
+            raise
+        except Exception as e:
+            logging.error(f"Error introspecting database '{db_name}': {e}")
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.DATABASE_ERROR,
+                f"Failed to introspect database: {str(e)}"
+            )

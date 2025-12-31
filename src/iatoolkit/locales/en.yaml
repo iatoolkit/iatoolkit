@@ -78,7 +78,6 @@ ui:
     saved_ok: "File saved successfully"
     save_file: "Save"
     credentials: "Email and password required for login."
-    saved_ok: "Saved successfully"
     deleted_ok: "Deleted successfully"
     user_manager: "User management"
     admin_page_title: "Admin access"
@@ -87,6 +86,29 @@ ui:
     logout: "Close session"
     error_loading: "Error loading file content"
     loading: "Loading..."
+
+  db_explorer:
+    data_explorer: "Data Explorer"
+    database_connection: "Database Connection"
+    tables: "Tables"
+    data_explorer_description: "Explore your database tables ."
+    select_database: "Please select a database above to view its tables."
+    not_table_selected: "No table selected"
+    view_yaml: "View YAML"
+    save_schema: "Save schema"
+    select_table: "Select a table from the left panel"
+    table_semantics: "Table Semantics"
+    table_description: "Description (AI Context)"
+    table_placeholder: "Describe what data this table contains (e.g., 'Active and inactive customer records including billing addresses')..."
+    column_metadata: "Column Metadata"
+    auto_detect: "Auto-detected from DB"
+    meta_column: "Column"
+    meta_type: "Type"
+    meta_description: "Description"
+    meta_synonyms: "Synonyms"
+    pii_sesitive: "PII Sensitive"
+
+
 
   rag:
     ingestion: "Ingestion"

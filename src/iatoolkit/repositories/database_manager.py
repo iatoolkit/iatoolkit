@@ -11,6 +11,7 @@ from iatoolkit.repositories.models import Base
 from injector import inject
 from pgvector.psycopg2 import register_vector
 from iatoolkit.common.interfaces.database_provider import DatabaseProvider
+import logging
 
 
 class DatabaseManager(DatabaseProvider):
@@ -183,3 +184,32 @@ class DatabaseManager(DatabaseProvider):
             })
 
         return "\n\n" + str(json_dict)
+
+    def get_database_structure(self) -> dict:
+
+        inspector = inspect(self._engine)
+        structure = {}
+        for table in inspector.get_table_names(schema=self.schema):
+            columns_data = []
+
+            # get columns
+            try:
+                columns = inspector.get_columns(table, schema=self.schema)
+                # Obtener PKs para marcarlas
+                pks = inspector.get_pk_constraint(table, schema=self.schema).get('constrained_columns', [])
+
+                for col in columns:
+                    columns_data.append({
+                        "name": col['name'],
+                        "type": str(col['type']),
+                        "nullable": col.get('nullable', True),
+                        "pk": col['name'] in pks
+                    })
+            except Exception as e:
+                logging.warning(f"Could not inspect columns for table {table}: {e}")
+
+            structure[table] = {
+                "columns": columns_data
+            }
+
+        return structure

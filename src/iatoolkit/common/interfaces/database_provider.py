@@ -19,6 +19,22 @@ class DatabaseProvider(abc.ABC):
                               exclude_columns: List[str] | None = None) -> str:
         pass
 
+    @abc.abstractmethod
+    def get_database_structure(self) -> dict:
+        """
+        Returns the structure of the database (tables, columns, types)
+        Format:
+        {
+            "table_name": {
+                "columns": [
+                    {"name": "col1", "type": "VARCHAR", "nullable": True, "pk": True},
+                    ...
+                ]
+            }
+        }
+        """
+        pass
+
     # --- Execution Methods ---
     @abc.abstractmethod
     def execute_query(self, query: str, commit: bool = False) -> Union[List[Dict[str, Any]], Dict[str, int]]:

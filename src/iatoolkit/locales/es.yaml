@@ -62,7 +62,6 @@ ui:
     monitoring: "Monitoreo"
     teams: "Usuarios"
     billing: "Facturación"
-    company: "Empresa"
     files: "Archivos"
     select_file: "Seleccione un archivo a editar"
     select_category: "Seleccione una categoría"
@@ -84,6 +83,34 @@ ui:
     load_configuration: "Guardar configuración"
     goto_chat: "Ir al chat"
     logout: "Cerrar sesión"
+
+  db_explorer:
+    data_explorer: "Explorador de datos"
+    database_connection: "Bases de datos"
+    tables: "Tablas"
+    data_explorer_description: "Explora tus tablas de base de datos."
+    select_database: "Seleccione una base de datos para ver sus tablas."
+    not_table_selected: "No hay tabla seleccionada."
+    view_yaml: "Ver YAML"
+    save_schema: "Guardar esquema"
+    select_table: "Seleccionar una tabla del panel izquierdo"
+    table_semantics: "Significado de la tabla"
+    table_description: "Descripción de la tabla (Contexto IA)"
+    table_placeholder: "Describe el significado de la tabla, ejemplo: tabla de usuarios."
+    column_metadata: "Metadatos de columna"
+    auto_detect: "Auto-detectar desde la BD"
+    meta_column: "Columna"
+    meta_type: "Tipo"
+    meta_description: "Descripción"
+    meta_synonyms: "Sinonimos"
+    pii_sesitive: "IP Sensible"
+
+
+
+
+
+
+
 
   rag:
     ingestion: "Ingesta"
