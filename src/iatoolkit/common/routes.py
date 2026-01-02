@@ -24,7 +24,7 @@ def register_views(app):
     from iatoolkit.views.profile_api_view import UserLanguageApiView
     from iatoolkit.views.embedding_api_view import EmbeddingApiView
     from iatoolkit.views.login_view import LoginView, FinalizeContextView
-    from iatoolkit.views.configuration_api_view import ConfigurationApiView
+    from iatoolkit.views.configuration_api_view import ConfigurationApiView, ValidateConfigurationApiView
     from iatoolkit.views.logout_api_view import LogoutApiView
     from iatoolkit.views.home_view import HomeView
     from iatoolkit.views.chat_view import ChatView
@@ -131,6 +131,10 @@ def register_views(app):
     app.add_url_rule('/<company_short_name>/api/configuration',
                      view_func=ConfigurationApiView.as_view('configuration'),
                      methods=['GET', 'POST', 'PATCH'],)
+
+    app.add_url_rule('/<company_short_name>/api/configuration/validate',
+                     view_func=ValidateConfigurationApiView.as_view('configuration'),
+                     methods=['GET'])
 
     # static pages
     # url: /pages/foundation o /pages/implementation_plan

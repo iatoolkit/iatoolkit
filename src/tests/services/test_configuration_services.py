@@ -2,6 +2,7 @@
 
 import pytest
 from unittest.mock import Mock, patch, call
+import copy
 
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.common.interfaces.asset_storage import AssetRepository, AssetType
@@ -269,8 +270,8 @@ class TestConfigurationService:
         THEN it should update the config, dump it to string, and write to asset repo.
         """
         # Arrange
-        # 1. Configuración inicial válida
-        initial_config = MOCK_VALID_CONFIG.copy()
+        # 1. Configuración inicial válida (Deep copy para evitar efectos secundarios)
+        initial_config = copy.deepcopy(MOCK_VALID_CONFIG)
 
         self.mock_asset_repo.exists.return_value = True
         self.mock_asset_repo.read_text.return_value = "original_yaml"
@@ -310,7 +311,7 @@ class TestConfigurationService:
         THEN it should update the correct item in the list.
         """
         # Arrange
-        initial_config = MOCK_VALID_CONFIG.copy()
+        initial_config = copy.deepcopy(MOCK_VALID_CONFIG)
         # Ensure we have a list to test against with all required fields (params is required by validation)
         initial_config['tools'] = [
             {'function_name': 'func1', 'description': 'old desc', 'params': {}},
@@ -350,6 +351,93 @@ class TestConfigurationService:
         with pytest.raises(ValueError, match="Invalid path"):
             self.service.update_configuration_key(self.COMPANY_NAME, "my_list.99", "val")
 
+    def test_add_configuration_key_success(self):
+        """
+        GIVEN a valid request to add a configuration key under a section
+        WHEN add_configuration_key is called
+        THEN it should update the config, save it to repo, and invalidate cache.
+        """
+        # Arrange
+        initial_config = copy.deepcopy(MOCK_VALID_CONFIG)
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "original_yaml"
+        self.mock_utility.load_yaml_from_string.return_value = initial_config
+        self.mock_utility.dump_yaml_to_string.return_value = "updated_yaml"
+
+        # Pre-fill cache to verify invalidation later
+        self.service._loaded_configs[self.COMPANY_NAME] = initial_config
+
+        # Act
+        # Add 'max_tokens' under 'llm'
+        updated_config, errors = self.service.add_configuration_key(
+            self.COMPANY_NAME, "llm", "max_tokens", 2048
+        )
+
+        # Assert
+        assert errors == []
+        assert updated_config['llm']['max_tokens'] == 2048
+
+        # Verify writing back to repo
+        self.mock_asset_repo.write_text.assert_called_once_with(
+            self.COMPANY_NAME, AssetType.CONFIG, "company.yaml", "updated_yaml"
+        )
+
+        # Verify utility dump call
+        args, _ = self.mock_utility.dump_yaml_to_string.call_args
+        assert args[0]['llm']['max_tokens'] == 2048
+
+        # Verify cache invalidation
+        assert self.COMPANY_NAME not in self.service._loaded_configs
+
+    def test_add_configuration_key_root_level(self):
+        """
+        GIVEN a request to add a key at root level (empty parent_key)
+        WHEN add_configuration_key is called
+        THEN it should add the key at the top level of the config.
+        """
+        # Arrange
+        initial_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = initial_config
+        self.mock_utility.dump_yaml_to_string.return_value = "new_yaml"
+
+        # Act
+        updated_config, errors = self.service.add_configuration_key(
+            self.COMPANY_NAME, "", "new_root_feature", True
+        )
+
+        # Assert
+        assert errors == []
+        assert updated_config["new_root_feature"] is True
+        self.mock_asset_repo.write_text.assert_called_once()
+
+    def test_add_configuration_key_validation_failure(self):
+        """
+        GIVEN a change that creates an invalid configuration state
+        WHEN add_configuration_key is called
+        THEN it should return errors and NOT save to the repository.
+        """
+        # Arrange
+        initial_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = initial_config
+
+        # Act
+        # We try to 'add' (overwrite) a required key with an invalid value
+        updated_config, errors = self.service.add_configuration_key(
+            self.COMPANY_NAME, "llm", "model", ""
+        )
+
+        # Assert
+        assert len(errors) > 0
+        assert any("Missing required key: 'model'" in e for e in errors)
+
+        # Verify NO write happened
+        self.mock_asset_repo.write_text.assert_not_called()
+
     def test_validate_configuration_success(self):
         """
         GIVEN a valid configuration file
@@ -359,7 +447,8 @@ class TestConfigurationService:
         # Arrange
         self.mock_asset_repo.exists.return_value = True
         self.mock_asset_repo.read_text.return_value = "yaml"
-        self.mock_utility.load_yaml_from_string.return_value = MOCK_VALID_CONFIG
+        # Importante: usar deepcopy aquí también
+        self.mock_utility.load_yaml_from_string.return_value = copy.deepcopy(MOCK_VALID_CONFIG)
 
         # Act
         errors = self.service.validate_configuration(self.COMPANY_NAME)
@@ -374,7 +463,7 @@ class TestConfigurationService:
         THEN it should return a list of validation errors.
         """
         # Arrange
-        invalid_config = MOCK_VALID_CONFIG.copy()
+        invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
         del invalid_config['name'] # Remove required field
 
         self.mock_asset_repo.exists.return_value = True

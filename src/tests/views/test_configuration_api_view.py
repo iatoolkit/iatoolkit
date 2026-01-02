@@ -6,10 +6,10 @@ from iatoolkit.views.configuration_api_view import ConfigurationApiView
 from iatoolkit.services.auth_service import AuthService
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.configuration_service import ConfigurationService
+from iatoolkit.views.configuration_api_view import ConfigurationApiView, ValidateConfigurationApiView # Importar la nueva clase
 
 
 MOCK_COMPANY_SHORT_NAME = "sample_company"
-
 
 class TestConfigurationApiView:
     """
@@ -22,6 +22,8 @@ class TestConfigurationApiView:
         self.app = Flask(__name__)
         self.app.testing = True
         self.client = self.app.test_client()
+        self.config_url = f'/{MOCK_COMPANY_SHORT_NAME}/api/config'
+        self.validate_url = f"/{MOCK_COMPANY_SHORT_NAME}/api/config/validate"
 
         # Mocks for injected services
         self.mock_auth_service = MagicMock(spec=AuthService)
@@ -38,9 +40,22 @@ class TestConfigurationApiView:
 
         # Enable GET, PATCH, POST methods
         self.app.add_url_rule(
-            "/api/<company_short_name>/config",
+            "/<company_short_name>/api/config",
             view_func=view_func,
             methods=["GET", "PATCH", "POST"],
+        )
+
+        # Register the view for validation
+        validate_view_func = ValidateConfigurationApiView.as_view(
+            "validate_company_config_api",
+            configuration_service=self.mock_config_service,
+            auth_service=self.mock_auth_service,
+        )
+
+        self.app.add_url_rule(
+            "/<company_short_name>/api/config/validate",
+            view_func=validate_view_func,
+            methods=["GET"],
         )
 
         # Default: Successful authentication
@@ -60,7 +75,7 @@ class TestConfigurationApiView:
             "status_code": 401,
         }
 
-        resp = self.client.get(f"/api/{MOCK_COMPANY_SHORT_NAME}/config")
+        resp = self.client.get(self.config_url)
 
         assert resp.status_code == 401
         data = resp.get_json()
@@ -73,7 +88,7 @@ class TestConfigurationApiView:
         """Should return 404 if the company does not exist."""
         self.mock_profile_service.get_company_by_short_name.return_value = None
 
-        resp = self.client.get(f"/api/{MOCK_COMPANY_SHORT_NAME}/config")
+        resp = self.client.get(self.config_url)
 
         assert resp.status_code == 404
         data = resp.get_json()
@@ -91,7 +106,7 @@ class TestConfigurationApiView:
         self.mock_config_service.load_configuration.return_value = (config, errors)
 
         # Act
-        resp = self.client.get(f"/api/{MOCK_COMPANY_SHORT_NAME}/config")
+        resp = self.client.get(self.config_url)
 
         # Assert
         assert resp.status_code == 200
@@ -113,7 +128,7 @@ class TestConfigurationApiView:
         errors = ["validation error 1", "validation error 2"]
         self.mock_config_service.load_configuration.return_value = (config, errors)
 
-        resp = self.client.get(f"/api/{MOCK_COMPANY_SHORT_NAME}/config")
+        resp = self.client.get(self.config_url)
 
         assert resp.status_code == 400
         data = resp.get_json()
@@ -129,7 +144,7 @@ class TestConfigurationApiView:
 
         self.mock_config_service.load_configuration.side_effect = Exception("boom")
 
-        resp = self.client.get(f"/api/{MOCK_COMPANY_SHORT_NAME}/config")
+        resp = self.client.get(self.config_url)
 
         assert resp.status_code == 500
         data = resp.get_json()
@@ -141,14 +156,14 @@ class TestConfigurationApiView:
         """PATCH should fail if authentication fails (requires valid user)."""
         self.mock_auth_service.verify.return_value = {"success": False, "status_code": 401}
 
-        resp = self.client.patch(f"/api/{MOCK_COMPANY_SHORT_NAME}/config", json={})
+        resp = self.client.patch(self.config_url, json={})
 
         assert resp.status_code == 401
         self.mock_config_service.update_configuration_key.assert_not_called()
 
     def test_patch_missing_key(self):
         """PATCH should return 400 if 'key' is missing from payload."""
-        resp = self.client.patch(f"/api/{MOCK_COMPANY_SHORT_NAME}/config", json={"value": "foo"})
+        resp = self.client.patch(self.config_url, json={"value": "foo"})
 
         assert resp.status_code == 400
         assert resp.get_json()['error'] == 'Missing "key" in payload'
@@ -161,7 +176,7 @@ class TestConfigurationApiView:
         updated_config = {"llm": {"model": "gpt-5"}, "company": MagicMock()} # 'company' obj to ensure it gets removed
         self.mock_config_service.update_configuration_key.return_value = (updated_config, [])
 
-        resp = self.client.patch(f"/api/{MOCK_COMPANY_SHORT_NAME}/config", json=payload)
+        resp = self.client.patch(self.config_url, json=payload)
 
         assert resp.status_code == 200
         data = resp.get_json()
@@ -182,7 +197,7 @@ class TestConfigurationApiView:
         errors = ["Missing required tools"]
         self.mock_config_service.update_configuration_key.return_value = (updated_config, errors)
 
-        resp = self.client.patch(f"/api/{MOCK_COMPANY_SHORT_NAME}/config", json=payload)
+        resp = self.client.patch(self.config_url, json=payload)
 
         assert resp.status_code == 400
         data = resp.get_json()
@@ -194,7 +209,7 @@ class TestConfigurationApiView:
         """PATCH should return 404 if the configuration file is not found."""
         self.mock_config_service.update_configuration_key.side_effect = FileNotFoundError()
 
-        resp = self.client.patch(f"/api/{MOCK_COMPANY_SHORT_NAME}/config", json={"key": "k", "value": "v"})
+        resp = self.client.patch(self.config_url, json={"key": "k", "value": "v"})
 
         assert resp.status_code == 404
         assert resp.get_json()['error'] == 'Configuration file not found'
@@ -203,27 +218,77 @@ class TestConfigurationApiView:
         """PATCH should return 500 on unexpected exceptions."""
         self.mock_config_service.update_configuration_key.side_effect = Exception("Disk error")
 
-        resp = self.client.patch(f"/api/{MOCK_COMPANY_SHORT_NAME}/config", json={"key": "k", "value": "v"})
+        resp = self.client.patch(self.config_url, json={"key": "k", "value": "v"})
 
         assert resp.status_code == 500
         assert resp.get_json()['status'] == 'error'
 
-    # --- POST Tests (Validate Configuration) ---
+    # --- POST Tests (Add Configuration Key) ---
 
     def test_post_fails_auth(self):
         """POST should fail if authentication fails."""
         self.mock_auth_service.verify.return_value = {"success": False, "status_code": 401}
 
-        resp = self.client.post(f"/api/{MOCK_COMPANY_SHORT_NAME}/config")
+        resp = self.client.post(self.config_url, json={})
+
+        assert resp.status_code == 401
+        self.mock_config_service.add_configuration_key.assert_not_called()
+
+    def test_post_missing_key(self):
+        """POST should return 400 if 'key' is missing."""
+        resp = self.client.post(self.config_url, json={"parent_key": "llm", "value": 1})
+
+        assert resp.status_code == 400
+        assert resp.get_json()['error'] == 'Missing "key" in payload'
+
+    def test_post_success(self):
+        """POST should return 200 and updated config on success."""
+        payload = {"parent_key": "llm", "key": "new_param", "value": 123}
+        updated_config = {"llm": {"new_param": 123}, "company": MagicMock()}
+
+        self.mock_config_service.add_configuration_key.return_value = (updated_config, [])
+
+        resp = self.client.post(self.config_url, json=payload)
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data['status'] == 'success'
+        assert data['config']['llm']['new_param'] == 123
+        assert 'company' not in data['config']
+
+        self.mock_config_service.add_configuration_key.assert_called_once_with(
+            MOCK_COMPANY_SHORT_NAME, "llm", "new_param", 123
+        )
+
+    def test_post_validation_error(self):
+        """POST should return 400 if validation fails."""
+        payload = {"key": "bad_key", "value": "val"}
+        errors = ["Invalid key"]
+        self.mock_config_service.add_configuration_key.return_value = ({}, errors)
+
+        resp = self.client.post(self.config_url, json=payload)
+
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert data['status'] == 'invalid'
+        assert data['errors'] == errors
+
+    # --- ValidateConfigurationApiView Tests (GET) ---
+
+    def test_validate_fails_auth(self):
+        """GET validate should fail if authentication fails."""
+        self.mock_auth_service.verify.return_value = {"success": False, "status_code": 401}
+
+        resp = self.client.get(self.validate_url)
 
         assert resp.status_code == 401
         self.mock_config_service.validate_configuration.assert_not_called()
 
-    def test_post_validate_valid(self):
-        """POST should return 200 and status 'valid' if configuration is correct."""
+    def test_validate_valid(self):
+        """GET validate should return 200 and status 'valid' if configuration is correct."""
         self.mock_config_service.validate_configuration.return_value = []
 
-        resp = self.client.post(f"/api/{MOCK_COMPANY_SHORT_NAME}/config")
+        resp = self.client.get(self.validate_url)
 
         assert resp.status_code == 200
         data = resp.get_json()
@@ -231,23 +296,23 @@ class TestConfigurationApiView:
         assert data['errors'] == []
         self.mock_config_service.validate_configuration.assert_called_once_with(MOCK_COMPANY_SHORT_NAME)
 
-    def test_post_validate_invalid(self):
-        """POST should return 200 and status 'invalid' if validation fails."""
+    def test_validate_invalid(self):
+        """GET validate should return 200 and status 'invalid' if validation fails."""
         errors = ["Missing ID", "Invalid Model"]
         self.mock_config_service.validate_configuration.return_value = errors
 
-        resp = self.client.post(f"/api/{MOCK_COMPANY_SHORT_NAME}/config")
+        resp = self.client.get(self.validate_url)
 
         assert resp.status_code == 200 # Request succeeded, result is that config is invalid
         data = resp.get_json()
         assert data['status'] == 'invalid'
         assert data['errors'] == errors
 
-    def test_post_internal_error(self):
-        """POST should return 500 on unexpected exceptions."""
+    def test_validate_internal_error(self):
+        """GET validate should return 500 on unexpected exceptions."""
         self.mock_config_service.validate_configuration.side_effect = Exception("Parser error")
 
-        resp = self.client.post(f"/api/{MOCK_COMPANY_SHORT_NAME}/config")
+        resp = self.client.get(self.validate_url)
 
         assert resp.status_code == 500
         assert resp.get_json()['status'] == 'error'

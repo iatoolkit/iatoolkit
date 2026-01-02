@@ -96,9 +96,56 @@ class ConfigurationApiView(MethodView):
 
     def post(self, company_short_name: str):
         """
-        Triggers an explicit validation of the current configuration.
-        Useful for UI to check status without modifying data.
+        Adds a new configuration key.
+        Body: { "parent_key": "llm", "key": "max_tokens", "value": 2048 }
         """
+        try:
+            auth_result = self.auth_service.verify(anonymous=False)
+            if not auth_result.get("success"):
+                return jsonify(auth_result), 401
+
+            payload = request.get_json()
+            parent_key = payload.get('parent_key', '')  # Optional, defaults to root
+            key = payload.get('key')
+            value = payload.get('value')
+
+            if not key:
+                return jsonify({'error': 'Missing "key" in payload'}), 400
+
+            logging.info(f"Adding config key '{key}' under '{parent_key}' for company '{company_short_name}'")
+
+            updated_config, errors = self.configuration_service.add_configuration_key(
+                company_short_name, parent_key, key, value
+            )
+
+            # Remove non-serializable objects
+            if 'company' in updated_config:
+                updated_config.pop('company')
+
+            if errors:
+                return jsonify({'status': 'invalid', 'errors': errors, 'config': updated_config}), 400
+
+            return jsonify({'status': 'success', 'config': updated_config}), 200
+
+        except FileNotFoundError:
+            return jsonify({'error': 'Configuration file not found'}), 404
+        except Exception as e:
+            logging.exception(f"Error adding config key: {e}")
+            return jsonify({'status': 'error', 'message': str(e)}), 500
+
+class ValidateConfigurationApiView(MethodView):
+    """
+    API View to trigger an explicit validation of the current configuration.
+    Useful for UI to check status without modifying data.
+    """
+    @inject
+    def __init__(self,
+                 configuration_service: ConfigurationService,
+                 auth_service: AuthService):
+        self.configuration_service = configuration_service
+        self.auth_service = auth_service
+
+    def get(self, company_short_name: str):
         try:
             auth_result = self.auth_service.verify(anonymous=False)
             if not auth_result.get("success"):
@@ -107,7 +154,7 @@ class ConfigurationApiView(MethodView):
             errors = self.configuration_service.validate_configuration(company_short_name)
 
             if errors:
-                return jsonify({'status': 'invalid', 'errors': errors}), 200 # 200 OK because the check succeeded, result is invalid
+                return jsonify({'status': 'invalid', 'errors': errors}), 200  # 200 OK because check succeeded
 
             return jsonify({'status': 'valid', 'errors': []}), 200
 

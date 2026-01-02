@@ -8,6 +8,7 @@ from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.common.util import Utility
 from injector import inject
+from typing import Any
 import logging
 import os
 
@@ -97,7 +98,7 @@ class ConfigurationService:
         logging.info(f"✅ Company '{company_short_name}' configured successfully.")
         return config, errors
 
-    def update_configuration_key(self, company_short_name: str, key: str, value: any) -> tuple[dict, list[str]]:
+    def update_configuration_key(self, company_short_name: str, key: str, value) -> tuple[dict, list[str]]:
         """
         Updates a specific key in the company's configuration file, validates the result,
         and saves it to the asset repository if valid.
@@ -142,6 +143,51 @@ class ConfigurationService:
 
         return config, []
 
+    def add_configuration_key(self, company_short_name: str, parent_key: str, key: str, value) -> tuple[dict, list[str]]:
+        """
+        Adds a new key-value pair under a specific parent key in the configuration.
+
+        Args:
+            company_short_name: The company identifier.
+            parent_key: The parent configuration key under which to add the new key (e.g., 'llm').
+            key: The new key name to add.
+            value: The value for the new key.
+
+        Returns:
+            A tuple containing the updated configuration dict and a list of error strings (if any).
+        """
+        # 1. Load raw config from file
+        main_config_filename = "company.yaml"
+
+        if not self.asset_repo.exists(company_short_name, AssetType.CONFIG, main_config_filename):
+            raise FileNotFoundError(f"Configuration file not found for {company_short_name}")
+
+        yaml_content = self.asset_repo.read_text(company_short_name, AssetType.CONFIG, main_config_filename)
+        config = self.utility.load_yaml_from_string(yaml_content) or {}
+
+        # 2. Construct full path and set the value
+        # If parent_key is provided, we append the new key to it (e.g., 'llm.new_setting')
+        full_path = f"{parent_key}.{key}" if parent_key else key
+        self._set_nested_value(config, full_path, value)
+
+        # 3. Validate the new configuration structure
+        errors = self._validate_configuration(company_short_name, config)
+
+        if errors:
+            logging.warning(f"Configuration add failed validation: {errors}")
+            return config, errors
+
+        # 4. Save back to repository
+        new_yaml_content = self.utility.dump_yaml_to_string(config)
+        self.asset_repo.write_text(company_short_name, AssetType.CONFIG, main_config_filename, new_yaml_content)
+
+        # 5. Invalidate cache
+        if company_short_name in self._loaded_configs:
+            del self._loaded_configs[company_short_name]
+
+        return config, []
+
+
     def validate_configuration(self, company_short_name: str) -> list[str]:
         """
         Public method to trigger validation of the current configuration.
@@ -149,7 +195,7 @@ class ConfigurationService:
         config = self._load_and_merge_configs(company_short_name)
         return self._validate_configuration(company_short_name, config)
 
-    def _set_nested_value(self, data: dict, key: str, value: any):
+    def _set_nested_value(self, data: dict, key: str, value):
         """
         Helper to set a value in a nested dictionary or list using dot notation (e.g. 'llm.model', 'tools.0.name').
         Handles traversal through both dictionaries and lists.
