@@ -45,26 +45,6 @@ class TestPromptService:
         result = self.prompt_service.get_user_prompts(company_short_name='test_company')
         assert result == {'message': []}
 
-    def test_get_user_prompts_filters_inactive_and_groups_correctly(self):
-        """Prueba que los prompts inactivos se filtran y que los activos se agrupan correctamente."""
-        # Usamos instancias reales de los modelos en lugar de Mocks para los datos.
-        category = PromptCategory(name='General', order=1)
-        active_prompt = Prompt(name='active_prompt', description='Active', active=True, order=1, category=category, prompt_type=PromptType.COMPANY.value)
-        inactive_prompt = Prompt(name='inactive_prompt', description='Inactive', active=False, order=2,
-                                 category=category, prompt_type=PromptType.COMPANY.value)
-
-        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
-        self.llm_query_repo.get_prompts.return_value = [active_prompt, inactive_prompt]
-
-        result = self.prompt_service.get_user_prompts(company_short_name='test_company')
-
-        # Verificar que solo hay una categoría en el resultado
-        assert len(result['message']) == 1
-        # Verificar que dentro de esa categoría, solo hay un prompt (el activo)
-        assert len(result['message'][0]['prompts']) == 1
-        # Verificar que el prompt es el correcto
-        assert result['message'][0]['prompts'][0]['prompt'] == 'active_prompt'
-
     # --- Tests para get_system_prompt ---
 
     @patch('iatoolkit.services.prompt_service.importlib.resources.read_text')

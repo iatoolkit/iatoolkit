@@ -287,7 +287,6 @@ class PromptCategory(Base):
         return f"<PromptCategory(name='{self.name}', order={self.order})>"
 
 
-
 class Prompt(Base):
     """Represents a system or user-defined prompt template for the LLM."""
     __tablename__ = 'iat_prompt'

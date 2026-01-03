@@ -50,6 +50,7 @@ class PromptService:
             raise IAToolkitException(IAToolkitException.ErrorType.INVALID_NAME,
                                      f'Company {company_short_name} not found')
 
+        self._register_system_prompts(company)
         try:
             # 1. Sync Categories
             category_map = {}
@@ -107,7 +108,7 @@ class PromptService:
             self.llm_query_repo.rollback()
             raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR, str(e))
 
-    def register_system_prompts(self):
+    def _register_system_prompts(self, company: Company):
         """
         Synchronizes system prompts defined in Dispatcher/Code to Database.
         """
@@ -117,19 +118,25 @@ class PromptService:
             for i, prompt_data in enumerate(_SYSTEM_PROMPTS):
                 prompt_name = prompt_data['name']
                 defined_names.add(prompt_name)
+                prompt_filename = f"{prompt_name}.prompt"
 
                 new_prompt = Prompt(
-                    company_id=None,  # System prompts have no company
+                    company_id=company.id,
                     name=prompt_name,
                     description=prompt_data['description'],
                     order=i + 1,
                     category_id=None,
                     active=True,
                     prompt_type=PromptType.SYSTEM.value,
-                    filename=f"{prompt_name}.prompt",
+                    filename=prompt_filename,
                     custom_fields=[]
                 )
                 self.llm_query_repo.create_or_update_prompt(new_prompt)
+
+                # add prompt to company assets
+                if not self.asset_repo.exists(company.short_name, AssetType.PROMPT, prompt_filename):
+                    prompt_content = importlib.resources.read_text('iatoolkit.system_prompts', prompt_filename)
+                    self.asset_repo.write_text(company.short_name, AssetType.PROMPT, prompt_filename, prompt_content)
 
             # Cleanup old system prompts
             existing_sys_prompts = self.llm_query_repo.get_system_prompts()
@@ -197,21 +204,25 @@ class PromptService:
 
     def get_prompt_content(self, company: Company, prompt_name: str):
         try:
-            # get the user prompt
-            user_prompt = self.llm_query_repo.get_prompt_by_name(company, prompt_name)
-            if not user_prompt:
+            # get the prompt
+            prompt = self.llm_query_repo.get_prompt_by_name(company, prompt_name)
+            if not prompt:
                 raise IAToolkitException(IAToolkitException.ErrorType.DOCUMENT_NOT_FOUND,
-                                   f"prompt not found '{prompt_name}' for company '{company.short_name}'")
+                                   f"prompt not found '{prompt}' for company '{company.short_name}'")
 
             try:
-                user_prompt_content = self.asset_repo.read_text(
-                    company.short_name,
-                    AssetType.PROMPT,
-                    user_prompt.filename
-                )
+                if (prompt.prompt_type == PromptType.SYSTEM.value and
+                        not self.asset_repo.exists(company.short_name, AssetType.PROMPT, prompt.filename)):
+                            user_prompt_content = importlib.resources.read_text('iatoolkit.system_prompts', prompt.filename)
+                else:
+                    user_prompt_content = self.asset_repo.read_text(
+                        company.short_name,
+                        AssetType.PROMPT,
+                        prompt.filename
+                    )
             except FileNotFoundError:
                 raise IAToolkitException(IAToolkitException.ErrorType.FILE_IO_ERROR,
-                                         f"prompt file '{user_prompt.filename}' does not exist for company '{company.short_name}'")
+                                         f"prompt file '{prompt.filename}' does not exist for company '{company.short_name}'")
             except Exception as e:
                 raise IAToolkitException(IAToolkitException.ErrorType.FILE_IO_ERROR,
                                          f"error while reading prompt: '{prompt_name}': {e}")
@@ -372,6 +383,9 @@ class PromptService:
             # get all the prompts
             # If include_all is True, repo should return everything for the company
             all_prompts = self.llm_query_repo.get_prompts(company, include_all=include_all)
+
+            # Deduplicate prompts by id
+            all_prompts = list({p.id: p for p in all_prompts}.values())
 
             # group by category
             prompts_by_category = defaultdict(list)

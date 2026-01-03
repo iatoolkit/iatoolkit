@@ -87,9 +87,6 @@ class Dispatcher:
             # system tools registration
             self.tool_service.register_system_tools()
 
-            # system prompts registration
-            self.prompt_service.register_system_prompts()
-
         except Exception as e:
             self.llmquery_repo.rollback()
             raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR, str(e))

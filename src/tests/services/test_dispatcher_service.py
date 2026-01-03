@@ -183,10 +183,6 @@ class TestDispatcher:
         # Verify ToolService called
         self.mock_tool_service.register_system_tools.assert_called_once()
 
-        # Verify PromptService called with system prompts list
-        # Note: Dispatcher defines _SYSTEM_PROMPT internally
-        self.mock_prompt_manager.register_system_prompts.assert_called_once_with()
-
 
     def test_setup_iatoolkit_system_exception(self):
         """Test that setup_iatoolkit_system handles exceptions and rolls back."""
