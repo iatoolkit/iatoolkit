@@ -17,6 +17,19 @@ import enum
 class Base(DeclarativeBase):
     pass
 
+
+class DocumentStatus(str, enum.Enum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    ACTIVE = "active"
+    FAILED = "failed"
+
+class PromptType(str, enum.Enum):
+    SYSTEM = "system"
+    COMPANY = "company"
+    AGENT = "agent"
+
+
 # relation table for many-to-many relationship between companies and users
 user_company = Table('iat_user_company',
                      Base.metadata,
@@ -149,11 +162,6 @@ class Tool(Base):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
 
 
-class DocumentStatus(str, enum.Enum):
-    PENDING = "pending"
-    PROCESSING = "processing"
-    ACTIVE = "active"
-    FAILED = "failed"
 
 
 class CollectionType(Base):
@@ -279,6 +287,7 @@ class PromptCategory(Base):
         return f"<PromptCategory(name='{self.name}', order={self.order})>"
 
 
+
 class Prompt(Base):
     """Represents a system or user-defined prompt template for the LLM."""
     __tablename__ = 'iat_prompt'
@@ -290,14 +299,13 @@ class Prompt(Base):
     description = Column(String, nullable=False)
     filename = Column(String, nullable=False)
     active = Column(Boolean, default=True)
-    is_system_prompt = Column(Boolean, default=False)
+    prompt_type = Column(String, default=PromptType.COMPANY.value, nullable=False)
     order = Column(Integer, nullable=True, default=0)
     category_id = Column(Integer, ForeignKey('iat_prompt_categories.id'), nullable=True)
     custom_fields = Column(JSON, nullable=False, default=[])
     created_at = Column(DateTime, default=datetime.now)
     def to_dict(self):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
-
 
     company = relationship("Company", back_populates="prompts")
     category = relationship("PromptCategory", back_populates="prompts")

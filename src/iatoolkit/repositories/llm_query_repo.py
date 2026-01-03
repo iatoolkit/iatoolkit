@@ -3,10 +3,13 @@
 #
 # IAToolkit is open source software.
 
-from iatoolkit.repositories.models import LLMQuery, Tool, Company, Prompt, PromptCategory
+from iatoolkit.repositories.models import (LLMQuery, Tool,
+                    Company, Prompt, PromptCategory, PromptType)
 from injector import inject
 from iatoolkit.repositories.database_manager import DatabaseManager
 from sqlalchemy import or_
+from typing import List
+
 
 class LLMQueryRepo:
     @inject
@@ -67,7 +70,7 @@ class LLMQueryRepo:
             prompt.category_id = new_prompt.category_id
             prompt.description = new_prompt.description
             prompt.order = new_prompt.order
-            prompt.is_system_prompt = new_prompt.is_system_prompt
+            prompt.prompt_type = new_prompt.prompt_type
             prompt.filename = new_prompt.filename
             prompt.custom_fields = new_prompt.custom_fields
         else:
@@ -94,12 +97,34 @@ class LLMQueryRepo:
             LLMQuery.user_identifier == user_identifier,
         ).filter_by(company_id=company.id).order_by(LLMQuery.created_at.desc()).limit(100).all()
 
-    def get_prompts(self, company: Company) -> list[Prompt]:
-        return self.session.query(Prompt).filter_by(company_id=company.id, is_system_prompt=False).all()
+    def get_prompts(self, company: Company, include_all: bool = False) -> list[Prompt]:
+        if include_all:
+            # Include company prompts OR system prompts
+            return self.session.query(Prompt).filter(
+                or_(
+                    Prompt.company_id == company.id,
+                    Prompt.prompt_type == PromptType.SYSTEM.value
+                )
+            ).all()
+        else:
+            # Only company prompts, excluding system (default behavior for end users)
+            return self.session.query(Prompt).filter(
+                Prompt.company_id == company.id,
+                Prompt.prompt_type != PromptType.SYSTEM.value
+            ).all()
 
     def get_prompt_by_name(self, company: Company, prompt_name: str):
         return self.session.query(Prompt).filter_by(company_id=company.id, name=prompt_name).first()
 
-    def get_system_prompts(self) -> list[Prompt]:
-        return self.session.query(Prompt).filter_by(is_system_prompt=True, active=True).order_by(Prompt.order).all()
+    def get_category_by_name(self, company_id: int, name: str) -> PromptCategory:
+        return self.session.query(PromptCategory).filter_by(company_id=company_id, name=name).first()
 
+    def get_all_categories(self, company_id: int) -> List[PromptCategory]:
+        return self.session.query(PromptCategory).filter_by(company_id=company_id).order_by(PromptCategory.order).all()
+
+    def get_system_prompts(self) -> list[Prompt]:
+        return self.session.query(Prompt).filter_by(prompt_type=PromptType.SYSTEM.value, active=True).order_by(Prompt.order).all()
+
+    def delete_prompt(self, prompt: Prompt):
+        self.session.delete(prompt)
+        self.session.commit()

@@ -49,8 +49,7 @@ ui:
     workspace: "Recursos"
     configuration: "Configuración"
     company_config: "Configuración Empresa (company.yaml)"
-    knowledge: "Conocimiento"
-    knowledge_rag: "RAG (Vectorial)"
+    knowledge_rag: "Knowledge Base (RAG)"
     knowledge_static: "Contenido Estático"
     prompts: "Prompts"
     prompts_description: "Prompts de sistema"
@@ -85,7 +84,7 @@ ui:
     logout: "Cerrar sesión"
     add: "Agregar"
     create: "Crear"
-
+    delete: "Borrar"
 
   db_explorer:
     data_explorer: "Explorador de datos"
@@ -135,6 +134,7 @@ ui:
     name_label: "Nombre (Slug)"
     name_help: "Solo minúsculas, números y guiones bajos."
     category_label: "Categoría"
+    delete_confirmation: "Eliminar el prompt?"
 
   config:
     editor_description: "Editor de configuración"

@@ -5,7 +5,8 @@ from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.common.interfaces.asset_storage import AssetRepository, AssetType
 from iatoolkit.repositories.profile_repo import ProfileRepo
-from iatoolkit.repositories.models import Prompt, PromptCategory, Company
+from iatoolkit.repositories.models import (Prompt, PromptCategory,
+                                           Company, PromptType)
 from iatoolkit.common.exceptions import IAToolkitException
 
 
@@ -48,9 +49,9 @@ class TestPromptService:
         """Prueba que los prompts inactivos se filtran y que los activos se agrupan correctamente."""
         # Usamos instancias reales de los modelos en lugar de Mocks para los datos.
         category = PromptCategory(name='General', order=1)
-        active_prompt = Prompt(name='active_prompt', description='Active', active=True, order=1, category=category)
+        active_prompt = Prompt(name='active_prompt', description='Active', active=True, order=1, category=category, prompt_type=PromptType.COMPANY.value)
         inactive_prompt = Prompt(name='inactive_prompt', description='Inactive', active=False, order=2,
-                                 category=category)
+                                 category=category, prompt_type=PromptType.COMPANY.value)
 
         self.profile_repo.get_company_by_short_name.return_value = self.mock_company
         self.llm_query_repo.get_prompts.return_value = [active_prompt, inactive_prompt]
@@ -161,7 +162,7 @@ class TestPromptService:
         assert isinstance(prompt_object, Prompt)
         assert prompt_object.name == 'new_prompt'
         assert prompt_object.company_id == self.mock_company.id
-        assert not prompt_object.is_system_prompt
+        assert prompt_object.prompt_type == PromptType.COMPANY.value
         assert 'new_prompt.prompt' in prompt_object.filename
         assert prompt_object.custom_fields == [{'data_key': 'key', 'label': ' a label', 'type': 'text'}]
 

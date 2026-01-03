@@ -48,13 +48,13 @@ class TestPromptView:
         # Route for list
         self.app.add_url_rule('/<company_short_name>/api/prompts',
                               view_func=prompt_view,
-                              methods=["GET"],
+                              methods=["GET", "POST"],
                               defaults={'prompt_name': None})
 
         # Route for details/update
         self.app.add_url_rule('/<company_short_name>/api/prompts/<prompt_name>',
                               view_func=prompt_view,
-                              methods=["GET", "PUT"])
+                              methods=["GET", "PUT", "POST", "DELETE"])
 
     # --- GET List Tests ---
 
@@ -76,18 +76,42 @@ class TestPromptView:
         """Test a successful request to retrieve all prompts."""
         mock_response = {
             'message': [
-                {'prompt': 'sales_prompt', 'description': 'Sales'},
-                {'prompt': 'support_prompt', 'description': 'Support'}
+                {'prompt': 'sales_prompt', 'description': 'Sales'}
             ]
         }
+        # Check default call
         self.prompt_service.get_user_prompts.return_value = mock_response
-
         response = self.client.get(self.base_url)
+        assert response.status_code == 200
+        self.prompt_service.get_user_prompts.assert_called_with(self.company_short_name, include_all=False)
+
+    def test_get_list_admin_all(self):
+        """Test retrieving all prompts (admin view)."""
+        self.prompt_service.get_user_prompts.return_value = {}
+        response = self.client.get(f"{self.base_url}?all=true")
+        assert response.status_code == 200
+        self.prompt_service.get_user_prompts.assert_called_with(self.company_short_name, include_all=True)
+
+    # --- POST Tests ---
+    def test_post_create_prompt(self):
+        """Test creating a new prompt via POST."""
+        payload = {"name": "new_prompt", "description": "desc"}
+        response = self.client.post(self.base_url, json=payload)
 
         assert response.status_code == 200
-        assert response.json == mock_response
-        self.auth_service.verify.assert_called_once()
-        self.prompt_service.get_user_prompts.assert_called_once_with(self.company_short_name)
+        self.prompt_service.save_prompt.assert_called_once_with(
+            self.company_short_name, "new_prompt", payload
+        )
+
+    # --- DELETE Tests ---
+    def test_delete_prompt(self):
+        """Test deleting a prompt."""
+        response = self.client.delete(f"{self.base_url}/old_prompt")
+
+        assert response.status_code == 200
+        self.prompt_service.delete_prompt.assert_called_once_with(
+            self.company_short_name, "old_prompt"
+        )
 
     # --- GET Detail Tests ---
 

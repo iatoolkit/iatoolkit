@@ -377,10 +377,12 @@ class ConfigurationService:
                     add_error(f"prompts[{i}]", "Missing required key: 'description'")
 
             prompt_cat = prompt.get("category")
-            if not prompt_cat:
-                add_error(f"prompts[{i}]", "Missing required key: 'category'")
-            elif prompt_cat not in category_set:
-                add_error(f"prompts[{i}]", f"Category '{prompt_cat}' is not defined in 'prompt_categories'.")
+            prompt_type = prompt.get("prompt_type", 'company').lower()
+            if prompt_type == 'company':
+                if not prompt_cat:
+                    add_error(f"prompts[{i}]", "Missing required key: 'category'")
+                elif prompt_cat not in category_set:
+                    add_error(f"prompts[{i}]", f"Category '{prompt_cat}' is not defined in 'prompt_categories'.")
 
         # 7. User Feedback
         feedback_config = config.get("parameters", {}).get("user_feedback", {})
@@ -445,6 +447,7 @@ class ConfigurationService:
                 # If it's a list, we MUST use an integer index
                 try:
                     idx = int(k)
+                    # Allow accessing existing index
                     current = current[idx]
                 except (ValueError, IndexError) as e:
                     raise ValueError(
@@ -460,7 +463,13 @@ class ConfigurationService:
         elif isinstance(current, list):
             try:
                 idx = int(last_key)
-                current[idx] = value
+                # If index equals length, it means append
+                if idx == len(current):
+                    current.append(value)
+                elif 0 <= idx < len(current):
+                    current[idx] = value
+                else:
+                    raise IndexError(f"Index {idx} out of range for list of size {len(current)}")
             except (ValueError, IndexError) as e:
                 raise ValueError(f"Invalid path: cannot assign to index '{last_key}' in list") from e
         else:

@@ -32,6 +32,7 @@ def register_views(app):
     from iatoolkit.views.root_redirect_view import RootRedirectView
     from iatoolkit.views.users_api_view import UsersApiView
     from iatoolkit.views.rag_api_view import RagApiView
+    from iatoolkit.views.categories_api_view import CategoriesApiView
 
     # assign root '/' to our new redirect logic
     app.add_url_rule('/home', view_func=RootRedirectView.as_view('root_redirect'))
@@ -85,16 +86,21 @@ def register_views(app):
     # can be used also for executing iatoolkit prompts
     app.add_url_rule('/<company_short_name>/api/llm_query', view_func=LLMQueryApiView.as_view('llm_query_api'))
 
+    # Categories Endpoint
+    app.add_url_rule('/<company_short_name>/api/categories',
+                     view_func=CategoriesApiView.as_view('categories_api'),
+                     methods=['GET'])
+
     # open the promt directory and specific prompt management
     prompt_view = PromptApiView.as_view('prompt')
     app.add_url_rule('/<company_short_name>/api/prompts',
                      view_func=prompt_view,
-                     methods=['GET'],
+                     methods=['GET', 'POST'],
                      defaults={'prompt_name': None})
 
     app.add_url_rule('/<company_short_name>/api/prompts/<prompt_name>',
                      view_func=prompt_view,
-                     methods=['GET', 'PUT'])
+                     methods=['GET', 'POST','PUT', 'DELETE'])
     # toolbar buttons
     app.add_url_rule('/<company_short_name>/api/feedback', view_func=UserFeedbackApiView.as_view('feedback'))
     app.add_url_rule('/<company_short_name>/api/history', view_func=HistoryApiView.as_view('history'))

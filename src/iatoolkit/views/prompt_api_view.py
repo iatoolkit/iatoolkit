@@ -36,11 +36,15 @@ class PromptApiView(MethodView):
             if not auth_result.get("success"):
                 return jsonify(auth_result), auth_result.get('status_code')
 
-            if prompt_name:
-                company = self.profile_service.get_company_by_short_name(company_short_name)
+            company = self.profile_service.get_company_by_short_name(company_short_name)
+            if not company:
+                 return jsonify({"error": "Company not found"}), 404
 
+            if prompt_name:
                 # get the prompt object from database
                 prompt_obj = self.llm_query_repo.get_prompt_by_name(company, prompt_name)
+                if not prompt_obj:
+                     return jsonify({"error": "Prompt not found"}), 404
 
                 # get the prompt content
                 content = self.prompt_service.get_prompt_content(company, prompt_name)
@@ -50,8 +54,11 @@ class PromptApiView(MethodView):
                     "content": content
                 })
             else:
-                # return all the prompts
-                return jsonify(self.prompt_service.get_user_prompts(company_short_name))
+                # Check for query param to include all prompts (admin view)
+                include_all = request.args.get('all', 'false').lower() == 'true'
+
+                # return prompts based on filter
+                return jsonify(self.prompt_service.get_user_prompts(company_short_name, include_all=include_all))
 
         except Exception as e:
             logging.exception(
@@ -66,10 +73,46 @@ class PromptApiView(MethodView):
 
             data = request.get_json()
 
-            # El servicio se encarga de la magia de archivos y YAML
+            # The service handles file magic and YAML sync
             self.prompt_service.save_prompt(company_short_name, prompt_name, data)
 
             return jsonify({"status": "success"})
         except Exception as e:
             logging.exception(f"Error saving prompt {prompt_name}: {e}")
+            return jsonify({"status": "error", "message": str(e)}), 500
+
+    def post(self, company_short_name, prompt_name=None):
+        """Creates a new prompt."""
+        try:
+            auth_result = self.auth_service.verify()
+            if not auth_result.get("success"):
+                return jsonify(auth_result), 401
+
+            data = request.get_json()
+            # If prompt_name is not in URL, check body
+            target_name = prompt_name if prompt_name else data.get('name')
+
+            if not target_name:
+                return jsonify({"status": "error", "message": "Prompt name is required"}), 400
+
+            # Reuse save_prompt logic which handles create/update
+            self.prompt_service.save_prompt(company_short_name, target_name, data)
+
+            return jsonify({"status": "success"})
+        except Exception as e:
+            logging.exception(f"Error creating prompt: {e}")
+            return jsonify({"status": "error", "message": str(e)}), 500
+
+    def delete(self, company_short_name, prompt_name):
+        """Deletes a prompt."""
+        try:
+            auth_result = self.auth_service.verify()
+            if not auth_result.get("success"):
+                return jsonify(auth_result), 401
+
+            self.prompt_service.delete_prompt(company_short_name, prompt_name)
+
+            return jsonify({"status": "success"})
+        except Exception as e:
+            logging.exception(f"Error deleting prompt {prompt_name}: {e}")
             return jsonify({"status": "error", "message": str(e)}), 500

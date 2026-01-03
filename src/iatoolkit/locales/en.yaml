@@ -52,8 +52,7 @@ ui:
     company_config: "Company Configuration (company.yaml)"
     prompts: "Prompts"
     prompts_description: "System Prompts"
-    knowledge: "Knowledge Base"
-    knowledge_rag: "RAG (Vector)"
+    knowledge_rag: "Knowledge Base (RAG)"
     knowledge_static: "Static Context"
     schemas: "Schemas"
     schemas_description: "Data Definitions (YAML)"
@@ -88,6 +87,8 @@ ui:
     loading: "Loading..."
     add: "Add"
     create: "Create"
+    delete: "Delete"
+
 
   db_explorer:
     data_explorer: "Data Explorer"
@@ -137,6 +138,8 @@ ui:
     name_label: "Name (Slug)"
     name_help: "Use lowercase, numbers, and underscores only."
     category_label: "Category"
+    delete_confirmation: "Delete Prompt?"
+
 
   config:
     editor_description: "IAToolkit configuration file"
