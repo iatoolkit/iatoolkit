@@ -94,7 +94,9 @@ ui:
     drag_drop_hint: "Use arrows to reorder items."
     current_items: "Current items"
     manage: "Manage"
-
+    unsaved_changes_title: "Unsaved Changes"
+    unsaved_changes_message: "You have unsaved changes. Do you want to save them before proceeding?"
+    discard_changes: "Discard Changes"
 
   db_explorer:
     data_explorer: "Data Explorer"
@@ -366,6 +368,8 @@ js_messages:
   config_saved: "Configuration saved successfully."
   config_error: "Error saving configuration."
   all_collections: "All collections"
+  no_variables_found: "No variables found in prompt template."
+
 
 
 

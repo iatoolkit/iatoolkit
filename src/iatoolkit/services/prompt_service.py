@@ -88,7 +88,7 @@ class PromptService:
                     order=prompt_data.get('order'),
                     category_id=category_obj.id,
                     active=prompt_data.get('active', True),
-                    prompt_type=PromptType.COMPANY.value,
+                    prompt_type=prompt_data.get('prompt_type', PromptType.COMPANY.name),
                     filename=filename,
                     custom_fields=prompt_data.get('custom_fields', [])
                 )

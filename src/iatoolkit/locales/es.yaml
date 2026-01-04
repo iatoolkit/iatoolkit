@@ -91,6 +91,9 @@ ui:
     drag_drop_hint: "Utiliza las flechas para ordenar items.."
     current_items: "items actuales"
     manage: "Administrar"
+    unsaved_changes_title: "Cambios sin guardar"
+    unsaved_changes_message: "Tienes modificaciones sin guardar. Quieres grabarlos antes de salir?"
+    discard_changes: "Descartar cambios"
 
 
   db_explorer:
@@ -142,6 +145,7 @@ ui:
     name_help: "Solo minúsculas, números y guiones bajos."
     category_label: "Categoría"
     delete_confirmation: "Eliminar el prompt?"
+
 
   config:
     editor_description: "Editor de configuración"
@@ -363,6 +367,8 @@ js_messages:
   config_saved: "Configuración guardada correctamente."
   config_error: "Error guardando configuración"
   all_collections: "Todas las colecciones"
+  no_variables_found: "El template no contiene variables."
+
 
 
 
