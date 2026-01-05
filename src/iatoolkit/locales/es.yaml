@@ -368,6 +368,8 @@ js_messages:
   config_error: "Error guardando configuración"
   all_collections: "Todas las colecciones"
   no_variables_found: "El template no contiene variables."
+  manage_collections: "Administra collections"
+
 
 
 

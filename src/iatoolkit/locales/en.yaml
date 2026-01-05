@@ -369,6 +369,8 @@ js_messages:
   config_error: "Error saving configuration."
   all_collections: "All collections"
   no_variables_found: "No variables found in prompt template."
+  manage_collections: "Manage collections"
+
 
 
 
