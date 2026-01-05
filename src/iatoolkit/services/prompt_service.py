@@ -88,7 +88,7 @@ class PromptService:
                     order=prompt_data.get('order'),
                     category_id=category_obj.id,
                     active=prompt_data.get('active', True),
-                    prompt_type=prompt_data.get('prompt_type', PromptType.COMPANY.name),
+                    prompt_type=prompt_data.get('prompt_type', PromptType.COMPANY.name).lower(),
                     filename=filename,
                     custom_fields=prompt_data.get('custom_fields', [])
                 )
@@ -149,58 +149,6 @@ class PromptService:
         except Exception as e:
             self.llm_query_repo.rollback()
             raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR, str(e))
-
-    def create_prompt(self,
-                      prompt_name: str,
-                      description: str,
-                      order: int,
-                      company: Company = None,
-                      category: PromptCategory = None,
-                      active: bool = True,
-                      prompt_type: PromptType = PromptType.COMPANY,
-                      custom_fields: list = []
-                      ):
-        """
-            Direct creation method (used by sync or direct calls).
-            Validates file existence before creating DB entry.
-        """
-        prompt_filename = prompt_name.lower() + '.prompt'
-        if prompt_type == PromptType.SYSTEM:
-            if not importlib.resources.files('iatoolkit.system_prompts').joinpath(prompt_filename).is_file():
-                raise IAToolkitException(IAToolkitException.ErrorType.INVALID_NAME,
-                                f'missing system prompt file: {prompt_filename}')
-        else:
-            if not self.asset_repo.exists(company.short_name, AssetType.PROMPT, prompt_filename):
-                raise IAToolkitException(IAToolkitException.ErrorType.INVALID_NAME,
-                               f'missing prompt file: {prompt_filename} in prompts/')
-
-        if custom_fields:
-            for f in custom_fields:
-                if ('data_key' not in f) or ('label' not in f):
-                    raise IAToolkitException(IAToolkitException.ErrorType.INVALID_PARAMETER,
-                               f'The field "custom_fields" must contain the following keys: data_key y label')
-
-                # add default value for data_type
-                if 'type' not in f:
-                    f['type'] = 'text'
-
-        prompt = Prompt(
-                company_id=company.id if company else None,
-                name=prompt_name,
-                description=description,
-                order=order,
-                category_id=category.id if category and prompt_type != PromptType.SYSTEM else None,
-                active=active,
-                filename=prompt_filename,
-                prompt_type=prompt_type.value,
-                custom_fields=custom_fields
-            )
-
-        try:
-            self.llm_query_repo.create_or_update_prompt(prompt)
-        except Exception as e:
-            raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR,
-                               f'error creating prompt "{prompt_name}": {str(e)}')
 
     def get_prompt_content(self, company: Company, prompt_name: str):
         try:

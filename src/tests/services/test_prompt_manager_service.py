@@ -119,46 +119,6 @@ class TestPromptService:
         assert exc_info.value.error_type == IAToolkitException.ErrorType.DOCUMENT_NOT_FOUND
 
 
-    def test_create_prompt_success_for_company(self):
-        self.mock_asset_repo.exists.return_value = True     # file exists
-
-        """Prueba la creación exitosa de un prompt para una compañía."""
-        self.prompt_service.create_prompt(
-            prompt_name='new_prompt',
-            description='A new prompt',
-            order=1,
-            company=self.mock_company,
-            custom_fields = [{'data_key': 'key', 'label': ' a label'}]
-        )
-
-        self.mock_asset_repo.exists.assert_called_once_with(
-            self.mock_company.short_name, AssetType.PROMPT, 'new_prompt.prompt'
-        )
-
-        self.llm_query_repo.create_or_update_prompt.assert_called_once()
-        call_args = self.llm_query_repo.create_or_update_prompt.call_args[0]
-        prompt_object = call_args[0]
-
-        assert isinstance(prompt_object, Prompt)
-        assert prompt_object.name == 'new_prompt'
-        assert prompt_object.company_id == self.mock_company.id
-        assert prompt_object.prompt_type == PromptType.COMPANY.value
-        assert 'new_prompt.prompt' in prompt_object.filename
-        assert prompt_object.custom_fields == [{'data_key': 'key', 'label': ' a label', 'type': 'text'}]
-
-    def test_create_prompt_when_invalid_custom_fields(self):
-        self.mock_asset_repo.exists.return_value = True
-        with pytest.raises(IAToolkitException) as exc_info:
-            self.prompt_service.create_prompt(
-                prompt_name='new_prompt',
-                description='A new prompt',
-                order=1,
-                company=self.mock_company,
-                custom_fields=[{'label': ' a label'}]
-            )
-
-        assert exc_info.value.error_type == IAToolkitException.ErrorType.INVALID_PARAMETER
-
     def test_get_prompt_content_file_not_found_in_repo(self):
         """Prueba que maneja FileNotFoundError del repositorio."""
         mock_prompt = Prompt(filename='missing.prompt')
@@ -171,20 +131,6 @@ class TestPromptService:
             self.prompt_service.get_prompt_content(self.mock_company, 'missing_prompt')
 
         assert exc_info.value.error_type == IAToolkitException.ErrorType.FILE_IO_ERROR
-
-    def test_create_prompt_handles_db_exception(self):
-        """Prueba que se maneja una excepción de la base de datos al guardar."""
-        self.llm_query_repo.create_or_update_prompt.side_effect = Exception("DB Unique Constraint Failed")
-        self.mock_asset_repo.exists.return_value = True
-
-        with pytest.raises(IAToolkitException) as exc_info:
-            self.prompt_service.create_prompt(
-                prompt_name='any_prompt',
-                description='Desc',
-                order=1,
-                company=self.mock_company
-            )
-        assert exc_info.value.error_type == IAToolkitException.ErrorType.DATABASE_ERROR
 
         # --- Tests para save_prompt (Nuevo método orquestador) ---
 
