@@ -138,7 +138,11 @@ class CompanyContextService:
                     db_context += table_str
 
                     # collect the table names for later use
-                    db_tables.append(table_name)
+                    db_tables.append(
+                        {'db_name': db_name,
+                         'table_name': table_name,
+                         }
+                    )
 
                 context_output.append(db_context)
 
@@ -152,7 +156,7 @@ class CompanyContextService:
         return header + "\n\n---\n\n".join(context_output), db_tables
 
 
-    def _get_yaml_schema_context(self, company_short_name: str, db_tables: List[str]) -> str:
+    def _get_yaml_schema_context(self, company_short_name: str, db_tables: List[Dict]) -> str:
         # Get context from .yaml schema files using the repository
         yaml_schema_context = ''
 
@@ -161,8 +165,17 @@ class CompanyContextService:
             schema_files = self.asset_repo.list_files(company_short_name, AssetType.SCHEMA, extension='.yaml')
 
             for filename in schema_files:
-                if filename.split('.')[0] in db_tables:
-                    continue            # ignore file if it's in db_tables
+                # skip tables that are already in the SQL context
+                if '-' in filename:
+                    dbname, f = filename.split("-", 1)
+                    table_name = f.split('.')[0]
+
+                    exists = any(
+                        item["db_name"] == dbname and item["table_name"] == table_name
+                        for item in db_tables
+                    )
+                    if exists:
+                        continue
 
                 try:
                     # 2. Read content
@@ -297,7 +310,14 @@ class CompanyContextService:
             files_map = {}
             for f in available_files:
                 clean = f.lower().replace('.yaml', '').replace('.yml', '')
-                files_map[clean] = f
+                if '-' not in clean:
+                    continue            # skip non-table files
+
+                dbname, table = clean.split("-", 1)
+                # filter by the database
+                if dbname != db_name:
+                    continue
+                files_map[table] = f
 
             logging.debug(f"🔍 [CompanyContextService] Enriching schema for {db_name}. Files found: {len(files_map)}")
 

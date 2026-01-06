@@ -34,23 +34,6 @@ MOCK_CONFIG_EXPLICIT_LIST = {
     }]
 }
 
-# Simulates include_all_tables with exclusions and overrides
-MOCK_CONFIG_COMPLEX = {
-    'sql': [{
-        'database': 'main_db',
-        'include_all_tables': True,
-        'exclude_tables': ['logs'],
-        'exclude_columns': ['id', 'created_at'],  # Global exclude
-        'tables': {
-            'users': {
-                'exclude_columns': ['password_hash']  # Local override
-            },
-            'user_profiles': {
-                'schema_name': 'profiles'  # Schema override
-            }
-        }
-    }]
-}
 
 
 class TestCompanyContextService:
@@ -121,7 +104,7 @@ class TestCompanyContextService:
         assert "- **`role`** (string)" in result_context
 
         # Check returned tables list
-        assert "users" in db_tables
+        assert "users" in db_tables[0].get("table_name")
 
     def test_get_sql_enriched_context_no_config(self):
         """
@@ -233,7 +216,7 @@ class TestCompanyContextService:
                 "columns": [{"name": "id"}, {"name": "email"}]
             }
         }
-        self.mock_asset_repo.list_files.return_value = ["users.yaml"]
+        self.mock_asset_repo.list_files.return_value = ["main_db-users.yaml"]
 
         yaml_content = textwrap.dedent("""
         users:
@@ -267,7 +250,7 @@ class TestCompanyContextService:
                 "columns": [{"name": "supplierid"}, {"name": "companyname"}]
             }
         }
-        self.mock_asset_repo.list_files.return_value = ["suppliers.yaml"]
+        self.mock_asset_repo.list_files.return_value = ["main_db-suppliers.yaml"]
 
         yaml_content = textwrap.dedent("""
         suppliers:
@@ -307,7 +290,7 @@ class TestCompanyContextService:
                 ]
             }
         }
-        self.mock_asset_repo.list_files.return_value = ["orders.yaml"]
+        self.mock_asset_repo.list_files.return_value = ["main_db-orders.yaml"]
 
         yaml_content = textwrap.dedent("""
         orders:

@@ -22,7 +22,7 @@ llm:
     deepseek: DEEP_SEEK_API_KEY
 data_sources:
   sql:
-  - database: sample_database
+  - database: sample_db
     schema: sample_db
     connection_string_env: DATABASE_URI
     description: 'This database contains all of the
