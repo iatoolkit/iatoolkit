@@ -1,0 +1,24 @@
+board:
+  description: "Endpoint que retorna información sobre los miembros del consejo de administración de la empresa."
+  columns:
+    num_members:
+      description: "Numero de personas en el board"
+      type: integer
+    ceo:
+      description: "CEO de la compañia."
+      type: string
+    members:
+      description: "Lista de miembros del board."
+      type: array
+      items:
+        type: object
+        properties:
+          name:
+            type: string
+            description: "nombre del director"
+          email:
+            type: string
+            description: "email del director"
+    city:
+      description: "Ciudad donde se reune el board"
+      type: string

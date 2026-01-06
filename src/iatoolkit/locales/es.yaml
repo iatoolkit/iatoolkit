@@ -6,6 +6,7 @@ ui:
     cancel: "Cancelar"
     apply: "Aplicar Cambios"
     discard_changes: "Descartar Cambios"
+    order: "Orden"
 
   login_widget:
     title: "Iniciar Sesión"
@@ -393,6 +394,7 @@ js_messages:
   all_collections: "Todas las colecciones"
   no_variables_found: "El template no contiene variables."
   manage_collections: "Administra collections"
+  edit: "Editar"
 
 
 

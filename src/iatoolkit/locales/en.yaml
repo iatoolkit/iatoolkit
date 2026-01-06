@@ -6,6 +6,7 @@ ui:
     cancel: "Cancel"
     apply: "Apply Changes"
     discard_changes: "Discard Changes"
+    order: "Order"
 
 
   login_widget:
@@ -398,6 +399,7 @@ js_messages:
   all_collections: "All collections"
   no_variables_found: "No variables found in prompt template."
   manage_collections: "Manage collections"
+  edit: "Edit"
 
 
 
