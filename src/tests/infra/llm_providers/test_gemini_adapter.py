@@ -106,6 +106,48 @@ class TestGeminiAdapter:
         assert tool_call.arguments == json.dumps(func_call_data['args'])
         self.mock_message_to_dict.assert_called_once_with("mock_pb")
 
+    def test_create_response_multimodal_input(self):
+        """Prueba que se fusionan las imágenes en el mensaje de usuario."""
+        mock_response = self._create_mock_gemini_response(text_content="Ok, veo la imagen")
+        self.mock_generative_model.generate_content.return_value = mock_response
+
+        # Input de usuario
+        input_data = [{"role": "user", "content": "Que ves?"}]
+        # Imágenes
+        images = [
+            {'name': 'foto.jpg', 'base64': 'AAAA'},
+            {'name': 'grafico.png', 'base64': 'BBBB'}
+        ]
+
+        self.adapter.create_response(model="gemini-1.5-flash", input=input_data, images=images)
+
+        # Verificar la llamada a generate_content
+        self.mock_generative_model.generate_content.assert_called_once()
+        call_args = self.mock_generative_model.generate_content.call_args
+        contents = call_args[0][0]  # Primer argumento posicional es 'contents'
+
+        # Debe haber 1 mensaje de usuario
+        assert len(contents) == 1
+        user_msg = contents[0]
+        assert user_msg['role'] == 'user'
+
+        # El mensaje debe tener 3 partes: 1 texto + 2 imágenes
+        parts = user_msg['parts']
+        assert len(parts) == 3
+
+        # Parte 1: Texto
+        assert parts[0] == {'text': 'Que ves?'}
+
+        # Parte 2: Imagen JPG
+        assert 'inline_data' in parts[1]
+        assert parts[1]['inline_data']['mime_type'] == 'image/jpeg'
+        assert parts[1]['inline_data']['data'] == 'AAAA'
+
+        # Parte 3: Imagen PNG
+        assert 'inline_data' in parts[2]
+        assert parts[2]['inline_data']['mime_type'] == 'image/png'
+        assert parts[2]['inline_data']['data'] == 'BBBB'
+
     def test_history_not_modified_if_no_content_in_response(self):
         """Prueba que el historial no se modifica si la respuesta está vacía."""
         mock_response = self._create_mock_gemini_response()  # Sin texto ni tool calls

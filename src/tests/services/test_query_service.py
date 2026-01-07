@@ -191,11 +191,7 @@ class TestQueryService:
         kwargs = self.mock_llm_client.invoke.call_args.kwargs
         assert kwargs['previous_response_id'] == 'existing_id'
         assert kwargs['context_history'] is None
-
-        # 3. Se actualiza el historial pasando el handle
-        # self.mock_history_manager.update_history.assert_called_once()
-        # update_args = self.mock_history_manager.update_history.call_args
-        #assert update_args[0][0] == handle_arg  # El primer argumento debe ser el handle
+        assert kwargs['images'] == []
 
     def test_llm_query_rebuilds_context_if_missing(self):
         """Prueba que llm_query reconstruye el contexto automáticamente si populate_request_params lo indica."""
@@ -251,26 +247,50 @@ class TestQueryService:
         self.mock_document_service.file_to_txt.return_value = "Text from file"
         files = [{'file_id': 'test.pdf', 'base64': self.base64_content.decode('utf-8')}]
 
-        result = self.service.load_files_for_context(files)
+        context, images = self.service.load_files_for_context(files)
 
         self.mock_document_service.file_to_txt.assert_called_once()
-        assert "<document name='test.pdf'>\nText from file\n</document>" in result
-        assert "en total son: 1 documentos adjuntos" in result
+        assert "<document name='test.pdf'>\nText from file\n</document>" in context
+        assert "en total son: 1 documentos adjuntos" in context
+        assert images == []
 
     def test_load_files_for_context_handles_missing_content(self):
         """Prueba que se maneja un archivo sin contenido (solo nombre)."""
         files = [{'filename': 'empty.txt'}]  # No 'base64' or 'content' key
 
-        result = self.service.load_files_for_context(files)
+        context, images = self.service.load_files_for_context(files)
 
-        assert "<error>El archivo 'empty.txt' no fue encontrado y no pudo ser cargado.</error>" in result
+        assert "<error>El archivo 'empty.txt' no fue encontrado y no pudo ser cargado.</error>" in context
         self.mock_document_service.file_to_txt.assert_not_called()
+        assert images == []
 
     def test_load_files_for_context_handles_processing_error(self):
         """Prueba que se captura una excepción durante el procesamiento del archivo."""
         self.mock_document_service.file_to_txt.side_effect = Exception("PDF rendering failed")
         files = [{'file_id': 'corrupt.pdf', 'base64': self.base64_content.decode('utf-8')}]
 
-        result = self.service.load_files_for_context(files)
+        context, images = self.service.load_files_for_context(files)
 
-        assert "<error>Error al procesar el archivo corrupt.pdf: PDF rendering failed</error>" in result
+        assert "<error>Error al procesar el archivo corrupt.pdf: PDF rendering failed</error>" in context
+        assert images == []
+
+    def test_load_files_for_context_separates_images(self):
+        """Test that images are separated from text files."""
+        files = [
+            {'file_id': 'image.png', 'base64': 'img_b64'},
+            # Use valid base64 content to avoid 'Incorrect padding' error during decode
+            {'file_id': 'doc.pdf', 'base64': self.base64_content.decode('utf-8')}
+        ]
+        self.mock_document_service.file_to_txt.return_value = "doc text"
+
+        context, images = self.service.load_files_for_context(files)
+
+        # Check image extraction
+        assert len(images) == 1
+        assert images[0]['name'] == 'image.png'
+        assert images[0]['base64'] == 'img_b64'
+
+        # Check text processing
+        assert "<document name='doc.pdf'>" in context
+        assert "doc text" in context
+        assert "image.png" not in context  # Images shouldn't be in text context

@@ -58,13 +58,33 @@ class TestLLMClient:
 
         result = self.client.invoke(
             company=self.company, user_identifier='user1', previous_response_id='prev1',
-            model='gpt-5',question='q', context='c', tools=[], text={}
+            model='gpt-5',question='q', context='c', tools=[], text={}, images=[]
         )
 
         self.mock_proxy.create_response.assert_called_once()
+        call_kwargs = self.mock_proxy.create_response.call_args.kwargs
+        assert call_kwargs['images'] == []
+
         assert result['valid_response'] is True
         assert 'Test response' in result['answer']
         assert result['response_id'] == 'response_123'
+        self.llmquery_repo.add_query.assert_called_once()
+
+    def test_invoke_success_with_images(self):
+        """Test de una llamada invoke exitosa con imagenes."""
+        self.mock_proxy.create_response.return_value = self.mock_llm_response
+        fake_images = [{'name': 'x.png', 'base64': '...'}]
+
+        result = self.client.invoke(
+            company=self.company, user_identifier='user1', previous_response_id='prev1',
+            model='gpt-5',question='q', context='c', tools=[], text={}, images=fake_images
+        )
+
+        self.mock_proxy.create_response.assert_called_once()
+        call_kwargs = self.mock_proxy.create_response.call_args.kwargs
+        assert call_kwargs['images'] == fake_images
+
+        assert result['valid_response'] is True
         self.llmquery_repo.add_query.assert_called_once()
 
     def test_invoke_handles_function_calls(self):
@@ -92,7 +112,7 @@ class TestLLMClient:
             # 6. Invoke the client. Now, when it calls current_iatoolkit, it will get our mock.
             self.client.invoke(
                 company=self.company, user_identifier='user1', previous_response_id='prev1',
-                model='gpt-5',question='q', context='c', tools=[{}], text={}
+                model='gpt-5',question='q', context='c', tools=[{}], text={}, images=[]
             )
 
         # 7. Assertions
@@ -116,7 +136,7 @@ class TestLLMClient:
         with pytest.raises(IAToolkitException, match="Error calling LLM API"):
             self.client.invoke(
                 company=self.company, user_identifier='user1', previous_response_id='prev1',
-                model='gpt-5', question='q', context='c', tools=[], text={}
+                model='gpt-5', question='q', context='c', tools=[], text={}, images=[]
             )
         # Verificar que se guarda un registro de error en la BD
         self.llmquery_repo.add_query.assert_called_once()

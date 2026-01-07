@@ -208,12 +208,7 @@
                title="{{ t('ui.tooltips.attach_files') }}">
                 <i class="bi bi-plus-circle"></i>
             </a>
-            <div id="view-files-button-container" style="display: none;">
-                <a class="p-2" href="javascript:void(0);" id="view-files-button"
-                   title="{{ t('ui.tooltips.view_attached_files') }}">
-                    <i class="bi bi-file-earmark-text"></i>
-                </a>
-            </div>
+
         </div>
 
         <!-- Textarea Central -->
@@ -238,6 +233,20 @@
             </div>
         </div>
     </div>
+
+    <!-- NUEVO: Área de Adjuntos (Lista + Dropzone) -->
+    <div id="attachments-wrapper" class="px-1">
+        <!-- Lista de archivos cargados -->
+        <div id="inline-file-list" class="file-list-inline"></div>
+
+        <!-- Dropzone siempre visible -->
+        <div id="chat-dropzone" class="chat-dropzone">
+            <i class="bi bi-cloud-upload"></i>
+            <span>Arrastra archivos aquí o haz clic para adjuntar</span>
+            <span id="file-counter" class="dropzone-counter" style="display:none;">0/5</span>
+        </div>
+    </div>
+
 </div>
 
 <!-- Incluir los modales desde un archivo externo -->

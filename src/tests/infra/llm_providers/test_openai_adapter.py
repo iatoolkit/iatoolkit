@@ -82,6 +82,52 @@ class TestOpenAIAdapter:
         assert result.output[0].name == 'get_weather'
         assert result.output[0].arguments == '{"location": "London"}'
 
+    def test_create_response_multimodal_input(self):
+        """Prueba que los mensajes de texto se transforman a multimodal cuando hay imágenes."""
+        # Arrange
+        mock_response = MagicMock()
+        mock_response.id = 'chatcmpl-mm'
+        mock_response.model = 'gpt-4-turbo'
+        mock_response.status = 'completed'
+        mock_response.output = []
+        mock_response.usage = None
+        self.mock_openai_client.responses.create.return_value = mock_response
+
+        # Input inicial (solo texto)
+        input_data = [{'role': 'user', 'content': 'Describe this image'}]
+
+        # Imágenes adjuntas (simuladas)
+        images = [
+            {'name': 'photo.jpg', 'base64': 'AAAA'},
+            {'name': 'chart.png', 'base64': 'BBBB'}
+        ]
+
+        # Act
+        self.adapter.create_response(model='gpt-4-turbo', input=input_data, images=images)
+
+        # Assert
+        self.mock_openai_client.responses.create.assert_called_once()
+        call_kwargs = self.mock_openai_client.responses.create.call_args.kwargs
+        final_input = call_kwargs['input']
+
+        # Verificaciones:
+        # 1. El contenido del mensaje user debe ser una lista ahora
+        user_msg = final_input[0]
+        assert isinstance(user_msg['content'], list)
+        assert len(user_msg['content']) == 3  # 1 texto + 2 imágenes
+
+        # 2. Verificar texto (Responses API)
+        assert user_msg['content'][0] == {'type': 'input_text', 'text': 'Describe this image'}
+
+        # 3. Verificar imágenes (Responses API)
+        img1 = user_msg['content'][1]
+        assert img1['type'] == 'input_image'
+        assert img1['image_url'] == 'data:image/jpeg;base64,AAAA'  # fallback jpeg
+
+        img2 = user_msg['content'][2]
+        assert img2['type'] == 'input_image'
+        assert img2['image_url'] == 'data:image/png;base64,BBBB'
+
     def test_create_response_api_error(self):
         """Prueba que los errores de la API se capturan y lanzan como IAToolkitException."""
         # Arrange

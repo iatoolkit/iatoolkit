@@ -84,6 +84,36 @@ class TestLLMQueryRepo:
         assert result.prompt_type == PromptType.COMPANY.value
         assert result.custom_fields == [{'label': 'lbl'}]
 
+    def test_create_or_update_prompt_updates_existing(self):
+        """Test updating an existing prompt."""
+        # 1. Crear prompt original
+        prompt = Prompt(name="p_update", company_id=self.company.id, description="Old Desc", filename="old.txt")
+        self.session.add(prompt)
+        self.session.commit()
+
+        # 2. Datos nuevos
+        new_prompt_data = Prompt(
+            name="p_update",
+            company_id=self.company.id,
+            description="New Desc",
+            filename="new.txt",
+            order=10,
+            prompt_type=PromptType.SYSTEM.value,
+            custom_fields=[{'key': 'val'}]
+        )
+
+        # 3. Actualizar
+        result = self.repo.create_or_update_prompt(new_prompt_data)
+        self.session.commit()
+
+        # 4. Verificar
+        assert result.id == prompt.id
+        assert result.description == "New Desc"
+        assert result.filename == "new.txt"
+        assert result.order == 10
+        assert result.prompt_type == PromptType.SYSTEM.value
+        assert result.custom_fields == [{'key': 'val'}]
+
     def test_create_prompt_category(self):
         """Test creating a new prompt category."""
         new_category = PromptCategory(name="Cat1", order=1, company_id=self.company.id)
@@ -94,6 +124,25 @@ class TestLLMQueryRepo:
         assert result.name == "Cat1"
         assert result.order == 1
         assert result.company_id == self.company.id
+
+    def test_create_or_update_prompt_category_updates_existing(self):
+        """Test updating an existing prompt category."""
+        # 1. Crear categoría original
+        cat = PromptCategory(name="CatUpdate", order=1, company_id=self.company.id)
+        self.session.add(cat)
+        self.session.commit()
+
+        # 2. Datos nuevos (solo cambia el orden según la lógica actual)
+        new_cat_data = PromptCategory(name="CatUpdate", order=99, company_id=self.company.id)
+
+        # 3. Actualizar
+        result = self.repo.create_or_update_prompt_category(new_cat_data)
+        self.session.commit()
+
+        # 4. Verificar
+        assert result.id == cat.id
+        assert result.order == 99
+
 
     def test_get_history_empty_result(self):
         """Test get_history when no queries exist for the user"""
@@ -352,3 +401,29 @@ class TestLLMQueryRepo:
         # Should return None if prompt doesn't exist for that company
         result_none = self.repo.get_prompt_by_name(self.company, "non_existent")
         assert result_none is None
+
+        def test_create_or_update_tool_updates_existing(self):
+            """Test updating an existing tool."""
+            # 1. Crear tool original
+            tool = Tool(name="func_update", company_id=self.company.id, description="Desc Original", parameters={'a': 1})
+            self.session.add(tool)
+            self.session.commit()
+
+            # 2. Objeto con los nuevos datos (mismo nombre y compañía)
+            updated_tool_data = Tool(
+                name="func_update",
+                company_id=self.company.id,
+                description="Desc Actualizada",
+                parameters={'a': 2},
+                system_function=True
+            )
+
+            # 3. Ejecutar actualización
+            result = self.repo.create_or_update_tool(updated_tool_data)
+            self.session.commit()
+
+            # 4. Verificar
+            assert result.id == tool.id  # Debe mantener el ID
+            assert result.description == "Desc Actualizada"
+            assert result.parameters == {'a': 2}
+            assert result.system_function is True

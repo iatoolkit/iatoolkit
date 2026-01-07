@@ -4,18 +4,15 @@ locale: en_ES
 llm:
   model: gpt-5
   available_models:
-  - id: gpt-5
-    label: gpt-5
+  - id: gpt-5.2
+    label: gpt-5.2
     description: Fast, recommended for general purpose tasks.
-  - id: gpt-5.1
-    label: gpt-5.1
-    description: Reasoner.
   - id: deepseek-chat
     label: deepseek-chat
     description: Fast and cheap.
-  - id: deepseek-reasoner
-    label: deepseek-reasoner
-    description: Detail reasoning.
+  - id: gemini-3-flash-preview
+    label: gemini-3
+    description: Fast
   provider_api_keys:
     openai: OPENAI_API_KEY
     gemini: GEMINI_API_KEY

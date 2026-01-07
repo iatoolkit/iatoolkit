@@ -98,11 +98,13 @@ const handleChatMessage = async function () {
             return;
         }
 
-        displayUserMessage(displayMessage, isEditable, question);
+        // Obtener archivos ANTES de mostrar el mensaje para poder renderizarlos
+        const files = window.filePond.getFiles();
+
+        displayUserMessage(displayMessage, isEditable, question, files);
         showSpinner();
         resetAllInputs();
 
-        const files = window.filePond.getFiles();
         const filesBase64 = await Promise.all(files.map(fileItem => toBase64(fileItem.file)));
 
         const data = {
@@ -316,13 +318,47 @@ const callToolkit = async function(apiPath, data, method, timeoutMs = 500000) {
  * @param {string} message - The full message string to display.
  * @param {boolean} isEditable - Determines if the edit icon should be shown.
  * @param {string} originalQuestion - The original text to put back in the textarea for editing.
+ * @param {Array} [files] - Optional array of FilePond file items.
  */
-const displayUserMessage = function(message, isEditable, originalQuestion) {
+const displayUserMessage = function(message, isEditable, originalQuestion, files = []) {
     const chatContainer = $('#chat-container');
     const userMessage = $('<div>').addClass('message shadow-sm');
     const messageText = $('<span>').text(message);
 
     userMessage.append(messageText);
+
+    // Renderizar previsualizaciones de archivos si existen
+    if (files && files.length > 0) {
+        const attachmentsContainer = $('<div>').addClass('mt-2 d-flex flex-wrap gap-2 ms-3');
+
+        files.forEach(fileItem => {
+            const file = fileItem.file;
+
+            if (file.type && file.type.startsWith('image/')) {
+                // Previsualización de imagen usando URL temporal
+                const imgUrl = URL.createObjectURL(file);
+                const img = $('<img>')
+                    .attr('src', imgUrl)
+                    .addClass('rounded border')
+                    .css({
+                        'max-height': '80px',
+                        'max-width': '120px',
+                        'object-fit': 'cover',
+                        'cursor': 'pointer'
+                    })
+                    .on('click', () => window.open(imgUrl, '_blank')); // Click para ver en grande
+                attachmentsContainer.append(img);
+            } else {
+                // Icono genérico para documentos
+                const badge = $('<span>')
+                    .addClass('badge bg-light text-dark border p-2')
+                    .html(`<i class="bi bi-file-earmark-text me-1"></i> ${file.name}`);
+                attachmentsContainer.append(badge);
+            }
+        });
+
+        userMessage.append(attachmentsContainer);
+    }
 
     if (isEditable) {
         const editIcon = $('<i>').addClass('p-2 bi bi-pencil-fill edit-icon edit-pencil').attr('title', 'Edit query').on('click', function () {

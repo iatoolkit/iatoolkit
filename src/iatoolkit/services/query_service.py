@@ -99,7 +99,7 @@ class QueryService:
         final_client_data.update(client_data)
 
         # Load attached files into the context
-        files_context = self.load_files_for_context(files)
+        files_context, images = self.load_files_for_context(files)
 
         # Initialize prompt_content. It will be an empty string for direct questions.
         main_prompt = ""
@@ -128,7 +128,7 @@ class QueryService:
         else:
             user_turn_prompt += f'\n### Contexto Adicional: El usuario ha aportado este contexto puede ayudar: {effective_question}'
 
-        return user_turn_prompt, effective_question
+        return user_turn_prompt, effective_question, images
 
     def _ensure_valid_history(self, company,
                               user_identifier: str,
@@ -356,7 +356,7 @@ class QueryService:
             effective_model = self._resolve_model(company_short_name, model)
 
             # --- Build User-Facing Prompt ---
-            user_turn_prompt, effective_question = self._build_user_facing_prompt(
+            user_turn_prompt, effective_question, images = self._build_user_facing_prompt(
                 company=company,
                 user_identifier=user_identifier,
                 client_data=client_data,
@@ -397,7 +397,8 @@ class QueryService:
                 question=effective_question,
                 context=user_turn_prompt,
                 tools=tools,
-                text=output_schema
+                text=output_schema,
+                images=images,
             )
 
             if not response.get('valid_response'):
@@ -421,24 +422,23 @@ class QueryService:
             return "unknown"
 
 
-    def load_files_for_context(self, files: list) -> str:
+    def load_files_for_context(self, files: list) -> tuple[str, list]:
         """
-        Processes a list of attached files, decodes their content,
-        and formats them into a string context for the LLM.
+        Processes a list of attached files.
+        Decodes text documents into context string and separates images for multimodal processing.
         """
         if not files:
-            return ''
+            return '', []
 
-        context = f"""
-            A continuación encontraras una lista de documentos adjuntos
-            enviados por el usuario que hace la pregunta, 
-            en total son: {len(files)} documentos adjuntos
-            """
+        context_parts = []
+        images = []
+        text_files_count = 0
+
         for document in files:
             # Support both 'file_id' and 'filename' for robustness
             filename = document.get('file_id') or document.get('filename') or document.get('name')
             if not filename:
-                context += "\n<error>Documento adjunto sin nombre ignorado.</error>\n"
+                context_parts.append("\n<error>Documento adjunto sin nombre ignorado.</error>\n")
                 continue
 
             # Support both 'base64' and 'content' for robustness
@@ -446,7 +446,12 @@ class QueryService:
 
             if not base64_content:
                 # Handles the case where a file is referenced but no content is provided
-                context += f"\n<error>El archivo '{filename}' no fue encontrado y no pudo ser cargado.</error>\n"
+                context_parts.append(f"\n<error>El archivo '{filename}' no fue encontrado y no pudo ser cargado.</error>\n")
+                continue
+
+            # Detect if the file is an image
+            if self._is_image(filename):
+                images.append({'name': filename, 'base64': base64_content})
                 continue
 
             try:
@@ -456,12 +461,26 @@ class QueryService:
 
                 file_content = base64.b64decode(base64_content)
                 document_text = self.document_service.file_to_txt(filename, file_content)
-                context += f"\n<document name='{filename}'>\n{document_text}\n</document>\n"
+                context_parts.append(f"\n<document name='{filename}'>\n{document_text}\n</document>\n")
+                text_files_count += 1
             except Exception as e:
                 # Catches errors from b64decode or file_to_txt
                 logging.error(f"Failed to process file {filename}: {e}")
-                context += f"\n<error>Error al procesar el archivo {filename}: {str(e)}</error>\n"
+                context_parts.append(f"\n<error>Error al procesar el archivo {filename}: {str(e)}</error>\n")
                 continue
 
-        return context
+        context = ""
+        if text_files_count > 0:
+            context = f"""
+            A continuación encontraras una lista de documentos adjuntos
+            enviados por el usuario que hace la pregunta, 
+            en total son: {text_files_count} documentos adjuntos
+            """ + "".join(context_parts)
+        elif context_parts:
+            # If only errors were collected
+            context = "".join(context_parts)
 
+        return context, images
+
+    def _is_image(self, filename: str) -> bool:
+        return filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.gif'))

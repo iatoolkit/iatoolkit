@@ -303,6 +303,102 @@ li {
     color: #343a40;
 }
 
+/* --- NUEVO: Dropzone y Lista de Archivos Inline --- */
+
+/* Contenedor de la lista de archivos */
+.file-list-inline {
+    margin-bottom: 0.5rem;
+    display: none; /* Se oculta si no hay archivos */
+}
+
+.file-list-item {
+    background-color: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    padding: 6px 10px;
+    margin-bottom: 5px;
+    display: flex;
+    align-items: center;
+    font-size: 0.9rem;
+    transition: background-color 0.2s;
+}
+
+.file-list-item:hover {
+    background-color: #f8f9fa;
+}
+
+.file-list-item i.file-icon {
+    font-size: 1.1rem;
+    margin-right: 8px;
+    color: var(--brand-primary-color);
+}
+
+.file-list-item .file-name {
+    flex-grow: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-right: 10px;
+    color: #495057;
+}
+
+.file-list-item .file-remove {
+    cursor: pointer;
+    color: #dc3545; /* Rojo Bootstrap estándar */
+    opacity: 0.6;
+    transition: opacity 0.2s, transform 0.2s;
+}
+
+.file-list-item .file-remove:hover {
+    opacity: 1;
+    transform: scale(1.1);
+}
+
+/* Dropzone estática */
+.chat-dropzone {
+    border: 2px dashed #ced4da;
+    border-radius: 0.5rem;
+    padding: 10px;
+    text-align: center;
+    background-color: rgba(255, 255, 255, 0.5);
+    color: #6c757d;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+    margin-top: 0.5rem;
+    font-size: 0.9rem;
+}
+
+.chat-dropzone:hover {
+    border-color: var(--brand-primary-color);
+    background-color: rgba(255, 255, 255, 0.8);
+    color: var(--brand-primary-color);
+}
+
+.chat-dropzone.drag-over {
+    border-color: var(--brand-primary-color);
+    background-color: #e9ecef;
+    transform: scale(1.01);
+}
+
+.chat-dropzone i {
+    font-size: 1.2rem;
+    vertical-align: middle;
+    margin-right: 5px;
+}
+
+/* Ajuste para el contador de archivos */
+.dropzone-counter {
+    font-size: 0.8rem;
+    margin-left: 5px;
+    background: #e9ecef;
+    padding: 2px 6px;
+    border-radius: 10px;
+    color: #495057;
+}
+
+/* --- FIN NUEVO --- */
+
+
 /* Anulación específica para el botón de ENVIAR usando su ID (Máxima Prioridad) */
 #send-button i {
     font-size: 1.7rem; /* Ligeramente más grande */

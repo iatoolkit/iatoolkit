@@ -40,6 +40,13 @@ class DeepseekAdapter:
         tools = kwargs.get("tools") or []
         tool_choice = kwargs.get("tool_choice", "auto")
         context_history = kwargs.get("context_history") or []
+        images = kwargs.get("images") or []
+
+        if images:
+            logging.warning(
+                f"[DeepseekAdapter] Images provided but DeepSeek models are not multimodal. "
+                f"Ignoring {len(images)} images."
+            )
 
         try:
             # 1) Build messages from history (if any)

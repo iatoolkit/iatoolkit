@@ -69,8 +69,10 @@ class llmClient:
                text: dict,
                model: str,
                context_history: Optional[List[Dict]] = None,
+               images: list = None,
                ) -> dict:
 
+        images = images or []
         f_calls = []  # keep track of the function calls executed by the LLM
         f_call_time = 0
         response = None
@@ -84,7 +86,7 @@ class llmClient:
 
         try:
             start_time = time.time()
-            logging.info(f"calling llm model '{model}' with {self.count_tokens(context, context_history)} tokens...")
+            logging.info(f"calling llm model '{model}' with {self.count_tokens(context, context_history)} tokens...and {len(images)} images...")
 
             # this is the first call to the LLM on the iteration
             try:
@@ -102,6 +104,7 @@ class llmClient:
                     tools=tools,
                     text=text_payload,
                     reasoning=reasoning,
+                    images=images,
                 )
                 stats = self.get_stats(response)
 
@@ -198,6 +201,7 @@ class llmClient:
                     tool_choice=tool_choice_value,
                     tools=tools,
                     text=text_payload,
+                    images=images,
                 )
                 stats_fcall = self.add_stats(stats_fcall, self.get_stats(response))
 

@@ -9,6 +9,8 @@ from iatoolkit.infra.llm_response import LLMResponse, ToolCall, Usage
 from iatoolkit.common.exceptions import IAToolkitException
 import html
 from typing import List
+import mimetypes
+
 
 class OpenAIAdapter:
     """Adaptador para la API de OpenAI"""
@@ -24,9 +26,14 @@ class OpenAIAdapter:
                         tools: Optional[List[Dict]] = None,
                         text: Optional[Dict] = None,
                         reasoning: Optional[Dict] = None,
-                        tool_choice: str = "auto") -> LLMResponse:
+                        tool_choice: str = "auto",
+                        images: Optional[List[Dict]] = None) -> LLMResponse:
         """Llamada a la API de OpenAI y mapeo a estructura común"""
         try:
+            # Handle multimodal input if images are present
+            if images:
+                input = self._prepare_multimodal_input(input, images)
+
             # Preparar parámetros para OpenAI
             params = {
                 'model': model,
@@ -55,6 +62,55 @@ class OpenAIAdapter:
             logging.error(error_message)
 
             raise IAToolkitException(IAToolkitException.ErrorType.LLM_ERROR, error_message)
+
+    def _prepare_multimodal_input(self, messages: List[Dict], images: List[Dict]) -> List[Dict]:
+        """
+        Transforma el mensaje del usuario de texto simple a contenido multimodal (texto + imágenes)
+        usando el formato de Responses API (input_text/input_image).
+        """
+        # Encontrar el último mensaje del usuario
+        target_message = None
+        for msg in reversed(messages):
+            if msg.get('role') == 'user':
+                target_message = msg
+                break
+
+        if not target_message:
+            return messages
+
+        text_content = target_message.get('content', '')
+        content_parts = []
+
+        # Agregar parte de texto (Responses API)
+        if text_content:
+            content_parts.append({"type": "input_text", "text": text_content})
+
+        # Agregar partes de imagen (Responses API)
+        for img in images:
+            filename = img.get('name', '')
+            mime_type, _ = mimetypes.guess_type(filename)
+            if not mime_type:
+                mime_type = 'image/jpeg'
+
+            base64_data = img.get('base64', '')
+            url = f"data:{mime_type};base64,{base64_data}"
+
+            content_parts.append({
+                "type": "input_image",
+                "image_url": url
+            })
+
+        # Construir nueva lista de mensajes con el contenido actualizado
+        final_messages = []
+        for msg in messages:
+            if msg is target_message:
+                new_msg = msg.copy()
+                new_msg['content'] = content_parts
+                final_messages.append(new_msg)
+            else:
+                final_messages.append(msg)
+
+        return final_messages
 
     def _map_openai_response(self, openai_response) -> LLMResponse:
         """Mapear respuesta de OpenAI a estructura común"""

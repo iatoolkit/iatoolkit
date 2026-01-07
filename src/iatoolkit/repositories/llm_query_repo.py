@@ -22,12 +22,20 @@ class LLMQueryRepo:
     def rollback(self):
         self.session.rollback()
 
+    # save new query result in the database
     def add_query(self, query: LLMQuery):
         self.session.add(query)
         self.session.commit()
         return query
 
+    # get user query history
+    def get_history(self, company: Company, user_identifier: str) -> list[LLMQuery]:
+        return self.session.query(LLMQuery).filter(
+            LLMQuery.user_identifier == user_identifier,
+        ).filter_by(company_id=company.id).order_by(LLMQuery.created_at.desc()).limit(100).all()
 
+
+    ## --- Tools related methods
     def get_company_tools(self, company: Company) -> list[Tool]:
         return (
             self.session.query(Tool)
@@ -63,6 +71,30 @@ class LLMQueryRepo:
     def delete_tool(self, tool: Tool):
         self.session.query(Tool).filter_by(id=tool.id).delete(synchronize_session=False)
 
+    # -- Prompt related methods
+
+    def get_prompt_by_name(self, company: Company, prompt_name: str):
+        return self.session.query(Prompt).filter_by(company_id=company.id, name=prompt_name).first()
+
+
+    def get_prompts(self, company: Company, include_all: bool = False) -> list[Prompt]:
+        if include_all:
+            # Include all prompts (for the prompt admin dashboard)
+            return self.session.query(Prompt).filter(
+                Prompt.company_id == company.id,
+            ).all()
+        else:
+            # Only active company prompts (default behavior for end users)
+            return self.session.query(Prompt).filter(
+                Prompt.company_id == company.id,
+                Prompt.prompt_type == PromptType.COMPANY.value,
+                Prompt.active == True
+            ).all()
+
+    def get_system_prompts(self) -> list[Prompt]:
+        return self.session.query(Prompt).filter_by(prompt_type=PromptType.SYSTEM.value, active=True).order_by(
+            Prompt.order).all()
+
     def create_or_update_prompt(self, new_prompt: Prompt):
         prompt = self.session.query(Prompt).filter_by(company_id=new_prompt.company_id,
                                                  name=new_prompt.name).first()
@@ -80,6 +112,18 @@ class LLMQueryRepo:
         self.session.commit()
         return prompt
 
+    def delete_prompt(self, prompt: Prompt):
+        self.session.delete(prompt)
+        self.session.commit()
+
+    # -- Prompt category methods
+
+    def get_category_by_name(self, company_id: int, name: str) -> PromptCategory:
+        return self.session.query(PromptCategory).filter_by(company_id=company_id, name=name).first()
+
+    def get_all_categories(self, company_id: int) -> List[PromptCategory]:
+        return self.session.query(PromptCategory).filter_by(company_id=company_id).order_by(PromptCategory.order).all()
+
     def create_or_update_prompt_category(self, new_category: PromptCategory):
         category = self.session.query(PromptCategory).filter_by(company_id=new_category.company_id,
                                                       name=new_category.name).first()
@@ -92,37 +136,3 @@ class LLMQueryRepo:
         self.session.flush()
         return category
 
-    def get_history(self, company: Company, user_identifier: str) -> list[LLMQuery]:
-        return self.session.query(LLMQuery).filter(
-            LLMQuery.user_identifier == user_identifier,
-        ).filter_by(company_id=company.id).order_by(LLMQuery.created_at.desc()).limit(100).all()
-
-    def get_prompts(self, company: Company, include_all: bool = False) -> list[Prompt]:
-        if include_all:
-            # Include all prompts (for the prompt admin dashboard)
-            return self.session.query(Prompt).filter(
-                Prompt.company_id == company.id,
-            ).all()
-        else:
-            # Only active company prompts (default behavior for end users)
-            return self.session.query(Prompt).filter(
-                Prompt.company_id == company.id,
-                Prompt.prompt_type == PromptType.COMPANY.value,
-                Prompt.active == True
-            ).all()
-
-    def get_prompt_by_name(self, company: Company, prompt_name: str):
-        return self.session.query(Prompt).filter_by(company_id=company.id, name=prompt_name).first()
-
-    def get_category_by_name(self, company_id: int, name: str) -> PromptCategory:
-        return self.session.query(PromptCategory).filter_by(company_id=company_id, name=name).first()
-
-    def get_all_categories(self, company_id: int) -> List[PromptCategory]:
-        return self.session.query(PromptCategory).filter_by(company_id=company_id).order_by(PromptCategory.order).all()
-
-    def get_system_prompts(self) -> list[Prompt]:
-        return self.session.query(Prompt).filter_by(prompt_type=PromptType.SYSTEM.value, active=True).order_by(Prompt.order).all()
-
-    def delete_prompt(self, prompt: Prompt):
-        self.session.delete(prompt)
-        self.session.commit()

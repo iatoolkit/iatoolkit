@@ -1,85 +1,209 @@
-$(document).ready(function () {
-    const paperclipButton = $('#paperclip-button');
-    const viewFilesButtonContainer = $('#view-files-button-container');
-    const viewFilesButton = $('#view-files-button');
-    const uploadedFilesModalElement = $('#uploadedFilesModal');
-    const uploadedFilesModal = uploadedFilesModalElement;  // En Bootstrap 3, el elemento jQuery es el modal
-    const uploadedFilesList = $('#uploaded-files-list');
+document.addEventListener('DOMContentLoaded', function () {
+    // 1. Register FilePond Plugins
+    // Ensure plugin scripts are loaded in your base layout or template
+    if (typeof FilePondPluginFileEncode !== 'undefined') {
+        FilePond.registerPlugin(FilePondPluginFileEncode);
+    }
+    if (typeof FilePondPluginFileValidateSize !== 'undefined') {
+        FilePond.registerPlugin(FilePondPluginFileValidateSize);
+    }
+    if (typeof FilePondPluginFileValidateType !== 'undefined') {
+        FilePond.registerPlugin(FilePondPluginFileValidateType);
+    }
+    if (typeof FilePondPluginImagePreview !== 'undefined') {
+        FilePond.registerPlugin(FilePondPluginImagePreview);
+    }
 
-    // Initialize FilePond
-    window.filePond = FilePond.create(
-        document.querySelector('#file-upload'), {
+    // 2. Create FilePond instance on the hidden input
+    const inputElement = document.querySelector('input.filepond');
+
+    // FilePond base configuration
+    const filePond = FilePond.create(inputElement, {
         allowMultiple: true,
-        labelIdle: '',
+        maxFiles: 5,
+        maxFileSize: '10MB', // Adjust as needed
+        // Extensive list of accepted types (Images, PDF, Text, Excel, Word)
+        acceptedFileTypes: [
+            'image/*',
+            'application/pdf',
+            'text/plain',
+            'text/csv',
+            'application/vnd.ms-excel',                                                 // .xls
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',        // .xlsx
+            'application/msword',                                                       // .doc
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'   // .docx
+        ],
+        labelIdle: '', // Left empty because we use our own UI
         credits: false,
-        allowFileSizeValidation: true,
-        maxFileSize: '10MB',
-        stylePanelLayout: null,
-        itemInsertLocation: 'after',
-        instantUpload: false,
+        storeAsFile: true, // Important for encode to work if used
     });
 
-    $('.filepond--root').hide(); // Ocultar la UI de FilePond
+    // Expose globally so chat_main.js can access (getFiles, removeFiles)
+    window.filePond = filePond;
 
-    // Función para actualizar la visibilidad del icono "ver archivos"
-    function updateFileIconsVisibility() {
+
+    // 3. DOM references for the new custom UI
+    const dropzone = document.getElementById('chat-dropzone');
+    const fileListContainer = document.getElementById('inline-file-list');
+    const fileCounter = document.getElementById('file-counter');
+    const paperclipBtn = document.getElementById('paperclip-button');
+
+
+    // 4. Rendering Functions
+
+    /**
+     * Returns the Bootstrap icon class based on filename or file type.
+     */
+    function getFileIconClass(filename, type) {
+        const ext = filename.split('.').pop().toLowerCase();
+
+        // Images
+        if (type.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) {
+            return 'bi-file-earmark-image';
+        }
+        // PDF
+        if (type === 'application/pdf' || ext === 'pdf') {
+            return 'bi-file-earmark-pdf';
+        }
+        // Excel / Spreadsheets
+        if (['xls', 'xlsx', 'csv'].includes(ext) || type.includes('spreadsheet') || type.includes('excel')) {
+            return 'bi-file-earmark-excel';
+        }
+        // Word / Documents
+        if (['doc', 'docx'].includes(ext) || type.includes('word') || type.includes('document')) {
+            return 'bi-file-earmark-word';
+        }
+        // Text / Code
+        if (['txt', 'md', 'json', 'py', 'js', 'html', 'css'].includes(ext)) {
+            return 'bi-file-earmark-text';
+        }
+
+        // Default icon
+        return 'bi-file-earmark';
+    }
+
+    /**
+     * Rebuilds the visual file list below the input.
+     */
+    function renderFileList() {
+        if (!fileListContainer) return;
+
         const files = filePond.getFiles();
+        fileListContainer.innerHTML = ''; // Clear current list
+
         if (files.length > 0) {
-            viewFilesButtonContainer.show();
-        } else {
-            viewFilesButtonContainer.hide();
-            if (uploadedFilesModalElement.hasClass('in')) { // Si el modal está abierto y no hay archivos, ciérralo
-                uploadedFilesModal.modal('hide');
+            fileListContainer.style.display = 'block';
+
+            // Update counter
+            if (fileCounter) {
+                fileCounter.textContent = `${files.length}/${filePond.maxFiles || 5}`;
+                fileCounter.style.display = 'inline-block';
             }
+
+            files.forEach(fileItem => {
+                const file = fileItem.file;
+                const iconClass = getFileIconClass(file.name, file.type || '');
+
+                // Create file row
+                const row = document.createElement('div');
+                row.className = 'file-list-item';
+
+                row.innerHTML = `
+                    <i class="bi ${iconClass} file-icon"></i>
+                    <span class="file-name" title="${file.name}">${file.name}</span>
+                    <i class="bi bi-x-circle-fill file-remove" role="button" aria-label="Remove file"></i>
+                `;
+
+                // Click event on the remove button of the row
+                const removeBtn = row.querySelector('.file-remove');
+                removeBtn.addEventListener('click', (e) => {
+                    e.stopPropagation(); // Prevent click propagation if nested in a clickable area
+                    filePond.removeFile(fileItem.id);
+                });
+
+                fileListContainer.appendChild(row);
+            });
+        } else {
+            // Hide list and counter if no files
+            fileListContainer.style.display = 'none';
+            if (fileCounter) fileCounter.style.display = 'none';
         }
     }
 
-    // Función para poblar el modal con los archivos y botones de eliminar
-    function populateFilesModal() {
-        uploadedFilesList.empty(); // Limpiar lista anterior
-        const files = filePond.getFiles();
 
-        if (files.length === 0) {
-            uploadedFilesList.append('<li class="list-group-item">No hay archivos adjuntos.</li>');
-            return;
-        }
+    // 5. Interaction Event Management
 
-        files.forEach(file => {
-            const listItem = $(`
-                <li class="list-group-item d-flex justify-content-between align-items-center">
-                    <span class="file-name-modal">${file.filename}</span>
-                    <button type="button" class="btn btn-sm btn-outline-danger remove-file-btn" data-file-id="${file.id}" title="Eliminar archivo">
-                        <i class="bi bi-trash-fill"></i>
-                    </button>
-                </li>
-            `);
-            uploadedFilesList.append(listItem);
+    // -- Custom Dropzone Robust Handling --
+    if (dropzone) {
+        // Prevent default browser behavior for drag events
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropzone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+            }, false);
+        });
+
+        // Highlight dropzone on drag enter/over
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropzone.addEventListener(eventName, () => {
+                dropzone.classList.add('drag-over');
+            }, false);
+        });
+
+        // Remove highlight on drag leave or drop
+        // Note: checking relatedTarget prevents flickering when dragging over child elements
+        dropzone.addEventListener('dragleave', (e) => {
+            if (!dropzone.contains(e.relatedTarget)) {
+                dropzone.classList.remove('drag-over');
+            }
+        }, false);
+
+        dropzone.addEventListener('drop', (e) => {
+            dropzone.classList.remove('drag-over');
+
+            // Pass dropped files to FilePond
+            // We convert FileList to Array to ensure compatibility
+            if (e.dataTransfer && e.dataTransfer.files.length > 0) {
+                filePond.addFiles(Array.from(e.dataTransfer.files));
+            }
+        }, false);
+
+        // Click on zone opens native selector
+        dropzone.addEventListener('click', function() {
+            filePond.browse();
         });
     }
 
-        // Event listeners de FilePond
-    window.filePond.on('addfile', () => updateFileIconsVisibility());
-    window.filePond.on('removefile', () => {
-        updateFileIconsVisibility();
-        if (uploadedFilesModalElement.hasClass('in')) {
-            populateFilesModal();
+    // -- "Clip" Button (Legacy design compatibility) --
+    if (paperclipBtn) {
+        paperclipBtn.addEventListener('click', function() {
+            filePond.browse();
+        });
+    }
+
+
+    // 6. FilePond Hooks for Reactivity
+
+    // On file add (even if validation error, FilePond manages array)
+    filePond.on('addfile', (error, file) => {
+        if (error) {
+            console.error('FilePond Error:', error);
+            // Optional: Show error toast if file is invalid (e.g., too large)
+            return;
         }
+        renderFileList();
     });
 
-    // Event listeners de los botones de la UI
-    paperclipButton.on('click', () => window.filePond.browse());
-    viewFilesButton.on('click', () => {
-        populateFilesModal();
-        uploadedFilesModal.modal('show');
-    });
-    uploadedFilesList.on('click', '.remove-file-btn', function () {
-        const fileIdToRemove = $(this).data('file-id');
-        if (fileIdToRemove) {
-            window.filePond.removeFile(fileIdToRemove);
-        }
+    // On file remove
+    filePond.on('removefile', (error, file) => {
+        renderFileList();
     });
 
-    // Inicializar visibilidad al cargar
-    updateFileIconsVisibility();
+    // Event for general error (e.g., type not allowed on drop)
+    filePond.on('warning', (error) => {
+        console.warn('FilePond Warning:', error);
+    });
+
+    // Initialization: Initial render in case browser cached state
+    renderFileList();
 });
-

@@ -11,6 +11,8 @@ from iatoolkit.common.exceptions import IAToolkitException
 import logging
 import json
 import uuid
+import mimetypes
+
 
 class GeminiAdapter:
 
@@ -34,6 +36,7 @@ class GeminiAdapter:
                         text: Optional[Dict] = None,
                         reasoning: Optional[Dict] = None,
                         tool_choice: str = "auto",
+                        images: Optional[List[Dict]] = None,
                         ) -> LLMResponse:
         try:
             # init the model with the configured client
@@ -43,11 +46,12 @@ class GeminiAdapter:
             )
 
             # prepare the content for gemini
+            # We pass images here because they need to be merged into the content
             if context_history:
                 # concat the history with the current input
-                contents = self._prepare_gemini_contents(context_history + input)
+                contents = self._prepare_gemini_contents(context_history + input, images)
             else:
-                contents = self._prepare_gemini_contents(input)
+                contents = self._prepare_gemini_contents(input, images)
 
             # prepare tools
             gemini_tools = self._prepare_gemini_tools(tools) if tools else None
@@ -108,31 +112,67 @@ class GeminiAdapter:
         }
         return model_mapping.get(model.lower(), model)
 
-    def _prepare_gemini_contents(self, input: List[Dict]) -> List[Dict]:
+    def _prepare_gemini_contents(self, input: List[Dict], images: Optional[List[Dict]] = None) -> List[Dict]:
         # convert input messages to Gemini format
         gemini_contents = []
 
-        for message in input:
+        # Find the last user message to attach images to
+        last_user_msg_index = -1
+        if images:
+            for i in range(len(input) - 1, -1, -1):
+                if input[i].get("role") == "user":
+                    last_user_msg_index = i
+                    break
+
+        for i, message in enumerate(input):
+            parts = []
+
             if message.get("role") == "system":
+                # System prompts are usually passed as user role with special text in Gemini 1.0/1.5 API
+                # unless using the explicit system_instruction parameter (which is model-init time).
+                # Here we keep the existing logic of prepending to user role.
                 gemini_contents.append({
                     "role": "user",
                     "parts": [{"text": f"[INSTRUCCIONES DEL SISTEMA]\n{message.get('content', '')}"}]
                 })
+                continue # Skip the rest for this iteration
+
             elif message.get("role") == "user":
-                gemini_contents.append({
-                    "role": "user",
-                    "parts": [{"text": message.get("content", "")}]
-                })
+                role = "user"
+                parts.append({"text": message.get("content", "")})
+
+                # Attach images to the LAST user message only
+                if images and i == last_user_msg_index:
+                    for img in images:
+                        filename = img.get('name', '')
+                        mime_type, _ = mimetypes.guess_type(filename)
+                        if not mime_type:
+                            mime_type = 'image/jpeg'
+
+                        parts.append({
+                            "inline_data": {
+                                "mime_type": mime_type,
+                                "data": img.get('base64', '')
+                            }
+                        })
+
             elif message.get("type") == "function_call_output":
-                gemini_contents.append({
-                    "role": "function",
-                    "parts": [{
-                        "function_response": {
-                            "name": "tool_result",
-                            "response": {"output": message.get("output", "")}
-                        }
-                    }]
+                role = "function"
+                parts.append({
+                    "function_response": {
+                        "name": "tool_result",
+                        "response": {"output": message.get("output", "")}
+                    }
                 })
+            else:
+                # Handle assistant messages or others if present in history
+                # Assuming role mapping is correct or handled elsewhere if needed
+                continue
+
+            gemini_contents.append({
+                "role": role,
+                "parts": parts
+            })
 
         return gemini_contents
 
