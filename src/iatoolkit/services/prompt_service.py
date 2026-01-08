@@ -331,9 +331,8 @@ class PromptService:
                 self.llm_query_repo.create_or_update_prompt(new_prompt)
 
                 # add prompt to company assets
-                if not self.asset_repo.exists(company.short_name, AssetType.PROMPT, prompt_filename):
-                    prompt_content = importlib.resources.read_text('iatoolkit.system_prompts', prompt_filename)
-                    self.asset_repo.write_text(company.short_name, AssetType.PROMPT, prompt_filename, prompt_content)
+                prompt_content = importlib.resources.read_text('iatoolkit.system_prompts', prompt_filename)
+                self.asset_repo.write_text(company.short_name, AssetType.PROMPT, prompt_filename, prompt_content)
 
             # Cleanup old system prompts
             existing_sys_prompts = self.llm_query_repo.get_system_prompts()
