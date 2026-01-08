@@ -19,9 +19,9 @@ import os
 
 # iatoolkit system prompts definitions
 _SYSTEM_PROMPTS = [
-    {'name': 'query_main', 'description': 'iatoolkit main prompt'},
-    {'name': 'format_styles', 'description': 'output format styles'},
-    {'name': 'sql_rules', 'description': 'instructions  for SQL queries'},
+    {'name': 'query_main', 'description': 'iatoolkit main prompt', 'order': 1},
+    {'name': 'format_styles', 'description': 'output format styles', 'order': 2},
+    {'name': 'sql_rules', 'description': 'instructions  for SQL queries', 'order': 3},
 ]
 
 class PromptService:
@@ -321,7 +321,7 @@ class PromptService:
                     company_id=company.id,
                     name=prompt_name,
                     description=prompt_data['description'],
-                    order=i + 1,
+                    order=prompt_data['order'],
                     category_id=sys_category.id,
                     active=True,
                     prompt_type=PromptType.SYSTEM.value,

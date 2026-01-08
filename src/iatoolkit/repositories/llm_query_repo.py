@@ -93,7 +93,7 @@ class LLMQueryRepo:
 
     def get_system_prompts(self) -> list[Prompt]:
         return self.session.query(Prompt).filter_by(prompt_type=PromptType.SYSTEM.value, active=True).order_by(
-            Prompt.order.desc()).all()
+            Prompt.order).all()
 
     def create_or_update_prompt(self, new_prompt: Prompt):
         prompt = self.session.query(Prompt).filter_by(company_id=new_prompt.company_id,

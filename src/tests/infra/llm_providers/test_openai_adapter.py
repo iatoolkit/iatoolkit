@@ -91,6 +91,7 @@ class TestOpenAIAdapter:
         mock_response.status = 'completed'
         mock_response.output = []
         mock_response.usage = None
+        mock_response.output_text = ""
         self.mock_openai_client.responses.create.return_value = mock_response
 
         # Input inicial (solo texto)
@@ -152,6 +153,7 @@ class TestOpenAIAdapter:
         mock_response.model = 'model'
         mock_response.status = 'status'
         mock_response.output = []
+        mock_response.output_text = ""
         mock_response.usage = None
 
         self.mock_openai_client.responses.create.return_value = mock_response
