@@ -5,7 +5,7 @@
 
 from iatoolkit.infra.connectors.file_connector import FileConnector
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
+from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 from google.oauth2.service_account import Credentials
 import io
 from typing import List
@@ -68,4 +68,32 @@ class GoogleDriveConnector(FileConnector):
         return file_buffer.getvalue()
 
     def upload_file(self, file_path: str, content: bytes, content_type: str = None) -> None:
-        return
+        """
+        Sube un archivo a Google Drive.
+        Nota: 'file_path' en este contexto se interpreta como el nombre del archivo,
+        ya que GDrive usa IDs para carpetas. El archivo se subirá a la carpeta configurada (self.folder_id).
+        """
+        file_metadata = {
+            'name': file_path, # Usamos file_path como nombre
+            'parents': [self.folder_id]
+        }
+
+        media = MediaIoBaseUpload(io.BytesIO(content), mimetype=content_type, resumable=True)
+
+        self.drive_service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields='id'
+        ).execute()
+
+    def delete_file(self, file_path: str) -> None:
+        """
+        Elimina un archivo de Google Drive.
+        Nota: 'file_path' aquí DEBE ser el ID del archivo (fileId), no su nombre.
+        """
+        try:
+            self.drive_service.files().delete(fileId=file_path).execute()
+        except Exception:
+            # Si falla (ej: no existe), podríamos loguear o ignorar según diseño.
+            # Aquí asumimos propagación de error o manejo silencioso si no crítico.
+            pass

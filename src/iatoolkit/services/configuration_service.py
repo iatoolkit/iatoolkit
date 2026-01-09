@@ -412,7 +412,34 @@ class ConfigurationService:
             if not mail_config.get("sender_email"):
                 add_error("mail_provider", "Missing required key: 'sender_email'")
 
-        # 10. Help Files
+        # 10. Storage Provider
+        storage_config = config.get("storage_provider", {})
+        if storage_config:
+            provider = storage_config.get("provider")
+            if not provider:
+                add_error("storage_provider", "Missing required key: 'provider'")
+            elif provider not in ["s3", "google_cloud_storage"]:
+                add_error("storage_provider", f"Unsupported provider: '{provider}'. Must be 's3' or 'google_cloud_storage'.")
+
+            if not storage_config.get("bucket"):
+                add_error("storage_provider", "Missing required key: 'bucket'")
+
+            # Validation for specific providers
+            if provider == "s3":
+                s3_conf = storage_config.get("s3", {})
+                # Check for env var names, not values
+                if not s3_conf.get("access_key_env"):
+                    add_error("storage_provider.s3", "Missing 'access_key_env'")
+                if not s3_conf.get("secret_key_env"):
+                    add_error("storage_provider.s3", "Missing 'secret_key_env'")
+
+            if provider == "google_cloud_storage":
+                gcs_conf = storage_config.get("google_cloud_storage", {})
+                if not gcs_conf.get("service_account_path"):
+                    add_error("storage_provider.google_cloud_storage", "Missing 'service_account_path'")
+
+
+        # 11. Help Files
         for key, filename in config.get("help_files", {}).items():
             if not filename:
                 add_error(f"help_files.{key}", "Filename cannot be empty.")

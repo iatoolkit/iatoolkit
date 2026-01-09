@@ -75,7 +75,7 @@ class VSRepo:
                                SELECT iat_vsdocs.id, \
                                       iat_documents.filename, \
                                       iat_vsdocs.text, \
-                                      iat_documents.content_b64, \
+                                      iat_documents.storage_key, \
                                       iat_documents.meta,
                                       iat_documents.id
                                FROM iat_vsdocs, \

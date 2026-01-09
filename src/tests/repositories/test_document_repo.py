@@ -22,7 +22,7 @@ class TestDocumentRepo:
         self.mock_document = Document(company_id=1,
                                  filename='test.txt',
                                  content='123',
-                                 content_b64=base64.b64encode('123'.encode('utf-8')).decode('utf-8'),
+                                 storage_key='iatoolkit/document-key',
                                  meta={'repertorio_id': 10})
         self.mock_company = Company(name='company')
 

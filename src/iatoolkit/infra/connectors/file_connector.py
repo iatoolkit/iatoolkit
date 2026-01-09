@@ -16,6 +16,9 @@ class FileConnector(ABC):
     def get_file_content(self, file_path: str) -> bytes:
         pass
 
+    @abstractmethod
+    def delete_file(self, file_path: str) -> None:
+        pass
 
     @abstractmethod
     def upload_file(self, file_path: str, content: bytes, content_type: str = None) -> None:

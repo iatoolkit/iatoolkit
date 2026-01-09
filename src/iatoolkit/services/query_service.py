@@ -459,8 +459,13 @@ class QueryService:
                 if isinstance(base64_content, str):
                     base64_content = base64_content.encode('utf-8')
 
-                file_content = base64.b64decode(base64_content)
-                document_text = self.document_service.file_to_txt(filename, file_content)
+                # in case of json files pass it directly to the context
+                if self._is_json(filename):
+                    document_text = json.dumps(document.get('content'))
+                else:
+                    file_content = base64.b64decode(base64_content)
+                    document_text = self.document_service.file_to_txt(filename, file_content)
+
                 context_parts.append(f"\n<document name='{filename}'>\n{document_text}\n</document>\n")
                 text_files_count += 1
             except Exception as e:
@@ -484,3 +489,6 @@ class QueryService:
 
     def _is_image(self, filename: str) -> bool:
         return filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.gif'))
+
+    def _is_json(self, filename: str) -> bool:
+        return filename.lower().endswith(('.json', '.xml'))

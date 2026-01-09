@@ -141,3 +141,11 @@ mail_provider:
     port_env: SMTP_PORT
     username_env: SMTP_USERNAME
     password_env: SMTP_PASSWORD
+storage_provider:
+  provider: s3
+  bucket: iatoolkit-assets
+  s3:
+    access_key_env: AWS_ACCESS_KEY_ID
+    secret_key_env: AWS_SECRET_ACCESS_KEY
+    region_env: AWS_REGION
+    prefix: ''

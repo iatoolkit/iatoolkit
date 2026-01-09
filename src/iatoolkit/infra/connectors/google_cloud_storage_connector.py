@@ -51,3 +51,17 @@ class GoogleCloudStorageConnector(FileConnector):
         file_buffer = blob.download_as_bytes()  # Descarga el contenido como bytes
 
         return file_buffer
+
+    def delete_file(self, file_path: str) -> None:
+        """
+        Elimina un archivo del bucket dado su path.
+        """
+        blob = self.bucket.blob(file_path)
+        blob.delete()
+
+    def upload_file(self, file_path: str, content: bytes, content_type: str = None) -> None:
+        """
+        Sube un archivo al bucket.
+        """
+        blob = self.bucket.blob(file_path)
+        blob.upload_from_string(content, content_type=content_type)

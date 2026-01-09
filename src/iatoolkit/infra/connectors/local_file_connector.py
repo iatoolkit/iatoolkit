@@ -46,4 +46,23 @@ class LocalFileConnector(FileConnector):
                                f"Error leyendo el archivo {file_path}: {e}")
 
     def upload_file(self, file_path: str, content: bytes, content_type: str = None) -> None:
-        return
+        # Nota: file_path debe ser relativo al directorio raíz configurado
+        full_path = os.path.join(self.directory, file_path)
+
+        # Asegurar que el directorio destino existe
+        try:
+            os.makedirs(os.path.dirname(full_path), exist_ok=True)
+            with open(full_path, 'wb') as f:
+                f.write(content)
+        except Exception as e:
+            raise IAToolkitException(IAToolkitException.ErrorType.FILE_IO_ERROR,
+                                     f"Error escribiendo el archivo {file_path}: {e}")
+
+    def delete_file(self, file_path: str) -> None:
+        full_path = os.path.join(self.directory, file_path)
+        try:
+            if os.path.exists(full_path):
+                os.remove(full_path)
+        except Exception as e:
+            raise IAToolkitException(IAToolkitException.ErrorType.FILE_IO_ERROR,
+                                     f"Error eliminando el archivo {file_path}: {e}")

@@ -34,6 +34,9 @@ class S3Connector(FileConnector):
         response = self.s3.get_object(Bucket=self.bucket, Key=file_path)
         return response['Body'].read()
 
+    def delete_file(self, file_path: str) -> None:
+        self.s3.delete_object(Bucket=self.bucket, Key=file_path)
+
     def upload_file(self, file_path: str, content: bytes, content_type: str = None) -> None:
         # If the path doesn't start with the prefix, add it (optional, depends on your logic)'
         # Assuming file_path is either a full path or relative to the root of the bucket for flexibility

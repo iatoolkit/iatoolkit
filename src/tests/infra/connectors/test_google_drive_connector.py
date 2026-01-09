@@ -105,3 +105,30 @@ class TestGoogleDriveConnector(unittest.TestCase):
         self.mock_drive_service.files().get_media.assert_called_once_with(fileId='invalid-file-id')
         self.assertIn("Mock download error", str(context.exception))
 
+    def test_upload_file_success(self):
+        # Arrange
+        file_name = "new_doc.pdf"
+        content = b"PDF DATA"
+        content_type = "application/pdf"
+
+        mock_create = self.mock_drive_service.files().create
+        mock_create.return_value.execute.return_value = {'id': 'new-file-id'}
+
+        # Patch MediaIoBaseUpload since it's used internally
+        with patch('iatoolkit.infra.connectors.google_drive_connector.MediaIoBaseUpload') as mock_media:
+            # Act
+            self.connector.upload_file(file_name, content, content_type)
+
+            # Assert
+            # Verify metadata
+            call_args = mock_create.call_args.kwargs
+            assert call_args['body']['name'] == file_name
+            assert call_args['body']['parents'] == [self.folder_id]
+            assert call_args['media_body'] == mock_media.return_value
+
+    def test_delete_file_success(self):
+        # Act
+        self.connector.delete_file('file-id-to-delete')
+
+        # Assert
+        self.mock_drive_service.files().delete.assert_called_with(fileId='file-id-to-delete')

@@ -195,7 +195,9 @@ class Document(Base):
     meta = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     content = Column(Text, nullable=False)
-    content_b64 = Column(Text, nullable=False)
+
+    # Stores the path in the cloud storage (S3/GCS)
+    storage_key = Column(String, index=True, nullable=True)
 
     # For feedback if OCR or embedding fails
     error_message = Column(Text, nullable=True)

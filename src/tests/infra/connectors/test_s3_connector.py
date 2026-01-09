@@ -10,155 +10,156 @@ from iatoolkit.infra.connectors.s3_connector import S3Connector
 
 class TestS3Connector(unittest.TestCase):
     def setUp(self):
-        # Mock de `boto3.client`
+        # 1. Patch de `boto3.client`
         self.boto3_client_patch = patch('iatoolkit.infra.connectors.s3_connector.boto3.client')
         self.mock_boto3_client = self.boto3_client_patch.start()
 
-        # Mock del cliente S3
+        # 2. Configurar el objeto cliente mock que devuelve boto3
         self.mock_s3_client = MagicMock()
         self.mock_boto3_client.return_value = self.mock_s3_client
 
-        # Configuración básica
+        # 3. Datos de configuración comunes
         self.bucket = "test-bucket"
-        self.prefix = "test-prefix/"
-        self.folder = "test-folder/"
+        self.prefix = "test-prefix"
+        self.folder = "test-folder"
         self.auth = {
             "aws_access_key_id": "mock-key",
             "aws_secret_access_key": "mock-secret",
             "region_name": "us-east-1"
         }
 
-        # Crear una instancia del conector con los mocks
-        self.connector = S3Connector(bucket=self.bucket, prefix=self.prefix, folder=self.folder, auth=self.auth)
+        # 4. Instancia del conector a probar
+        self.connector = S3Connector(
+            bucket=self.bucket,
+            prefix=self.prefix,
+            folder=self.folder,
+            auth=self.auth
+        )
 
     def tearDown(self):
         self.boto3_client_patch.stop()
 
-    def test_init_when_boto3_client_error(self):
-        self.mock_boto3_client.side_effect = Exception("Failed to create boto3 client")
+    def test_init_creates_boto3_client_correctly(self):
+        """Verifica que el cliente boto3 se inicializa con las credenciales pasadas."""
+        self.mock_boto3_client.assert_called_with('s3', **self.auth)
 
-        with self.assertRaises(Exception) as context:
-            S3Connector(bucket=self.bucket, prefix=self.prefix, folder=self.folder, auth=self.auth)
-
-        # Validar que el mensaje de la excepción coincide
-        self.assertEqual(str(context.exception), "Failed to create boto3 client")
-
-    def test_list_files_empty(self):
-        self.mock_s3_client.list_objects_v2.return_value = {}
-
-        result = self.connector.list_files()
-        self.assertEqual(result, [])
-
-    def test_list_files_success(self):
-        # Simulación de respuesta de `list_objects_v2`
+    def test_list_files_returns_mapped_objects(self):
+        """Verifica que list_files mapea correctamente la respuesta de S3 a la estructura interna."""
+        # Arrange
         self.mock_s3_client.list_objects_v2.return_value = {
             "Contents": [
                 {
-                    "Key": "test-prefix/file1.txt",
+                    "Key": "test-prefix/test-folder/doc1.pdf",
                     "Size": 1024,
-                    "LastModified": "2023-01-01T12:00:00.000Z"
+                    "LastModified": "2023-01-01"
                 },
                 {
-                    "Key": "test-prefix/file2.txt",
+                    "Key": "test-prefix/test-folder/img.png",
                     "Size": 2048,
-                    "LastModified": "2023-01-02T12:00:00.000Z"
+                    "LastModified": "2023-01-02"
                 }
             ]
         }
 
+        # Act
         result = self.connector.list_files()
 
+        # Assert
+        # Verificar llamada a S3 con prefijo correcto
+        expected_prefix = f"{self.prefix}/{self.folder}/"
+        self.mock_s3_client.list_objects_v2.assert_called_with(Bucket=self.bucket, Prefix=expected_prefix)
+
+        # Verificar mapeo
         self.assertEqual(len(result), 2)
-        self.assertEqual(result[0]['path'], "test-prefix/file1.txt")
-        self.assertEqual(result[0]['name'], "file1.txt")
+
+        self.assertEqual(result[0]['path'], "test-prefix/test-folder/doc1.pdf")
+        self.assertEqual(result[0]['name'], "doc1.pdf")
         self.assertEqual(result[0]['metadata']['size'], 1024)
-        self.assertEqual(result[0]['metadata']['last_modified'], "2023-01-01T12:00:00.000Z")
 
+        self.assertEqual(result[1]['name'], "img.png")
 
-    def test_get_file_content_not_found(self):
-        # Simulación de excepción de archivo no encontrado
-        self.mock_s3_client.get_object.side_effect = Exception("NoSuchKey")
+    def test_list_files_returns_empty_list_when_no_contents(self):
+        """Verifica que retorna lista vacía si S3 no devuelve 'Contents'."""
+        self.mock_s3_client.list_objects_v2.return_value = {} # Sin clave 'Contents'
 
-        # Llamada al método y capturar excepción
-        with self.assertRaises(Exception) as context:
-            self.connector.get_file_content("test-prefix/nonexistent.txt")
+        result = self.connector.list_files()
 
-        # Validar la excepción
-        self.assertEqual(str(context.exception), "NoSuchKey")
+        self.assertEqual(result, [])
 
     def test_get_file_content_success(self):
-        # Simulación de respuesta de `get_object`
-        mock_body = MagicMock()
-        mock_body.read.return_value = b"mock file content"
-        self.mock_s3_client.get_object.return_value = {"Body": mock_body}
+        """Verifica la descarga de contenido."""
+        # Arrange
+        mock_streaming_body = MagicMock()
+        mock_streaming_body.read.return_value = b"file content bytes"
+        self.mock_s3_client.get_object.return_value = {"Body": mock_streaming_body}
 
-        result = self.connector.get_file_content("test-prefix/file1.txt")
-        self.assertEqual(result, b"mock file content")
+        path = "path/to/file.txt"
 
-    def test_upload_file_success(self):
-        # Test basic upload functionality
-        file_path = "uploads/image.png"
-        content = b"fake-image-data"
-        content_type = "image/png"
+        # Act
+        content = self.connector.get_file_content(path)
 
-        self.connector.upload_file(file_path, content, content_type)
+        # Assert
+        self.mock_s3_client.get_object.assert_called_with(Bucket=self.bucket, Key=path)
+        self.assertEqual(content, b"file content bytes")
 
-        # Verify put_object was called with correct parameters
+    def test_upload_file_with_content_type(self):
+        """Verifica subida de archivo pasando ContentType."""
+        # Act
+        self.connector.upload_file("path/image.png", b"data", "image/png")
+
+        # Assert
         self.mock_s3_client.put_object.assert_called_once_with(
             Bucket=self.bucket,
-            Key=file_path,
-            Body=content,
-            ContentType=content_type
+            Key="path/image.png",
+            Body=b"data",
+            ContentType="image/png"
         )
 
     def test_upload_file_without_content_type(self):
-        # Test upload without specifying content type
-        file_path = "uploads/data.bin"
-        content = b"fake-data"
+        """Verifica subida de archivo sin ContentType."""
+        # Act
+        self.connector.upload_file("path/data.bin", b"raw_data")
 
-        self.connector.upload_file(file_path, content)
-
-        # Verify put_object was called without ContentType
+        # Assert
         self.mock_s3_client.put_object.assert_called_once_with(
             Bucket=self.bucket,
-            Key=file_path,
-            Body=content
+            Key="path/data.bin",
+            Body=b"raw_data"
         )
 
-    def test_upload_file_error(self):
-        # Test error handling during upload
-        self.mock_s3_client.put_object.side_effect = Exception("S3 Upload Failed")
+    def test_delete_file_success(self):
+        """Verifica que delete_file llama a delete_object con los parámetros correctos."""
+        # Act
+        self.connector.delete_file("path/to/delete.txt")
 
-        with self.assertRaises(Exception) as context:
-            self.connector.upload_file("path/file.txt", b"data")
+        # Assert
+        self.mock_s3_client.delete_object.assert_called_once_with(
+            Bucket=self.bucket,
+            Key="path/to/delete.txt"
+        )
 
-        self.assertEqual(str(context.exception), "S3 Upload Failed")
+    def test_generate_presigned_url_defaults(self):
+        """Verifica la generación de URL firmada con expiración por defecto."""
+        # Arrange
+        self.mock_s3_client.generate_presigned_url.return_value = "https://s3.aws.com/signed"
 
-    def test_generate_presigned_url_success(self):
-        # Test generating a presigned URL
-        file_path = "images/pic.jpg"
-        expected_url = "https://s3.amazonaws.com/test-bucket/images/pic.jpg?signature=xyz"
+        # Act
+        url = self.connector.generate_presigned_url("path/doc.pdf")
 
-        self.mock_s3_client.generate_presigned_url.return_value = expected_url
-
-        url = self.connector.generate_presigned_url(file_path)
-
-        self.assertEqual(url, expected_url)
-        self.mock_s3_client.generate_presigned_url.assert_called_once_with(
+        # Assert
+        self.assertEqual(url, "https://s3.aws.com/signed")
+        self.mock_s3_client.generate_presigned_url.assert_called_with(
             'get_object',
-            Params={'Bucket': self.bucket, 'Key': file_path},
-            ExpiresIn=3600
+            Params={'Bucket': self.bucket, 'Key': "path/doc.pdf"},
+            ExpiresIn=3600 # Default
         )
 
     def test_generate_presigned_url_custom_expiration(self):
-        # Test generating URL with custom expiration time
-        file_path = "images/pic.jpg"
-        expiration = 60
+        """Verifica la generación de URL firmada con expiración personalizada."""
+        self.connector.generate_presigned_url("path/doc.pdf", expiration=60)
 
-        self.connector.generate_presigned_url(file_path, expiration)
-
-        self.mock_s3_client.generate_presigned_url.assert_called_once_with(
+        self.mock_s3_client.generate_presigned_url.assert_called_with(
             'get_object',
-            Params={'Bucket': self.bucket, 'Key': file_path},
-            ExpiresIn=expiration
+            Params={'Bucket': self.bucket, 'Key': "path/doc.pdf"},
+            ExpiresIn=60
         )

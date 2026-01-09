@@ -83,3 +83,32 @@ class TestLocalFileConnector:
         assert result == b"file content"
         mock_open_file.assert_called_once_with(mock_file_path, "rb")
 
+    @patch("os.path.exists", return_value=True)
+    @patch("os.remove")
+    def test_delete_file_success(self, mock_remove, mock_exists):
+        """Prueba que delete_file elimine el archivo si existe."""
+        mock_file_path = "subdir/file_to_delete.txt"
+        full_path = os.path.join(self.mock_directory, mock_file_path)
+
+        self.file_connector.delete_file(mock_file_path)
+
+        mock_exists.assert_called_once_with(full_path)
+        mock_remove.assert_called_once_with(full_path)
+
+    @patch("os.path.exists", return_value=False)
+    @patch("os.remove")
+    def test_delete_file_ignored_if_not_exists(self, mock_remove, mock_exists):
+        """Prueba que delete_file no haga nada si el archivo no existe."""
+        self.file_connector.delete_file("ghost.txt")
+
+        mock_remove.assert_not_called()
+
+    @patch("os.path.exists", return_value=True)
+    @patch("os.remove", side_effect=OSError("Permission denied"))
+    def test_delete_file_error(self, mock_remove, mock_exists):
+        """Prueba que delete_file lance IAToolkitException ante errores de OS."""
+        with pytest.raises(IAToolkitException) as exc:
+            self.file_connector.delete_file("protected.txt")
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.FILE_IO_ERROR
+        assert "Error eliminando el archivo" in str(exc.value)

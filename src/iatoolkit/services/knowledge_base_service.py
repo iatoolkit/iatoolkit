@@ -11,6 +11,7 @@ from iatoolkit.repositories.models import CollectionType
 from iatoolkit.services.document_service import DocumentService
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.i18n_service import I18nService
+from iatoolkit.services.storage_service import StorageService
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sqlalchemy import desc
 from typing import Dict
@@ -34,11 +35,13 @@ class KnowledgeBaseService:
                  document_repo: DocumentRepo,
                  vs_repo: VSRepo,
                  document_service: DocumentService,
+                 storage_service: StorageService,
                  profile_service: ProfileService,
                  i18n_service: I18nService):
         self.document_repo = document_repo
         self.vs_repo = vs_repo
         self.document_service = document_service
+        self.storage_service = storage_service
         self.profile_service = profile_service
         self.i18n_service = i18n_service
 
@@ -93,10 +96,21 @@ class KnowledgeBaseService:
             return existing_doc
 
 
-        # 3. Create initial record with PENDING status
+        # 3. Storage creation record with PENDING status
         try:
-            # Encode to b64 for safe storage in DB if needed later for download
-            content_b64 = base64.b64encode(content).decode('utf-8')
+            # Upload to Storage immediately instead of saving b64 to DB
+            # Determine basic mime type for upload
+            import mimetypes
+            mime_type, _ = mimetypes.guess_type(filename)
+            if not mime_type:
+                mime_type = "application/octet-stream"
+
+            storage_key = self.storage_service.upload_document(
+                company_short_name=company.short_name,
+                file_content=content,
+                filename=filename,
+                mime_type=mime_type
+            )
 
             new_doc = Document(
                 company_id=company.id,
@@ -104,8 +118,8 @@ class KnowledgeBaseService:
                 filename=filename,
                 hash=file_hash,
                 user_identifier=user_identifier,
-                content="",         # Will be populated after text extraction
-                content_b64=content_b64,
+                content="",                     # Will be populated after text extraction
+                storage_key=storage_key,        # Reference to cloud storage
                 meta=metadata,
                 status=DocumentStatus.PENDING
             )
@@ -124,7 +138,10 @@ class KnowledgeBaseService:
             raise IAToolkitException(IAToolkitException.ErrorType.LOAD_DOCUMENT_ERROR, error_msg)
 
 
-    def _process_document_content(self, company_short_name: str, document: Document, raw_content: bytes):
+    def _process_document_content(self,
+                                  company_short_name: str,
+                                  document: Document,
+                                  raw_content: bytes):
         """
         Internal method to handle the heavy lifting of extraction and vectorization.
         Updates the document status directly via the session.
@@ -342,12 +359,15 @@ class KnowledgeBaseService:
             Returns (None, None) if document not found.
         """
         doc = self.document_repo.get_by_id(document_id)
-        if not doc or not doc.content_b64:
+        if not doc:
             return None, None
 
         try:
-            file_bytes = base64.b64decode(doc.content_b64)
-            return file_bytes, doc.filename
+            # Try to fetch from Cloud Storage
+            if doc.storage_key:
+                file_bytes = self.storage_service.get_document_content(doc.company.short_name, doc.storage_key)
+                return file_bytes, doc.filename
+
         except Exception as e:
             logging.error(f"Error decoding content for document {document_id}: {e}")
             raise IAToolkitException(IAToolkitException.ErrorType.FILE_FORMAT_ERROR,
@@ -357,6 +377,7 @@ class KnowledgeBaseService:
         """
         Deletes a document and its associated vectors.
         Since vectors are linked via FK with ON DELETE CASCADE, deleting the Document record is sufficient.
+        Also attempts to delete the physical file from Cloud Storage if it exists.
 
         Args:
             document_id: The ID of the document to delete.
@@ -370,6 +391,17 @@ class KnowledgeBaseService:
 
         session = self.document_repo.session
         try:
+            # 1. Delete from Cloud Storage
+            # We do this before DB commit. If it fails, we might still want to delete the DB record
+            # or rollback. Here I choose to log and proceed, to avoid DB inconsistencies if S3 is down.
+            if doc.storage_key:
+                try:
+                    self.storage_service.delete_file(doc.company.short_name, doc.storage_key)
+                except Exception as e:
+                    logging.error(f"Failed to delete file from storage for doc {doc.id}: {e}")
+                    # We proceed to delete from DB to avoid "ghost" documents in UI
+
+            # 2. delete from database
             session.delete(doc)
             session.commit()
             return True
