@@ -7,6 +7,7 @@ import click
 import logging
 from iatoolkit.core import IAToolkit
 from iatoolkit.services.profile_service import ProfileService
+from iatoolkit.services.prompt_service import PromptService
 
 
 def register_core_commands(app):
@@ -31,6 +32,21 @@ def register_core_commands(app):
         except Exception as e:
             logging.exception(e)
             click.echo(f"❌ unexpectd error during the configuration: {e}")
+
+    @app.cli.command("init-company")
+    @click.argument("company_short_name")
+    def init_company(company_short_name: str):
+        """⚙️ Bootstrap a new company."""
+        try:
+            prompt_service = IAToolkit.get_instance().get_injector().get(PromptService)
+            click.echo(f"🔑 Bootstrap company: '{company_short_name}'...")
+            result = prompt_service.register_system_prompts(company_short_name)
+
+            if result:
+                click.echo("✅ System prompts registered successfully!")
+        except Exception as e:
+            logging.exception(e)
+            click.echo(f"❌ unexpected error during the configuration: {e}")
 
     @app.cli.command("encrypt-key")
     @click.argument("key")

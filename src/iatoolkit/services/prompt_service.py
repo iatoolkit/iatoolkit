@@ -177,8 +177,7 @@ class PromptService:
         """
         Deletes a prompt:
         1. Removes from DB.
-        2. Removes from YAML config.
-        3. (Optional) Deletes/Archives physical file.
+        2. (Optional) Deletes/Archives physical file.
         """
         company = self.profile_repo.get_company_by_short_name(company_short_name)
         if not company:
@@ -234,9 +233,6 @@ class PromptService:
             raise IAToolkitException(IAToolkitException.ErrorType.INVALID_NAME,
                                      f'Company {company_short_name} not found')
 
-        # Register system prompts
-        self._register_system_prompts(company)
-
         # community edition has its own prompt management
         if not current_iatoolkit().is_community:
             return
@@ -286,7 +282,7 @@ class PromptService:
                 self.llm_query_repo.create_or_update_prompt(new_prompt)
 
             # 3. Cleanup: Delete prompts present in DB but not in Config
-            existing_prompts = self.llm_query_repo.get_prompts(company)
+            existing_prompts = self.llm_query_repo.get_prompts(company, include_all=True)
             for p in existing_prompts:
                 if p.name not in defined_prompt_names:
                     # Using hard delete to keep consistent with previous "refresh" behavior
@@ -298,13 +294,14 @@ class PromptService:
             self.llm_query_repo.rollback()
             raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR, str(e))
 
-    def _register_system_prompts(self, company: Company):
+    def register_system_prompts(self, company_short_name: str):
         """
-        Synchronizes system prompts defined in Dispatcher/Code to Database.
+        Instantiates the system prompts into the database.
         """
-
-        # if there are system prompts already registered, skip
-        # if self.llm_query_repo.get_system_prompts(): return
+        company = self.profile_repo.get_company_by_short_name(company_short_name)
+        if not company:
+            raise IAToolkitException(IAToolkitException.ErrorType.INVALID_NAME,
+                                     f'Company {company_short_name} not found')
 
         sys_category = PromptCategory(company_id=company.id, name="System", order=0)
         self.llm_query_repo.create_or_update_prompt_category(sys_category)
@@ -334,13 +331,8 @@ class PromptService:
                 prompt_content = importlib.resources.read_text('iatoolkit.system_prompts', prompt_filename)
                 self.asset_repo.write_text(company.short_name, AssetType.PROMPT, prompt_filename, prompt_content)
 
-            # Cleanup old system prompts
-            existing_sys_prompts = self.llm_query_repo.get_system_prompts()
-            for p in existing_sys_prompts:
-                if p.name not in defined_names:
-                    self.llm_query_repo.session.delete(p)
-
             self.llm_query_repo.commit()
+            return True
 
         except Exception as e:
             self.llm_query_repo.rollback()
@@ -351,7 +343,6 @@ class PromptService:
         Syncs only the prompt categories based on a simple list of names.
         The order in the list determines the 'order' field in DB.
         Removes categories not present in the list.
-        Finally, updates the YAML configuration.
         """
         company = self.profile_repo.get_company_by_short_name(company_short_name)
         if not company:

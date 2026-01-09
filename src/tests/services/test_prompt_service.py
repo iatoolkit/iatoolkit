@@ -15,6 +15,8 @@ class TestPromptService:
     def setup(self):
         """Configura mocks y la instancia del servicio para cada test."""
         self.llm_query_repo = MagicMock(spec=LLMQueryRepo)
+        self.llm_query_repo.session = MagicMock()
+
         self.profile_repo = MagicMock(spec=ProfileRepo)
         self.mock_i18n_service = MagicMock(spec=I18nService)
         self.mock_asset_repo = MagicMock(spec=AssetRepository)
@@ -188,7 +190,7 @@ class TestPromptService:
     # --- Tests para sync_company_prompts ---
 
     @patch('iatoolkit.services.prompt_service.current_iatoolkit')
-    @patch('iatoolkit.services.prompt_service.PromptService._register_system_prompts')
+    @patch('iatoolkit.services.prompt_service.PromptService.register_system_prompts')
     def test_sync_company_prompts_enterprise_mode(self, mock_register_sys, mock_current_toolkit):
         """
         Prueba que si NO es community (Enterprise), sync_company_prompts retorna
@@ -209,7 +211,7 @@ class TestPromptService:
 
 
     @patch('iatoolkit.services.prompt_service.current_iatoolkit')
-    @patch('iatoolkit.services.prompt_service.PromptService._register_system_prompts')
+    @patch('iatoolkit.services.prompt_service.PromptService.register_system_prompts')
     def test_sync_company_prompts_community_mode(self, mock_register_sys, mock_current_toolkit):
         """
         Prueba que si ES community, realiza la sincronización completa.
@@ -232,9 +234,128 @@ class TestPromptService:
         # Act
         self.prompt_service.sync_company_prompts('test_co', prompt_list, categories_config)
 
-        # Assert
-        mock_register_sys.assert_called_once()
         # Se crean categorías
         self.llm_query_repo.create_or_update_prompt_category.assert_called()
         # Se crean prompts
         self.llm_query_repo.create_or_update_prompt.assert_called()
+
+    # --- Tests para sync_prompt_categories ---
+
+    def test_sync_prompt_categories_success(self):
+        """
+        Prueba la sincronización de categorías:
+        1. Crea/Actualiza las que están en la lista.
+        2. Elimina las que existen en BD pero no en la lista.
+        """
+        # Arrange
+        categories_config = ['Cat A', 'Cat B']
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+
+        # Mockear las categorías existentes en BD: Cat A y Cat Old (Cat Old debería borrarse)
+        cat_a_mock = MagicMock(spec=PromptCategory, id=1, name='Cat A')
+        cat_old_mock = MagicMock(spec=PromptCategory, id=99, name='Cat Old')
+        self.llm_query_repo.get_all_categories.return_value = [cat_a_mock, cat_old_mock]
+
+        # Simular que create_or_update devuelve un objeto con ID para simular persistencia
+        def side_effect_create_cat(cat_obj):
+            cat_obj.id = 1 if cat_obj.name == 'Cat A' else 2 # ID 1 existe, ID 2 nuevo
+            return cat_obj
+        self.llm_query_repo.create_or_update_prompt_category.side_effect = side_effect_create_cat
+
+        # Act
+        self.prompt_service.sync_prompt_categories('test_co', categories_config)
+
+        # Assert
+        # 1. Verificar llamadas de creación/actualización (deben ser 2: Cat A y Cat B)
+        assert self.llm_query_repo.create_or_update_prompt_category.call_count == 2
+        calls = self.llm_query_repo.create_or_update_prompt_category.call_args_list
+        assert calls[0][0][0].name == 'Cat A'
+        assert calls[1][0][0].name == 'Cat B'
+
+        # 2. Verificar eliminación (debe borrar Cat Old porque su ID (99) no estaba en los procesados)
+        # IDs procesados: 1 (Cat A) y 2 (Cat B). ID existente: 99.
+        self.llm_query_repo.session.delete.assert_called_once_with(cat_old_mock)
+
+        # 3. Commit
+        self.llm_query_repo.commit.assert_called_once()
+
+    def test_sync_prompt_categories_db_error(self):
+        """Prueba manejo de excepciones y rollback en sync_prompt_categories."""
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.create_or_update_prompt_category.side_effect = Exception("DB Error")
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.prompt_service.sync_prompt_categories('test_co', ['C1'])
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.DATABASE_ERROR
+        self.llm_query_repo.rollback.assert_called_once()
+
+    # --- Tests para register_system_prompts ---
+
+    @patch('iatoolkit.services.prompt_service.importlib.resources.read_text')
+    def test_register_system_prompts_success(self, mock_read_text):
+        """
+        Prueba que se registren los prompts del sistema definidos en _SYSTEM_PROMPTS.
+        """
+        # Arrange
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        mock_read_text.return_value = "System prompt content"
+
+        # Simular creación de categoría System
+        sys_cat = MagicMock(id=999)
+        self.llm_query_repo.create_or_update_prompt_category.return_value = sys_cat
+
+        # Act
+        result = self.prompt_service.register_system_prompts('test_co')
+
+        # Assert
+        assert result is True
+
+        # Verificar que se creó la categoría System
+        args_cat = self.llm_query_repo.create_or_update_prompt_category.call_args[0][0]
+        assert args_cat.name == "System"
+
+        # Verificar que se intentaron crear prompts
+        # Como _SYSTEM_PROMPTS tiene 3 elementos por defecto en el código fuente, esperamos llamadas
+        assert self.llm_query_repo.create_or_update_prompt.call_count >= 1
+
+        # Verificar que se escribieron los assets físicos
+        assert self.mock_asset_repo.write_text.call_count >= 1
+        # Verificar un ejemplo de llamada a write_text
+        self.mock_asset_repo.write_text.assert_any_call(
+            'test_co', AssetType.PROMPT, 'query_main.prompt', "System prompt content"
+        )
+
+        self.llm_query_repo.commit.assert_called_once()
+
+    def test_register_system_prompts_company_not_found(self):
+        """Prueba error si company no existe en register_system_prompts."""
+        self.profile_repo.get_company_by_short_name.return_value = None
+        with pytest.raises(IAToolkitException) as exc:
+            self.prompt_service.register_system_prompts('missing_co')
+        assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_NAME
+
+    # --- Tests para delete_prompt ---
+
+    def test_delete_prompt_success(self):
+        """Prueba borrado exitoso de un prompt."""
+        # Arrange
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        mock_prompt = MagicMock(spec=Prompt)
+        self.llm_query_repo.get_prompt_by_name.return_value = mock_prompt
+
+        # Act
+        self.prompt_service.delete_prompt('test_co', 'myprompt')
+
+        # Assert
+        self.llm_query_repo.delete_prompt.assert_called_once_with(mock_prompt)
+
+    def test_delete_prompt_not_found(self):
+        """Prueba error DocumentNotFound si el prompt no existe."""
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_prompt_by_name.return_value = None
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.prompt_service.delete_prompt('test_co', 'missing_prompt')
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.DOCUMENT_NOT_FOUND
