@@ -282,7 +282,7 @@ class PromptService:
                 self.llm_query_repo.create_or_update_prompt(new_prompt)
 
             # 3. Cleanup: Delete prompts present in DB but not in Config
-            existing_prompts = self.llm_query_repo.get_prompts(company, include_all=True)
+            existing_prompts = self.llm_query_repo.get_prompts(company)
             for p in existing_prompts:
                 if p.name not in defined_prompt_names:
                     # Using hard delete to keep consistent with previous "refresh" behavior
@@ -304,7 +304,7 @@ class PromptService:
                                      f'Company {company_short_name} not found')
 
         sys_category = PromptCategory(company_id=company.id, name="System", order=0)
-        self.llm_query_repo.create_or_update_prompt_category(sys_category)
+        sys_category = self.llm_query_repo.create_or_update_prompt_category(sys_category)
 
         try:
             defined_names = set()

@@ -53,6 +53,7 @@ class LLMQueryRepo:
 
     def delete_system_tools(self):
         self.session.query(Tool).filter_by(system_function=True).delete(synchronize_session=False)
+        self.session.commit()
 
     def create_or_update_tool(self, new_tool: Tool):
         tool = self.session.query(Tool).filter_by(company_id=new_tool.company_id,
@@ -70,12 +71,12 @@ class LLMQueryRepo:
 
     def delete_tool(self, tool: Tool):
         self.session.query(Tool).filter_by(id=tool.id).delete(synchronize_session=False)
+        self.session.commit()
 
     # -- Prompt related methods
 
     def get_prompt_by_name(self, company: Company, prompt_name: str):
         return self.session.query(Prompt).filter_by(company_id=company.id, name=prompt_name).first()
-
 
     def get_prompts(self, company: Company, include_all: bool = False) -> list[Prompt]:
         if include_all:
@@ -133,6 +134,6 @@ class LLMQueryRepo:
             self.session.add(new_category)
             category = new_category
 
-        self.session.flush()
+        self.session.commit()
         return category
 
