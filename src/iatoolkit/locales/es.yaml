@@ -31,6 +31,7 @@ ui:
     error_rate: "Tasa Error (1h)"
     queue: "Tareas Pendientes"
     tab_chats: "Chats en Vivo"
+    tab_agents: "Agentes"
     tab_logs: "Logs de Acceso"
     search_placeholder: "Buscar usuario o texto..."
 
