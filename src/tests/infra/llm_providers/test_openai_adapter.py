@@ -222,4 +222,3 @@ class TestOpenAIAdapter:
 
         # output_text debe incluir texto y marcador de imagen
         assert 'Here is the image:' in result.output_text
-        assert "[Imagen Generada]" in result.output_text

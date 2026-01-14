@@ -40,6 +40,10 @@ class OpenAIAdapter:
                 'input': input
             }
 
+            # add image generation tool
+            if tools:
+                tools.append({"type": "image_generation"})
+
             if previous_response_id:
                 params['previous_response_id'] = previous_response_id
             if tools:
@@ -145,7 +149,6 @@ class OpenAIAdapter:
                             "data": b64
                         }
                     })
-                    output_text += "\n[Imagen Generada]\n"
                 continue
 
             # 3) Mensajes: solo texto

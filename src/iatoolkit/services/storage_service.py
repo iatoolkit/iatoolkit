@@ -134,7 +134,7 @@ class StorageService:
             logging.error(error_msg)
             raise IAToolkitException(IAToolkitException.ErrorType.FILE_IO_ERROR, error_msg)
 
-    def get_public_url(self, company_short_name: str, storage_key: str) -> str:
+    def generate_presigned_url(self, company_short_name: str, storage_key: str) -> str:
         """Gets a fresh signed URL using the configured connector."""
         connector = self._get_connector(company_short_name)
         return connector.generate_presigned_url(storage_key)

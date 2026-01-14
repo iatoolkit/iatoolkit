@@ -8,14 +8,12 @@ from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.infra.llm_providers.openai_adapter import OpenAIAdapter
 from iatoolkit.infra.llm_providers.gemini_adapter import GeminiAdapter
 from iatoolkit.infra.llm_providers.deepseek_adapter import DeepseekAdapter
-# from iatoolkit.infra.llm_providers.anthropic_adapter import AnthropicAdapter
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.common.util import Utility
 from iatoolkit.infra.llm_response import LLMResponse
 from iatoolkit.common.model_registry import ModelRegistry
 
 from openai import OpenAI         # For OpenAI and xAI (OpenAI-compatible)
-# from anthropic import Anthropic  # For Claude (Anthropic)
 
 from typing import Dict, List, Any, Tuple
 import os
@@ -198,10 +196,9 @@ class LLMProxy:
             # Example placeholder: you may already have a Gemini client factory elsewhere.
             # Here you could create and configure the Gemini client (e.g. google.generativeai).
             #
-            import google.generativeai as genai
+            from google.genai import Client
 
-            genai.configure(api_key=api_key)
-            return genai
+            return Client(api_key=api_key, http_options={'api_version': 'v1alpha'})
         if provider == self.PROVIDER_ANTHROPIC:
             # Example using Anthropic official client:
             #

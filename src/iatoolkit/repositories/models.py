@@ -94,6 +94,9 @@ class Company(Base):
     vsdocs = relationship("VSDoc",
                           back_populates="company",
                           cascade="all, delete-orphan")
+    vsimages = relationship("VSImage",
+                        back_populates="company",
+                        cascade="all, delete-orphan")
     llm_queries = relationship("LLMQuery",
                                back_populates="company",
                                cascade="all, delete-orphan")
@@ -254,6 +257,12 @@ class Document(Base):
     company = relationship("Company", back_populates="documents")
     collection_type = relationship("CollectionType", back_populates="documents")
 
+    # Relationship to image vector - One to One
+    vsimage = relationship("VSImage",
+                           uselist=False,
+                           back_populates="document",
+                           cascade="all, delete-orphan")
+
     def to_dict(self):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
 
@@ -302,6 +311,29 @@ class VSDoc(Base):
     embedding = Column(Vector(384), nullable=False)
 
     company = relationship("Company", back_populates="vsdocs")
+
+    def to_dict(self):
+        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
+
+class VSImage(Base):
+    """Stores the vector embedding for an image document for visual similarity search."""
+    __tablename__ = "iat_vsimages"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey('iat_companies.id',
+                                            ondelete='CASCADE'), nullable=False)
+    document_id = Column(Integer, ForeignKey('iat_documents.id',
+                                             ondelete='CASCADE'), nullable=False)
+
+    # Metadata specific to the image (width, height, format, aspect_ratio)
+    # Useful for the LLM to filter images (e.g., "show me landscape images")
+    meta = Column(JSON, nullable=True)
+
+    # Vector dimension depends on the multimodal model (e.g., CLIP uses 512 or 768)
+    embedding = Column(Vector(2048), nullable=False)
+
+    company = relationship("Company", back_populates="vsimages")
+    document = relationship("Document", back_populates="vsimage")
 
     def to_dict(self):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}

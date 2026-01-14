@@ -43,7 +43,7 @@ class ModelRegistry:
         # The order of patterns matters: first match wins.
         self._provider_patterns: dict[ProviderType, tuple[str, ...]] = {
             "openai": ("gpt", "gpt-5", "gpt-5-mini", "gpt-5.1"),
-            "gemini": ("gemini", "gemini-3"),
+            "gemini": ("gemini", "gemini-3", "gemini-3-flash-preview"),
             "deepseek": ("deepseek",),
             "xai": ("grok", "grok-1", "grok-beta"),
             "anthropic": ("claude", "claude-3", "claude-2"),
@@ -89,12 +89,7 @@ class ModelRegistry:
         # OpenAI/xAI (OpenAI-compatible) support 'text.verbosity' and 'reasoning.effort' in our current integration.
         if provider in ("openai", "xai"):
             defaults["text"] = {"verbosity": "low"}
-
-            # Fine-grained per-model tuning.
-            if model_lower in ("gpt-5", "gpt-5-mini"):
-                defaults["reasoning"] = {"effort": "minimal"}
-            elif model_lower == "gpt-5.1":
-                defaults["reasoning"] = {"effort": "low", "summary": "auto"}
+            defaults["reasoning"] = {"effort": "low"}
 
         # Gemini/DeepSeek/unknown: keep defaults empty to avoid sending unsupported parameters.
         return defaults

@@ -13,7 +13,7 @@ from injector import inject
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.services.excel_service import ExcelService
-
+import logging
 
 class DocumentService:
     @inject
@@ -56,6 +56,7 @@ class DocumentService:
             # Si es una excepción conocida, simplemente la relanzamos
             raise
         except Exception as e:
+            logging.exception(e)
             raise IAToolkitException(IAToolkitException.ErrorType.FILE_IO_ERROR,
                                    f"Error processing file: {e}") from e
 

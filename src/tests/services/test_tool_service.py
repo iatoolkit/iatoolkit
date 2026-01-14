@@ -10,7 +10,7 @@ from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.sql_service import SqlService
 from iatoolkit.services.excel_service import ExcelService
 from iatoolkit.services.mail_service import MailService
-
+from iatoolkit.services.visual_kb_service import VisualKnowledgeBaseService
 
 class TestToolService:
     @pytest.fixture(autouse=True)
@@ -20,13 +20,15 @@ class TestToolService:
         self.mock_excel_service = MagicMock(spec=ExcelService)
         self.mock_mail_service = MagicMock(spec=MailService)
         self.mock_profile_repo = MagicMock(spec=ProfileRepo)
+        self.mock_visual_kb_service = MagicMock(spec=VisualKnowledgeBaseService)
 
         self.service = ToolService(
             llm_query_repo=self.mock_llm_query_repo,
             profile_repo=self.mock_profile_repo,
             sql_service=self.mock_sql_service,
             excel_service=self.mock_excel_service,
-            mail_service=self.mock_mail_service
+            mail_service=self.mock_mail_service,
+            visual_kb_service=self.mock_visual_kb_service
         )
 
         # Mock del modelo de base de datos (Company Model)
@@ -160,7 +162,7 @@ class TestToolService:
         result = self.service.get_tools_for_llm(self.mock_company)
 
         # Assert
-        assert len(result) == 2         # added image_generation tool
+        assert len(result) == 1
         assert result[0]['type'] == 'function'
         assert result[0]['name'] == 'tool1'
         assert result[0]['description'] == 'desc1'

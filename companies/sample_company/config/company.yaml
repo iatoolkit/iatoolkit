@@ -2,7 +2,7 @@ id: sample_company
 name: Sample Company
 locale: en_ES
 llm:
-  model: gpt-5
+  model: gpt-5.2
   available_models:
   - id: gpt-5.2
     label: gpt-5.2
@@ -11,7 +11,7 @@ llm:
     label: deepseek-chat
     description: Fast and cheap.
   - id: gemini-3-flash-preview
-    label: gemini-3
+    label: gemini-3-flash-preview
     description: Fast
   provider_api_keys:
     openai: OPENAI_API_KEY
@@ -130,6 +130,12 @@ embedding_provider:
   provider: huggingface
   model: sentence-transformers/all-MiniLM-L6-v2
   api_key_name: HF_TOKEN
+visual_embedding_provider:
+  provider: custom_class
+  class_path: iatoolkit.infra.jina_embeddings_client.JinaEmbeddingsClient
+  api_key_name: JINA_API_KEY
+  model: jina-embeddings-v4
+  dimensions: 0
 mail_provider:
   provider: brevo_mail
   sender_email: sample_ia@iatoolkit.com

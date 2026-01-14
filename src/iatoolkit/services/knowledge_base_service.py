@@ -13,6 +13,7 @@ from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.services.storage_service import StorageService
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from iatoolkit.services.visual_kb_service import VisualKnowledgeBaseService
 from sqlalchemy import desc
 from typing import Dict
 from iatoolkit.common.exceptions import IAToolkitException
@@ -34,12 +35,14 @@ class KnowledgeBaseService:
     def __init__(self,
                  document_repo: DocumentRepo,
                  vs_repo: VSRepo,
+                 visual_kb_service: VisualKnowledgeBaseService,
                  document_service: DocumentService,
                  storage_service: StorageService,
                  profile_service: ProfileService,
                  i18n_service: I18nService):
         self.document_repo = document_repo
         self.vs_repo = vs_repo
+        self.visual_kb_service = visual_kb_service
         self.document_service = document_service
         self.storage_service = storage_service
         self.profile_service = profile_service
@@ -84,6 +87,19 @@ class KnowledgeBaseService:
         collection_name = collection or metadata.get('collection')
         collection_type_id = self._get_collection_type_id(company.id, collection_name)
 
+        # ---  Router ---
+        import mimetypes
+        mime_type, _ = mimetypes.guess_type(filename)
+
+        if mime_type and mime_type.startswith('image/'):
+            return self.visual_kb_service.ingest_image_sync(
+                company=company,
+                filename=filename,
+                content=content,
+                user_identifier=user_identifier,
+                metadata=metadata,
+                collection_type_id=collection_type_id
+            )
         # 1. Calculate SHA-256 hash of the content
         file_hash = hashlib.sha256(content).hexdigest()
 

@@ -457,15 +457,11 @@ class QueryService:
                 continue
 
             try:
-                # Ensure content is bytes before decoding
-                if isinstance(base64_content, str):
-                    base64_content = base64_content.encode('utf-8')
-
                 # in case of json files pass it directly to the context
                 if self._is_json(filename):
                     document_text = json.dumps(document.get('content'))
                 else:
-                    file_content = base64.b64decode(base64_content)
+                    file_content = self.util.normalize_base64_payload(base64_content)
                     document_text = self.document_service.file_to_txt(filename, file_content)
 
                 context_parts.append(f"\n<document name='{filename}'>\n{document_text}\n</document>\n")

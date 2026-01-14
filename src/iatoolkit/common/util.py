@@ -4,7 +4,7 @@
 # IAToolkit is open source software.
 
 import logging
-from typing import List
+from typing import List, Union
 from iatoolkit.common.exceptions import IAToolkitException
 from flask import request
 from injector import inject
@@ -15,7 +15,6 @@ from decimal import Decimal
 import yaml
 from cryptography.fernet import Fernet
 import base64
-
 
 
 class Utility:
@@ -113,6 +112,32 @@ class Utility:
             return obj.decode('utf-8')
         else:
             raise TypeError(f"Type {type(obj)} not serializable")
+
+    def normalize_base64_payload(self, content: Union[str, bytes]) -> bytes:
+        """
+        Normalizes a Base64 payload coming from:
+        - plain base64 string
+        - data:*/*;base64,<payload>
+        - bytes (already encoded)
+
+        Returns raw decoded bytes.
+        """
+        if content is None:
+            return b""
+
+        # If already bytes, assume raw file bytes
+        if isinstance(content, bytes):
+            return content
+
+        if not isinstance(content, str):
+            raise TypeError(f"Invalid base64 content type: {type(content)}")
+
+        # Remove data URL header if present
+        if "," in content and content.strip().lower().startswith("data:"):
+            content = content.split(",", 1)[1]
+
+        # Base64 is ASCII-safe, no need for utf-8 encode but we normalize
+        return __import__("base64").b64decode(content)
 
     def encrypt_key(self, key: str) -> str:
         if not self.encryption_key:

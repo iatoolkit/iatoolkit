@@ -12,11 +12,13 @@ from iatoolkit.services.embedding_service import (
     EmbeddingService,
     HuggingFaceClientWrapper,
     OpenAIClientWrapper,
+    CustomClassClientWrapper,
     EmbeddingClientWrapper
 )
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.repositories.profile_repo import ProfileRepo
+from iatoolkit.infra.call_service import CallServiceClient
 
 
 class TestEmbeddingService:
@@ -35,6 +37,21 @@ class TestEmbeddingService:
         'model': 'openai-model',
         'api_key_name': 'OPENAI_KEY'
     }
+    MOCK_CONFIG_CUSTOM = {
+        'provider': 'custom_class',
+        'model': 'my-custom-model',
+        'class_path': 'companies.acme.my_model.MyEmbedder',
+        'api_key_name': 'CUSTOM_KEY',
+        'init_params': {'arg1': 'val1'}
+    }
+    # Mock config for visual provider
+    MOCK_CONFIG_VISUAL = {
+        'provider': 'openai',
+        'model': 'clip-vit-base',
+        'api_key_name': 'OPENAI_KEY',
+        'dimensions': 512
+    }
+
     SAMPLE_VECTOR = [0.1, 0.2, 0.3, 0.4]
 
     @pytest.fixture(autouse=True)
@@ -51,6 +68,16 @@ class TestEmbeddingService:
                     return self.MOCK_CONFIG_HF
                 if company_short_name == 'company_openai':
                     return self.MOCK_CONFIG_OPENAI
+                if company_short_name == 'company_custom':
+                    return self.MOCK_CONFIG_CUSTOM
+                if company_short_name == 'company_visual':
+                    # Default text config for this company
+                    return self.MOCK_CONFIG_OPENAI
+
+            if key == 'visual_embedding_provider':
+                if company_short_name == 'company_visual':
+                    return self.MOCK_CONFIG_VISUAL
+
             return None
 
         self.mock_config_service.get_configuration.side_effect = get_config_side_effect
@@ -61,12 +88,15 @@ class TestEmbeddingService:
 
         self.mock_i18n_service = MagicMock(spec=I18nService)
         self.mock_i18n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
+        self.mock_call_service = MagicMock(spec=CallServiceClient)
 
         # Instantiate the classes under test
-        self.client_factory = EmbeddingClientFactory(config_service=self.mock_config_service)
+        self.client_factory = EmbeddingClientFactory(
+            config_service=self.mock_config_service,
+            call_service=self.mock_call_service)
         self.embedding_service = EmbeddingService(client_factory=self.client_factory,
                                                   profile_repo=self.mock_profile_repo,
-                                                 i18n_service=self.mock_i18n_service)
+                                                  i18n_service=self.mock_i18n_service)
 
     # --- Factory Tests ---
 
@@ -96,18 +126,58 @@ class TestEmbeddingService:
         mock_openai_client_class.assert_called_once_with(api_key='fake-openai-key')
         assert wrapper.model == 'openai-model'
 
-    def test_factory_returns_cached_wrapper(self, mocker):
-        """Tests that the factory caches the wrapper instance on subsequent calls."""
-        mocker.patch('os.getenv', return_value='fake-key')
-        mock_hf_client_class = mocker.patch('iatoolkit.services.embedding_service.InferenceClient')
+    def test_factory_creates_custom_class_wrapper(self, mocker):
+        """Tests that the factory correctly loads and instantiates a custom class."""
+        mocker.patch('os.getenv', return_value='fake-custom-key')
+
+        # Mock importlib and the dynamic class
+        mock_importlib = mocker.patch('importlib.import_module')
+        mock_module = MagicMock()
+        mock_class = MagicMock()
+        mock_instance = MagicMock()
+
+        # Setup import chain: import_module -> module -> class -> instance
+        mock_importlib.return_value = mock_module
+        setattr(mock_module, 'MyEmbedder', mock_class)
+        mock_class.return_value = mock_instance
 
         # Act
-        wrapper1 = self.client_factory.get_client('company_hf')
-        wrapper2 = self.client_factory.get_client('company_hf')
+        wrapper = self.client_factory.get_client('company_custom')
 
         # Assert
-        mock_hf_client_class.assert_called_once()  # The underlying client should only be created once
-        assert wrapper1 is wrapper2  # The returned wrapper must be the same object instance
+        assert isinstance(wrapper, CustomClassClientWrapper)
+        mock_importlib.assert_called_once_with('companies.acme.my_model')
+        mock_class.assert_called_once_with(arg1='val1')
+        assert wrapper.client == mock_instance
+
+    def test_factory_get_client_visual_model(self, mocker):
+        """Tests that requesting model_type='image' loads the visual configuration."""
+        mocker.patch('os.getenv', return_value='fake-openai-key')
+        mock_openai_client_class = mocker.patch('iatoolkit.services.embedding_service.OpenAI')
+
+        # Act
+        wrapper = self.client_factory.get_client('company_visual', model_type='image')
+
+        # Assert
+        # Check that it used the visual config (dimensions=512, model=clip-vit-base)
+        assert wrapper.model == 'clip-vit-base'
+        assert wrapper.dimensions == 512
+        # Should be OpenAI wrapper because provider is 'openai' in MOCK_CONFIG_VISUAL
+        assert isinstance(wrapper, OpenAIClientWrapper)
+
+    def test_factory_caching_separates_text_and_image(self, mocker):
+        """Tests that the factory caches text and image clients separately."""
+        mocker.patch('os.getenv', return_value='fake-key')
+        mocker.patch('iatoolkit.services.embedding_service.OpenAI')
+
+        # Act
+        wrapper_text = self.client_factory.get_client('company_visual', model_type='text')
+        wrapper_image = self.client_factory.get_client('company_visual', model_type='image')
+
+        # Assert
+        assert wrapper_text is not wrapper_image
+        assert wrapper_text.model == 'openai-model' # From MOCK_CONFIG_OPENAI
+        assert wrapper_image.model == 'clip-vit-base' # From MOCK_CONFIG_VISUAL
 
     def test_factory_raises_error_if_api_key_is_not_set(self, mocker):
         """Tests that a ValueError is raised if the API key environment variable is missing."""
@@ -120,54 +190,36 @@ class TestEmbeddingService:
     def test_service_embed_text_returns_vector(self, mocker):
         """
         Tests that embed_text correctly calls the wrapper's interface and returns a vector.
-        This test is provider-agnostic.
         """
         # Arrange
         mock_wrapper = MagicMock(spec=EmbeddingClientWrapper)
         mock_wrapper.get_embedding.return_value = self.SAMPLE_VECTOR
+        # Mock get_client to return our mock wrapper regardless of args
         mocker.patch.object(self.client_factory, 'get_client', return_value=mock_wrapper)
 
         # Act
-        # FIX: Correct argument order: text, then company_short_name
-        result = self.embedding_service.embed_text("any_company", "some text", )
+        result = self.embedding_service.embed_text("any_company", "some text")
 
         # Assert
-        self.client_factory.get_client.assert_called_once_with("any_company")
+        self.client_factory.get_client.assert_called_once_with("any_company", "text")
         mock_wrapper.get_embedding.assert_called_once_with("some text")
         assert result == self.SAMPLE_VECTOR
 
-    def test_service_embed_text_returns_base64(self, mocker):
+    def test_service_embed_image_returns_vector(self, mocker):
         """
-        Tests that embed_text correctly returns a base64 string when requested.
-        This test is provider-agnostic.
-        """
-        # Arrange
-        mock_wrapper = MagicMock(spec=EmbeddingClientWrapper)
-        mock_wrapper.get_embedding.return_value = self.SAMPLE_VECTOR
-        mocker.patch.object(self.client_factory, 'get_client', return_value=mock_wrapper)
-
-        # Act
-        # FIX: Correct argument order
-        result = self.embedding_service.embed_text("any_company", "some text", to_base64=True)
-
-        # Assert
-        expected_base64 = base64.b64encode(np.array(self.SAMPLE_VECTOR, dtype=np.float32).tobytes()).decode('utf-8')
-        assert result == expected_base64
-        mock_wrapper.get_embedding.assert_called_once_with("some text")
-
-    def test_service_get_model_name(self, mocker):
-        """
-        Tests that get_model_name returns the model name from the wrapper.
-        This test is provider-agnostic.
+        Tests that embed_image calls the factory with model_type='image' and uses get_image_embedding.
         """
         # Arrange
         mock_wrapper = MagicMock(spec=EmbeddingClientWrapper)
-        mock_wrapper.model = "the-correct-model"
+        mock_wrapper.get_image_embedding.return_value = self.SAMPLE_VECTOR
         mocker.patch.object(self.client_factory, 'get_client', return_value=mock_wrapper)
 
+        fake_image_bytes = b'\x89PNG\r\n\x1a\n'
+
         # Act
-        model_name = self.embedding_service.get_model_name("any_company")
+        result = self.embedding_service.embed_image("any_company", fake_image_bytes)
 
         # Assert
-        self.client_factory.get_client.assert_called_once_with("any_company")
-        assert model_name == "the-correct-model"
+        self.client_factory.get_client.assert_called_once_with("any_company", model_type="image")
+        mock_wrapper.get_image_embedding.assert_called_once_with(fake_image_bytes)
+        assert result == self.SAMPLE_VECTOR

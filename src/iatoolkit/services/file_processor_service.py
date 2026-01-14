@@ -67,6 +67,9 @@ class FileProcessor:
             file_path = file_info['path']
             file_name = file_info['name']
 
+            if not file_name:
+                continue
+
             try:
                 if not self._apply_filters(file_name):
                     continue

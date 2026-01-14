@@ -55,9 +55,11 @@ class TestCallServiceClient:
     def test_post_success(self):
         json_dict = {'key': 'value'}
         response, status = self.client.post(self.endpoint, json_dict)
-        self.mock_post.assert_called_once_with(self.endpoint, json=json_dict,
-                                               headers=self.client.headers,
+        self.mock_post.assert_called_once_with(self.endpoint,
                                                params=None,
+                                               json=json_dict,
+                                               headers=self.client.headers,
+                                               data=None,
                                                timeout=(10, 10.0))
         assert status == 200
         assert response == {'result': 'ok'}

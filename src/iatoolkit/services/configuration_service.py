@@ -336,6 +336,16 @@ class ConfigurationService:
             if not config.get("embedding_provider", {}).get("api_key_name"):
                 add_error("embedding_provider", "Missing required key: 'api_key_name'")
 
+        # 3b. Visual Embedding Provider (Optional)
+        if config.get("visual_embedding_provider"):
+            if not isinstance(config.get("visual_embedding_provider"), dict):
+                add_error("visual_embedding_provider", "Section must be a dictionary.")
+            else:
+                if not config.get("visual_embedding_provider", {}).get("provider"):
+                    add_error("visual_embedding_provider", "Missing required key: 'provider'")
+                if not config.get("visual_embedding_provider", {}).get("model"):
+                    add_error("visual_embedding_provider", "Missing required key: 'model'")
+
         # 4. Data Sources
         for i, source in enumerate(config.get("data_sources", {}).get("sql", [])):
             if not source.get("database"):

@@ -6,6 +6,7 @@
 from injector import inject
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.repositories.profile_repo import ProfileRepo
+from iatoolkit.services.visual_kb_service import VisualKnowledgeBaseService
 from iatoolkit.repositories.models import Company, Tool
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.sql_service import SqlService
@@ -114,7 +115,28 @@ _SYSTEM_TOOLS = [
             },
             "required": ["database_key", "query"]
         }
-    }
+    },
+    {
+        "function_name": "iat_visual_search",
+        "description": "Busca imágenes en la base de conocimiento visual de la empresa usando una descripción de texto. "
+                       "Útil cuando el usuario pide 'ver' algo, 'muéstrame una foto de...', o busca gráficos y diagramas."
+                    "",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Descripción detallada de la imagen que se busca (ej: 'foto de la fachada del edificio')."
+                },
+                "collection": {
+                    "type": "string",
+                    "description": "Opcional. Nombre de la colección donde buscar (ej: 'Planos', 'Marketing')."
+                }
+            },
+            "required": ["query", "collection"]
+        }
+    },
+
 ]
 
 
@@ -122,6 +144,7 @@ class ToolService:
     @inject
     def __init__(self,
                  llm_query_repo: LLMQueryRepo,
+                 visual_kb_service: VisualKnowledgeBaseService,
                  profile_repo: ProfileRepo,
                  sql_service: SqlService,
                  excel_service: ExcelService,
@@ -131,13 +154,38 @@ class ToolService:
         self.sql_service = sql_service
         self.excel_service = excel_service
         self.mail_service = mail_service
+        self.visual_kb_service = visual_kb_service
 
         # execution mapper for system tools
         self.system_handlers = {
             "iat_generate_excel": self.excel_service.excel_generator,
             "iat_send_email": self.mail_service.send_mail,
-            "iat_sql_query": self.sql_service.exec_sql
+            "iat_sql_query": self.sql_service.exec_sql,
+            "iat_visual_search": self.visual_search_wrapper
         }
+
+    # Wrapper for text-to-image search
+    def visual_search_wrapper(self, company_short_name: str, query: str, collection: str = None):
+        results = self.visual_kb_service.search_images(
+            company_short_name=company_short_name,
+            query=query,
+            collection=collection
+        )
+
+        if not results:
+            return "No se encontraron imágenes que coincidan con la descripción."
+
+        # Format response for LLM
+        response = "Imágenes encontradas:\n"
+        for item in results:
+            response += f"- **{item['filename']}** (Score: {item['score']:.2f})\n"
+            if item['url']:
+                response += f"  ![{item['filename']}]({item['url']})\n"
+            else:
+                response += "  (Imagen no disponible públicamente)\n"
+
+        return response
+
 
     def register_system_tools(self):
         """Creates or updates system functions in the database."""
@@ -236,8 +284,6 @@ class ToolService:
 
             tools.append(ai_tool)
 
-        # add image generation tools
-        tools.append({"type": "image_generation"})
         return tools
 
     def get_system_handler(self, function_name: str):

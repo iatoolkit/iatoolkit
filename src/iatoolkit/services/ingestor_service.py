@@ -215,7 +215,7 @@ class IngestorService:
             source_record.configuration = full_config
             self.document_repo.create_or_update_ingestion_source(source_record)
 
-    def _trigger_ingestion_logic(self, source: IngestionSource, filters: dict = None) -> int:
+    def _trigger_ingestion_logic(self, source: IngestionSource, filters: dict = {}) -> int:
         """
         Internal worker: Executes the ingestion for a specific DB Source.
         """
@@ -242,9 +242,9 @@ class IngestorService:
             processor_config = FileProcessorConfig(
                 callback=self._file_processing_callback,
                 context=context,
-                filters=filters or {"filename_contains": ".pdf"},
+                filters=filters,
                 continue_on_error=True,
-                echo=True
+                echo=False
             )
 
             # 3. Factory & Process

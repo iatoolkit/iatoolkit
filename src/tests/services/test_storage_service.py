@@ -165,7 +165,7 @@ class TestStorageService(unittest.TestCase):
         self.mock_config_service.get_configuration.return_value = None
 
         # Act
-        url = self.service.get_public_url(self.company_name, key)
+        url = self.service.generate_presigned_url(self.company_name, key)
 
         # Assert
         self.assertEqual(url, expected_url)

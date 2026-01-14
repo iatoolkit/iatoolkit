@@ -8,7 +8,7 @@ from injector import inject
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.repositories.database_manager import DatabaseManager
 from iatoolkit.services.embedding_service import EmbeddingService
-from iatoolkit.repositories.models import Document, VSDoc, Company
+from iatoolkit.repositories.models import Document, VSDoc, Company, VSImage
 from typing import Dict
 import logging
 
@@ -20,7 +20,6 @@ class VSRepo:
                  embedding_service: EmbeddingService):
         self.session = db_manager.get_session()
         self.embedding_service = embedding_service
-
 
     def add_document(self, company_short_name, vs_chunk_list: list[VSDoc]):
         try:
@@ -34,6 +33,15 @@ class VSRepo:
             self.session.rollback()
             raise IAToolkitException(IAToolkitException.ErrorType.VECTOR_STORE_ERROR,
                                f"Error while inserting embedding chunk list: {str(e)}")
+
+    def add_image(self, vs_image: VSImage):
+        """Adds a VSImage record to the database."""
+        try:
+            self.session.add(vs_image)
+            self.session.commit()
+        except Exception as e:
+            self.session.rollback()
+            raise e
 
     def query(self,
               company_short_name: str,
@@ -136,7 +144,6 @@ class VSRepo:
 
             return vs_documents
 
-
         except Exception as e:
             logging.error(f"Error en la consulta de documentos: {str(e)}")
             logging.error(f"Failed SQL: {sql_query}")
@@ -146,3 +153,83 @@ class VSRepo:
         finally:
             self.session.close()
 
+    def query_images(self, company_short_name: str, query_text: str, n_results: int = 5, collection_id: int = None) -> list[Dict]:
+        """
+        Searches for images semantically similar to the query text.
+        """
+        try:
+            # 1. Generate Query Vector (Text -> Visual Space)
+            query_embedding = self.embedding_service.embed_text(company_short_name, query_text, model_type='image')
+
+            # 2. Delegate to internal vector search
+            return self._query_images_by_vector(company_short_name, query_embedding, n_results, collection_id)
+
+        except Exception as e:
+            logging.error(f"Error querying images by text: {e}")
+            raise IAToolkitException(IAToolkitException.ErrorType.VECTOR_STORE_ERROR, str(e))
+
+    def query_images_by_image(self, company_short_name: str, image_bytes: bytes, n_results: int = 5, collection_id: int = None) -> list[Dict]:
+        """
+        Searches for images visually similar to the query image.
+        """
+        try:
+            # 1. Generate Query Vector (Image -> Visual Space)
+            query_embedding = self.embedding_service.embed_image(company_short_name, image_bytes)
+
+            # 2. Delegate to internal vector search
+            return self._query_images_by_vector(company_short_name, query_embedding, n_results, collection_id)
+
+        except Exception as e:
+            logging.error(f"Error querying images by image: {e}")
+            raise IAToolkitException(IAToolkitException.ErrorType.VECTOR_STORE_ERROR, str(e))
+
+    def _query_images_by_vector(self, company_short_name: str, query_vector: list, n_results: int, collection_id: int = None) -> list[Dict]:
+        """
+        Internal method to execute the SQL vector search.
+        """
+        try:
+            company = self.session.query(Company).filter(Company.short_name == company_short_name).one_or_none()
+            if not company:
+                return []
+
+            sql = """
+                  SELECT
+                      doc.id,
+                      doc.filename,
+                      doc.storage_key,
+                      img.meta,
+                      (img.embedding <=> CAST(:query_embedding AS VECTOR)) as distance
+                  FROM iat_vsimages img
+                           JOIN iat_documents doc ON img.document_id = doc.id
+                  WHERE img.company_id = :company_id
+                  """
+
+            params = {
+                "company_id": company.id,
+                "query_embedding": query_vector,
+                "n_results": n_results
+            }
+
+            if collection_id:
+                sql += " AND doc.collection_type_id = :collection_id"
+                params["collection_id"] = collection_id
+
+            sql += " ORDER BY distance ASC LIMIT :n_results"
+
+            result = self.session.execute(text(sql), params)
+            rows = result.fetchall()
+
+            image_results = []
+            for row in rows:
+                score = 1 - row[4]
+                image_results.append({
+                    'document_id': row[0],
+                    'filename': row[1],
+                    'storage_key': row[2],
+                    'meta': row[3] or {},
+                    'score': score
+                })
+
+            return image_results
+        except Exception as e:
+            raise e

@@ -13,13 +13,13 @@ flatbuffers==24.3.25
 google-ai-generativelanguage==0.6.15
 google-api-core==2.24.1
 google-api-python-client==2.161.0
-google-auth==2.37.0
+google-auth>=2.46.0
 google-auth-httplib2==0.2.0
 google-auth-oauthlib==1.2.1
 google-cloud-core==2.4.1
 google-cloud-storage==3.0.0
 google-crc32c==1.6.0
-google-generativeai==0.8.5
+google-genai==1.57.0
 google-resumable-media==2.7.2
 googleapis-common-protos==1.66.0
 gunicorn==23.0.0
@@ -27,9 +27,9 @@ h11==0.14.0
 httpcore==1.0.7
 httplib2==0.22.0
 httptools==0.6.4
-httpx==0.28.0
+httpx>=0.28.0
 httpx-sse==0.4.0
-huggingface-hub==0.31.4
+huggingface-hub>=0.16.4
 humanfriendly==10.0
 idna==3.10
 injector==0.22.0

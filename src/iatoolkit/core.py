@@ -364,12 +364,14 @@ class IAToolkit:
         from iatoolkit.infra.llm_proxy import LLMProxy
         from iatoolkit.infra.google_chat_app import GoogleChatApp
         from iatoolkit.infra.brevo_mail_app import BrevoMailApp
+        from iatoolkit.infra.jina_embeddings_client import JinaEmbeddingsClient
         from iatoolkit.common.util import Utility
         from iatoolkit.common.model_registry import ModelRegistry
 
         binder.bind(LLMProxy, to=LLMProxy)
         binder.bind(GoogleChatApp, to=GoogleChatApp)
         binder.bind(BrevoMailApp, to=BrevoMailApp)
+        binder.bind(JinaEmbeddingsClient, to=JinaEmbeddingsClient)
         binder.bind(Utility, to=Utility)
         binder.bind(ModelRegistry, to=ModelRegistry)
 
