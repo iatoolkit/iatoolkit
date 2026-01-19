@@ -1,0 +1,19 @@
+
+Contexto: El usuario quiere un análisis completo de las ventas realizadas
+entre los años 2024 y 2025
+
+### **Estructura HTML de Salida OBLIGATORIA**
+- **Contenedor de Secciones:** envuelve TODAS las secciones en
+un `<div class="ficha-categorias">`.
+- **Secciones Individuales:** CADA sección (título + contenido) debe estar
+envuelta en su propio `<div class="categoria">`.
+
+### **Sección : clientes mas importantes**
+dame una tabla con los 5 clientes mas importantes por volumen de compra.
+columnas: nombre cliente, volumen de compra, ingresos
+
+### **Sección : productos mas rentables**
+Dame una tabla con  los 10 productos mas rentables.
+columnas: nombre producto, precio, cantidad vendida, ingresos
+
+

@@ -103,11 +103,14 @@ class Dispatcher:
                 f"Company '{company_short_name}' not configured. available companies: {available_companies}"
             )
 
+
+        # extract and remove 'request_images' from kwargs to avoid errors in functions that don't expect it'
+        request_images = kwargs.pop("request_images", None) or []
+
         # check if action is a system function using ToolService
         if self.tool_service.is_system_tool(function_name):
             # --- Special case: visual similarity search needs image bytes from request attachments ---
             if function_name == "iat_visual_search":
-                request_images = kwargs.pop("request_images", None) or []
                 image_index = kwargs.get("image_index", None)
                 n_results = kwargs.get("n_results", 5)
 

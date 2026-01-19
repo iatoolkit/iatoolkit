@@ -1,0 +1,44 @@
+order:
+  description: "Tabla de Pedidos o ventas: Contiene la información principal de cada pedido realizado por un cliente."
+  OrderID:
+    description: "Identificador único para cada pedido. Es la clave primaria."
+    type: integer
+  CustomerID:
+    description: "Identificador del cliente que realizó el pedido. Es una clave foránea a la tabla de clientes."
+    type: string
+  EmployeeID:
+    description: "Identificador del empleado que gestionó el pedido. Es una clave foránea a la tabla de empleados."
+    type: integer
+  OrderDate:
+    description: "Fecha del pedido."
+    type: date
+  RequiredDate:
+    description: "Fecha límite para la entrega del pedido."
+    type: date
+  ShippedDate:
+    description: "Fecha en que se envió el pedido."
+    type: date
+  ShipVia:
+    description: "Identificador de la empresa de transporte utilizada. Es una clave foránea a la tabla de transportistas."
+    type: integer
+  Freight:
+    description: "Costo del envío."
+    type: real
+  ShipName:
+    description: "Nombre del destinatario del envío (puede ser diferente al nombre del cliente)."
+    type: string
+  ShipAddress:
+    description: "Dirección de envío."
+    type: string
+  ShipCity:
+    description: "Ciudad de envío."
+    type: string
+  ShipRegion:
+    description: "Región o estado de envío."
+    type: string
+  ShipPostalCode:
+    description: "Código postal de envío."
+    type: string
+  ShipCountry:
+    description: "País de envío."
+    type: string

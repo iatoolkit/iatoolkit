@@ -1,0 +1,32 @@
+product:
+  description: "Tabla de Productos: Contiene información detallada sobre cada producto vendido, incluyendo precio, stock y a qué categoría y proveedor pertenece."
+  ProductID:
+    description: "Identificador único para cada producto. Es la clave primaria."
+    type: integer
+  ProductName:
+    description: "Nombre del producto."
+    type: string
+  SupplierID:
+    description: "Identificador del proveedor que suministra el producto. Es una clave foránea a la tabla de proveedores."
+    type: integer
+  CategoryID:
+    description: "Identificador de la categoría a la que pertenece el producto. Es una clave foránea a la tabla de categorías."
+    type: integer
+  QuantityPerUnit:
+    description: "Descripción del empaquetado por unidad (ej. '12 - 1 l bottles')."
+    type: string
+  UnitPrice:
+    description: "Precio por unidad del producto."
+    type: real
+  UnitsInStock:
+    description: "Cantidad de unidades del producto actualmente en el inventario."
+    type: integer
+  UnitsOnOrder:
+    description: "Cantidad de unidades del producto que han sido pedidas pero aún no se han recibido."
+    type: integer
+  ReorderLevel:
+    description: "Nivel de stock en el cual se debe realizar un nuevo pedido del producto."
+    type: integer
+  Discontinued:
+    description: "Indica si el producto ha sido descontinuado (1 para sí, 0 para no)."
+    type: integer

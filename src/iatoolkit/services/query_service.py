@@ -4,26 +4,19 @@
 # IAToolkit is open source software.
 
 from iatoolkit.services.llm_client_service import llmClient
-from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.tool_service import ToolService
-from iatoolkit.services.document_service import DocumentService
-from iatoolkit.services.company_context_service import CompanyContextService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.dispatcher_service import Dispatcher
-from iatoolkit.services.prompt_service import PromptService
 from iatoolkit.services.user_session_context_service import UserSessionContextService
 from iatoolkit.services.history_manager_service import HistoryManagerService
+from iatoolkit.services.context_builder_service import ContextBuilderService
 from iatoolkit.common.model_registry import ModelRegistry
-from iatoolkit.common.util import Utility
 from injector import inject
-import base64
 import logging
 from typing import Optional
-import json
 import time
-import hashlib
 from dataclasses import dataclass
 
 
@@ -43,33 +36,24 @@ class QueryService:
                  dispatcher: Dispatcher,
                  tool_service: ToolService,
                  llm_client: llmClient,
-                 profile_service: ProfileService,
-                 company_context_service: CompanyContextService,
-                 document_service: DocumentService,
                  profile_repo: ProfileRepo,
-                 prompt_service: PromptService,
                  i18n_service: I18nService,
                  session_context: UserSessionContextService,
                  configuration_service: ConfigurationService,
                  history_manager: HistoryManagerService,
-                 util: Utility,
-                 model_registry: ModelRegistry
+                 model_registry: ModelRegistry,
+                 context_builder: ContextBuilderService
                  ):
-        self.profile_service = profile_service
-        self.company_context_service = company_context_service
-        self.document_service = document_service
         self.profile_repo = profile_repo
         self.tool_service = tool_service
-        self.prompt_service = prompt_service
         self.i18n_service = i18n_service
-        self.util = util
         self.dispatcher = dispatcher
         self.session_context = session_context
         self.configuration_service = configuration_service
         self.llm_client = llm_client
         self.history_manager = history_manager
         self.model_registry = model_registry
-
+        self.context_builder = context_builder
 
     def _resolve_model(self, company_short_name: str, model: Optional[str]) -> str:
         # Priority: 1. Explicit model -> 2. Company config
@@ -86,49 +70,6 @@ class QueryService:
             return HistoryManagerService.TYPE_SERVER_SIDE
         else:
             return HistoryManagerService.TYPE_CLIENT_SIDE
-
-
-    def _build_user_facing_prompt(self, company, user_identifier: str,
-                                  client_data: dict, files: list,
-                                  prompt_name: Optional[str], question: str):
-        # get the user profile data from the session context
-        user_profile = self.profile_service.get_profile_by_identifier(company.short_name, user_identifier)
-
-        # combine client_data with user_profile
-        final_client_data = (user_profile or {}).copy()
-        final_client_data.update(client_data)
-
-        # Load attached files into the context
-        files_context, images = self.load_files_for_context(files)
-
-        # Initialize prompt_content. It will be an empty string for direct questions.
-        main_prompt = ""
-        # We use a local variable for the question to avoid modifying the argument reference if it were mutable,
-        # although strings are immutable, this keeps the logic clean regarding what 'question' means in each context.
-        effective_question = question
-
-        if prompt_name:
-            question_dict = {'prompt': prompt_name, 'data': final_client_data}
-            effective_question = json.dumps(question_dict)
-            prompt_content = self.prompt_service.get_prompt_content(company, prompt_name)
-
-            # Render the user requested prompt
-            main_prompt = self.util.render_prompt_from_string(
-                template_string=prompt_content,
-                question=effective_question,
-                client_data=final_client_data,
-                user_identifier=user_identifier,
-                company=company,
-            )
-
-        # This is the final user-facing prompt for this specific turn
-        user_turn_prompt = f"{main_prompt}\n{files_context}"
-        if not prompt_name:
-            user_turn_prompt += f"\n### La pregunta que debes responder es: {effective_question}"
-        else:
-            user_turn_prompt += f'\n### Contexto Adicional: El usuario ha aportado este contexto puede ayudar: {effective_question}'
-
-        return user_turn_prompt, effective_question, images
 
     def _ensure_valid_history(self, company,
                               user_identifier: str,
@@ -176,34 +117,6 @@ class QueryService:
 
         return handle, None
 
-    def _build_context_and_profile(self, company_short_name: str, user_identifier: str) -> tuple:
-        # this method read the user/company context from the database and renders the system prompt
-        company = self.profile_repo.get_company_by_short_name(company_short_name)
-        if not company:
-            return None, None
-
-        # Get the user profile from the single source of truth.
-        user_profile = self.profile_service.get_profile_by_identifier(company_short_name, user_identifier)
-
-        # render the iatoolkit main system prompt with the company/user information
-        system_prompt_template = self.prompt_service.get_system_prompt()
-        rendered_system_prompt = self.util.render_prompt_from_string(
-            template_string=system_prompt_template,
-            question=None,
-            client_data=user_profile,
-            company=company,
-            service_list=self.tool_service.get_tools_for_llm(company)
-        )
-
-        # get the company context: schemas, database models, .md files
-        company_specific_context = self.company_context_service.get_company_context(company_short_name)
-
-        # merge context: company + user
-        final_system_context = f"{company_specific_context}\n{rendered_system_prompt}"
-
-        return final_system_context, user_profile
-
-
     def init_context(self, company_short_name: str,
                      user_identifier: str,
                      model: str = None) -> dict:
@@ -219,7 +132,7 @@ class QueryService:
         effective_model = self._resolve_model(company_short_name, model)
 
         # 2. Clear only the LLM-related context for this model
-        self.session_context.clear_all_context(company_short_name, user_identifier,model=effective_model)
+        self.session_context.clear_all_context(company_short_name, user_identifier, model=effective_model)
         logging.info(
             f"Context for {company_short_name}/{user_identifier} "
             f"(model={effective_model}) has been cleared."
@@ -240,23 +153,29 @@ class QueryService:
 
         return response
 
-
     def prepare_context(self, company_short_name: str, user_identifier: str) -> dict:
-        # prepare the context and decide if it needs to be rebuilt
-        # save the generated context in the session context for later use
+        """
+        Prepares the static context (Company + User Profile + Tools) and checks if it needs to be rebuilt.
+        Delegates construction to ContextBuilderService.
+        """
         if not user_identifier:
             return {'rebuild_needed': True, 'error': 'Invalid user identifier'}
 
-        # create the company/user context and compute its version
-        final_system_context, user_profile = self._build_context_and_profile(
-            company_short_name, user_identifier)
+        # Delegate context construction to the builder
+        final_system_context, user_profile = self.context_builder.build_system_context(
+            company_short_name, user_identifier
+        )
+
+        if not final_system_context:
+            logging.error(f"Failed to build system context for {company_short_name}")
+            return {'rebuild_needed': True}
 
         # save the user information in the session context
         # it's needed for the jinja predefined prompts (filtering)
         self.session_context.save_profile_data(company_short_name, user_identifier, user_profile)
 
-        # calculate the context version
-        current_version = self._compute_context_version_from_string(final_system_context)
+        # calculate the context version using the builder
+        current_version = self.context_builder.compute_context_version(final_system_context)
 
         # get the current version from the session cache
         try:
@@ -265,8 +184,6 @@ class QueryService:
             prev_version = None
 
         # Determine if we need to persist the prepared context again.
-        # If versions match, we assume the artifact is likely safe, but forcing a save
-        # on version mismatch ensures data consistency.
         rebuild_is_needed = (prev_version != current_version)
 
         # Save the prepared context and its version for `set_context_for_llm` to use.
@@ -303,11 +220,13 @@ class QueryService:
             start_time = time.time()
 
             # get the prepared context and version from the session cache
-            prepared_context, version_to_save = self.session_context.get_and_clear_prepared_context(company_short_name,                                                                                                    user_identifier)
+            prepared_context, version_to_save = self.session_context.get_and_clear_prepared_context(company_short_name,
+                                                                                                    user_identifier)
             if not prepared_context:
                 return
 
-            logging.info(f"sending context to LLM model {effective_model} for: {company_short_name}/{user_identifier}...")
+            logging.info(
+                f"sending context to LLM model {effective_model} for: {company_short_name}/{user_identifier}...")
 
             # --- Use Strategy Pattern for History/Context Initialization ---
             history_type = self._get_history_type(effective_model)
@@ -331,7 +250,6 @@ class QueryService:
             # release the lock
             self.session_context.release_lock(lock_key)
 
-
     def llm_query(self,
                   company_short_name: str,
                   user_identifier: str,
@@ -347,7 +265,8 @@ class QueryService:
             company = self.profile_repo.get_company_by_short_name(short_name=company_short_name)
             if not company:
                 return {"error": True,
-                        "error_message": self.i18n_service.t('errors.company_not_found', company_short_name=company_short_name)}
+                        "error_message": self.i18n_service.t('errors.company_not_found',
+                                                             company_short_name=company_short_name)}
 
             if not prompt_name and not question:
                 return {"error": True,
@@ -356,8 +275,8 @@ class QueryService:
             # --- Model Resolution ---
             effective_model = self._resolve_model(company_short_name, model)
 
-            # --- Build User-Facing Prompt ---
-            user_turn_prompt, effective_question, images = self._build_user_facing_prompt(
+            # --- Build User-Facing Prompt (Delegated to Builder) ---
+            user_turn_prompt, effective_question, images = self.context_builder.build_user_turn_prompt(
                 company=company,
                 user_identifier=user_identifier,
                 client_data=client_data,
@@ -415,78 +334,3 @@ class QueryService:
         except Exception as e:
             logging.exception(e)
             return {'error': True, "error_message": f"{str(e)}"}
-
-    def _compute_context_version_from_string(self, final_system_context: str) -> str:
-        # returns a hash of the context string
-        try:
-            return hashlib.sha256(final_system_context.encode("utf-8")).hexdigest()
-        except Exception:
-            return "unknown"
-
-
-    def load_files_for_context(self, files: list) -> tuple[str, list]:
-        """
-        Processes a list of attached files.
-        Decodes text documents into context string and separates images for multimodal processing.
-        """
-        if not files:
-            return '', []
-
-        context_parts = []
-        images = []
-        text_files_count = 0
-
-        for document in files:
-            # Support both 'file_id' and 'filename' for robustness
-            filename = document.get('file_id') or document.get('filename') or document.get('name')
-            if not filename:
-                context_parts.append("\n<error>Documento adjunto sin nombre ignorado.</error>\n")
-                continue
-
-            # Support both 'base64' and 'content' for robustness
-            base64_content = document.get('base64') or document.get('content')
-
-            if not base64_content:
-                # Handles the case where a file is referenced but no content is provided
-                context_parts.append(f"\n<error>El archivo '{filename}' no fue encontrado y no pudo ser cargado.</error>\n")
-                continue
-
-            # Detect if the file is an image
-            if self._is_image(filename):
-                images.append({'name': filename, 'base64': base64_content})
-                continue
-
-            try:
-                # in case of json files pass it directly to the context
-                if self._is_json(filename):
-                    document_text = json.dumps(document.get('content'))
-                else:
-                    file_content = self.util.normalize_base64_payload(base64_content)
-                    document_text = self.document_service.file_to_txt(filename, file_content)
-
-                context_parts.append(f"\n<document name='{filename}'>\n{document_text}\n</document>\n")
-                text_files_count += 1
-            except Exception as e:
-                # Catches errors from b64decode or file_to_txt
-                logging.error(f"Failed to process file {filename}: {e}")
-                context_parts.append(f"\n<error>Error al procesar el archivo {filename}: {str(e)}</error>\n")
-                continue
-
-        context = ""
-        if text_files_count > 0:
-            context = f"""
-            A continuación encontraras una lista de documentos adjuntos
-            enviados por el usuario que hace la pregunta, 
-            en total son: {text_files_count} documentos adjuntos
-            """ + "".join(context_parts)
-        elif context_parts:
-            # If only errors were collected
-            context = "".join(context_parts)
-
-        return context, images
-
-    def _is_image(self, filename: str) -> bool:
-        return filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.gif'))
-
-    def _is_json(self, filename: str) -> bool:
-        return filename.lower().endswith(('.json', '.xml'))

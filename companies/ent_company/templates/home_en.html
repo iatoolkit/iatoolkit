@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}{{ branding.name }} - Home{% endblock %}
+
+{% block styles %}
+    <style>
+        {{ branding.css_variables | safe }}
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles/chat_public.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+{% include '_company_header.html' %}
+
+{# Main content with the value proposition and login widget #}
+<div class="container my-4 my-md-5">
+    <div class="row start g-5">
+
+        <div class="col-lg-7">
+            <h1 class="home-title">Welcome to the intelligence of {{ branding.name }}</h1>
+            <p class="lead">
+                This assistant is trained with the data of a fictional company called
+                <span class="text-brand-primary">Sample Company</span>,
+                a commercial distributor operating in several countries.
+                You can ask about a wide variety of topics, such as:
+            </p>
+            <ul class="list-unstyled mt-4 fs-5 fw-normal">
+                <li class="mb-3">
+                    <i class="bi bi-check-circle-fill me-2 text-brand-primary"></i>
+                    <strong>Sales queries</strong>
+                    <span class="list-example">"What was the total sales in Germany during the first quarter of 2025?"</span>
+                </li>
+                <li class="mb-3">
+                    <i class="bi bi-check-circle-fill me-2 text-brand-primary"></i>
+                    <strong>Supplier information</strong>
+                    <span class="list-example">"Show me the last 3 shipments from the supplier 'Atlantic Seafood BV'."</span>
+                </li>
+                <li class="mb-3">
+                    <i class="bi bi-check-circle-fill me-2 text-brand-primary"></i>
+                    <strong>Summaries and aggregations</strong>
+                    <span class="list-example">"Generate a table summarizing sales by country for 2025: number of orders and total amount."</span>
+                </li>
+            </ul>
+        </div>
+
+        {# Login widget column #}
+        <div class="col-lg-5">
+            {% include '_login_widget.html' %}
+        </div>
+    </div>
+</div>
+</div>
+{% endblock %}

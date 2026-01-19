@@ -1,0 +1,8 @@
+employee_territory:
+  description: "Tabla de Territorios de Empleados: Es una tabla de unión que asigna empleados a los territorios de ventas de los que son responsables."
+  EmployeeID:
+    description: "Identificador del empleado. Parte de la clave primaria compuesta y clave foránea a la tabla de empleados."
+    type: integer
+  TerritoryID:
+    description: "Identificador del territorio. Parte de la clave primaria compuesta y clave foránea a la tabla de territorios."
+    type: integer

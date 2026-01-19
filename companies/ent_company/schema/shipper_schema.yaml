@@ -1,0 +1,11 @@
+shipper:
+  description: "Tabla de Transportistas: Almacena las empresas de transporte que se utilizan para enviar los pedidos."
+  ShipperID:
+    description: "Identificador único para cada empresa de transporte. Es la clave primaria."
+    type: integer
+  CompanyName:
+    description: "Nombre de la empresa de transporte."
+    type: string
+  Phone:
+    description: "Número de teléfono de la empresa de transporte."
+    type: string

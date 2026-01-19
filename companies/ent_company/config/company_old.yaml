@@ -1,0 +1,209 @@
+# General Company Information
+id: "ent_company"
+name: "Sample Enterprise Company"
+locale: "es_ES"
+
+# Default Language Model and api-key for provider
+# Can be overridden in the API call: llm_query_api_view and init_context_api_view
+llm:
+  model: "gpt-5"
+
+  provider_api_keys:
+    openai: "OPENAI_API_KEY"
+    gemini: "GEMINI_API_KEY"
+    deepseek: "DEEP_SEEK_API_KEY"
+
+
+# Data Sources
+# Defines the SQL data sources available to the LLM.
+data_sources:
+  sql:
+    - database: "sample_database"
+      connection_string_env: "DATABASE_URI"
+      schema: "sample_db"
+      description: |
+        This is Enterprise Company’s main database.
+        It contains all of the company’s commercial and operational information.
+        It is the primary source for answering questions about sales, shipments, purchase orders, employees, countries, and territories.
+      # Loads all the databases tables automatically
+      include_all_tables: true
+      # ...but ignore these specific tables
+      exclude_tables:
+        - "test_table"
+        - "logs"
+      # exclude these columns from all tables
+      exclude_columns: [ 'created', 'updated' ]
+
+      # The service will use this section to add details to the tables
+      # that were automatically loaded using include_all_tables.
+      tables:
+        employee_territories:
+          # For this table use a custom squema name.
+          schema_name: "employee_territory"
+
+        orders:
+          # For the orders table, ignore the global exclude_columns list
+          # and use this:
+          exclude_columns: [ 'internal_notes', 'processing_id' ]
+
+        products:
+          # For the products table, there are no overrides, but we can
+          # add a description if we want.
+          description: "Catálogo de productos de la compañía."
+
+
+# Tools (Functions)
+tools:
+  - function_name: "document_search"
+    description: "Busquedas sobre documentos: manuales, contratos de trabajo de empleados, manuales de procedimientos, y documentos legales."
+    params:
+      type: "object"
+      properties:
+        query:
+          type: "string"
+          description: "Texto o pregunta a buscar en los documentos."
+      required: ["query"]
+
+
+# Prompts
+# Defines the ordered list of categories and the prompts available in the UI.
+# Prompts are files in the company prompts/ folder
+# (filename is: prompt_name.prompt).
+# Example: analisis_ventas.prompt
+prompt_categories:
+  - "Comercial"
+  - "Financiero"     # sample for adding more categories
+  - "workflows"
+
+prompts:
+  - category: "Comercial"     # assign this prompt to the category "General"
+    name: "analisis_ventas"
+    description: "Analisis de ventas"
+    order: 1
+  - category: "Comercial"
+    name: "supplier_report"
+    description: "Análisis de proveedores"
+    order: 2
+    custom_fields:
+      - data_key: "supplier_id"
+        label: "Identificador del Proveedor"
+  - category: "Financiero"
+    name: "analisis_despachos"
+    description: "Analisis de despachos de proveedores"
+    order: 3
+    custom_fields:
+      - data_key: "init_date"
+        label: "Fecha desde"
+        type: "date"
+      - data_key: "end_date"
+        label: "Fecha hasta"
+        type: "date"
+  - category: "workflows"
+    name: "agent_orders"
+    description: "Agente que envia ordenes de compra"
+    active: false
+
+
+# Company-specific Parameters
+# These parameters are used by the company code to customize its behavior.
+parameters:
+  # Enable or disable the account verification flow when signup
+  verify_account: false      # IMPORTANT! in production recommend to set to true
+
+  # This configuration is for receiving the user feedback from the chat modal window
+  user_feedback:
+    channel: "email"
+    destination: "fernando.libedinsky@gmail.com"
+
+  # CORS (Cross-Origin Resource Sharing) origins for the API: USUALLY YOUR COMPANY DOMAIN AND THE PORTAL DOMAIN
+  cors_origin:
+    - "https://portal-interno.empresa_de_ejemplo.cl"
+
+  # External URLs for the login and logout buttons
+  external_urls:
+    logout_url: ""
+
+
+# Branding and Content Files
+# this section defines the colors used in the UI
+branding:
+  header_background_color: "#0F9D58"
+  header_text_color: "#FFFFFF"
+  brand_primary_color: "#0F9D58"
+  brand_secondary_color: "#9EADC0"
+  brand_text_on_primary: "#FFFFFF"
+  brand_text_on_secondary: "#FFFFFF"
+
+# Help files
+# These files are used to populate the help content in the UI.
+help_files:
+  onboarding_cards: "onboarding_cards.yaml"
+  help_content: "help_content.yaml"
+
+
+# Knowledge Base (RAG)
+# Defines the sources of unstructured documents for indexing.
+knowledge_base:
+
+  # Connectors
+  # Defines how to connect to the document storage for different environments.
+  # El comando 'load' usará el conector apropiado según el FLASK_ENV.
+  connectors:
+    development:
+      type: "local"
+    production:
+      type: "s3"
+      bucket: "iatoolkit"
+      prefix: "sample_company"
+      aws_access_key_id_env: "AWS_ACCESS_KEY_ID"
+      aws_secret_access_key_env: "AWS_SECRET_ACCESS_KEY"
+      aws_region_env: "AWS_REGION"
+
+  # Document Sources
+  # A map defining the logical groups of documents to be indexed.
+  # Cada clave es un tipo de fuente, que contiene su ubicación y metadatos.
+  document_sources:
+    supplier_manuals:
+      path: "companies/sample_company/sample_data/supplier_manuals"
+      # Metadatos que se aplicarán a todos los documentos de esta fuente.
+      metadata:
+        type: "supplier_manual"
+
+    employee_contracts:
+      path: "companies/sample_company/sample_data/employee_contracts"
+      metadata:
+        type: "employee_contract"
+
+# Embeddings configuration
+# You should define a 'provider', supported only openai and huggingface.
+embedding_provider:
+  provider: "openai"
+  model: "text-embedding-ada-002"
+  api_key_name: "OPENAI_API_KEY"
+
+  # Here is an example in case you use huggingface:
+  #  provider: "huggingface"
+  #  model: "sentence-transformers/all-MiniLM-L6-v2"
+  #  api_key_name: "huggingface_token"
+
+
+# Email / Mail Provider configuration
+mail_provider:
+  # current provider to use:
+  provider: "brevo_mail"
+
+  # For mails sent from the Company, default sender email and name.
+  sender_email: "sample_ia@iatoolkit.com"
+  sender_name: "Sample Company IA"
+
+  brevo_mail:
+    # name of the env var that holds the Brevo API key
+    brevo_api: "BREVO_API_KEY"
+
+  smtplib:
+    # the default names are in the mail_service.py file
+    host_env: "SMTP_HOST"
+    port_env: "SMTP_PORT"
+    username_env: "SMTP_USERNAME"
+    password_env: "SMTP_PASSWORD"
+

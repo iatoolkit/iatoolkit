@@ -1,0 +1,17 @@
+order_detail:
+  description: "Tabla de Detalles del Pedido: Es una tabla de unión que detalla los productos incluidos en cada pedido, con su cantidad y precio."
+  OrderID:
+    description: "Identificador del pedido. Parte de la clave primaria compuesta y clave foránea a la tabla de pedidos."
+    type: integer
+  ProductID:
+    description: "Identificador del producto. Parte de la clave primaria compuesta y clave foránea a la tabla de productos."
+    type: integer
+  UnitPrice:
+    description: "Precio por unidad del producto al momento de la venta."
+    type: real
+  Quantity:
+    description: "Cantidad de unidades del producto solicitadas en el pedido."
+    type: integer
+  Discount:
+    description: "Descuento aplicado al producto en este pedido (ej. 0.15 para 15%)."
+    type: real

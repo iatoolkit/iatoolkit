@@ -1,0 +1,155 @@
+id: ent_company
+name: Ent Company
+locale: es_ES
+llm:
+  model: gpt-5.2
+  available_models:
+  - id: gpt-5.2
+    label: gpt-5.2
+    description: Fast, recommended for general purpose tasks.
+  - id: deepseek-chat
+    label: deepseek-chat
+    description: Fast and cheap.
+  - id: gemini-3-flash-preview
+    label: gemini-3-flash-preview
+    description: Fast
+  provider_api_keys:
+    openai: OPENAI_API_KEY
+    gemini: GEMINI_API_KEY
+    deepseek: DEEP_SEEK_API_KEY
+data_sources:
+  sql:
+  - database: sample_db
+    schema: sample_db
+    connection_string_env: DATABASE_URI
+    description: 'This database contains all of the
+
+      company’s commercial and operational information.
+
+      It is the primary source for answering questions about sales, shipments, purchase
+      orders, employees, countries, and territories. '
+    include_all_tables: true
+    exclude_tables:
+    - test_table
+    - logs
+    exclude_columns:
+    - created
+    - updated
+    tables:
+      employee_territories:
+        schema_name: employee_territory
+      orders:
+        exclude_columns:
+        - internal_notes
+        - processing_id
+      products:
+        description: Catálogo de productos de la compañía.
+tools:
+- function_name: document_search
+  description: 'Busquedas sobre documentos: manuales, contratos de trabajo de empleados,
+    manuales de procedimientos, y documentos legales.'
+  params:
+    type: object
+    properties:
+      query:
+        type: string
+        description: Texto o pregunta a buscar en los documentos.
+    required:
+    - query
+prompts:
+  prompt_categories:
+  - Sales
+  - Finance
+  prompt_list:
+  - category: Sales
+    name: analisis_ventas
+    description: Sales Analysis
+    order: 1
+  - category: Sales
+    name: supplier_report
+    description: Suppliers Report
+    order: 2
+    custom_fields:
+    - data_key: supplier_id
+      label: 'Provider ID (example: cascadia, andean foods, ...)'
+  - category: Finance
+    name: analisis_despachos
+    description: Supply Chain Analysis
+    order: 3
+    custom_fields:
+    - data_key: init_date
+      label: from date
+      type: date
+    - data_key: end_date
+      label: to date
+      type: date
+parameters:
+  verify_account: false
+  user_feedback:
+    channel: email
+    destination: fernando.libedinsky@gmail.com
+  cors_origin:
+  - https://portal-interno.empresa_de_ejemplo.cl
+  external_urls:
+    logout_url: ''
+branding:
+  header_background_color: '#4C6A8D'
+  header_text_color: '#FFFFFF'
+  brand_primary_color: '#4C6A8D'
+  brand_secondary_color: '#9EADC0'
+  brand_text_on_primary: '#FFFFFF'
+  brand_text_on_secondary: '#FFFFFF'
+help_files:
+  onboarding_cards: onboarding_cards.yaml
+  help_content: help_content.yaml
+knowledge_base:
+  collections:
+  - supplier_manual
+  - employee_contract
+  connectors:
+    development:
+      type: s3
+      bucket: iatoolkit
+      prefix: sample_company
+      aws_access_key_id_env: AWS_ACCESS_KEY_ID
+      aws_secret_access_key_env: AWS_SECRET_ACCESS_KEY
+      aws_region_env: AWS_REGION
+  document_sources:
+    supplier_manuals:
+      collection: supplier_manual
+      path: companies/sample_company/sample_data/supplier_manuals
+      folder: supplier_manuals
+      metadata: null
+    employee_contracts:
+      collection: employee_contract
+      path: companies/sample_company/sample_data/employee_contracts
+      folder: employee_contracts
+embedding_provider:
+  provider: huggingface
+  model: sentence-transformers/all-MiniLM-L6-v2
+  api_key_name: HF_TOKEN
+visual_embedding_provider:
+  provider: custom_class
+  class_path: iatoolkit.infra.jina_embeddings_client.JinaEmbeddingsClient
+  api_key_name: JINA_API_KEY
+  model: jina-embeddings-v4
+  dimensions: 0
+mail_provider:
+  provider: brevo_mail
+  sender_email: sample_ia@iatoolkit.com
+  sender_name: Sample Company IA
+  brevo_mail:
+    brevo_api: BREVO_API_KEY
+  smtplib:
+    host_env: SMTP_HOST
+    port_env: SMTP_PORT
+    username_env: SMTP_USERNAME
+    password_env: SMTP_PASSWORD
+storage_provider:
+  provider: s3
+  bucket: iatoolkit-assets
+  s3:
+    access_key_env: AWS_ACCESS_KEY_ID
+    secret_key_env: AWS_SECRET_ACCESS_KEY
+    region_env: AWS_REGION
+    prefix: ''

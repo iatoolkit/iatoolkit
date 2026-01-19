@@ -1,0 +1,5 @@
+Debes obtener las ultimas {{num_orders}} ordenes de compra
+del cliente identificado por {{client_id}} y enviarlas en
+formato de tabla al siguiente email: {{email}}.
+
+No generes excel, solo envia una tabla HTML por email.

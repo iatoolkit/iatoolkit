@@ -1,0 +1,40 @@
+# ===================================================================
+# Onboarding Cards Content for: sample_company
+# Location: companies/sample_company/config/onboarding_cards.yaml
+# ===================================================================
+# This file contains the list of cards displayed to the user upon
+# their first visit or when the chat history is empty.
+
+- icon: "fas fa-database"
+  title: "Bienvenido a Sample Company"
+  text: |
+    Esta es una empresa ficticia para mostrarte cómo interactuar con la IA. 
+    Los datos disponibles son un ejemplo de una empresa típica que vende productos, gestiona órdenes de compra, proveedores y empleados.
+
+- icon: "fas fa-database"
+  title: "Consulta sobre Datos"
+  text: "Conozco los datos de: clientes, productos, ventas, empleados, territorios y más."
+  example: "¿Cuál fue el producto más vendido en Alemania el año 2024?"
+
+- icon: "fas fa-file-alt"
+  title: "Busca en Documentos Internos"
+  text: "Puedo buscar en manuales, contratos y documentos legales para encontrar la información que necesitas."
+  example: "¿Cuál es el procedimiento para solicitar vacaciones?"
+
+- icon: "fas fa-cogs"
+  title: "Ejecuta Análisis SQL"
+  text: "Puedes pedirme que ejecute consultas SQL directamente sobre la base de datos y te entregaré los resultados."
+  example: "SQL: SELECT * FROM Orders WHERE ShipCountry = 'France' LIMIT 5"
+
+- icon: "fas fa-table"
+  title: "Pide Tablas y Excel"
+  text: "Puedes solicitar que la respuesta se formatee como una tabla o se exporte a un archivo Excel."
+  example: "dame una tabla con los 10 productos más caros."
+
+- icon: "fas fa-wand-magic-sparkles" # Ícono actualizado para ser más representativo
+  title: "Usa Prompts Predefinidos"
+  text: "Utiliza la varita mágica ✨ para explorar y ejecutar análisis complejos que he preparado para ti."
+
+- icon: "fas fa-shield-alt"
+  title: "Seguridad y Confidencialidad"
+  text: "Toda tu información es procesada de forma segura y confidencial dentro de nuestro entorno protegido."

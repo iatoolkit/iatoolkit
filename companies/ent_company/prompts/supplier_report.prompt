@@ -1,0 +1,33 @@
+Contexto: Quiero analizar el desempeño comercial de un proveedor específico (supplier).
+
+El nombre del proveedor es: {{supplier_id}}
+
+### **Estructura HTML de Salida OBLIGATORIA**
+- **Contenedor de Secciones:** envuelve TODAS las secciones en
+un `<div class="ficha-categorias">`.
+- **Secciones Individuales:** CADA sección (título + contenido) debe estar
+envuelta en su propio `<div class="categoria">`.
+
+### **Sección : Perfil del proveedor**
+	•	Datos básicos desde Suppliers: CompanyName, ContactName, Country, City, Phone.
+	•	Catálogo asociado desde Products: cantidad de productos activos, lista de ProductName, CategoryID, UnitsInStock, UnitsOnOrder, ReorderLevel.
+
+### **Sección : Desempeño de ventas de sus productos**
+
+	•	Ingresos asociados a los productos de este proveedor
+	•	Unidades vendidas y ticket promedio por orden (solo líneas de este proveedor).
+	•	Descuento promedio aplicado en esas líneas.
+	•	Top 10 productos del proveedor por ingresos y por cantidad.
+	•	Evolución mensual (series por mes de ingresos y unidades).
+
+### **Sección : Clientes que compran sus productos**
+
+	•	Top 10 clientes por ingresos (CompanyName de Customers).
+	•	Distribución por país de esos clientes.
+
+### **Sección : Señales y recomendaciones**
+
+	•	Señala productos “estrella” (alto ingreso y alta rotación).
+	•	Señala productos de baja rotación (poca venta, alto stock).
+	•	Sugerencias de promociones o packs con productos complementarios (si existe evidencia por co-ocurrencia en Order Details).
+	•	Recomendaciones de reabastecimiento para los items bajo su ReorderLevel.

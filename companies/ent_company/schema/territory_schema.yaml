@@ -1,0 +1,11 @@
+territory:
+  description: "Tabla de Territorios: Define territorios de ventas específicos que pertenecen a una región."
+  TerritoryID:
+    description: "Identificador único para cada territorio. Es la clave primaria."
+    type: integer
+  TerritoryDescription:
+    description: "Nombre o descripción del territorio."
+    type: string
+  RegionID:
+    description: "Identificador de la región a la que pertenece el territorio. Es una clave foránea a la tabla de regiones."
+    type: integer
