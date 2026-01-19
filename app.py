@@ -14,14 +14,14 @@ sys.path.insert(0, src_path)
 from dotenv import load_dotenv
 from iatoolkit.core import IAToolkit
 from iatoolkit.company_registry import register_company
-from companies.sample_company.sample_company import SampleCompany
+from companies.ent_company.ent_company import EntCompany
 
 # load environment variables
 load_dotenv(override=True)
 
 def create_app():
     # IMPORTANT: companies must be registered before creating the IAToolkit
-    register_company('sample_company', SampleCompany)
+    register_company('ent_company', EntCompany)
 
 
     # create the IAToolkit and Flask instance

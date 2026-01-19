@@ -17,7 +17,7 @@ from iatoolkit.services.mail_service import MailService
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.tool_service import ToolService
 from iatoolkit.common.util import Utility
-
+import base64
 
 # A mock company class for testing purposes
 class MockSampleCompany(BaseCompany):
@@ -234,3 +234,80 @@ class TestDispatcher:
             self.dispatcher.load_company_configs()
 
         assert "Config Error" in str(excinfo.value)
+
+    def test_dispatch_system_function_visual_search_success(self):
+        """Tests that iat_visual_search decodes base64 and calls handler with image_content bytes."""
+        self.mock_tool_service.is_system_tool.return_value = True
+
+        mock_handler = MagicMock(return_value={"ok": True})
+        self.mock_tool_service.get_system_handler.return_value = mock_handler
+
+        img_bytes = b"hello"
+        img_b64 = base64.b64encode(img_bytes).decode("ascii")
+        request_images = [{"name": "x.png", "base64": img_b64}]
+
+        result = self.dispatcher.dispatch(
+            "sample",
+            "iat_visual_search",
+            request_images=request_images,
+            image_index=0,
+            n_results=7
+        )
+
+        assert result == {"ok": True}
+        self.mock_tool_service.is_system_tool.assert_called_once_with("iat_visual_search")
+        self.mock_tool_service.get_system_handler.assert_called_once_with("iat_visual_search")
+        mock_handler.assert_called_once_with("sample", image_content=img_bytes, n_results=7)
+
+        self.mock_sample_company_instance.handle_request.assert_not_called()
+
+    def test_dispatch_system_function_visual_search_missing_image_index(self):
+        """iat_visual_search should fail if image_index is missing."""
+        self.mock_tool_service.is_system_tool.return_value = True
+        self.mock_tool_service.get_system_handler.return_value = MagicMock()
+
+        with pytest.raises(IAToolkitException) as excinfo:
+            self.dispatcher.dispatch(
+                "sample",
+                "iat_visual_search",
+                request_images=[{"name": "x.png", "base64": "AAAA"}],
+                n_results=5
+            )
+
+        assert excinfo.value.error_type == IAToolkitException.ErrorType.INVALID_NAME
+        assert "requiere 'image_index'" in str(excinfo.value)
+
+    def test_dispatch_system_function_visual_search_image_index_out_of_range(self):
+        """iat_visual_search should fail if image_index is out of bounds."""
+        self.mock_tool_service.is_system_tool.return_value = True
+        self.mock_tool_service.get_system_handler.return_value = MagicMock()
+
+        with pytest.raises(IAToolkitException) as excinfo:
+            self.dispatcher.dispatch(
+                "sample",
+                "iat_visual_search",
+                request_images=[{"name": "x.png", "base64": "AAAA"}],
+                image_index=5,
+                n_results=5
+            )
+
+        assert excinfo.value.error_type == IAToolkitException.ErrorType.INVALID_NAME
+        assert "image_index inválido" in str(excinfo.value)
+
+    def test_dispatch_system_function_visual_search_missing_base64_in_payload(self):
+        """iat_visual_search should fail if selected image payload has no base64."""
+        self.mock_tool_service.is_system_tool.return_value = True
+        self.mock_tool_service.get_system_handler.return_value = MagicMock()
+
+        with pytest.raises(IAToolkitException) as excinfo:
+            self.dispatcher.dispatch(
+                "sample",
+                "iat_visual_search",
+                request_images=[{"name": "x.png"}],
+                image_index=0,
+                n_results=5
+            )
+
+        assert excinfo.value.error_type == IAToolkitException.ErrorType.INVALID_NAME
+        assert "no contiene campo 'base64'" in str(excinfo.value)
+

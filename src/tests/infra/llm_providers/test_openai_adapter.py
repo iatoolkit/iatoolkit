@@ -209,7 +209,7 @@ class TestOpenAIAdapter:
         result = self.adapter.create_response(model='gpt-4', input=[])
 
         # Assert
-        assert len(result.content_parts) == 2
+        assert len(result.content_parts) == 3
 
         # Parte 1: Texto
         assert result.content_parts[0] == {'type': 'text', 'text': 'Here is the image:'}
@@ -220,5 +220,11 @@ class TestOpenAIAdapter:
         assert result.content_parts[1]['source']['data'] == 'BASE64DATA'
         assert result.content_parts[1]['source']['media_type'] == 'image/png'
 
-        # output_text debe incluir texto y marcador de imagen
+        # Parte 3: marcador de imagen en texto (markdown)
+        assert result.content_parts[2] == {
+            'type': 'text',
+            'text': '![Imagen Generada](data:image/png;base64,BASE64DATA)'
+        }
+
+        # output_text debe incluir texto (la imagen está en content_parts)
         assert 'Here is the image:' in result.output_text

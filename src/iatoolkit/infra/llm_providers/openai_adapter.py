@@ -149,6 +149,10 @@ class OpenAIAdapter:
                             "data": b64
                         }
                     })
+                    content_parts.append({
+                        "type": "text",
+                        "text": f"![Imagen Generada](data:image/png;base64,{b64})"
+                    })
                 continue
 
             # 3) Mensajes: solo texto

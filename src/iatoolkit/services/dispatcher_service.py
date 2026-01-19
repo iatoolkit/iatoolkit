@@ -11,6 +11,7 @@ from iatoolkit.common.util import Utility
 from injector import inject
 import logging
 import os
+import base64
 
 
 class Dispatcher:
@@ -104,6 +105,49 @@ class Dispatcher:
 
         # check if action is a system function using ToolService
         if self.tool_service.is_system_tool(function_name):
+            # --- Special case: visual similarity search needs image bytes from request attachments ---
+            if function_name == "iat_visual_search":
+                request_images = kwargs.pop("request_images", None) or []
+                image_index = kwargs.get("image_index", None)
+                n_results = kwargs.get("n_results", 5)
+
+                if image_index is None:
+                    raise IAToolkitException(
+                        IAToolkitException.ErrorType.INVALID_NAME,
+                        "iat_visual_search requiere 'image_index'."
+                    )
+
+                if not isinstance(image_index, int) or image_index < 0 or image_index >= len(request_images):
+                    raise IAToolkitException(
+                        IAToolkitException.ErrorType.INVALID_NAME,
+                        f"image_index inválido ({image_index}). Imágenes adjuntas disponibles: {len(request_images)}."
+                    )
+
+                img_payload = request_images[image_index] or {}
+                img_b64 = img_payload.get("base64")
+                if not img_b64:
+                    raise IAToolkitException(
+                        IAToolkitException.ErrorType.INVALID_NAME,
+                        f"La imagen adjunta en index {image_index} no contiene campo 'base64'."
+                    )
+
+                try:
+                    image_content = base64.b64decode(img_b64, validate=False)
+                except Exception as e:
+                    raise IAToolkitException(
+                        IAToolkitException.ErrorType.INVALID_NAME,
+                        f"No se pudo decodificar base64 de la imagen en index {image_index}: {str(e)}"
+                    ) from e
+
+                handler = self.tool_service.get_system_handler(function_name)
+                logging.debug(
+                    f"Calling system handler [{function_name}] "
+                    f"with company_short_name={company_short_name} "
+                    f"and image_index={image_index} n_results={n_results}"
+                )
+                return handler(company_short_name, image_content=image_content, n_results=n_results)
+
+
             # this is the system function to be executed.
             handler = self.tool_service.get_system_handler(function_name)
             logging.debug(

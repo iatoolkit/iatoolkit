@@ -164,6 +164,8 @@ class TestLLMClient:
         # Make its _get_injector() method return our mock injector
         toolkit_mock.get_injector.return_value = injector_mock
 
+        fake_images = [{'name': 'x.png', 'base64': '...'}]
+
         # 4. Use patch to replace `current_iatoolkit` with our mock toolkit
         with patch('iatoolkit.current_iatoolkit', return_value=toolkit_mock):
             # 5. Define the sequence of LLM responses
@@ -174,15 +176,18 @@ class TestLLMClient:
             # 6. Invoke the client. Now, when it calls current_iatoolkit, it will get our mock.
             self.client.invoke(
                 company=self.company, user_identifier='user1', previous_response_id='prev1',
-                model='gpt-5',question='q', context='c', tools=[{}], text={}, images=[]
+                model='gpt-5', question='q', context='c', tools=[{}], text={}, images=fake_images
             )
 
         # 7. Assertions
         assert self.mock_proxy.create_response.call_count == 2
 
-        # Verify that the dispatcher was correctly retrieved and called
+        # Verify that the dispatcher was correctly retrieved and called (including request_images)
         dispatcher_mock.dispatch.assert_called_once_with(
-            company_short_name='test_company', function_name='test_func', a=1
+            company_short_name='test_company',
+            function_name='test_func',
+            request_images=fake_images,
+            a=1
         )
 
         # Verify that the function output was reinjected into the history

@@ -147,6 +147,7 @@ class llmClient:
                         result = self.dispatcher.dispatch(
                             company_short_name=company.short_name,
                             function_name=function_name,
+                            request_images=images,
                             **args
                         )
                         force_tool_name = None
@@ -488,6 +489,13 @@ class llmClient:
         """
 
     def format_html(self, answer: str):
+        if not answer:
+            return ""
+
+        # Heurística simple: si contiene tags, lo tratamos como HTML ya renderizable
+        if re.search(r"</?[a-zA-Z][\s\S]*>", answer):
+            return answer.replace("\n", "")
+
         html_answer = markdown2.markdown(answer).replace("\n", "")
         return html_answer
 
