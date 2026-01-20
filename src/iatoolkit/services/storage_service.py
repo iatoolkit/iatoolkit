@@ -58,19 +58,20 @@ class StorageService:
                 s3_conf = storage_config.get("s3", {})
 
                 # Resolve Env Var NAMES to VALUES
-                access_key = os.getenv(s3_conf.get("access_key_env", "AWS_ACCESS_KEY_ID"))
-                secret_key = os.getenv(s3_conf.get("secret_key_env", "AWS_SECRET_ACCESS_KEY"))
+                auth = {}
+                access_key = os.getenv(s3_conf.get("access_key_env"))
+                secret_key = os.getenv(s3_conf.get("secret_key_env"))
                 region = os.getenv(s3_conf.get("region_env", "AWS_REGION"), "us-east-1")
+                if access_key and secret_key:
+                    auth = {"aws_access_key_id": access_key,
+                            "aws_secret_access_key": secret_key,
+                            "region_name": region}
 
                 factory_config = {
                     "type": "s3",
                     "bucket": bucket,
                     "prefix": s3_conf.get("prefix", ""),
-                    "auth": {
-                        'aws_access_key_id': access_key,
-                        'aws_secret_access_key': secret_key,
-                        'region_name': region
-                    }
+                    "auth": auth
                 }
 
             elif provider == "google_cloud_storage":
