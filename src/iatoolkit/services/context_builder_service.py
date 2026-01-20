@@ -115,6 +115,7 @@ class ContextBuilderService:
                 client_data=final_client_data,
                 user_identifier=user_identifier,
                 company=company,
+                images=images
             )
 
         # Final assembly of the user prompt
