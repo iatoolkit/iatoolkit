@@ -140,7 +140,7 @@ _SYSTEM_TOOLS = [
     {
         "function_name": "iat_visual_search",
         "description": "Busca imágenes visualmente similares a una imagen adjunta por el usuario (búsqueda por similitud visual). "
-                       "Si el usuario adjunta una imagen y pregunta 'tienes algo parecido a esto', usa esta herramienta.",
+                       "Si el usuario adjunta una imagen y solicita buscar algo similar debes utilizar este servicio.",
         "parameters": {
             "type": "object",
             "properties": {
