@@ -59,13 +59,15 @@ class StorageService:
 
                 # Resolve Env Var NAMES to VALUES
                 auth = {}
-                access_key = os.getenv(s3_conf.get("access_key_env"))
-                secret_key = os.getenv(s3_conf.get("secret_key_env"))
-                region = os.getenv(s3_conf.get("region_env", "AWS_REGION"), "us-east-1")
+                a_key_env = s3_conf.get("access_key_env")
+                s_key_env = s3_conf.get("secret_key_env")
+
+                access_key = os.getenv(a_key_env) if a_key_env else None
+                secret_key = os.getenv(s_key_env) if s_key_env else None
                 if access_key and secret_key:
                     auth = {"aws_access_key_id": access_key,
                             "aws_secret_access_key": secret_key,
-                            "region_name": region}
+                            "region_name": os.getenv(s3_conf.get("region_env", "AWS_REGION"), "us-east-1")}
 
                 factory_config = {
                     "type": "s3",
