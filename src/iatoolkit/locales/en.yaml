@@ -154,6 +154,7 @@ ui:
     unsaved_changes_message: "You have unsaved changes. Do you want to save them before proceeding?"
     discard_changes: "Discard Changes"
 
+
   db_explorer:
     data_explorer: "Data Explorer"
     database_connection: "Database Connection"
@@ -174,6 +175,7 @@ ui:
     meta_description: "Description"
     meta_synonyms: "Synonyms"
     pii_sesitive: "PII Sensitive"
+    no_table_selected: "No table selected"
 
   prompts:
     title: "Prompts Manager"
@@ -203,6 +205,7 @@ ui:
     name_help: "Use lowercase, numbers, and underscores only."
     category_label: "Category"
     delete_confirmation: "Delete Prompt?"
+    filter_type: "Filter by type"
 
 
   config:

@@ -35,6 +35,10 @@ class EmbeddingClientWrapper:
 
 
 class HuggingFaceClientWrapper(EmbeddingClientWrapper):
+    def __init__(self, client, model: str, dimensions: int = 1536, endpoint: str = None):
+        super().__init__(client, model, dimensions)
+        self.endpoint = endpoint
+
     def get_embedding(self, text: str) -> list[float]:
         embedding = self.client.feature_extraction(text)
         # Ensure the output is a flat list of floats
@@ -43,16 +47,62 @@ class HuggingFaceClientWrapper(EmbeddingClientWrapper):
         return embedding
 
     def get_image_embedding(self, presigned_url: str) -> list[float]:
-        # HuggingFace Inference API expects base64 or raw bytes depending on client version
-        # Usually passing the image directly works with feature_extraction if PIL is used
+        import requests
 
-        # Call API
-        embedding = self.client.feature_extraction(presigned_url)
+        try:
+            # 1) Download the image bytes
+            r = requests.get(presigned_url, timeout=30)
+            r.raise_for_status()
+            image_bytes = r.content
 
-        # Normalize Output (API might return nested list)
-        if isinstance(embedding, list) and len(embedding) > 0 and isinstance(embedding[0], list):
-            return embedding[0]
-        return embedding
+            # 2) Base64 encode (RAW base64, no data: URI prefix)
+            b64_data = base64.b64encode(image_bytes).decode("utf-8")
+
+            # 3) Endpoint URL
+            api_url = self.endpoint or f"https://api-inference.huggingface.co/models/{self.model}"
+
+            # 4) Headers
+            client_headers = getattr(self.client, "headers", {}) or {}
+            headers = dict(client_headers)
+
+            if "Authorization" not in headers:
+                token = getattr(self.client, "token", None)
+                if token:
+                    headers["Authorization"] = f"Bearer {token}"
+
+            # Ensure JSON content type (requests sets it automatically when using json=...)
+            # headers["Content-Type"] = "application/json"
+
+            # 5) Payload (match handler contract)
+            payload = {"inputs": b64_data}
+
+            # 6) Call endpoint
+            resp = requests.post(api_url, headers=headers, json=payload, timeout=60)
+            resp.raise_for_status()
+
+            # 7) Parse response
+            result = resp.json()
+
+            # Common custom-handler response: {"embedding": [...], "dimensions": N, ...}
+            if isinstance(result, dict):
+                if "embedding" in result and isinstance(result["embedding"], list):
+                    return result["embedding"]
+                if "embeddings" in result and isinstance(result["embeddings"], list):
+                    return result["embeddings"]
+
+            # If your handler returns raw list (less common)
+            if isinstance(result, list):
+                # Sometimes it may return [[...]] for batch=1
+                if len(result) > 0 and isinstance(result[0], list):
+                    return result[0]
+                return result
+
+            raise ValueError(f"Unexpected response format: {type(result)} - {result}")
+
+        except Exception as e:
+            logging.error(f"Error in HuggingFace get_image_embedding: {e}")
+            raise
+
 
 class OpenAIClientWrapper(EmbeddingClientWrapper):
     def get_embedding(self, text: str) -> list[float]:
@@ -62,6 +112,7 @@ class OpenAIClientWrapper(EmbeddingClientWrapper):
                                                  model=self.model,
                                                  dimensions=self.dimensions)
         return response.data[0].embedding
+
 
 class CustomClassClientWrapper(EmbeddingClientWrapper):
     """
@@ -195,8 +246,12 @@ class EmbeddingClientFactory:
             if not model:
                 model = 'sentence-transformers/all-MiniLM-L6-v2'  # Default text model, change for image if needed
 
+            # read the endpoint_url from the config
+            endpoint_url = embedding_config.get('endpoint_url')
+
             client = InferenceClient(model=model, token=api_key)
-            wrapper = HuggingFaceClientWrapper(client, model, dimensions)
+
+            wrapper = HuggingFaceClientWrapper(client, model, dimensions, endpoint=endpoint_url)
 
         elif provider == 'openai':
             if not api_key:

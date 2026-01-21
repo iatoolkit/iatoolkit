@@ -438,10 +438,8 @@ class ConfigurationService:
             if provider == "s3":
                 s3_conf = storage_config.get("s3", {})
                 # Check for env var names, not values
-                if not s3_conf.get("access_key_env"):
-                    add_error("storage_provider.s3", "Missing 'access_key_env'")
-                if not s3_conf.get("secret_key_env"):
-                    add_error("storage_provider.s3", "Missing 'secret_key_env'")
+                if not s3_conf:
+                    add_error("storage_provider.s3", "Missing s3 configuration.")
 
             if provider == "google_cloud_storage":
                 gcs_conf = storage_config.get("google_cloud_storage", {})

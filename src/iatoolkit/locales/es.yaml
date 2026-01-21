@@ -150,6 +150,8 @@ ui:
     unsaved_changes_title: "Cambios sin guardar"
     unsaved_changes_message: "Tienes modificaciones sin guardar. Quieres grabarlos antes de salir?"
     discard_changes: "Descartar cambios"
+    loading: "Cargando..."
+
 
 
   db_explorer:
@@ -172,6 +174,8 @@ ui:
     meta_description: "Descripción"
     meta_synonyms: "Sinonimos"
     pii_sesitive: "IP Sensible"
+    no_table_selected: "No hay tabla seleccionada."
+
 
   prompts:
     title: "Gestor de Prompts"
@@ -201,6 +205,7 @@ ui:
     name_help: "Solo minúsculas, números y guiones bajos."
     category_label: "Categoría"
     delete_confirmation: "Eliminar el prompt?"
+    filter_type: "Filtrar por tipo"
 
 
   config:

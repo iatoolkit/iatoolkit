@@ -29,7 +29,7 @@ httplib2==0.22.0
 httptools==0.6.4
 httpx>=0.28.1,<1.0.0
 httpx-sse==0.4.0
-huggingface-hub>=0.16.4
+huggingface-hub==0.16.4
 humanfriendly==10.0
 idna==3.10
 injector==0.22.0

@@ -130,12 +130,21 @@ embedding_provider:
   provider: huggingface
   model: sentence-transformers/all-MiniLM-L6-v2
   api_key_name: HF_TOKEN
+
 visual_embedding_provider:
+  provider: "huggingface"
+  model: "openai/clip-vit-base-patch32"
+  api_key_name: "HF_TOKEN"
+  dimensions: 512
+  endpoint_url: "https://mzhd034gobgquoje.us-east-1.aws.endpoints.huggingface.cloud"
+
+visual_embedding_provider_save:
   provider: custom_class
   class_path: iatoolkit.infra.jina_embeddings_client.JinaEmbeddingsClient
   api_key_name: JINA_API_KEY
   model: jina-embeddings-v4
   dimensions: 0
+
 mail_provider:
   provider: brevo_mail
   sender_email: sample_ia@iatoolkit.com
