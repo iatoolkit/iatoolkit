@@ -63,7 +63,7 @@ class VisualKnowledgeBaseService:
             presigned_url = self.storage_service.generate_presigned_url(company.short_name, storage_key)
 
             # 3. Generate Embedding (using the visual provider logic)
-            vector = self.embedding_service.embed_image(company.short_name, presigned_url)
+            vector = self.embedding_service.embed_image_from_url(company.short_name, presigned_url)
 
             # 4. Extract Meta (Width/Height) - Optional/Lazy load
             image_meta = self._extract_image_meta(content)

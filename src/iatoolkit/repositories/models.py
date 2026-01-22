@@ -329,7 +329,7 @@ class VSImage(Base):
     meta = Column(JSON, nullable=True)
 
     # Vector dimension depends on the multimodal model (e.g., CLIP uses 512 or 768)
-    embedding = Column(Vector, nullable=False)
+    embedding = Column(Vector(512), nullable=False)
 
     company = relationship("Company", back_populates="vsimages")
     document = relationship("Document", back_populates="vsimage")

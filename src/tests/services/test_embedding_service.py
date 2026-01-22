@@ -207,7 +207,45 @@ class TestEmbeddingService:
 
     def test_service_embed_image_returns_vector(self, mocker):
         """
-        Tests that embed_image calls the factory with model_type='image' and uses get_image_embedding.
+        Tests that embed_image (alias) calls embed_image_from_url and uses get_image_embedding(url).
+        """
+        # Arrange
+        mock_wrapper = MagicMock(spec=EmbeddingClientWrapper)
+        mock_wrapper.get_image_embedding.return_value = self.SAMPLE_VECTOR
+        mocker.patch.object(self.client_factory, 'get_client', return_value=mock_wrapper)
+
+        presigned_url = "https://example.com/presigned"
+
+        # Act
+        result = self.embedding_service.embed_image("any_company", presigned_url)
+
+        # Assert
+        self.client_factory.get_client.assert_called_once_with("any_company", model_type="image")
+        mock_wrapper.get_image_embedding.assert_called_once_with(presigned_url)
+        assert result == self.SAMPLE_VECTOR
+
+    def test_service_embed_image_from_url_returns_vector(self, mocker):
+        """
+        Tests that embed_image_from_url calls the factory with model_type='image' and uses get_image_embedding(url).
+        """
+        # Arrange
+        mock_wrapper = MagicMock(spec=EmbeddingClientWrapper)
+        mock_wrapper.get_image_embedding.return_value = self.SAMPLE_VECTOR
+        mocker.patch.object(self.client_factory, 'get_client', return_value=mock_wrapper)
+
+        presigned_url = "https://example.com/presigned"
+
+        # Act
+        result = self.embedding_service.embed_image_from_url("any_company", presigned_url)
+
+        # Assert
+        self.client_factory.get_client.assert_called_once_with("any_company", model_type="image")
+        mock_wrapper.get_image_embedding.assert_called_once_with(presigned_url)
+        assert result == self.SAMPLE_VECTOR
+
+    def test_service_embed_image_from_bytes_returns_vector(self, mocker):
+        """
+        Tests that embed_image_from_bytes calls the factory with model_type='image' and uses get_image_embedding(bytes).
         """
         # Arrange
         mock_wrapper = MagicMock(spec=EmbeddingClientWrapper)
@@ -217,9 +255,136 @@ class TestEmbeddingService:
         fake_image_bytes = b'\x89PNG\r\n\x1a\n'
 
         # Act
-        result = self.embedding_service.embed_image("any_company", fake_image_bytes)
+        result = self.embedding_service.embed_image_from_bytes("any_company", fake_image_bytes)
 
         # Assert
         self.client_factory.get_client.assert_called_once_with("any_company", model_type="image")
         mock_wrapper.get_image_embedding.assert_called_once_with(fake_image_bytes)
         assert result == self.SAMPLE_VECTOR
+
+        def test_huggingface_wrapper_get_embedding_flattens_nested_list(self):
+            """
+            feature_extraction puede devolver [[...]] para batch=1; el wrapper debe aplanar a [...]
+            """
+        mock_client = MagicMock()
+        mock_client.feature_extraction.return_value = [[0.1, 0.2, 0.3]]
+
+        wrapper = HuggingFaceClientWrapper(
+            client=mock_client,
+            model="any-model",
+            dimensions=3,
+            endpoint="https://example.com/endpoint",
+            api_key="fake-token"
+        )
+
+        result = wrapper.get_embedding("hola")
+
+        mock_client.feature_extraction.assert_called_once_with("hola")
+        assert result == [0.1, 0.2, 0.3]
+
+    def test_huggingface_wrapper_get_image_embedding_raises_without_endpoint(self):
+        mock_client = MagicMock()
+        wrapper = HuggingFaceClientWrapper(
+            client=mock_client,
+            model="any-model",
+            dimensions=512,
+            endpoint=None,
+            api_key="fake-token"
+        )
+
+        with pytest.raises(ValueError, match="Missing HuggingFace endpoint URL"):
+            wrapper.get_image_embedding("https://example.com/presigned")
+
+    def test_huggingface_wrapper_get_image_embedding_raises_without_token(self, mocker):
+        mock_client = MagicMock()
+        # asegurar que no exista token fallback en el cliente
+        if hasattr(mock_client, "token"):
+            delattr(mock_client, "token")
+
+        wrapper = HuggingFaceClientWrapper(
+            client=mock_client,
+            model="any-model",
+            dimensions=512,
+            endpoint="https://example.com/endpoint",
+            api_key=None
+        )
+
+        with pytest.raises(ValueError, match="Missing HuggingFace token"):
+            wrapper.get_image_embedding("https://example.com/presigned")
+
+    def test_huggingface_wrapper_get_image_embedding_sends_url_inside_inputs_dict(self, mocker):
+        requests_post = mocker.patch("requests.post")
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status.return_value = None
+        mock_resp.json.return_value = {"embedding": [0.0, 1.0, 2.0], "dimensions": 3}
+        requests_post.return_value = mock_resp
+
+        mock_client = MagicMock()
+        wrapper = HuggingFaceClientWrapper(
+            client=mock_client,
+            model="clip",
+            dimensions=3,
+            endpoint="https://example.com/endpoint",
+            api_key="fake-token"
+        )
+
+        presigned_url = "https://example.com/presigned"
+        result = wrapper.get_image_embedding(presigned_url)
+
+        assert result == [0.0, 1.0, 2.0]
+
+        requests_post.assert_called_once()
+        call_kwargs = requests_post.call_args.kwargs
+        assert call_kwargs["json"] == {"inputs": {"presigned_url": presigned_url}}
+        assert call_kwargs["timeout"] == 60
+
+        headers = call_kwargs["headers"]
+        assert headers["Accept"] == "application/json"
+        assert headers["Content-Type"] == "application/json"
+        assert headers["Authorization"] == "Bearer fake-token"
+
+    def test_huggingface_wrapper_get_image_embedding_sends_bytes_as_base64_in_inputs(self, mocker):
+        requests_post = mocker.patch("requests.post")
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status.return_value = None
+        mock_resp.json.return_value = {"embedding": [0.1, 0.2], "dimensions": 2}
+        requests_post.return_value = mock_resp
+
+        mock_client = MagicMock()
+        wrapper = HuggingFaceClientWrapper(
+            client=mock_client,
+            model="clip",
+            dimensions=2,
+            endpoint="https://example.com/endpoint",
+            api_key="fake-token"
+        )
+
+        image_bytes = b"\x89PNG\r\n\x1a\n"
+        result = wrapper.get_image_embedding(image_bytes)
+
+        assert result == [0.1, 0.2]
+
+        requests_post.assert_called_once()
+        call_kwargs = requests_post.call_args.kwargs
+        payload = call_kwargs["json"]
+        assert "inputs" in payload
+        assert isinstance(payload["inputs"], str)
+        assert payload["inputs"] != ""  # base64 string
+
+    def test_huggingface_wrapper_get_image_embedding_raises_on_hf_error_payload(self, mocker):
+        requests_post = mocker.patch("requests.post")
+        mock_resp = MagicMock()
+        mock_resp.raise_for_status.return_value = None
+        mock_resp.json.return_value = {"error": "Bad things happened"}
+        requests_post.return_value = mock_resp
+
+        wrapper = HuggingFaceClientWrapper(
+            client=MagicMock(),
+            model="clip",
+            dimensions=512,
+            endpoint="https://example.com/endpoint",
+            api_key="fake-token"
+        )
+
+        with pytest.raises(ValueError, match="HuggingFace endpoint error: Bad things happened"):
+            wrapper.get_image_embedding("https://example.com/presigned")

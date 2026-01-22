@@ -15,6 +15,7 @@ from iatoolkit.infra.call_service import CallServiceClient
 import logging
 import importlib
 import inspect
+from typing import Union
 
 
 # Wrapper classes to create a common interface for embedding clients
@@ -29,15 +30,16 @@ class EmbeddingClientWrapper:
         """Generates and returns an embedding for the given text."""
         raise NotImplementedError
 
-    def get_image_embedding(self, image_url: str) -> list[float]:
-        """Generates and returns an embedding for the given image."""
+    def get_image_embedding(self, image_input: Union[bytes, str]) -> list[float]:
+        """Generates and returns an embedding for the given image (bytes or URL)."""
         raise NotImplementedError(f"Model {self.model} does not support image embeddings")
 
 
 class HuggingFaceClientWrapper(EmbeddingClientWrapper):
-    def __init__(self, client, model: str, dimensions: int = 1536, endpoint: str = None):
+    def __init__(self, client, model: str, dimensions: int = 1536, endpoint: str = None, api_key: str | None = None):
         super().__init__(client, model, dimensions)
         self.endpoint = endpoint
+        self.api_key = api_key
 
     def get_embedding(self, text: str) -> list[float]:
         embedding = self.client.feature_extraction(text)
@@ -46,53 +48,55 @@ class HuggingFaceClientWrapper(EmbeddingClientWrapper):
             return embedding[0]
         return embedding
 
-    def get_image_embedding(self, presigned_url: str) -> list[float]:
+    def get_image_embedding(self, image_input: Union[bytes, str]) -> list[float]:
         import requests
+        import base64
 
         try:
-            # 1) Download the image bytes
-            r = requests.get(presigned_url, timeout=30)
-            r.raise_for_status()
-            image_bytes = r.content
+            api_url = self.endpoint
+            if not api_url:
+                raise ValueError("Missing HuggingFace endpoint URL for image embeddings (endpoint_url).")
 
-            # 2) Base64 encode (RAW base64, no data: URI prefix)
-            b64_data = base64.b64encode(image_bytes).decode("utf-8")
+            headers = {
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            }
 
-            # 3) Endpoint URL
-            api_url = self.endpoint or f"https://api-inference.huggingface.co/models/{self.model}"
+            token = self.api_key or getattr(self.client, "token", None)
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+            else:
+                raise ValueError("Missing HuggingFace token for image embedding request (Authorization header not set).")
 
-            # 4) Headers
-            client_headers = getattr(self.client, "headers", {}) or {}
-            headers = dict(client_headers)
+            # HF inference toolkit requires top-level "inputs"
+            if isinstance(image_input, bytes):
+                b64_data = base64.b64encode(image_input).decode("utf-8")
+                payload = {"inputs": b64_data}
+            elif isinstance(image_input, str):
+                payload = {"inputs": {"presigned_url": image_input}}
+            else:
+                raise TypeError(f"Unsupported image_input type: {type(image_input)}")
 
-            if "Authorization" not in headers:
-                token = getattr(self.client, "token", None)
-                if token:
-                    headers["Authorization"] = f"Bearer {token}"
-
-            # Ensure JSON content type (requests sets it automatically when using json=...)
-            # headers["Content-Type"] = "application/json"
-
-            # 5) Payload (match handler contract)
-            payload = {"inputs": b64_data}
-
-            # 6) Call endpoint
             resp = requests.post(api_url, headers=headers, json=payload, timeout=60)
             resp.raise_for_status()
-
-            # 7) Parse response
             result = resp.json()
 
-            # Common custom-handler response: {"embedding": [...], "dimensions": N, ...}
+            if isinstance(result, dict) and "error" in result:
+                raise ValueError(f"HuggingFace endpoint error: {result['error']}")
+
             if isinstance(result, dict):
                 if "embedding" in result and isinstance(result["embedding"], list):
-                    return result["embedding"]
+                    embedding = result["embedding"]
+                    if self.dimensions and len(embedding) != self.dimensions:
+                        logging.warning(
+                            f"HuggingFace image embedding dimensions mismatch: "
+                            f"expected={self.dimensions} got={len(embedding)} model={self.model}"
+                        )
+                    return embedding
                 if "embeddings" in result and isinstance(result["embeddings"], list):
                     return result["embeddings"]
 
-            # If your handler returns raw list (less common)
             if isinstance(result, list):
-                # Sometimes it may return [[...]] for batch=1
                 if len(result) > 0 and isinstance(result[0], list):
                     return result[0]
                 return result
@@ -102,7 +106,6 @@ class HuggingFaceClientWrapper(EmbeddingClientWrapper):
         except Exception as e:
             logging.error(f"Error in HuggingFace get_image_embedding: {e}")
             raise
-
 
 class OpenAIClientWrapper(EmbeddingClientWrapper):
     def get_embedding(self, text: str) -> list[float]:
@@ -138,13 +141,12 @@ class CustomClassClientWrapper(EmbeddingClientWrapper):
             return embedding[0]
         return embedding
 
-    def get_image_embedding(self, presigned_url: str) -> list[float]:
+    def get_image_embedding(self, image_input: Union[bytes, str]) -> list[float]:
         if hasattr(self.client, 'embed_image'):
-            return self.client.embed_image(presigned_url)
-        elif hasattr(self.client, 'get_image_embedding'):
-            return self.client.get_image_embedding(presigned_url)
-        else:
-            raise NotImplementedError(f"Custom class {type(self.client).__name__} does not support image embeddings")
+            return self.client.embed_image(image_input)
+        if hasattr(self.client, 'get_image_embedding'):
+            return self.client.get_image_embedding(image_input)
+        raise NotImplementedError(f"Custom class {type(self.client).__name__} does not support image embeddings")
 
 
 # Factory and Service classes
@@ -251,7 +253,7 @@ class EmbeddingClientFactory:
 
             client = InferenceClient(model=model, token=api_key)
 
-            wrapper = HuggingFaceClientWrapper(client, model, dimensions, endpoint=endpoint_url)
+            wrapper = HuggingFaceClientWrapper(client, model, dimensions, endpoint=endpoint_url, api_key=api_key)
 
         elif provider == 'openai':
             if not api_key:
@@ -307,24 +309,34 @@ class EmbeddingService:
             logging.error(f"Error generating embedding for text: {text[:80]}... - {e}")
             raise
 
-    def embed_image(self, company_short_name: str, presigned_url: str) -> list[float]:
+    def embed_image_from_url(self, company_short_name: str, presigned_url: str) -> list[float]:
         """
-        Generates the embedding for a given image using the multimodal model.
+        Embedding para imagen a partir de una URL firmada (ingestions / assets).
         """
         try:
-            # 1. Get the multimodal client (explicitly request 'image' model type)
             client_wrapper = self.client_factory.get_client(company_short_name, model_type='image')
-
-            # 2. Assume client_wrapper has a specialized method for images
-            # If the wrapper unifies interfaces, it might check input type or have specific method
-            if hasattr(client_wrapper, 'get_image_embedding'):
-                return client_wrapper.get_image_embedding(presigned_url)
-            else:
-                raise NotImplementedError(f"Model {client_wrapper.model} does not support image embeddings")
-
+            return client_wrapper.get_image_embedding(presigned_url)
         except Exception as e:
-            logging.error(f"Error generating embedding for image - {e}")
+            logging.error(f"Error generating embedding for image (url) - {e}")
             raise
+
+    def embed_image_from_bytes(self, company_short_name: str, image_bytes: bytes) -> list[float]:
+        """
+        Embedding para imagen a partir de bytes (visual search / uploads).
+        """
+        try:
+            client_wrapper = self.client_factory.get_client(company_short_name, model_type='image')
+            return client_wrapper.get_image_embedding(image_bytes)
+        except Exception as e:
+            logging.error(f"Error generating embedding for image (bytes) - {e}")
+            raise
+
+    def embed_image(self, company_short_name: str, presigned_url: str) -> list[float]:
+        """
+        Backwards-compatible alias: conserva la firma anterior (URL).
+        """
+        return self.embed_image_from_url(company_short_name, presigned_url)
+
 
     def get_model_name(self, company_short_name: str, model_type: str = 'text') -> str:
         """

@@ -174,7 +174,7 @@ class VSRepo:
         """
         try:
             # 1. Generate Query Vector (Image -> Visual Space)
-            query_embedding = self.embedding_service.embed_image(company_short_name, image_bytes)
+            query_embedding = self.embedding_service.embed_image_from_bytes(company_short_name, image_bytes)
 
             # 2. Delegate to internal vector search
             return self._query_images_by_vector(company_short_name, query_embedding, n_results, collection_id)
