@@ -144,11 +144,14 @@ class llmClient:
                     logging.debug(f"[Dispatcher] Parsed args = {args}")
 
                     try:
+                        call_kwargs = dict(args)
+                        if images:
+                            call_kwargs["request_images"] = images
+
                         result = self.dispatcher.dispatch(
                             company_short_name=company.short_name,
                             function_name=function_name,
-                            request_images=images,
-                            **args
+                            **call_kwargs
                         )
                         force_tool_name = None
                     except IAToolkitException as e:

@@ -36,76 +36,77 @@ class EmbeddingClientWrapper:
 
 
 class HuggingFaceClientWrapper(EmbeddingClientWrapper):
-    def __init__(self, client, model: str, dimensions: int = 1536, endpoint: str = None, api_key: str | None = None):
+    def __init__(
+            self,
+            client,
+            model: str,
+            dimensions: int = 1536,
+            endpoint: str | None = None,
+            api_key: str | None = None,
+            call_service: None = None
+    ):
         super().__init__(client, model, dimensions)
         self.endpoint = endpoint
         self.api_key = api_key
+        self.call_service = call_service
+
+    def _post_endpoint(self, payload: dict) -> dict:
+        if not self.endpoint:
+            raise ValueError("Missing HuggingFace endpoint URL (endpoint_url).")
+        if not self.call_service:
+            raise ValueError("Missing call_service dependency for HuggingFaceClientWrapper.")
+        if not self.api_key:
+            raise ValueError("Missing HuggingFace token (api_key).")
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        resp, status = self.call_service.post(
+            self.endpoint,
+            json_dict=payload,
+            headers=headers,
+            timeout=(10, 120.0)
+        )
+
+        if status != 200:
+            raise ValueError(f"HuggingFace endpoint error {status}: {resp}")
+
+        if not isinstance(resp, dict):
+            raise ValueError(f"Unexpected response format: {type(resp)} - {resp}")
+
+        if "error" in resp:
+            raise ValueError(f"HuggingFace endpoint error: {resp['error']}")
+
+        if "embedding" not in resp or not isinstance(resp["embedding"], list):
+            raise ValueError(f"Unexpected response format: {type(resp)} - {resp}")
+
+        return resp
 
     def get_embedding(self, text: str) -> list[float]:
-        embedding = self.client.feature_extraction(text)
-        # Ensure the output is a flat list of floats
-        if isinstance(embedding, list) and len(embedding) > 0 and isinstance(embedding[0], list):
-            return embedding[0]
+        result = self._post_endpoint({"inputs": {"mode": "text", "text": text}})
+        embedding = result["embedding"]
+
+        if self.dimensions and len(embedding) != self.dimensions:
+            logging.warning(
+                f"HuggingFace embedding dimensions mismatch: expected={self.dimensions} got={len(embedding)} model={self.model}"
+            )
         return embedding
 
     def get_image_embedding(self, image_input: Union[bytes, str]) -> list[float]:
-        import requests
         import base64
 
-        try:
-            api_url = self.endpoint
-            if not api_url:
-                raise ValueError("Missing HuggingFace endpoint URL for image embeddings (endpoint_url).")
+        if isinstance(image_input, bytes):
+            b64_data = base64.b64encode(image_input).decode("utf-8")
+            result = self._post_endpoint({"inputs": {"mode": "image", "base64": b64_data}})
+            return result["embedding"]
 
-            headers = {
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-            }
+        if isinstance(image_input, str):
+            result = self._post_endpoint({"inputs": {"mode": "image", "url": image_input}})
+            return result["embedding"]
 
-            token = self.api_key or getattr(self.client, "token", None)
-            if token:
-                headers["Authorization"] = f"Bearer {token}"
-            else:
-                raise ValueError("Missing HuggingFace token for image embedding request (Authorization header not set).")
-
-            # HF inference toolkit requires top-level "inputs"
-            if isinstance(image_input, bytes):
-                b64_data = base64.b64encode(image_input).decode("utf-8")
-                payload = {"inputs": b64_data}
-            elif isinstance(image_input, str):
-                payload = {"inputs": {"presigned_url": image_input}}
-            else:
-                raise TypeError(f"Unsupported image_input type: {type(image_input)}")
-
-            resp = requests.post(api_url, headers=headers, json=payload, timeout=60)
-            resp.raise_for_status()
-            result = resp.json()
-
-            if isinstance(result, dict) and "error" in result:
-                raise ValueError(f"HuggingFace endpoint error: {result['error']}")
-
-            if isinstance(result, dict):
-                if "embedding" in result and isinstance(result["embedding"], list):
-                    embedding = result["embedding"]
-                    if self.dimensions and len(embedding) != self.dimensions:
-                        logging.warning(
-                            f"HuggingFace image embedding dimensions mismatch: "
-                            f"expected={self.dimensions} got={len(embedding)} model={self.model}"
-                        )
-                    return embedding
-                if "embeddings" in result and isinstance(result["embeddings"], list):
-                    return result["embeddings"]
-
-            if isinstance(result, list):
-                if len(result) > 0 and isinstance(result[0], list):
-                    return result[0]
-                return result
-
-            raise ValueError(f"Unexpected response format: {type(result)} - {result}")
-
-        except Exception as e:
-            logging.error(f"Error in HuggingFace get_image_embedding: {e}")
-            raise
+        raise TypeError(f"Unsupported image_input type: {type(image_input)}")
 
 class OpenAIClientWrapper(EmbeddingClientWrapper):
     def get_embedding(self, text: str) -> list[float]:
@@ -250,11 +251,14 @@ class EmbeddingClientFactory:
 
             # read the endpoint_url from the config
             endpoint_url = embedding_config.get('endpoint_url')
-
-            client = InferenceClient(model=model, token=api_key)
-
-            wrapper = HuggingFaceClientWrapper(client, model, dimensions, endpoint=endpoint_url, api_key=api_key)
-
+            wrapper = HuggingFaceClientWrapper(
+                client=None,
+                model=model,
+                dimensions=dimensions,
+                endpoint=endpoint_url,
+                api_key=api_key,
+                call_service=self.call_service
+            )
         elif provider == 'openai':
             if not api_key:
                 raise ValueError(f"Environment variable '{api_key_name}' is not set.")

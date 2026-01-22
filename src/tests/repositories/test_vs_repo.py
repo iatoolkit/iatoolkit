@@ -165,7 +165,7 @@ class TestVSRepo:
         self.mock_session.query.return_value.filter.return_value.one_or_none.return_value = mock_company
 
         # 2. Embedding mock (must use embed_image)
-        self.mock_embedding_service.embed_image.return_value = [0.8, 0.1, 0.1] # Visual vector
+        self.mock_embedding_service.embed_image_from_bytes.return_value = [0.8, 0.1, 0.1] # Visual vector
 
         # 3. DB Result (doc_id, filename, key, meta, distance)
         db_rows = [(20, "similar_photo.png", "path/photo.png", {"w": 500}, 0.05)]
@@ -178,7 +178,7 @@ class TestVSRepo:
 
         # Assert
         # Verify correct embedding call: embed_image, NOT embed_text
-        self.mock_embedding_service.embed_image.assert_called_with(
+        self.mock_embedding_service.embed_image_from_bytes.assert_called_with(
             self.MOCK_COMPANY_SHORT_NAME, fake_image_bytes
         )
         self.mock_embedding_service.embed_text.assert_not_called()
@@ -190,7 +190,7 @@ class TestVSRepo:
 
     def test_query_images_by_image_embedding_failure(self):
         """Should raise IAToolkitException if image embedding fails."""
-        self.mock_embedding_service.embed_image.side_effect = Exception("Vision Model Error")
+        self.mock_embedding_service.embed_image_from_bytes.side_effect = Exception("Vision Model Error")
         with pytest.raises(IAToolkitException) as exc:
             self.vs_repo.query_images_by_image("co", b"img")
         assert exc.value.error_type == IAToolkitException.ErrorType.VECTOR_STORE_ERROR
