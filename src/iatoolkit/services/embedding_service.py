@@ -30,10 +30,9 @@ class EmbeddingClientWrapper:
         """Generates and returns an embedding for the given text."""
         raise NotImplementedError
 
-    def get_image_embedding(self, image_input: Union[bytes, str]) -> list[float]:
+    def get_image_embedding(self, presigned_url: str, image_bytes: bytes) -> list[float]:
         """Generates and returns an embedding for the given image (bytes or URL)."""
         raise NotImplementedError(f"Model {self.model} does not support image embeddings")
-
 
 class HuggingFaceClientWrapper(EmbeddingClientWrapper):
     def __init__(
@@ -94,19 +93,19 @@ class HuggingFaceClientWrapper(EmbeddingClientWrapper):
             )
         return embedding
 
-    def get_image_embedding(self, image_input: Union[bytes, str]) -> list[float]:
+    def get_image_embedding(self, presigned_url: str, image_bytes: bytes) -> list[float]:
         import base64
 
-        if isinstance(image_input, bytes):
-            b64_data = base64.b64encode(image_input).decode("utf-8")
+        if presigned_url:
+            result = self._post_endpoint({"inputs": {"mode": "image", "url": presigned_url}})
+            return result["embedding"]
+
+        if image_bytes:
+            b64_data = base64.b64encode(image_bytes).decode("utf-8")
             result = self._post_endpoint({"inputs": {"mode": "image", "base64": b64_data}})
             return result["embedding"]
 
-        if isinstance(image_input, str):
-            result = self._post_endpoint({"inputs": {"mode": "image", "url": image_input}})
-            return result["embedding"]
-
-        raise TypeError(f"Unsupported image_input type: {type(image_input)}")
+        raise ValueError("Missing image data (presigned_url or image_bytes).")
 
 class OpenAIClientWrapper(EmbeddingClientWrapper):
     def get_embedding(self, text: str) -> list[float]:
@@ -139,10 +138,8 @@ class CustomClassClientWrapper(EmbeddingClientWrapper):
             return embedding[0]
         return embedding
 
-    def get_image_embedding(self, image_input: Union[bytes, str]) -> list[float]:
-        if hasattr(self.client, 'get_image_embedding'):
-            return self.client.get_image_embedding(image_input)
-        raise NotImplementedError(f"Custom class {type(self.client).__name__} does not support image embeddings")
+    def get_image_embedding(self, presigned_url: str, image_bytes: bytes) -> list[float]:
+        return self.client.get_image_embedding(image_input)
 
 
 # Factory and Service classes
@@ -301,33 +298,16 @@ class EmbeddingService:
             logging.error(f"Error generating embedding for text: {text[:80]}... - {e}")
             raise
 
-    def embed_image_from_url(self, company_short_name: str, presigned_url: str) -> list[float]:
+    def embed_image(self, company_short_name: str, presigned_url: str = None, image_bytes: bytes = None) -> list[float]:
         """
         Embedding para imagen a partir de una URL firmada (ingestions / assets).
         """
         try:
             client_wrapper = self.client_factory.get_client(company_short_name, model_type='image')
-            return client_wrapper.get_image_embedding(presigned_url)
+            return client_wrapper.get_image_embedding(presigned_url, image_bytes)
         except Exception as e:
             logging.error(f"Error generating embedding for image (url) - {e}")
             raise
-
-    def embed_image_from_bytes(self, company_short_name: str, image_bytes: bytes) -> list[float]:
-        """
-        Embedding para imagen a partir de bytes (visual search / uploads).
-        """
-        try:
-            client_wrapper = self.client_factory.get_client(company_short_name, model_type='image')
-            return client_wrapper.get_image_embedding(image_bytes)
-        except Exception as e:
-            logging.error(f"Error generating embedding for image (bytes) - {e}")
-            raise
-
-    def embed_image(self, company_short_name: str, presigned_url: str) -> list[float]:
-        """
-        Backwards-compatible alias: conserva la firma anterior (URL).
-        """
-        return self.embed_image_from_url(company_short_name, presigned_url)
 
 
     def get_model_name(self, company_short_name: str, model_type: str = 'text') -> str:

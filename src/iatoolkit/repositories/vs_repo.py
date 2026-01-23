@@ -168,13 +168,20 @@ class VSRepo:
             logging.error(f"Error querying images by text: {e}")
             raise IAToolkitException(IAToolkitException.ErrorType.VECTOR_STORE_ERROR, str(e))
 
-    def query_images_by_image(self, company_short_name: str, image_bytes: bytes, n_results: int = 5, collection_id: int = None) -> list[Dict]:
+    def query_images_by_image(self,
+                              company_short_name: str,
+                              image_bytes: bytes,
+                              n_results: int = 5,
+                              collection_id: int = None) -> list[Dict]:
         """
         Searches for images visually similar to the query image.
         """
         try:
             # 1. Generate Query Vector (Image -> Visual Space)
-            query_embedding = self.embedding_service.embed_image_from_bytes(company_short_name, image_bytes)
+            query_embedding = self.embedding_service.embed_image(
+                company_short_name=company_short_name,
+                presigned_url=None,
+                image_bytes=image_bytes)
 
             # 2. Delegate to internal vector search
             return self._query_images_by_vector(company_short_name, query_embedding, n_results, collection_id)

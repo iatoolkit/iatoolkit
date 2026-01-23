@@ -219,11 +219,11 @@ class TestEmbeddingService:
         presigned_url = "https://example.com/presigned"
 
         # Act
-        result = self.embedding_service.embed_image("any_company", presigned_url)
+        result = self.embedding_service.embed_image("any_company", presigned_url, None)
 
         # Assert
         self.client_factory.get_client.assert_called_once_with("any_company", model_type="image")
-        mock_wrapper.get_image_embedding.assert_called_once_with(presigned_url)
+        mock_wrapper.get_image_embedding.assert_called_once_with(presigned_url, None)
         assert result == self.SAMPLE_VECTOR
 
     def test_service_embed_image_from_url_returns_vector(self, mocker):
@@ -238,11 +238,11 @@ class TestEmbeddingService:
         presigned_url = "https://example.com/presigned"
 
         # Act
-        result = self.embedding_service.embed_image_from_url("any_company", presigned_url)
+        result = self.embedding_service.embed_image("any_company", presigned_url, None)
 
         # Assert
         self.client_factory.get_client.assert_called_once_with("any_company", model_type="image")
-        mock_wrapper.get_image_embedding.assert_called_once_with(presigned_url)
+        mock_wrapper.get_image_embedding.assert_called_once_with(presigned_url, None)
         assert result == self.SAMPLE_VECTOR
 
     def test_service_embed_image_from_bytes_returns_vector(self, mocker):
@@ -257,11 +257,11 @@ class TestEmbeddingService:
         fake_image_bytes = b'\x89PNG\r\n\x1a\n'
 
         # Act
-        result = self.embedding_service.embed_image_from_bytes("any_company", fake_image_bytes)
+        result = self.embedding_service.embed_image("any_company", presigned_url=None, image_bytes=fake_image_bytes)
 
         # Assert
         self.client_factory.get_client.assert_called_once_with("any_company", model_type="image")
-        mock_wrapper.get_image_embedding.assert_called_once_with(fake_image_bytes)
+        mock_wrapper.get_image_embedding.assert_called_once_with(None, fake_image_bytes)
         assert result == self.SAMPLE_VECTOR
 
     def test_huggingface_wrapper_get_embedding_calls_endpoint_with_text_mode(self):
@@ -295,7 +295,7 @@ class TestEmbeddingService:
         )
 
         with pytest.raises(ValueError, match="Missing HuggingFace endpoint URL"):
-            wrapper.get_image_embedding("https://example.com/presigned")
+            wrapper.get_image_embedding("https://example.com/presigned", None)
 
     def test_huggingface_wrapper_get_image_embedding_raises_without_token(self):
         wrapper = HuggingFaceClientWrapper(
@@ -308,7 +308,7 @@ class TestEmbeddingService:
         )
 
         with pytest.raises(ValueError, match="Missing HuggingFace token"):
-            wrapper.get_image_embedding("https://example.com/presigned")
+            wrapper.get_image_embedding("https://example.com/presigned", None)
 
     def test_huggingface_wrapper_get_image_embedding_raises_without_call_service(self):
         wrapper = HuggingFaceClientWrapper(
@@ -321,7 +321,7 @@ class TestEmbeddingService:
         )
 
         with pytest.raises(ValueError, match="Missing call_service dependency"):
-            wrapper.get_image_embedding("https://example.com/presigned")
+            wrapper.get_image_embedding("https://example.com/presigned", None)
 
     def test_huggingface_wrapper_get_image_embedding_sends_url_inside_inputs_dict(self):
         self.mock_call_service.post.return_value = ({"embedding": [0.0, 1.0, 2.0], "dimensions": 3}, 200)
@@ -336,7 +336,7 @@ class TestEmbeddingService:
         )
 
         presigned_url = "https://example.com/presigned"
-        result = wrapper.get_image_embedding(presigned_url)
+        result = wrapper.get_image_embedding(presigned_url, None)
 
         assert result == [0.0, 1.0, 2.0]
 
@@ -362,7 +362,7 @@ class TestEmbeddingService:
         )
 
         image_bytes = b"\x89PNG\r\n\x1a\n"
-        result = wrapper.get_image_embedding(image_bytes)
+        result = wrapper.get_image_embedding(None, image_bytes)
 
         assert result == [0.1, 0.2]
 
@@ -387,7 +387,7 @@ class TestEmbeddingService:
         )
 
         with pytest.raises(ValueError, match="HuggingFace endpoint error: Bad things happened"):
-            wrapper.get_image_embedding("https://example.com/presigned")
+            wrapper.get_image_embedding("https://example.com/presigned", None)
 
     def test_huggingface_wrapper_get_image_embedding_raises_on_non_200(self):
         self.mock_call_service.post.return_value = ("upstream failed", 500)
@@ -402,4 +402,4 @@ class TestEmbeddingService:
         )
 
         with pytest.raises(ValueError, match=r"HuggingFace endpoint error 500:"):
-            wrapper.get_image_embedding("https://example.com/presigned")
+            wrapper.get_image_embedding("https://example.com/presigned", None)
