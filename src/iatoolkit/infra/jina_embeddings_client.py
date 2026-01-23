@@ -1,7 +1,7 @@
 # src/iatoolkit/integrations/jina_embeddings_client.py
 # Simple Jina embeddings client (text + image bytes)
 import base64
-from typing import List, Union
+from typing import List, Union, Optional
 from iatoolkit.infra.call_service import CallServiceClient
 
 
@@ -36,29 +36,35 @@ class JinaEmbeddingsClient:
         response = self._post(payload)
         return response["data"][0]["embedding"]
 
-    def get_image_embedding(self, image_input: Union[bytes, str]) -> list[float]:
-        if isinstance(image_input, str):
+    def get_image_embedding(self,
+                            presigned_url: Optional[str] = None,
+                            image_bytes: Optional[bytes] = None
+                            ) -> list[float]:
+        if presigned_url:
             # URL path
             payload = {
                 "model": self.model,
                 "embedding_type": "float",
                 "normalized": self.normalized,
-                "input": [{"image": image_input}],
+                "input": [{"image": presigned_url}],
             }
             response = self._post(payload)
             return response["data"][0]["embedding"]
 
         # bytes path -> Data URL
-        b64 = base64.b64encode(image_input).decode("utf-8")
-        data_url = f"data:image/jpeg;base64,{b64}"  # or detect mime
-        payload = {
-            "model": self.model,
-            "embedding_type": "float",
-            "normalized": self.normalized,
-            "input": [{"image": data_url}],
-        }
-        response = self._post(payload)
-        return response["data"][0]["embedding"]
+        if image_bytes:
+            b64 = base64.b64encode(image_bytes).decode("utf-8")
+            data_url = f"data:image/jpeg;base64,{b64}"  # or detect mime
+            payload = {
+                "model": self.model,
+                "embedding_type": "float",
+                "normalized": self.normalized,
+                "input": [{"image": data_url}],
+            }
+            response = self._post(payload)
+            return response["data"][0]["embedding"]
+
+        raise ValueError("Missing image data (presigned_url or image_bytes).")
 
     def _post(self, payload: dict) -> dict:
         headers = {

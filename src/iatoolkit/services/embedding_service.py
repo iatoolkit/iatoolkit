@@ -15,7 +15,7 @@ from iatoolkit.infra.call_service import CallServiceClient
 import logging
 import importlib
 import inspect
-from typing import Union
+from typing import Union, Optional
 
 
 # Wrapper classes to create a common interface for embedding clients
@@ -30,7 +30,10 @@ class EmbeddingClientWrapper:
         """Generates and returns an embedding for the given text."""
         raise NotImplementedError
 
-    def get_image_embedding(self, presigned_url: str, image_bytes: bytes) -> list[float]:
+    def get_image_embedding(self,
+                            presigned_url: Optional[str] = None,
+                            image_bytes: Optional[bytes] = None
+                            ) -> list[float]:
         """Generates and returns an embedding for the given image (bytes or URL)."""
         raise NotImplementedError(f"Model {self.model} does not support image embeddings")
 
@@ -93,7 +96,10 @@ class HuggingFaceClientWrapper(EmbeddingClientWrapper):
             )
         return embedding
 
-    def get_image_embedding(self, presigned_url: str, image_bytes: bytes) -> list[float]:
+    def get_image_embedding(self,
+                            presigned_url: Optional[str] = None,
+                            image_bytes: Optional[bytes] = None
+                            ) -> list[float]:
         import base64
 
         if presigned_url:
@@ -138,7 +144,10 @@ class CustomClassClientWrapper(EmbeddingClientWrapper):
             return embedding[0]
         return embedding
 
-    def get_image_embedding(self, presigned_url: str, image_bytes: bytes) -> list[float]:
+    def get_image_embedding(self,
+                            presigned_url: Optional[str] = None,
+                            image_bytes: Optional[bytes] = None
+                            ) -> list[float]:
         return self.client.get_image_embedding(presigned_url, image_bytes)
 
 
@@ -298,7 +307,9 @@ class EmbeddingService:
             logging.error(f"Error generating embedding for text: {text[:80]}... - {e}")
             raise
 
-    def embed_image(self, company_short_name: str, presigned_url: str = None, image_bytes: bytes = None) -> list[float]:
+    def embed_image(self, company_short_name: str,
+                    presigned_url: Optional[str] = None,
+                    image_bytes: Optional[bytes] = None) -> list[float]:
         """
         Embedding para imagen a partir de una URL firmada (ingestions / assets).
         """
