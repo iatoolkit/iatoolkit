@@ -65,7 +65,7 @@ class TestVisualKnowledgeBaseService:
         self.mock_storage_service.generate_presigned_url.return_value = "https://signed.url/photo.png"
 
         expected_vector = [0.1, 0.2, 0.3]
-        self.mock_embedding_service.embed_image.return_value = expected_vector
+        self.mock_embedding_service.embed_image_from_url.return_value = expected_vector
 
         # Mock PIL behavior inside _extract_image_meta
         with patch("PIL.Image.open") as mock_img_open:
@@ -93,7 +93,7 @@ class TestVisualKnowledgeBaseService:
             )
 
             # 2. Embed Image
-            self.mock_embedding_service.embed_image.assert_called_with(
+            self.mock_embedding_service.embed_image_from_url.assert_called_with(
                 'test_co', "https://signed.url/photo.png"
             )
 

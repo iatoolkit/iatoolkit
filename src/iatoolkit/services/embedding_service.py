@@ -117,7 +117,6 @@ class OpenAIClientWrapper(EmbeddingClientWrapper):
                                                  dimensions=self.dimensions)
         return response.data[0].embedding
 
-
 class CustomClassClientWrapper(EmbeddingClientWrapper):
     """
     Adapter for custom embedding classes defined by the user.
@@ -130,9 +129,7 @@ class CustomClassClientWrapper(EmbeddingClientWrapper):
         # or we adapt them here. For simplicity, we assume Duck Typing.
 
     def get_embedding(self, text: str) -> list[float]:
-        if hasattr(self.client, 'embed_text'):
-            embedding = self.client.embed_text(text)
-        elif hasattr(self.client, 'get_embedding'):
+        if hasattr(self.client, 'get_embedding'):
             embedding = self.client.get_embedding(text)
         else:
             raise NotImplementedError(f"Custom class {type(self.client).__name__} must implement 'embed_text' or 'get_embedding'")
@@ -143,8 +140,6 @@ class CustomClassClientWrapper(EmbeddingClientWrapper):
         return embedding
 
     def get_image_embedding(self, image_input: Union[bytes, str]) -> list[float]:
-        if hasattr(self.client, 'embed_image'):
-            return self.client.embed_image(image_input)
         if hasattr(self.client, 'get_image_embedding'):
             return self.client.get_image_embedding(image_input)
         raise NotImplementedError(f"Custom class {type(self.client).__name__} does not support image embeddings")
@@ -187,15 +182,7 @@ class EmbeddingClientFactory:
         model = embedding_config.get('model')
         dimensions = int(embedding_config.get('dimensions', "512" if model_type == 'image' else "1536"))
 
-        api_key_name = embedding_config.get('api_key_name')
-        if not api_key_name:
-            raise ValueError(f"Missing configuration for {config_section}:api_key_name in config.yaml.")
-
-        api_key = os.getenv(api_key_name)
-        if not api_key:
-            raise ValueError(f"Environment variable '{api_key_name}' is not set.")
-
-        # New: Extract class path if provider is custom
+        # Extract class path if provider is custom
         class_path = embedding_config.get('class_path')
 
         # Logic to handle multiple providers
@@ -213,19 +200,14 @@ class EmbeddingClientFactory:
                 # Get optional init parameters
                 init_params = embedding_config.get('init_params', {})
 
-                # --- Auto-Inyección de dependencias basada en la firma del constructor ---
+                # auto-inject dependencies based on the constructor signature
                 sig = inspect.signature(cls.__init__)
                 params = sig.parameters
 
-                # Inyectamos api_key si el constructor lo pide y no viene en init_params
-                if 'api_key' in params and 'api_key' not in init_params:
-                    init_params['api_key'] = api_key
-
-                # Inyectamos call_service si el constructor lo pide
-                if 'call_service' in params and 'call_service' not in init_params:
+                if 'api_key' in params:
+                    init_params['api_key'] = self._get_api_key_from_config(embedding_config)
+                if 'call_service' in params:
                     init_params['call_service'] = self.call_service
-
-                # Inyectamos model si el constructor lo pide
                 if 'model' in params and 'model' not in init_params:
                     init_params['model'] = model
 
@@ -241,13 +223,8 @@ class EmbeddingClientFactory:
                 raise ValueError(f"Error initializing custom provider '{class_path}': {e}")
 
         elif provider == 'huggingface':
-
-            # api_key validation only if not custom class (custom class might not need it)
-            if not api_key:  # Re-check api_key here for standard providers
-                raise ValueError(f"Environment variable '{api_key_name}' is not set.")
-
-            if not model:
-                model = 'sentence-transformers/all-MiniLM-L6-v2'  # Default text model, change for image if needed
+            # api_key validation
+            api_key = self._get_api_key_from_config(embedding_config)
 
             # read the endpoint_url from the config
             endpoint_url = embedding_config.get('endpoint_url')
@@ -260,8 +237,7 @@ class EmbeddingClientFactory:
                 call_service=self.call_service
             )
         elif provider == 'openai':
-            if not api_key:
-                raise ValueError(f"Environment variable '{api_key_name}' is not set.")
+            api_key = self._get_api_key_from_config(embedding_config)
 
             client = OpenAI(api_key=api_key)
             if not model:
@@ -273,6 +249,18 @@ class EmbeddingClientFactory:
         logging.debug(f"Embedding client ({model_type}) for '{company_short_name}' created with model: {model}")
         self._clients[cache_key] = wrapper
         return wrapper
+
+    def _get_api_key_from_config(self, embedding_config: dict):
+        api_key_name = embedding_config.get('api_key_name')
+        if not api_key_name:
+            raise ValueError(f"Missing configuration for {config_section}:api_key_name in config.yaml.")
+
+        api_key = os.getenv(api_key_name)
+        if not api_key:
+            raise ValueError(f"Environment variable '{api_key_name}' is not set.")
+
+        return api_key
+
 
 class EmbeddingService:
     """

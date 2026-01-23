@@ -324,10 +324,6 @@ class VSImage(Base):
     document_id = Column(Integer, ForeignKey('iat_documents.id',
                                              ondelete='CASCADE'), nullable=False)
 
-    # Metadata specific to the image (width, height, format, aspect_ratio)
-    # Useful for the LLM to filter images (e.g., "show me landscape images")
-    meta = Column(JSON, nullable=True)
-
     # Vector dimension depends on the multimodal model (e.g., CLIP uses 512 or 768)
     embedding = Column(Vector(512), nullable=False)
 

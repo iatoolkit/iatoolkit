@@ -90,9 +90,10 @@ class VisualKnowledgeBaseService:
                 company_id=company.id,
                 document_id=new_doc.id,
                 embedding=vector,
-                meta=image_meta
             )
             self.vs_repo.add_image(vs_image)
+
+            logging.info(f"Successfully ingested image {filename}.")
 
             return new_doc
 

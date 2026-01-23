@@ -61,6 +61,7 @@ class IngestionApiView(MethodView):
         auth_result = self.auth_service.verify()
         if not auth_result.get("success"):
             return jsonify(auth_result), auth_result.get("status_code", 401)
+        user_identifier = auth_result.get('user_identifier')
 
         company = self.profile_repo.get_company_by_short_name(company_short_name)
         if not company:
