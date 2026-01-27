@@ -7,7 +7,7 @@ from iatoolkit.repositories.models import (LLMQuery, Tool,
                     Company, Prompt, PromptCategory, PromptType)
 from injector import inject
 from iatoolkit.repositories.database_manager import DatabaseManager
-from sqlalchemy import or_
+from sqlalchemy import or_, and_
 from typing import List
 
 
@@ -40,10 +40,12 @@ class LLMQueryRepo:
         return (
             self.session.query(Tool)
             .filter(
-                Tool.is_active.is_(True),
                 or_(
                     Tool.company_id == company.id,
-                    Tool.tool_type == Tool.TYPE_SYSTEM
+                    and_(
+                        Tool.company_id.is_(None),
+                        Tool.tool_type == Tool.TYPE_SYSTEM
+                    )
                 )
             )
             # Ordenamos: Queremos SYSTEM primero.

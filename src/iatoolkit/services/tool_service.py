@@ -249,6 +249,9 @@ class ToolService:
         company_tools = self.llm_query_repo.get_company_tools(company)
 
         for function in company_tools:
+            if not function.is_active:
+                continue
+
             # clone for no modify the SQLAlchemy session object
             params = function.parameters.copy() if function.parameters else {}
             params["additionalProperties"] = False

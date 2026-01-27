@@ -1,202 +1,201 @@
-id: maxxa
-name: Maxxa
-locale: es_ES
+id: sample_company
+name: Sample Company
+locale: en_ES
 llm:
-  model: gpt-5.1
+  model: gpt-5.2
   available_models:
-  - id: gpt-5.1
-    label: gpt-5.1
-    description: Rapido, para tareas de uso general.
-  - id: gpt-5-mini
-    label: gpt-5-mini
-    description: Rapido y barato, para tareas repetitivas.
+  - id: gpt-5.2
+    label: gpt-5.2
+    description: Fast, recommended for general purpose tasks.
   - id: deepseek-chat
     label: deepseek-chat
-    description: Ràpido y barato.
-  - id: deepseek-reasoner
-    label: deepseek-reasoner
-    description: Razonamiento detallado.
+    description: Fast and cheap.
+  - id: gemini-3-flash-preview
+    label: gemini-3-flash-preview
+    description: Fast
   provider_api_keys:
     openai: OPENAI_API_KEY
     gemini: GEMINI_API_KEY
     deepseek: DEEP_SEEK_API_KEY
-embedding_provider:
-  provider: openai
-  model: text-embedding-3-large
-  dimensions: '2000'
-  api_key_name: OPENAI_API_KEY
-visual_embedding_providerx:
-  provider: custom_class
-  class_path: companies.maxxa.maxxa_embeddings.MaxxaEmbeddings
-  api_key_name: JINA_API_KEY
-  model: jina-embeddings-v4
-  dimensions: 0
 data_sources:
   sql:
-  - database: bcu
-    connection_string_env: BCU_DATABASE_URI
-    schema: public
-    description: "Esta es la fuente de datos principal para responder preguntas sobre\
-      \ Maxxa.\nIncluye los datos de: clientes, contactos, productos contratados,\n\
-      certificados de fianza, ejecutivos comerciales de crédito y garantía,\nlicitaciones\
-      \ de chilecompra, codigos y tamaños de empresas definidos\nen el SII, fogape\
-      \ de certificados, acreedores de maxxa, \nresultados de evaluaciones de riesgo\
-      \ de maxxa, \ninformación de cobranza judicial y pre-judicial de garantías y\
-      \ créditos,\ncluster de clientes,\ninformación sobre clientes registrados en\
-      \ el portal de Maxxa,\nrut de clientes potenciales para incorporar a maxxa.\n\
-      Puedes solicitar análiticas sobre conjuntos de clientes o por equipos comerciales.\n"
+  - database: sample_db
+    schema: sample_db
+    connection_string_env: DATABASE_URI
+    description: 'This database contains all of the
+
+      company’s commercial and operational information.
+
+      It is the primary source for answering questions about sales, shipments, purchase
+      orders, employees, countries, and territories.
+
+      '
     include_all_tables: true
+    exclude_tables:
+    - test_table
+    - logs
+    exclude_columns:
+    - created
+    - updated
+    tables:
+      employee_territories:
+        schema_name: employee_territory
+      orders:
+        exclude_columns:
+        - internal_notes
+        - processing_id
+      products:
+        description: Catálogo de productos de la compañía.
 tools:
-- function_name: identity_risk
-  description: Evalúa riesgo de identidad comparando una imagen adjunta por el usuario
-    contra el repositorio visual interno (búsqueda por similitud imagen-a-imagen).
-    El backend extrae los bytes desde la lista request_images usando image_index.
+- function_name: document_search
+  description: 'Busquedas sobre documentos: manuales, contratos de trabajo de empleados,
+    manuales de procedimientos, y documentos legales.'
   params:
     type: object
     properties:
-      image_index:
-        type: integer
-        description: Índice (0-based) de la imagen adjunta a usar como consulta. Por
-          defecto 0.
-      n_results:
-        type: integer
-        description: Cantidad máxima de resultados a devolver.
+      query:
+        type: string
+        description: Texto o pregunta a buscar en los documentos.
     required:
-    - image_index
-    - n_results
-- function_name: maxxa_email
-  description: 'Envia mails cuando un usuario de Maxxa lo solicita. Como origen del
-    correo utiliza la dirección maxxaia@maxxa.cl. '
-  params:
-    type: object
-    properties:
-      from_email:
-        type: string
-        description: Dirección de correo electrónico que está enviando el email.
-      to_email:
-        type: string
-        description: Email del destinatario
-      subject:
-        type: string
-        description: Asunto del email
-      body:
-        type: string
-        description: Cuerpo del email en formato HTML
-      attachments:
-        type: array
-        description: Lista de archivos adjuntos (por ejemplo, documentos PDF, imágenes
-          u otros formatos).
-        items:
-          type: object
-          properties:
-            filename:
-              type: string
-              description: Nombre del archivo con su extensión (ej. informe.pdf)
-            content:
-              type: string
-              description: Contenido del archivo codificado en base64
-            attachment_token:
-              type: string
-              description: Token para descargar el archivo si no se provee el contenido.
-          required:
-          - filename
-          - content
-          - attachment_token
-          additionalProperties: false
-    required:
-    - from_email
-    - to_email
-    - subject
-    - body
-    - attachments
-prompt_categories:
-- General
-- Comercial
-- Tecnología
+    - query
 prompts:
-- category: General
-  name: perfil_cliente
-  description: Perfil de un cliente de maxxa
-  order: 1
-  custom_fields:
-  - data_key: client_rut
-    label: RUT del cliente
-- category: Comercial
-  name: mi_cartera
-  description: Mi cartera de maxxa
-  order: 1
-- category: Comercial
-  name: participacion_licitaciones
-  description: Participación en licitaciones chilecompra
-  order: 3
-  custom_fields:
-  - data_key: client_rut
-    label: RUT del cliente
-- category: Tecnología
-  name: company_description
-  description: Descripción para recomendador
-  order: 1
-  custom_fields:
-  - data_key: client_identity
-    label: RUT del cliente
-- category: Tecnología
-  name: recommender_ruts
-  description: Muestra de ruts para recomendador
-  order: 2
-- category: Tecnología
-  name: excel_cluster
-  description: Genera un Excel con el cluster de clientes
-  order: 3
-- category: Tecnología
-  name: customer_cluster_descriptions
-  description: endpoint - crea las descripciones para el cluster de clientes
-  order: 4
-  active: false
-- category: Tecnología
-  name: chilecompra_2
-  description: Descripción para campaña marketing
-  order: 5
-  custom_fields:
-  - data_key: client_identity
-    label: RUT empresa
+  prompt_categories:
+  - Sales
+  - Finance
+  prompt_list:
+  - category: Sales
+    name: analisis_ventas
+    description: Sales Analysis
+    order: 1
+  - category: Sales
+    name: supplier_report
+    description: Suppliers Report
+    order: 2
+    custom_fields:
+    - data_key: supplier_id
+      label: 'Provider ID (example: cascadia, andean foods, ...)'
+  - category: Finance
+    name: analisis_despachos
+    description: Supply Chain Analysis
+    order: 3
+    custom_fields:
+    - data_key: init_date
+      label: from date
+      type: date
+    - data_key: end_date
+      label: to date
+      type: date
 parameters:
-  cors_origin:
-  - https://portal-interno.maxxa.cl
+  verify_account: false
   user_feedback:
-    channel: google_chat
-    destination: spaces/AAQAupQldd4
+    channel: email
+    destination: fernando.libedinsky@gmail.com
+  cors_origin:
+  - https://portal-interno.empresa_de_ejemplo.cl
   external_urls:
-    login_url: https://portal-interno.maxxa.cl
-    logout_url: https://portal-interno.maxxa.cl
+    logout_url: ''
 branding:
-  header_background_color: '#FF5100'
+  header_background_color: '#4C6A8D'
   header_text_color: '#FFFFFF'
-  brand_primary_color: '#FF5100'
-  brand_secondary_color: '#06326B'
+  brand_primary_color: '#4C6A8D'
+  brand_secondary_color: '#9EADC0'
   brand_text_on_primary: '#FFFFFF'
   brand_text_on_secondary: '#FFFFFF'
 help_files:
   onboarding_cards: onboarding_cards.yaml
   help_content: help_content.yaml
-sso:
-  enabled: true
-  profile_method: get_user_profile
 knowledge_base:
   collections:
-  - certificados de fianza
-  - contratos
-  - identity_risk_faces
+  - supplier_manual
+  - employee_contract
+  connectors:
+    development:
+      type: s3
+      bucket: iatoolkit
+      prefix: sample_company
+      aws_access_key_id_env: AWS_ACCESS_KEY_ID
+      aws_secret_access_key_env: AWS_SECRET_ACCESS_KEY
+      aws_region_env: AWS_REGION
+  document_sources:
+    supplier_manuals:
+      collection: supplier_manual
+      path: companies/sample_company/sample_data/supplier_manuals
+      folder: supplier_manuals
+      metadata: null
+    employee_contracts:
+      collection: employee_contract
+      path: companies/sample_company/sample_data/employee_contracts
+      folder: employee_contracts
+mail_provider:
+  provider: brevo_mail
+  sender_email: sample_ia@iatoolkit.com
+  sender_name: Sample Company IA
+  brevo_mail:
+    brevo_api: BREVO_API_KEY
+  smtplib:
+    host_env: SMTP_HOST
+    port_env: SMTP_PORT
+    username_env: SMTP_USERNAME
+    password_env: SMTP_PASSWORD
+
 connectors:
   iatoolkit_storage:
     type: s3
-    bucket: iatoolkit-files
+    bucket: iatoolkit-assets
+    auth_env:
+      aws_access_key_id_env: AWS_ACCESS_KEY_ID
+      aws_secret_access_key_env: AWS_SECRET_ACCESS_KEY
+      aws_region_env: AWS_REGION
+
   maxxa-aws-iatoolkit:
     type: s3
-    bucket: iatoolkit-files
+    bucket: iatoolkit-assets
+
   maxxa-aws-iatoolkit-local:
     type: s3
-    bucket: iatoolkit-files
+    bucket: iatoolkit-assets
     auth_env:
       aws_access_key_id_env: MAXAA_AWS_ACCESS_KEY_ID
       aws_secret_access_key_env: MAXAA_AWS_SECRET_ACCESS_KEY
       aws_region_env: MAXAA_AWS_REGION
+
+# Configuración para embeddings de texto
+embedding_provider:
+  provider: huggingface
+  model: sentence-transformers/all-MiniLM-L6-v2
+  tool_name: text_embeddings  # <--- Conecta con inference_tools.text_embeddings
+
+# Configuración para embeddings visuales (imágenes)
+visual_embedding_provider:
+  provider: huggingface
+  model: openai/clip-vit-base-patch32
+  tool_name: clip_embeddings  # <--- Conecta con inference_tools.clip_embeddings
+  dimensions: 512
+
+# Definición centralizada de herramientas de inferencia
+inference_tools:
+  # Ancla para reutilizar la configuración base
+  _defaults: &hf_config
+    endpoint_url: https://wj5yzzh7hw21srg9.us-east-1.aws.endpoints.huggingface.cloud
+    api_key_name: HF_TOKEN
+
+  # Herramienta para CLIP (usada por visual_embedding_provider)
+  clip_embeddings:
+    <<: *hf_config
+    model_id: openai/clip-vit-base-patch32
+    model_parameters:
+      from_tf: true
+
+  # Herramienta para Texto (usada por embedding_provider)
+  text_embeddings:
+    <<: *hf_config
+    model_id: sentence-transformers/all-MiniLM-L6-v2
+
+  # Otras herramientas disponibles para el futuro (Voice, Whisper, etc.)
+  vibe_voice:
+    <<: *hf_config
+    model_id: microsoft/VibeVoice-1.5B
+
+  whisper:
+    <<: *hf_config
+    model_id: openai/whisper-large-v3
