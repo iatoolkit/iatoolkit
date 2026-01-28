@@ -194,8 +194,7 @@ class Utility:
             yaml_content = yaml_content.replace('\t', '  ')
 
             loaded = yaml.safe_load(yaml_content)
-            # Asegurar que siempre retornamos un dict, incluso si el YAML es una lista o escalar
-            return loaded if isinstance(loaded, dict) else {}
+            return loaded
         except yaml.YAMLError as e:
             logging.error(f"Error parsing YAML string: {e}")
             return {}
