@@ -126,7 +126,7 @@ class VisualKnowledgeBaseService:
                 # We need company_id first
                 company = self.profile_repo.get_company_by_short_name(company_short_name)
                 if company:
-                    col_obj = self.document_repo.get_collection_type_by_name(company.id, collection.upper())
+                    col_obj = self.document_repo.get_collection_type_by_name(company.id, collection)
                     if col_obj:
                         collection_id = col_obj.id
             except Exception as e:

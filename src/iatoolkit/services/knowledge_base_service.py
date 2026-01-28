@@ -354,7 +354,7 @@ class KnowledgeBaseService:
 
         # filter by collection
         if collection:
-            query = query.join(Document.collection_type).filter(CollectionType.name == collection)
+            query = query.join(Document.collection_type).filter(CollectionType.name == collection.lower())
 
         # Filter by user identifier
         if user_identifier:
@@ -455,14 +455,14 @@ class KnowledgeBaseService:
 
         # 1. Get existing types
         existing_types = session.query(CollectionType).filter_by(company_id=company.id).all()
-        existing_names = {ct.name: ct for ct in existing_types}
+        existing_names = {ct.name.lower(): ct for ct in existing_types}
 
         # 2. Add new types
         current_config_names = set()
         for cat_name in categories_config:
             current_config_names.add(cat_name)
             if cat_name not in existing_names:
-                new_type = CollectionType(company_id=company.id, name=cat_name)
+                new_type = CollectionType(company_id=company.id, name=cat_name.lower())
                 session.add(new_type)
 
         # 3. Delete types not in config
@@ -493,5 +493,5 @@ class KnowledgeBaseService:
         if not collection_name:
             return None
         session = self.document_repo.session
-        ct = session.query(CollectionType).filter_by(company_id=company_id, name=collection_name.upper()).first()
+        ct = session.query(CollectionType).filter_by(company_id=company_id, name=collection_name.lower()).first()
         return ct.id if ct else None

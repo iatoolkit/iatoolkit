@@ -5,7 +5,6 @@
 import os
 import base64
 import numpy as np
-from huggingface_hub import InferenceClient
 from openai import OpenAI
 from injector import inject
 from iatoolkit.services.configuration_service import ConfigurationService
