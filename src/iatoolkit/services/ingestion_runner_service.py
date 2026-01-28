@@ -129,14 +129,13 @@ class IngestionRunnerService:
                     f"Unsupported connector type for ingestion: {connector_type}"
                 )
 
-            metadata = ingestion_cfg.get("metadata") or {}
-
-            collection_name = source.collection_type.name if source.collection_type else None
+            # add filters if are defined in configuration
+            filters.update(ingestion_cfg.get("filters") or {})
 
             context = {
                 "company": source.company,
-                "collection": collection_name,
-                "metadata": metadata
+                "collection": source.collection_type.name if source.collection_type else None,
+                "metadata": ingestion_cfg.get("metadata") or {}
             }
 
             processor_config = FileProcessorConfig(

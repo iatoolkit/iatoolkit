@@ -222,8 +222,8 @@ ui:
     # Right Panel
     definition_title: "Definition"
     type_label: "Tool Type"
-    method_label: "Execution Method (Client Class)"
-    method_help: "Python method name in your company class implementation."
+    method_label: "Execution Method"
+    method_help: "Python method name in your company class implementation, or inference tool name."
     desc_label: "Description (Prompt)"
     desc_placeholder: "Describe to the LLM when and how to use this tool..."
     active_label: "Active"

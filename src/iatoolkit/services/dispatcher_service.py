@@ -13,7 +13,6 @@ from injector import inject
 import logging
 
 
-
 class Dispatcher:
     @inject
     def __init__(self,
@@ -57,43 +56,6 @@ class Dispatcher:
             self._company_instances = self.company_registry.get_all_company_instances()
         return self._company_instances
 
-    def load_company_configs(self):
-        # initialize the system functions and prompts
-        self.setup_iatoolkit_system()
-
-        # Loads the configuration of every company: company.yaml file
-        for company_short_name, company_instance in self.company_instances.items():
-            try:
-                # read company configuration from company.yaml
-                config, errors = self.config_service.load_configuration(company_short_name)
-
-                '''
-                if errors:
-                    raise IAToolkitException(
-                        IAToolkitException.ErrorType.CONFIG_ERROR,
-                        'company.yaml validation errors'
-                    )
-                '''
-
-                # complement the instance self data
-                company_instance.company_short_name = company_short_name
-                company_instance.company = config.get('company')
-
-            except Exception as e:
-                logging.error(f"❌ Failed to register configuration for '{company_short_name}': {e}")
-                raise e
-
-        return True
-
-    def setup_iatoolkit_system(self):
-        try:
-            # system tools registration
-            self.tool_service.register_system_tools()
-
-        except Exception as e:
-            self.llmquery_repo.rollback()
-            raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR, str(e))
-
 
     def dispatch(self, company_short_name: str, function_name: str, **kwargs) -> dict:
         company_key = company_short_name.lower()
@@ -131,18 +93,13 @@ class Dispatcher:
                 company_short_name=company_short_name,
                 tool_name=function_name,
                 input_data=kwargs,
-                execution_config=tool_def.execution_config
             )
 
         elif tool_def.tool_type == 'NATIVE':
             # Delegate to Company Python Class
             logging.debug(f"Dispatching NATIVE tool: {function_name}")
             company_instance = self.company_instances[company_short_name]
-
-            # Determine which method to call (default to tool name if mapping missing)
             method_name = function_name
-            if tool_def.execution_config:
-                method_name = tool_def.execution_config.get('method_name', function_name)
 
             try:
                 # Check if the method exists and is callable
@@ -159,7 +116,7 @@ class Dispatcher:
                         f"Attribute '{method_name}' in company '{company_short_name}' is not callable."
                     )
 
-                # Execute the method directly
+                # Execute the method directly in the company class
                 return method(**kwargs)
 
             except IAToolkitException as e:
@@ -175,7 +132,28 @@ class Dispatcher:
                 f"Unknown tool type '{tool_def.tool_type}'"
             )
 
+    def load_company_configs(self):
 
-    def get_company_instance(self, company_name: str):
-        """Returns the instance for a given company name."""
-        return self.company_instances.get(company_name)
+        # Loads the configuration of every company: company.yaml file
+        for company_short_name, company_instance in self.company_instances.items():
+            try:
+                # read company configuration from company.yaml
+                config, errors = self.config_service.load_configuration(company_short_name)
+
+                '''
+                if errors:
+                    raise IAToolkitException(
+                        IAToolkitException.ErrorType.CONFIG_ERROR,
+                        'company.yaml validation errors'
+                    )
+                '''
+
+                # complement the instance self data
+                company_instance.company_short_name = company_short_name
+                company_instance.company = config.get('company')
+
+            except Exception as e:
+                logging.error(f"❌ Failed to register configuration for '{company_short_name}': {e}")
+                raise e
+
+        return True

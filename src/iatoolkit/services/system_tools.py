@@ -136,9 +136,13 @@ SYSTEM_TOOLS_DEFINITIONS = [
                     "description": "Cantidad de resultados a devolver (por defecto 3).",
                     "minimum": 1,
                     "maximum": 5
+                },
+                "collection": {
+                    "type": "string",
+                    "description": "Opcional. Nombre de la colección donde buscar (ej: 'Planos', 'Marketing')."
                 }
             },
-            "required": ["n_results", "image_index"]
+            "required": ["n_results", "image_index", "collection"]
         }
     },
 ]

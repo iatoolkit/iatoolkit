@@ -223,8 +223,8 @@ ui:
     # Right Panel
     definition_title: "Definición"
     type_label: "Tipo de Herramienta"
-    method_label: "Método de Ejecución (Clase Cliente)"
-    method_help: "Nombre del método Python en la implementación de la clase de su empresa."
+    method_label: "Método a ejecutar"
+    method_help: "Nombre del método Python en la implementación de la clase de su empresa, o nombre de tool en inference"
     desc_label: "Descripción (Prompt)"
     desc_placeholder: "Describe al LLM cuándo y cómo usar esta herramienta..."
     active_label: "Activo"

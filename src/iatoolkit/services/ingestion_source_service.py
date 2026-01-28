@@ -106,7 +106,7 @@ class IngestionSourceService:
                 raise IAToolkitException(IAToolkitException.ErrorType.INVALID_PARAMETER, "Invalid collection name")
             source.collection_type_id = collection_type.id
 
-            # opcional: mantener configuration.collection alineado si existe configuration
+            # mantener configuration.collection alineado si existe configuration
             if isinstance(source.configuration, dict):
                 source.configuration["collection"] = data["collection_name"]
 

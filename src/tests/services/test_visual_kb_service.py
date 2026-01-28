@@ -193,11 +193,45 @@ class TestVisualKnowledgeBaseService:
         self.mock_vs_repo.query_images_by_image.assert_called_with(
             company_short_name='test_co',
             image_bytes=query_image_bytes,
-            n_results=5
+            n_results=5,
+            collection_id=None
         )
         assert len(results) == 1
         assert results[0]['url'] == "https://signed.url/similar.jpg"
         assert results[0]['score'] == 0.88
+
+    def test_search_similar_images_with_collection(self):
+        """Should resolve collection name to ID and filter search."""
+        # Arrange
+        collection_name = 'logos'
+        collection_id = 456
+        self.mock_doc_repo.get_collection_type_by_name.return_value = MagicMock(id=collection_id)
+
+        mock_results = [{
+            'document_id': 3,
+            'filename': 'logo.jpg',
+            'storage_key': 'key3',
+            'meta': {},
+            'score': 0.99
+        }]
+        self.mock_vs_repo.query_images_by_image.return_value = mock_results
+        self.mock_storage_service.generate_presigned_url.return_value = "https://signed.url/logo.jpg"
+
+        query_image_bytes = b"fake_image_data"
+
+        # Act
+        results = self.service.search_similar_images('test_co', query_image_bytes, collection=collection_name)
+
+        # Assert
+        self.mock_doc_repo.get_collection_type_by_name.assert_called_with(self.company.id, collection_name)
+
+        self.mock_vs_repo.query_images_by_image.assert_called_with(
+            company_short_name='test_co',
+            image_bytes=query_image_bytes,
+            n_results=5,
+            collection_id=collection_id
+        )
+        assert len(results) == 1
 
     def test_search_images_empty_query(self):
         """Should return empty list for empty query."""

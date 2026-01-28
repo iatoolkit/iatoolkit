@@ -76,7 +76,6 @@ class TestLLMQueryRepo:
             parameters={'name': 'value'},
             tool_type=Tool.TYPE_NATIVE,
             source=Tool.SOURCE_USER,
-            execution_config={"method": "run"}
         )
         result = self.repo.create_or_update_tool(new_tool=new_tool)
         self.session.commit()  # Commit to persist and check retrieval
@@ -87,7 +86,6 @@ class TestLLMQueryRepo:
         assert result.parameters == {'name': 'value'}
         assert result.company_id == self.company.id
         assert result.tool_type == Tool.TYPE_NATIVE
-        assert result.execution_config == {"method": "run"}
 
     def test_create_or_update_tool_updates_existing(self):
         """Test updating an existing tool."""

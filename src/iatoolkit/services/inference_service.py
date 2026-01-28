@@ -31,7 +31,7 @@ class InferenceService:
         self.storage_service = storage_service
         self.i18n_service = i18n_service
 
-    def predict(self, company_short_name: str, tool_name: str, input_data: Dict[str, Any], execution_config: dict = None) -> Dict[str, Any]:
+    def predict(self, company_short_name: str, tool_name: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Executes an inference task by calling the configured HF endpoint.
 
@@ -39,21 +39,12 @@ class InferenceService:
             company_short_name: The company identifier.
             tool_name: The specific tool key in company.yaml (or the mapping key).
             input_data: The payload required for the model.
-            execution_config: Metadata from the tool definition (e.g. {'method_name': 'vibe_voice'}).
 
         Returns:
             Dict containing the model's response or formatted result.
         """
-        # 0. Resolver el nombre real de la configuración
-        # Si execution_config tiene un 'method_name', úsalo como clave para buscar en el YAML.
-        # Esto es útil si el nombre de la tool en el LLM difiere de la clave en inference_tools,
-        # aunque por defecto suelen ser iguales.
-        config_key = tool_name
-        if execution_config and 'method_name' in execution_config:
-            config_key = execution_config['method_name']
-
         # 1. Load configuration for the specific tool
-        config = self._get_tool_config(company_short_name, config_key)
+        config = self._get_tool_config(company_short_name, tool_name)
 
         endpoint_url = config.get('endpoint_url')
         api_key_name = config.get('api_key_name', 'HF_TOKEN')
@@ -61,7 +52,7 @@ class InferenceService:
         model_parameters = config.get('model_parameters', {})
 
         if not endpoint_url:
-            raise ValueError(f"Missing 'endpoint_url' for tool '{config_key}' in company '{company_short_name}'.")
+            raise ValueError(f"Missing 'endpoint_url' for tool '{tool_name}' in company '{company_short_name}'.")
 
         # 2. Get the API Key
         api_key = os.getenv(api_key_name)
@@ -84,54 +75,88 @@ class InferenceService:
         if parameters:
             payload["parameters"] = parameters
 
-            # 4. Execute Call
+        # 4. Execute Call
+        logging.info(f"Called inference tool {tool_name} with model {model_id}.")
         response_data = self._call_endpoint(endpoint_url, api_key, payload)
 
-        # 5. Post-Processing for Audio
+        # 5. Post-Processing
 
-        # CASO A: Bytes puros (si HF decidiera devolver raw bytes, poco común en custom handlers json)
-        if isinstance(response_data, bytes):
-            return self._handle_binary_response(company_short_name, response_data, "audio/flac")
-
-        # CASO B: JSON con base64 (Estándar para Custom Handlers)
+        # CASO A: Audio Base64 (TTS)
         if isinstance(response_data, dict) and "audio_base64" in response_data:
             try:
                 audio_bytes = base64.b64decode(response_data["audio_base64"])
-                # El handler usa wavfile.write, así que es WAV
                 return self._handle_binary_response(company_short_name, audio_bytes, "audio/wav")
             except Exception as e:
-                logging.error(f"Error decoding base64 audio: {e}")
-                return {"error": True, "message": "Failed to decode audio from inference response."}
+                logging.error(f"Error decoding audio: {e}")
+                return {"error": True, "message": "Failed to decode audio."}
+
+        # CASO B: Video Base64 (Text-to-Video)
+        if isinstance(response_data, dict) and "video_base64" in response_data:
+            try:
+                video_bytes = base64.b64decode(response_data["video_base64"])
+                return self._handle_binary_response(company_short_name, video_bytes, "video/mp4")
+            except Exception as e:
+                logging.error(f"Error decoding video: {e}")
+                return {"error": True, "message": "Failed to decode video."}
+
+        # CASO C: Imagen Base64 (Text-to-Image)
+        if isinstance(response_data, dict) and "image_base64" in response_data:
+            try:
+                image_bytes = base64.b64decode(response_data["image_base64"])
+                return self._handle_binary_response(company_short_name, image_bytes, "image/png")
+            except Exception as e:
+                logging.error(f"Error decoding image: {e}")
+                return {"error": True, "message": "Failed to decode image."}
 
         return response_data
 
     def _handle_binary_response(self, company_short_name: str, content: bytes, mime_type: str) -> dict:
-        """Sube el contenido binario al storage y retorna una estructura para el LLM."""
-        filename = f"generated_audio_{uuid.uuid4().hex}.flac"
+        """Sube el contenido binario y retorna la estructura con el HTML tag adecuado."""
+        # Determinar extensión y tipo de asset
+        ext = ".bin"
+        asset_type = "file"
+
+        if "audio" in mime_type:
+            ext = ".wav"
+            asset_type = "audio"
+        elif "video" in mime_type:
+            ext = ".mp4"
+            asset_type = "video"
+        elif "image" in mime_type:  # NUEVO
+            ext = ".png"
+            asset_type = "image"
+
+        filename = f"generated_{asset_type}_{uuid.uuid4().hex}{ext}"
 
         try:
-            # Subir usando StorageService
+            # Subir
             storage_key = self.storage_service.upload_document(
                 company_short_name=company_short_name,
                 file_content=content,
                 filename=filename,
                 mime_type=mime_type
             )
-
-            # Generar URL firmada
+            # URL
             url = self.storage_service.generate_presigned_url(company_short_name, storage_key)
 
-            # Retornar respuesta estructurada para el LLM
-            # Incluimos un snippet HTML para que el frontend pueda renderizarlo si el LLM decide mostrarlo.
+            # Generar HTML Snippet dinámico
+            html_snippet = ""
+            if asset_type == "audio":
+                html_snippet = f'<audio controls src="{url}" style="width: 100%; margin-top: 10px;"></audio>'
+            elif asset_type == "video":
+                html_snippet = f'<video controls src="{url}" style="width: 100%; max-width: 500px; border-radius: 8px; margin-top: 10px;"></video>'
+            elif asset_type == "image":
+                html_snippet = f'<img src="{url}" alt="Generated Image" style="width: 100%; max-width: 512px; border-radius: 8px; margin-top: 10px;" />'
+
             return {
                 "status": "success",
-                "message": "Audio generated successfully.",
-                "audio_url": url,
-                "html_snippet": f'<audio controls src="{url}" style="width: 100%; margin-top: 10px;"></audio>'
+                "message": f"{asset_type.capitalize()} generated successfully.",
+                f"{asset_type}_url": url,
+                "html_snippet": html_snippet
             }
         except Exception as e:
-            logging.exception(f"Error handling binary response for {company_short_name}: {e}")
-            return {"error": True, "message": "Failed to save generated audio."}
+            logging.exception(f"Error saving binary response: {e}")
+            return {"error": True, "message": "Failed to save generated content."}
 
     def _get_tool_config(self, company_short_name: str, tool_name: str) -> dict:
         """Helper to safely extract tool configuration from company.yaml."""
@@ -142,7 +167,6 @@ class InferenceService:
 
         tool_config = inference_config.get(tool_name)
         if not tool_config:
-            # Fallback: intentar buscar en _defaults o retornar error
             raise ValueError(f"Tool '{tool_name}' not configured in 'inference_tools' for '{company_short_name}'.")
 
         return tool_config
@@ -155,15 +179,11 @@ class InferenceService:
         }
 
         try:
-            # NOTA: Usamos call_service.post. Dependiendo de la implementación de call_service,
-            # este podría intentar decodificar JSON automáticamente.
-            # Si call_service falla con respuestas binarias, deberíamos usar requests.post directamente aquí
-            # o asegurar que call_service maneje content-types no-json.
             resp, status = self.call_service.post(
                 url,
                 json_dict=payload,
                 headers=headers,
-                timeout=(5, 60.0) # 5s connect, 60s read (models can be slow)
+                timeout=(5, 300.0)
             )
 
             if status != 200:

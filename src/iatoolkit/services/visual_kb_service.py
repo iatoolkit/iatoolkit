@@ -107,24 +107,48 @@ class VisualKnowledgeBaseService:
             raise IAToolkitException(IAToolkitException.ErrorType.LOAD_DOCUMENT_ERROR, str(e))
 
 
-    def search_similar_images(self, company_short_name: str, image_content: bytes, n_results: int = 5) -> list[dict]:
+    def search_similar_images(self,
+                              company_short_name: str,
+                              image_content: bytes,
+                              n_results: int = 5,
+                              collection: str = None
+                              ) -> list[dict]:
         """
         Searches for images visually similar to the provided image content.
         """
         if not image_content:
             return []
 
+        # obtain collection_id from collection_name
+        collection_id = None
+        if collection:
+            try:
+                # We need company_id first
+                company = self.profile_repo.get_company_by_short_name(company_short_name)
+                if company:
+                    col_obj = self.document_repo.get_collection_type_by_name(company.id, collection)
+                    if col_obj:
+                        collection_id = col_obj.id
+            except Exception as e:
+                logging.warning(f"Error resolving collection '{collection}': {e}")
+
         # 1. Query Repo using the new method
         results = self.vs_repo.query_images_by_image(
             company_short_name=company_short_name,
             image_bytes=image_content,
-            n_results=n_results
+            n_results=n_results,
+            collection_id=collection_id
         )
 
         # 2. Format Results (Reuse logic or refactor to helper)
         return self._format_search_results(company_short_name, results)
 
-    def search_images(self, company_short_name: str, query: str, n_results: int = 5, collection: str = None) -> list[dict]:
+    def search_images(self,
+                      company_short_name: str,
+                      query: str,
+                      n_results: int = 5,
+                      collection: str = None
+                      ) -> list[dict]:
         """
         Searches for images semantically similar to the query text.
         """

@@ -8,6 +8,7 @@ import logging
 from iatoolkit.core import IAToolkit
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.prompt_service import PromptService
+from iatoolkit.services.tool_service import ToolService
 
 
 def register_core_commands(app):
@@ -43,7 +44,14 @@ def register_core_commands(app):
             result = prompt_service.register_system_prompts(company_short_name)
 
             if result:
-                click.echo("✅ System prompts registered successfully!")
+                click.echo("✅ System Prompts registered successfully!")
+
+            tool_service = IAToolkit.get_instance().get_injector().get(ToolService)
+            result = tool_service.register_system_tools()
+            if result:
+                click.echo("✅ System Tools registered successfully!")
+
+
         except Exception as e:
             logging.exception(e)
             click.echo(f"❌ unexpected error during the configuration: {e}")

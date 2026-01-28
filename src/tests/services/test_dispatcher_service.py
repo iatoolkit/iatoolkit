@@ -107,15 +107,16 @@ class TestDispatcher:
         # Arrange: Mock the tool definition retrieval
         mock_tool_def = MagicMock(spec=Tool)
         mock_tool_def.tool_type = Tool.TYPE_NATIVE
-        # Configuramos para que el dispatcher llame a 'handle_request' en lugar de 'some_data'
-        mock_tool_def.execution_config = {'method_name': 'handle_request'}
+
+        # Configuramos para que el dispatcher llame a 'handle_request'
+        mock_tool_def.name = 'handle_request'
         self.mock_tool_service.get_tool_definition.return_value = mock_tool_def
 
         # Act
-        result = self.dispatcher.dispatch("sample", "some_data", key='a value')
+        result = self.dispatcher.dispatch("sample", "handle_request", key='a value')
 
         # Assert
-        self.mock_tool_service.get_tool_definition.assert_called_once_with("sample", "some_data")
+        self.mock_tool_service.get_tool_definition.assert_called_once_with("sample", "handle_request")
         # El dispatcher solo pasa kwargs al método nativo, no el nombre de la herramienta
         self.mock_sample_company_instance.handle_request.assert_called_once_with(key='a value')
         assert result == {"result": "sample_company_response"}
@@ -140,7 +141,7 @@ class TestDispatcher:
         with pytest.raises(IAToolkitException) as excinfo:
             self.dispatcher.dispatch("sample", "some_data")
 
-        assert "Error executing native tool" in str(excinfo.value)
+        assert "Method 'some_data' not found in company 'sample' instance." in str(excinfo.value)
 
     def test_dispatch_system_function(self):
         """Tests that dispatch correctly handles system functions via ToolService."""
@@ -206,13 +207,6 @@ class TestDispatcher:
 
         assert "Tool 'unknown_tool' not registered" in str(excinfo.value)
 
-    def test_get_company_instance(self):
-        """Tests that get_company_instance returns the correct company instance."""
-        instance = self.dispatcher.get_company_instance("sample")
-        assert instance == self.mock_sample_company_instance
-
-        instance_none = self.dispatcher.get_company_instance("non_existent")
-        assert instance_none is None
 
     def test_dispatcher_with_no_companies_registered(self):
         """Tests that the dispatcher works if no company is registered."""
@@ -234,46 +228,14 @@ class TestDispatcher:
 
         assert "Company 'any_company' not configured" in str(excinfo.value)
 
-    def test_setup_iatoolkit_system_success(self):
-        """Test successful setup of system functions and prompts."""
-        # Call the method under test
-        self.dispatcher.setup_iatoolkit_system()
-
-        # Verify ToolService called
-        self.mock_tool_service.register_system_tools.assert_called_once()
-
-
-    def test_setup_iatoolkit_system_exception(self):
-        """Test that setup_iatoolkit_system handles exceptions and rolls back."""
-        # Configure mock to raise an exception in ToolService
-        self.mock_tool_service.register_system_tools.side_effect = Exception("DB Error")
-
-        # Configure repo rollback mock
-        self.mock_llm_query_repo.rollback = MagicMock()
-
-        # Verify exception is raised and wrapped in IAToolkitException
-        with pytest.raises(IAToolkitException) as excinfo:
-            self.dispatcher.setup_iatoolkit_system()
-
-        assert excinfo.value.error_type == IAToolkitException.ErrorType.DATABASE_ERROR
-        assert "DB Error" in str(excinfo.value)
-
-        # Verify rollback was called
-        self.mock_llm_query_repo.rollback.assert_called_once()
 
     def test_load_company_configs_success(self):
         """Test load_company_configs loads configuration for all companies."""
         # Dispatcher uses self.company_instances which is populated by registry.
         # We have "sample" registered in setup()
 
-        # Mock setup_iatoolkit_system
-        self.dispatcher.setup_iatoolkit_system = MagicMock()
-
         # Call method under test
         result = self.dispatcher.load_company_configs()
-
-        # Assertions
-        self.dispatcher.setup_iatoolkit_system.assert_called_once()
 
         # Verify config_service.load_configuration called for "sample"
         self.mock_config_service.load_configuration.assert_called_once_with(

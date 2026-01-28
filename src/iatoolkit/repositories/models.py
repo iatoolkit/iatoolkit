@@ -175,7 +175,6 @@ class Tool(Base):
     name = Column(String, nullable=False)
     tool_type = Column(String, default=TYPE_NATIVE, nullable=False)
     source = Column(String, default=SOURCE_YAML, nullable=False)
-    execution_config = Column(JSON, nullable=True) # e.g. {"method_name": "calc_roi"} or {"endpoint": "..."}
 
     description = Column(Text, nullable=False)
     parameters = Column(JSON, nullable=False)

@@ -45,7 +45,10 @@ class ToolService:
         }
 
     def register_system_tools(self):
-        """Creates or updates system functions in the database."""
+        """
+        Creates or updates system functions in the database.
+        Called by the init_company cli command, the IAToolkit bootstrap process.
+        """
         try:
             # delete all system tools
             self.llm_query_repo.delete_system_tools()
@@ -58,8 +61,7 @@ class ToolService:
                     description=function['description'],
                     parameters=function['parameters'],
                     tool_type=Tool.TYPE_SYSTEM,
-                    source=Tool.SOURCE_SYSTEM,
-                    execution_config={}
+                    source=Tool.SOURCE_SYSTEM
                 )
                 self.llm_query_repo.create_or_update_tool(new_tool)
 
@@ -112,8 +114,6 @@ class ToolService:
 
                     tool_type=Tool.TYPE_NATIVE,
                     source=Tool.SOURCE_YAML,
-                    # Default mapping: tool name = python method name
-                    execution_config={"method_name": name}
                 )
 
                 self.llm_query_repo.create_or_update_tool(tool_obj)
@@ -160,19 +160,13 @@ class ToolService:
         if not tool_data.get('name') or not tool_data.get('description'):
             raise IAToolkitException(IAToolkitException.ErrorType.MISSING_PARAMETER, "Name and Description are required")
 
-        # Ensure execution_config is a dict
-        exec_config = tool_data.get('execution_config', {})
-        if not isinstance(exec_config, dict):
-            exec_config = {}
-
         new_tool = Tool(
             company_id=company.id,
             name=tool_data['name'],
             description=tool_data['description'],
             parameters=tool_data.get('parameters', {"type": "object", "properties": {}}),
-            tool_type=tool_data.get('tool_type', Tool.TYPE_NATIVE), # Default to Native if not specified
+            tool_type=tool_data.get('tool_type', Tool.TYPE_NATIVE),
             source=Tool.SOURCE_USER,
-            execution_config=exec_config,
             is_active=tool_data.get('is_active', True)
         )
 
@@ -199,17 +193,14 @@ class ToolService:
             raise IAToolkitException(IAToolkitException.ErrorType.INVALID_OPERATION, "Cannot modify System Tools")
 
         # Update fields
+        if 'name' in tool_data:
+            tool.name = tool_data['name']
         if 'description' in tool_data:
             tool.description = tool_data['description']
         if 'parameters' in tool_data:
             tool.parameters = tool_data['parameters']
-        if 'execution_config' in tool_data:
-            tool.execution_config = tool_data['execution_config']
         if 'is_active' in tool_data:
             tool.is_active = tool_data['is_active']
-
-        # Note: We usually don't allow changing 'name' or 'type' easily as it breaks references,
-        # but if needed, add logic here.
 
         self.llm_query_repo.commit()
         return tool.to_dict()
@@ -236,8 +227,13 @@ class ToolService:
         if not company:
             return None
 
-        return self.llm_query_repo.get_tool_definition(company, tool_name)
+        # 1. Try to find in company tools
+        tool = self.llm_query_repo.get_tool_definition(company, tool_name)
+        if tool:
+            return tool
 
+        # 2. Fallback to system tools
+        return self.llm_query_repo.get_system_tool(tool_name)
 
     def get_tools_for_llm(self, company: Company) -> list[dict]:
         """

@@ -19,7 +19,6 @@ class VisualToolService:
         self.util = util
         self.i18n_service = i18n_service
 
-
     def image_search(self, company_short_name: str, query: str, collection: str = None, request_images: list = []):
         """
         Handle the search for text to image (iat_image_search).
@@ -31,7 +30,7 @@ class VisualToolService:
         )
         return self._format_response(results, self.i18n_service.t('rag.visual.found_images'))
 
-    def visual_search(self, company_short_name: str, request_images: list, n_results: int = 5, image_index: int = 0):
+    def visual_search(self, company_short_name: str, request_images: list, n_results: int = 5, image_index: int = 0, collection: str = None, ):
         """
         Handle the visual search (image to image) (iat_visual_search).
         Receive the full list of images from the request, decode and call the KB service.
@@ -53,7 +52,8 @@ class VisualToolService:
             results = self.visual_kb_service.search_similar_images(
                 company_short_name=company_short_name,
                 image_content=image_bytes,
-                n_results=n_results
+                n_results=n_results,
+                collection=collection
             )
 
             return self._format_response(results, self.i18n_service.t('rag.visual.similar_images_found'))

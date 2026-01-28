@@ -168,10 +168,10 @@ class llmClient:
                             # force the next call to be this function
                             force_tool_name = function_name
                         else:
-                            error_message = f"Error en dispatch para '{function_name}' tras {sql_retry_count} reintentos: {str(e)}"
+                            error_message = f"**LLM_DISPATCHER** error en dispatch para tool: '{function_name}': {str(e)}"
                             raise IAToolkitException(IAToolkitException.ErrorType.CALL_ERROR, error_message)
                     except Exception as e:
-                        error_message = f"Dispatch error en {function_name} con args {args} -******- {str(e)}"
+                        error_message = f"Dispatch error en tool {function_name} con args {args} -******- {str(e)}"
                         raise IAToolkitException(IAToolkitException.ErrorType.CALL_ERROR, error_message)
 
                     # add the return value into the list of messages
