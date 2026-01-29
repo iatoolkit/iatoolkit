@@ -184,8 +184,7 @@ class TestKnowledgeBaseService:
     def test_ingest_document_assigns_collection_id(self):
         # Arrange
         metadata = {'collection': 'Legal'}
-        mock_collection_type = CollectionType(id=55, name='Legal')
-        self.mock_session.query.return_value.filter_by.return_value.first.return_value = mock_collection_type
+        self.mock_doc_repo.get_collection_type_by_name.return_value = 99
 
         self.mock_storage.upload_document.return_value = "key"
         self.mock_doc_service.file_to_txt.return_value = "content"
@@ -196,7 +195,7 @@ class TestKnowledgeBaseService:
 
         # Assert
         inserted_doc = self.mock_doc_repo.insert.call_args[0][0]
-        assert inserted_doc.collection_type_id == 55
+        assert inserted_doc.collection_type_id == 99
 
     # --- Get Content Tests ---
 

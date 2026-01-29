@@ -85,7 +85,7 @@ class KnowledgeBaseService:
         # --- Logic for Collection ---
         # priority: 1. method parameter 2. metadata
         collection_name = collection or metadata.get('collection')
-        collection_type_id = self._get_collection_type_id(company.id, collection_name)
+        collection_id = self.document_repo.get_collection_type_by_name(company.short_name, collection_name)
 
         # ---  Router ---
         import mimetypes
@@ -98,7 +98,7 @@ class KnowledgeBaseService:
                 content=content,
                 user_identifier=user_identifier,
                 metadata=metadata,
-                collection_type_id=collection_type_id
+                collection_type_id=collection_id
             )
         # 1. Calculate SHA-256 hash of the content
         file_hash = hashlib.sha256(content).hexdigest()
@@ -134,7 +134,7 @@ class KnowledgeBaseService:
 
             new_doc = Document(
                 company_id=company.id,
-                collection_type_id=collection_type_id,
+                collection_type_id=collection_id,
                 filename=filename,
                 hash=file_hash,
                 user_identifier=user_identifier,
@@ -248,7 +248,7 @@ class KnowledgeBaseService:
         # If collection name provided, resolve to ID or handle in VSRepo
         collection_id = None
         if collection:
-            collection_id = self._get_collection_type_id(company.id, collection)
+            collection_id = self.document_repo.get_collection_type_by_name(company_short_name, collection)
             if not collection_id:
                 logging.warning(f"Collection '{collection}' not found. Searching all.")
 
@@ -487,10 +487,3 @@ class KnowledgeBaseService:
         collections = session.query(CollectionType).filter_by(company_id=company.id).all()
         return [c.name for c in collections]
 
-    def _get_collection_type_id(self, company_id: int, collection_name: str) -> Optional[int]:
-        """Helper to get ID by name"""
-        if not collection_name:
-            return None
-        session = self.document_repo.session
-        ct = session.query(CollectionType).filter_by(company_id=company_id, name=collection_name.lower()).first()
-        return ct.id if ct else None

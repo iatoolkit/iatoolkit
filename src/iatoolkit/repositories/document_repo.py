@@ -3,7 +3,7 @@
 #
 # IAToolkit is open source software.
 
-from iatoolkit.repositories.models import Document, CollectionType
+from iatoolkit.repositories.models import Document, Company, CollectionType
 
 from injector import inject
 from iatoolkit.repositories.database_manager import DatabaseManager
@@ -41,8 +41,15 @@ class DocumentRepo:
 
         return self.session.query(Document).filter_by(id=document_id).first()
 
-    def get_collection_type_by_name(self, company_id: int, name: str) -> Optional[CollectionType]:
-        return self.session.query(CollectionType).filter_by(company_id=company_id, name=name.lower()).first()
+    def get_collection_type_by_name(self, company_short_name: str, collection_name: str) -> Optional[int]:
+        if not collection_name:
+            return None
+
+        ct = self.session.query(CollectionType).join(Company).filter(
+            Company.short_name == company_short_name,
+            CollectionType.name == collection_name.lower()
+        ).first()
+        return ct.id if ct else None
 
     def commit(self):
         self.session.commit()

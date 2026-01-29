@@ -119,25 +119,12 @@ class VisualKnowledgeBaseService:
         if not image_content:
             return []
 
-        # obtain collection_id from collection_name
-        collection_id = None
-        if collection:
-            try:
-                # We need company_id first
-                company = self.profile_repo.get_company_by_short_name(company_short_name)
-                if company:
-                    col_obj = self.document_repo.get_collection_type_by_name(company.id, collection)
-                    if col_obj:
-                        collection_id = col_obj.id
-            except Exception as e:
-                logging.warning(f"Error resolving collection '{collection}': {e}")
-
         # 1. Query Repo using the new method
         results = self.vs_repo.query_images_by_image(
             company_short_name=company_short_name,
             image_bytes=image_content,
             n_results=n_results,
-            collection_id=collection_id
+            collection_id=self.document_repo.get_collection_type_by_name(company_short_name, collection)
         )
 
         # 2. Format Results (Reuse logic or refactor to helper)
@@ -156,17 +143,7 @@ class VisualKnowledgeBaseService:
             return []
 
         # obtain collection_id from collection_name
-        collection_id = None
-        if collection:
-            try:
-                # We need company_id first
-                company = self.profile_repo.get_company_by_short_name(company_short_name)
-                if company:
-                    col_obj = self.document_repo.get_collection_type_by_name(company.id, collection)
-                    if col_obj:
-                        collection_id = col_obj.id
-            except Exception as e:
-                logging.warning(f"Error resolving collection '{collection}': {e}")
+        collection_id = self.document_repo.get_collection_type_by_name(company_short_name, collection)
 
         results = self.vs_repo.query_images(
             company_short_name=company_short_name,

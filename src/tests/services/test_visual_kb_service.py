@@ -156,7 +156,7 @@ class TestVisualKnowledgeBaseService:
         }]
         self.mock_vs_repo.query_images.return_value = mock_results
         self.mock_storage_service.generate_presigned_url.return_value = "https://signed.url/pic.jpg"
-        self.mock_doc_repo.get_collection_type_by_name.return_value = MagicMock(id=99)
+        self.mock_doc_repo.get_collection_type_by_name.return_value = 99
         # Act
         results = self.service.search_images('test_co', 'dog', collection='riesgo')
 
@@ -183,6 +183,7 @@ class TestVisualKnowledgeBaseService:
         }]
         self.mock_vs_repo.query_images_by_image.return_value = mock_results
         self.mock_storage_service.generate_presigned_url.return_value = "https://signed.url/similar.jpg"
+        self.mock_doc_repo.get_collection_type_by_name.return_value = None
 
         query_image_bytes = b"fake_image_data"
 
@@ -205,7 +206,7 @@ class TestVisualKnowledgeBaseService:
         # Arrange
         collection_name = 'logos'
         collection_id = 456
-        self.mock_doc_repo.get_collection_type_by_name.return_value = MagicMock(id=collection_id)
+        self.mock_doc_repo.get_collection_type_by_name.return_value = collection_id
 
         mock_results = [{
             'document_id': 3,
@@ -223,7 +224,7 @@ class TestVisualKnowledgeBaseService:
         results = self.service.search_similar_images('test_co', query_image_bytes, collection=collection_name)
 
         # Assert
-        self.mock_doc_repo.get_collection_type_by_name.assert_called_with(self.company.id, collection_name)
+        self.mock_doc_repo.get_collection_type_by_name.assert_called_with(self.company.short_name, collection_name)
 
         self.mock_vs_repo.query_images_by_image.assert_called_with(
             company_short_name='test_co',

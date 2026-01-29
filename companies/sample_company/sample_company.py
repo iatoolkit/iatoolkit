@@ -4,7 +4,7 @@
 # IAToolkit is open source software.
 
 from iatoolkit import BaseCompany
-from iatoolkit import IngestorService, KnowledgeBaseService, SqlService
+from iatoolkit import KnowledgeBaseService, SqlService
 from injector import inject
 from companies.sample_company.sample_database import SampleCompanyDatabase
 import click
@@ -15,12 +15,10 @@ class SampleCompany(BaseCompany):
     @inject
     def __init__(self,
                 sql_service: SqlService,
-                knowledge_service: KnowledgeBaseService,
-                ingestor_service: IngestorService,):
+                knowledge_service: KnowledgeBaseService):
         super().__init__()
         self.sql_service = sql_service
         self.knowledge_service = knowledge_service
-        self.ingestor_service = ingestor_service
         logging.info('companies: ok')
 
     def handle_request(self, action: str, **kwargs) -> str:
@@ -55,15 +53,3 @@ class SampleCompany(BaseCompany):
             except Exception as e:
                 logging.exception(e)
                 click.echo(f"❌ an error: {e}")
-
-        @app.cli.command("load-documents")
-        def load_documents():
-            try:
-                self.ingestor_service.load_sources(
-                            company=self.company,
-                            sources_to_load=["employee_contracts", "supplier_manuals"]
-                        )
-            except Exception as e:
-                logging.exception(e)
-                click.echo(f"Error: {str(e)}")
-
