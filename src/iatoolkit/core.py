@@ -492,6 +492,15 @@ class IAToolkit:
             )
         return self.db_manager
 
+    def bootstrap_company(self, company_short_name: str):
+        from iatoolkit.services.prompt_service import PromptService
+        from iatoolkit.services.tool_service import ToolService
+
+        prompt_service = self.get_injector().get(PromptService)
+        tool_service = self.get_injector().get(ToolService)
+        prompt_service.register_system_prompts(company_short_name)
+        tool_service.register_system_tools()
+
     def _setup_download_dir(self):
         # 1. set the default download directory
         default_download_dir = os.path.join(os.getcwd(), 'iatoolkit-downloads')
@@ -511,6 +520,8 @@ class IAToolkit:
                 "No se pudo crear el directorio de descarga. Verifique que el directorio existe y tenga permisos de escritura."
             )
         logging.info(f"✅ download dir created in: {download_dir}")
+
+
 
 
 def current_iatoolkit() -> IAToolkit:

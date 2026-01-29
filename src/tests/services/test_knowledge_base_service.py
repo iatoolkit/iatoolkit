@@ -69,6 +69,54 @@ class TestKnowledgeBaseService:
         self.mock_doc_repo.insert.assert_not_called()
         self.mock_storage.upload_document.assert_not_called()
 
+    def test_ingest_document_sync_reprocesses_failed_document(self):
+        """
+        GIVEN a document that exists by hash but has status FAILED
+        WHEN ingest_document_sync is called
+        THEN it should delete the old failed document and re-ingest the new one.
+        """
+        # Arrange
+        # Create the existing failed document
+        existing_doc = Document(
+            id=99,
+            filename=self.filename,
+            status=DocumentStatus.FAILED,
+            storage_key="old/path/failed.pdf"
+        )
+        existing_doc.company = self.company  # Needed for delete_document -> company.short_name
+
+        # 1. Simulate finding the failed doc by hash
+        self.mock_doc_repo.get_by_hash.return_value = existing_doc
+        # 2. Simulate finding it by ID (required by delete_document internal call)
+        self.mock_doc_repo.get_by_id.return_value = existing_doc
+
+        # 3. Setup success for the NEW ingestion
+        self.mock_storage.upload_document.return_value = "new/path/success.pdf"
+        self.mock_doc_service.file_to_txt.return_value = "New fresh content"
+
+        # Act
+        new_doc = self.service.ingest_document_sync(self.company, self.filename, self.content)
+
+        # Assert
+        # 1. Verify deletion of old failed doc (Storage + DB)
+        self.mock_storage.delete_file.assert_called_with('acme', "old/path/failed.pdf")
+        self.mock_session.delete.assert_called_with(existing_doc)
+
+        # 2. Verify new ingestion proceeded (Upload + Insert)
+        self.mock_storage.upload_document.assert_called_with(
+            company_short_name='acme',
+            file_content=self.content,
+            filename=self.filename,
+            mime_type='application/pdf' # guessed from filename
+        )
+        self.mock_doc_repo.insert.assert_called()
+
+        # 3. Check result is the new active document
+        assert new_doc.status == DocumentStatus.ACTIVE
+        assert new_doc.storage_key == "new/path/success.pdf"
+        assert new_doc.content == "New fresh content"
+
+
     def test_ingest_document_sync_success_flow(self):
         """
         GIVEN a new file

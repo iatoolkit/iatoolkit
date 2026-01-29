@@ -5,10 +5,8 @@
 
 import click
 import logging
-from iatoolkit.core import IAToolkit
+from iatoolkit.core import IAToolkit, current_iatoolkit
 from iatoolkit.services.profile_service import ProfileService
-from iatoolkit.services.prompt_service import PromptService
-from iatoolkit.services.tool_service import ToolService
 
 
 def register_core_commands(app):
@@ -39,18 +37,11 @@ def register_core_commands(app):
     def init_company(company_short_name: str):
         """⚙️ Bootstrap a new company."""
         try:
-            prompt_service = IAToolkit.get_instance().get_injector().get(PromptService)
-            click.echo(f"🔑 Bootstrap company: '{company_short_name}'...")
-            result = prompt_service.register_system_prompts(company_short_name)
-
-            tool_service = IAToolkit.get_instance().get_injector().get(ToolService)
-            result = tool_service.register_system_tools()
-            click.echo("✅ System Tools and Prompts registered successfully!")
-
-
+            current_iatoolkit().bootstrap_company(company_short_name)
+            click.echo(f"✅ Company {company_short_name} initialized successfully!")
         except Exception as e:
             logging.exception(e)
-            click.echo(f"❌ unexpected error during the configuration: {e}")
+            click.echo(f"❌ unexpected error during bootstrap: {e}")
 
     @app.cli.command("encrypt-key")
     @click.argument("key")

@@ -203,6 +203,7 @@ class IngestionRunnerService:
                 collection=context.get('collection'),
                 metadata=predefined_metadata
             )
+            logging.info(f"File '{filename}' ingested successfully.")
             return new_document
 
         except Exception as e:

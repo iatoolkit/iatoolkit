@@ -255,6 +255,8 @@ ui:
     select_section: "Seleccione una sección del panel izquierdo"
     no_section_selected: "No hay sección seleccionada."
     view_yaml: "Ver YAML"
+    files: "Archivos de Configuración"
+
 
 
   rag:

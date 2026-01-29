@@ -7,6 +7,7 @@ from iatoolkit.repositories.vs_repo import VSRepo, VSImage
 from iatoolkit.repositories.models import VSDoc, Document, Company
 from iatoolkit.services.embedding_service import EmbeddingService
 from iatoolkit.repositories.database_manager import DatabaseManager
+from iatoolkit.services.storage_service import StorageService
 
 
 class TestVSRepo:
@@ -21,11 +22,13 @@ class TestVSRepo:
         self.mock_db_manager = MagicMock(spec=DatabaseManager)
         self.mock_session = self.mock_db_manager.get_session.return_value
         self.mock_embedding_service = MagicMock(spec=EmbeddingService)
+        self.mock_storage_service = MagicMock(spec=StorageService)
 
         # Instantiate the class under test
         self.vs_repo = VSRepo(
             db_manager=self.mock_db_manager,
-            embedding_service=self.mock_embedding_service
+            embedding_service=self.mock_embedding_service,
+            storage_service=self.mock_storage_service
         )
 
         # Default mock behavior
@@ -74,7 +77,7 @@ class TestVSRepo:
         # Mock the lookup for company_id from company_short_name
         mock_company = Company(id=self.MOCK_COMPANY_ID, short_name=self.MOCK_COMPANY_SHORT_NAME)
         self.mock_session.query.return_value.filter.return_value.one_or_none.return_value = mock_company
-
+        self.mock_storage_service.generate_presigned_url.return_value = "http://url_key"
         # Mock the final DB query result
         db_rows = [(1, "file1.txt", "content1", "b64_1", {}, 77), (2, "file2.txt", "content2", "b64_2", {}, 88)]
         self.mock_session.execute.return_value.fetchall.return_value = db_rows
@@ -89,12 +92,16 @@ class TestVSRepo:
         # 2. Check company lookup
         self.mock_session.query.assert_called_once_with(Company)
 
-        # 3. Check final results
+        #3. check storage service was not called
+        self.mock_storage_service.generate_presigned_url.assert_any_call(self.MOCK_COMPANY_SHORT_NAME, "b64_1")
+
+        # 4. Check final results
         assert len(result_docs) == 2
         assert result_docs[0]['id'] == 1
         assert result_docs[0]['filename'] == "file1.txt"
         assert result_docs[0]['text'] == "content1"
         assert result_docs[0]['document_id'] == 77
+        assert result_docs[0]['url'] == "http://url_key"
 
     def test_query_raises_exception_on_db_error(self):
         """Tests that an IAToolkitException is raised if the DB query fails."""

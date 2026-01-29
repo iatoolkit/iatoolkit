@@ -8,6 +8,7 @@ from injector import inject
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.repositories.database_manager import DatabaseManager
 from iatoolkit.services.embedding_service import EmbeddingService
+from iatoolkit.services.storage_service import StorageService
 from iatoolkit.repositories.models import Document, VSDoc, Company, VSImage
 from typing import Dict
 import logging
@@ -17,9 +18,11 @@ class VSRepo:
     @inject
     def __init__(self,
                  db_manager: DatabaseManager,
-                 embedding_service: EmbeddingService):
+                 embedding_service: EmbeddingService,
+                 storage_service: StorageService,):
         self.session = db_manager.get_session()
         self.embedding_service = embedding_service
+        self.storage_service = storage_service
 
     def add_document(self, company_short_name, vs_chunk_list: list[VSDoc]):
         try:
@@ -132,6 +135,13 @@ class VSRepo:
             for row in rows:
                 # create the document object with the data
                 meta_data = row[4] if len(row) > 4 and row[4] is not None else {}
+
+                # get the url of the document
+                storage_key = row[3] if len(row) > 3 and row[3] is not None else None
+                url = None
+                if storage_key:
+                    url = self.storage_service.generate_presigned_url(company_short_name, storage_key)
+
                 vs_documents.append(
                     {
                         'id': row[0],
@@ -139,6 +149,7 @@ class VSRepo:
                         'filename': row[1],
                         'text': row[2],
                         'meta': meta_data,
+                        'url': url
                     }
                 )
 

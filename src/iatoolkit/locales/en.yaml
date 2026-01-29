@@ -253,6 +253,7 @@ ui:
     select_section: "Select a section from the left panel"
     no_section_selected: "No section selected"
     view_yaml: "View YAML"
+    files: "Configuration files"
 
   rag:
     ingestion: "Ingestion"

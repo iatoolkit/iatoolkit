@@ -107,9 +107,13 @@ class KnowledgeBaseService:
         # If the same content exists (even with a different filename), we skip processing.
         existing_doc = self.document_repo.get_by_hash(company.id, file_hash)
         if existing_doc:
-            msg = self.i18n_service.t('rag.ingestion.duplicate', filename=filename, company_short_name=company.short_name)
-            logging.info(msg)
-            return existing_doc
+            if existing_doc.status == DocumentStatus.FAILED:
+                # If the previous ingestion failed, we delete the failed document and try again.
+                self.delete_document(existing_doc.id)
+            else:
+                msg = self.i18n_service.t('rag.ingestion.duplicate', filename=filename, company_short_name=company.short_name)
+                logging.info(msg)
+                return existing_doc
 
 
         # 3. Storage creation record with PENDING status
@@ -220,7 +224,8 @@ class KnowledgeBaseService:
 
     def search(self,
                company_short_name: str,
-               query: str, n_results: int = 5,
+               query: str,
+               n_results: int = 5,
                metadata_filter: dict = None,
                collection: str = None) -> str:
         """
@@ -271,7 +276,8 @@ class KnowledgeBaseService:
 
     def search_raw(self,
                    company_short_name: str,
-                   query: str, n_results: int = 5,
+                   query: str,
+                   n_results: int = 5,
                    collection: str = None,
                    metadata_filter: dict = None
                    ) -> List[Dict]:
@@ -464,13 +470,6 @@ class KnowledgeBaseService:
             if cat_name not in existing_names:
                 new_type = CollectionType(company_id=company.id, name=cat_name.lower())
                 session.add(new_type)
-
-        # 3. Delete types not in config
-        # Note: This might cascade delete documents depending on FK setup.
-        # Assuming safe deletion is desired here to match "Sync" behavior.
-        for existing_ct in existing_types:
-            if existing_ct.name not in current_config_names:
-                session.delete(existing_ct)
 
         session.commit()
 
