@@ -257,8 +257,6 @@ ui:
     view_yaml: "Ver YAML"
     files: "Archivos de Configuración"
 
-
-
   rag:
     ingestion: "Ingesta"
     ingestion_description: "Ingestar documentos en la base de conocimiento."
