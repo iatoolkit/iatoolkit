@@ -45,7 +45,7 @@ class ToolService:
             "iat_sql_query": self.sql_service.exec_sql,
             "iat_image_search": self.visual_tool_service.image_search,
             "iat_visual_search": self.visual_tool_service.visual_search,
-            "iat_document_search": self.knowledge_base_service.search_raw
+            "iat_document_search": self.knowledge_base_service.search
         }
 
     def register_system_tools(self):

@@ -226,61 +226,9 @@ class KnowledgeBaseService:
                company_short_name: str,
                query: str,
                n_results: int = 5,
-               metadata_filter: dict = None,
-               collection: str = None) -> str:
-        """
-        Performs a semantic search against the vector store and formats the result as a context string for LLMs.
-        Replaces the legacy SearchService logic.
-
-        Args:
-            company_short_name: The target company.
-            query: The user's question or search term.
-            n_results: Max number of chunks to retrieve.
-            metadata_filter: Optional filter for document metadata.
-
-        Returns:
-            Formatted string with context.
-        """
-        company = self.profile_service.get_company_by_short_name(company_short_name)
-        if not company:
-            return f"error: {self.i18n_service.t('rag.search.company_not_found', company_short_name=company_short_name)}"
-
-        # If collection name provided, resolve to ID or handle in VSRepo
-        collection_id = None
-        if collection:
-            collection_id = self.document_repo.get_collection_id_by_name(company_short_name, collection)
-            if not collection_id:
-                logging.warning(f"Collection '{collection}' not found. Searching all.")
-
-        # Queries VSRepo (which typically uses pgvector/SQL underneath)
-        chunk_list = self.vs_repo.query(
-            company_short_name=company_short_name,
-            query_text=query,
-            n_results=n_results,
-            metadata_filter=metadata_filter,
-            collection_id=collection_id,
-        )
-
-        search_context = ''
-        for chunk in chunk_list:
-            # 'doc' here is a reconstructed Document object containing the chunk text
-            search_context += f'document "{chunk['filename']}"'
-
-            if chunk.get('meta') and 'document_type' in chunk.get('meta'):
-                doc_type = chunk.get('meta').get('document_type', '')
-                search_context += f' type: {doc_type}'
-
-            search_context += f': {chunk.get('text')}\n\n'
-
-        return search_context
-
-    def search_raw(self,
-                   company_short_name: str,
-                   query: str,
-                   n_results: int = 5,
-                   collection: str = None,
-                   metadata_filter: dict = None
-                   ) -> List[Dict]:
+               collection: str = None,
+               metadata_filter: dict = None
+               ) -> List[Dict]:
         """
         Performs a semantic search and returns the list of Document objects (chunks).
         Useful for UI displays where structured data is needed instead of a raw string context.
@@ -290,6 +238,7 @@ class KnowledgeBaseService:
             query: The user's question or search term.
             n_results: Max number of chunks to retrieve.
             metadata_filter: Optional filter for document metadata.
+            collection: Optional collection name.
 
         Returns:
             List of Document objects found.
@@ -301,12 +250,7 @@ class KnowledgeBaseService:
             return []
 
         # If collection name provided, resolve to ID or handle in VSRepo
-        collection_id = None
-        if collection:
-            collection_id = self._get_collection_type_id(company.id, collection)
-            if not collection_id:
-                logging.warning(f"Collection '{collection}' not found. Searching all.")
-
+        collection_id = self.document_repo.get_collection_id_by_name(company.short_name, collection)
 
         # Queries VSRepo directly
         chunk_list = self.vs_repo.query(

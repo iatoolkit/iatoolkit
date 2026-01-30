@@ -197,7 +197,7 @@ class RagApiView(MethodView):
                 return jsonify({'result': 'error', 'message': msg}), 400
 
             # 3. Call Service
-            chunks = self.knowledge_base_service.search_raw(
+            chunks = self.knowledge_base_service.search(
                 company_short_name=company_short_name,
                 query=query,
                 n_results=n_results,

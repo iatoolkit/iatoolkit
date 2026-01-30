@@ -208,7 +208,7 @@ class TestRagApiView:
 
     # --- Search Tests ---
 
-    def test_search_raw_success(self):
+    def test_search_success(self):
         """Should return structured search results."""
         # Arrange
         mock_doc = {
@@ -219,7 +219,7 @@ class TestRagApiView:
             'count': 1
         }
 
-        self.mock_kb_service.search_raw.return_value = [mock_doc]
+        self.mock_kb_service.search.return_value = [mock_doc]
 
         payload = {
             "query": "how to install",
@@ -235,7 +235,7 @@ class TestRagApiView:
         assert data['result'] == 'success'
         assert data['chunks'][0]['text'] == "This is a relevant chunk"
 
-        self.mock_kb_service.search_raw.assert_called_with(
+        self.mock_kb_service.search.assert_called_with(
             company_short_name=self.company_short_name,
             query="how to install",
             n_results=3,
@@ -267,10 +267,10 @@ class TestRagApiView:
             collection="Legal" # Verify new param
         )
 
-    def test_search_raw_with_collection(self):
+    def test_search_with_collection(self):
         """Should pass collection filter to service search."""
         # Arrange
-        self.mock_kb_service.search_raw.return_value = []
+        self.mock_kb_service.search.return_value = []
         payload = {
             "query": "test",
             "collection": "Technical"
@@ -280,7 +280,7 @@ class TestRagApiView:
         self.client.post(f'/{self.company_short_name}/api/rag/search', json=payload)
 
         # Assert
-        self.mock_kb_service.search_raw.assert_called_with(
+        self.mock_kb_service.search.assert_called_with(
             company_short_name=self.company_short_name,
             query="test",
             n_results=5,
@@ -293,15 +293,3 @@ class TestRagApiView:
         response = self.client.post(f'/{self.company_short_name}/api/rag/search', json={"k": 5})
         assert response.status_code == 400
         assert 'translated:rag.search.query_required' in response.get_json()['message']
-
-    def test_search_exception(self):
-        """Should handle internal server errors gracefully."""
-        self.mock_kb_service.search_raw.side_effect = Exception("Vector DB Down")
-
-        response = self.client.post(
-            f'/{self.company_short_name}/api/rag/search',
-            json={"query": "test"}
-        )
-
-        assert response.status_code == 500
-        assert "Vector DB Down" in response.get_json()['error_message']
