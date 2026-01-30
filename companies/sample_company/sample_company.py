@@ -22,13 +22,7 @@ class SampleCompany(BaseCompany):
         logging.info('companies: ok')
 
     def handle_request(self, action: str, **kwargs) -> str:
-        if action == "document_search":
-            query_string = kwargs.get('query')
-            return self.knowledge_service.search(
-                company_short_name=self.company_short_name,
-                query=  query_string)
-        else:
-            return self.unsupported_operation(action)
+        return self.unsupported_operation(action)
 
 
     def register_cli_commands(self, app):
