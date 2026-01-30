@@ -326,12 +326,3 @@ class EmbeddingService:
         # Get the wrapper and return the model name from it
         client_wrapper = self.client_factory.get_client(company_short_name, model_type)
         return client_wrapper.model
-
-    def init_remote_embedding(self, company_short_name: str):
-        """
-        Initialize remote embedding model for a specific company and type.
-        """
-        try:
-            self.embed_text(company_short_name, "test")
-        except Exception as e:
-            pass

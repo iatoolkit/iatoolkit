@@ -13,7 +13,6 @@ from iatoolkit.services.dispatcher_service import Dispatcher
 from iatoolkit.services.language_service import LanguageService
 from iatoolkit.services.user_session_context_service import UserSessionContextService
 from iatoolkit.services.configuration_service import ConfigurationService
-from iatoolkit.services.embedding_service import EmbeddingService
 from flask_bcrypt import Bcrypt
 from iatoolkit.services.mail_service import MailService
 import random
@@ -33,7 +32,6 @@ class ProfileService:
                  config_service: ConfigurationService,
                  lang_service: LanguageService,
                  dispatcher: Dispatcher,
-                 embedding_service: EmbeddingService,
                  mail_service: MailService):
         self.i18n_service = i18n_service
         self.profile_repo = profile_repo
@@ -42,7 +40,6 @@ class ProfileService:
         self.config_service = config_service
         self.lang_service = lang_service
         self.mail_service = mail_service
-        self.embedding_service = embedding_service
         self.bcrypt = Bcrypt()
 
     def login(self, company_short_name: str, email: str, password: str) -> dict:
@@ -87,9 +84,6 @@ class ProfileService:
 
             # 3. create the web session
             self.set_session_for_user(company.short_name, user_identifier)
-
-            # 4. start remote embeddings
-            self.embedding_service.init_remote_embedding(company.short_name)
 
             return {'success': True, "user_identifier": user_identifier, "message": "Login ok"}
         except Exception as e:

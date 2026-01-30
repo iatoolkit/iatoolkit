@@ -102,7 +102,7 @@ SYSTEM_TOOLS_DEFINITIONS = [
     },
     {
         "function_name": "iat_document_search",
-        "description": "Búsqueda en documentos que forman una colección",
+        "description": "Búsqueda semantica sobre los documentos que forman una colección",
         "parameters": {
             "type": "object",
             "properties": {
