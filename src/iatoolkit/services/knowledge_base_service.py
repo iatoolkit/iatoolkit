@@ -228,7 +228,7 @@ class KnowledgeBaseService:
                n_results: int = 5,
                collection: str = None,
                metadata_filter: dict = None
-               ) -> List[Dict]:
+               ):
         """
         Performs a semantic search and returns the list of Document objects (chunks).
         Useful for UI displays where structured data is needed instead of a raw string context.
