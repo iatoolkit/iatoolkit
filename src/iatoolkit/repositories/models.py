@@ -235,7 +235,7 @@ class Document(Base):
 
 
 class DocumentImage(Base):
-    """Represents an image extracted from a document or an uploaded standalone image."""
+    """Represents an image extracted from a document or an uploaded standalone image.."""
     __tablename__ = 'iat_document_images'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
