@@ -99,6 +99,7 @@ class TestIAToolkit(unittest.TestCase):
                 patch.object(tk1, '_setup_cors'), \
                 patch.object(tk1, '_setup_additional_services'), \
                 patch.object(tk1, '_setup_cli_commands'), \
+                patch.object(tk1, '_setup_docling'), \
                 patch.object(tk1, 'register_data_sources'), \
                 patch.object(tk1, '_setup_download_dir'):
             # Inject dummy objects to allow flow to proceed

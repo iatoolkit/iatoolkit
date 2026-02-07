@@ -111,6 +111,7 @@ class IAToolkit:
         self._setup_cli_commands()
         self._setup_request_globals()
         self._setup_context_processors()
+        self._setup_docling()
 
         # Step 9: define the download_dir
         self._setup_download_dir()
@@ -497,6 +498,12 @@ class IAToolkit:
         prompt_service.register_system_prompts(company_short_name)
         tool_service.register_system_tools()
 
+    def _setup_docling(self):
+        from iatoolkit.services.docling_service import DoclingService
+
+        docling_service = self.get_injector().get(DoclingService)
+        docling_service.init()
+
     def _setup_download_dir(self):
         # 1. set the default download directory
         default_download_dir = os.path.join(os.getcwd(), 'iatoolkit-downloads')
@@ -516,8 +523,6 @@ class IAToolkit:
                 "No se pudo crear el directorio de descarga. Verifique que el directorio existe y tenga permisos de escritura."
             )
         logging.info(f"✅ download dir created in: {download_dir}")
-
-
 
 
 def current_iatoolkit() -> IAToolkit:

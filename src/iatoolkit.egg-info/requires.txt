@@ -29,7 +29,7 @@ httplib2==0.22.0
 httptools==0.6.4
 httpx<1.0.0,>=0.28.1
 httpx-sse==0.4.0
-huggingface-hub==0.16.4
+huggingface-hub>=0.16.4
 humanfriendly==10.0
 idna==3.10
 injector==0.22.0
@@ -54,6 +54,7 @@ pytest-mock==3.14.0
 python-dateutil==2.9.0.post0
 python-docx==1.1.2
 pytesseract==0.3.13
+docling==2.72.0
 pytz==2025.2
 PyYAML==6.0.2
 redis==5.2.1
@@ -65,7 +66,7 @@ s3transfer==0.11.2
 sib-api-v3-sdk==7.6.0
 SQLAlchemy==2.0.36
 tiktoken==0.8.0
-tokenizers==0.21.0
+tokenizers>=0.22.0
 websocket-client==1.8.0
 websockets==14.1
 Werkzeug==3.1.3

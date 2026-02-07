@@ -163,7 +163,7 @@ class VisualKnowledgeBaseService:
             )
             self.vs_repo.add_image(vs_image)
 
-            logging.info(f"Successfully ingested document image {filename}.")
+            logging.debug(f"Successfully ingested document image {filename}.")
 
             return document_image
 

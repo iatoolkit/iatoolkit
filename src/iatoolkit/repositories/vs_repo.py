@@ -108,15 +108,27 @@ class VSRepo:
                 sql_query_parts.append(" AND iat_documents.collection_type_id = :collection_id")
                 params['collection_id'] = collection_id
 
-            # add metadata filter, if exists
-            if metadata_filter and isinstance(metadata_filter, dict):
-                for key, value in metadata_filter.items():
-                    # Usar el operador ->> para extraer el valor del JSON como texto.
-                    # La clave del JSON se interpola directamente.
-                    # El valor se pasa como parámetro para evitar inyección SQL.
-                    param_name = f"value_{key}_filter"
-                    sql_query_parts.append(f" AND documents.meta->>'{key}' = :{param_name}")
-                    params[param_name] = str(value)     # parametros como string
+                # add metadata filter, if exists
+                if metadata_filter and isinstance(metadata_filter, dict):
+                    for key, value in metadata_filter.items():
+                        # FIX: Lógica híbrida.
+                        # 1. Si la key es específica de estructura (ej: page, block_type), buscamos en vsdocs.meta
+                        # 2. Si no, asumimos que es del documento global (ej: category, user) o buscamos en ambos.
+
+                        param_name = f"value_{key}_filter"
+
+                        # Lista de keys que sabemos que viven en el chunk (generados por docling)
+                        chunk_keys = ['page_start', 'page_end', 'block_type', 'section_title', 'table_index', 'image_index']
+
+                        if key in chunk_keys:
+                            # Filtro a nivel de Chunk
+                            sql_query_parts.append(f" AND iat_vsdocs.meta->>'{key}' = :{param_name}")
+                        else:
+                            # Filtro a nivel de Documento (comportamiento original)
+                            # Opcional: podrías usar OR para buscar en ambos lados si no estás seguro
+                            sql_query_parts.append(f" AND iat_documents.meta->>'{key}' = :{param_name}")
+
+                        params[param_name] = str(value)
 
             # join all the query parts
             sql_query = "".join(sql_query_parts)

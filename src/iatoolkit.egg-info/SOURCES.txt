@@ -61,6 +61,7 @@ src/iatoolkit/services/company_context_service.py
 src/iatoolkit/services/configuration_service.py
 src/iatoolkit/services/context_builder_service.py
 src/iatoolkit/services/dispatcher_service.py
+src/iatoolkit/services/docling_service.py
 src/iatoolkit/services/document_service.py
 src/iatoolkit/services/embedding_service.py
 src/iatoolkit/services/excel_service.py
@@ -68,9 +69,6 @@ src/iatoolkit/services/file_processor_service.py
 src/iatoolkit/services/history_manager_service.py
 src/iatoolkit/services/i18n_service.py
 src/iatoolkit/services/inference_service.py
-src/iatoolkit/services/ingestion_runner_service.py
-src/iatoolkit/services/ingestion_source_service.py
-src/iatoolkit/services/ingestor_service.py
 src/iatoolkit/services/jwt_service.py
 src/iatoolkit/services/knowledge_base_service.py
 src/iatoolkit/services/language_service.py
@@ -134,7 +132,6 @@ src/iatoolkit/views/forgot_password_view.py
 src/iatoolkit/views/help_content_api_view.py
 src/iatoolkit/views/history_api_view.py
 src/iatoolkit/views/home_view.py
-src/iatoolkit/views/ingestion_api_view.py
 src/iatoolkit/views/init_context_api_view.py
 src/iatoolkit/views/llmquery_api_view.py
 src/iatoolkit/views/load_document_api_view.py
