@@ -1,2 +1,6 @@
 /iatoolkit/src/tests/
 /docs/
+build/
+.idea/
+htmlReport/
+companies/*/sample_data/
