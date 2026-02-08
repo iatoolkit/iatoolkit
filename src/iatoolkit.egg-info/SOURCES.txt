@@ -61,8 +61,6 @@ src/iatoolkit/services/company_context_service.py
 src/iatoolkit/services/configuration_service.py
 src/iatoolkit/services/context_builder_service.py
 src/iatoolkit/services/dispatcher_service.py
-src/iatoolkit/services/docling_service.py
-src/iatoolkit/services/document_service.py
 src/iatoolkit/services/embedding_service.py
 src/iatoolkit/services/excel_service.py
 src/iatoolkit/services/file_processor_service.py
@@ -86,6 +84,16 @@ src/iatoolkit/services/user_feedback_service.py
 src/iatoolkit/services/user_session_context_service.py
 src/iatoolkit/services/visual_kb_service.py
 src/iatoolkit/services/visual_tool_service.py
+src/iatoolkit/services/parsers/__init__.py
+src/iatoolkit/services/parsers/contracts.py
+src/iatoolkit/services/parsers/image_normalizer.py
+src/iatoolkit/services/parsers/parsing_service.py
+src/iatoolkit/services/parsers/provider_factory.py
+src/iatoolkit/services/parsers/provider_resolver.py
+src/iatoolkit/services/parsers/validator.py
+src/iatoolkit/services/parsers/providers/__init__.py
+src/iatoolkit/services/parsers/providers/docling_provider.py
+src/iatoolkit/services/parsers/providers/legacy_provider.py
 src/iatoolkit/static/images/fernando.jpeg
 src/iatoolkit/static/images/iatoolkit_core.png
 src/iatoolkit/static/images/iatoolkit_logo.png

@@ -319,8 +319,11 @@ class IAToolkit:
     def _bind_services(self, binder: Binder):
         from iatoolkit.services.query_service import QueryService
         from iatoolkit.services.benchmark_service import BenchmarkService
-        from iatoolkit.services.document_service import DocumentService
-        from iatoolkit.services.docling_service import DoclingService
+        from iatoolkit.services.parsers.parsing_service import ParsingService
+        from iatoolkit.services.parsers.provider_factory import ParsingProviderFactory
+        from iatoolkit.services.parsers.provider_resolver import ParsingProviderResolver
+        from iatoolkit.services.parsers.providers.docling_provider import DoclingParsingProvider
+        from iatoolkit.services.parsers.providers.legacy_provider import LegacyParsingProvider
         from iatoolkit.services.prompt_service import PromptService
         from iatoolkit.services.excel_service import ExcelService
         from iatoolkit.services.mail_service import MailService
@@ -342,8 +345,11 @@ class IAToolkit:
 
         binder.bind(QueryService, to=QueryService)
         binder.bind(BenchmarkService, to=BenchmarkService)
-        binder.bind(DocumentService, to=DocumentService)
-        binder.bind(DoclingService, to=DoclingService)
+        binder.bind(ParsingService, to=ParsingService)
+        binder.bind(ParsingProviderFactory, to=ParsingProviderFactory)
+        binder.bind(ParsingProviderResolver, to=ParsingProviderResolver)
+        binder.bind(DoclingParsingProvider, to=DoclingParsingProvider)
+        binder.bind(LegacyParsingProvider, to=LegacyParsingProvider)
         binder.bind(PromptService, to=PromptService)
         binder.bind(ExcelService, to=ExcelService)
         binder.bind(MailService, to=MailService)
@@ -499,10 +505,10 @@ class IAToolkit:
         tool_service.register_system_tools()
 
     def _setup_docling(self):
-        from iatoolkit.services.docling_service import DoclingService
+        from iatoolkit.services.parsers.parsing_service import ParsingService
 
-        docling_service = self.get_injector().get(DoclingService)
-        docling_service.init()
+        parsing_service = self.get_injector().get(ParsingService)
+        parsing_service.warmup()
 
     def _setup_download_dir(self):
         # 1. set the default download directory

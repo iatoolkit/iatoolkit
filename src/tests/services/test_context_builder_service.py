@@ -4,7 +4,7 @@ from iatoolkit.services.context_builder_service import ContextBuilderService
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.company_context_service import CompanyContextService
-from iatoolkit.services.document_service import DocumentService
+from iatoolkit.services.parsers.parsing_service import ParsingService
 from iatoolkit.services.tool_service import ToolService
 from iatoolkit.services.prompt_service import PromptService
 from iatoolkit.common.util import Utility
@@ -22,7 +22,7 @@ class TestContextBuilderService:
         self.mock_profile_service = MagicMock(spec=ProfileService)
         self.mock_profile_repo = MagicMock(spec=ProfileRepo)
         self.mock_company_context = MagicMock(spec=CompanyContextService)
-        self.mock_document_service = MagicMock(spec=DocumentService)
+        self.mock_parsing_service = MagicMock(spec=ParsingService)
         self.mock_tool_service = MagicMock(spec=ToolService)
         self.mock_prompt_service = MagicMock(spec=PromptService)
         self.mock_util = MagicMock(spec=Utility)
@@ -31,7 +31,7 @@ class TestContextBuilderService:
             profile_service=self.mock_profile_service,
             profile_repo=self.mock_profile_repo,
             company_context_service=self.mock_company_context,
-            document_service=self.mock_document_service,
+            parsing_service=self.mock_parsing_service,
             tool_service=self.mock_tool_service,
             prompt_service=self.mock_prompt_service,
             util=self.mock_util
@@ -114,7 +114,7 @@ class TestContextBuilderService:
             {'filename': 'photo.jpg', 'base64': 'imagebytes'}
         ]
         self.mock_util.normalize_base64_payload.return_value = b'text'
-        self.mock_document_service.file_to_txt.return_value = "Decoded Content"
+        self.mock_parsing_service.extract_text_for_context.return_value = "Decoded Content"
 
         # Act
         context, images = self.service._process_attachments(files)
@@ -134,7 +134,7 @@ class TestContextBuilderService:
         """Should append error tags to context if file processing fails, instead of crashing."""
         # Arrange
         files = [{'filename': 'corrupt.pdf', 'base64': '...'}]
-        self.mock_document_service.file_to_txt.side_effect = Exception("Parsing error")
+        self.mock_parsing_service.extract_text_for_context.side_effect = Exception("Parsing error")
 
         # Act
         context, images = self.service._process_attachments(files)

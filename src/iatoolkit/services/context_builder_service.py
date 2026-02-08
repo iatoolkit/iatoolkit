@@ -12,7 +12,7 @@ import hashlib
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.tool_service import ToolService
-from iatoolkit.services.document_service import DocumentService
+from iatoolkit.services.parsers.parsing_service import ParsingService
 from iatoolkit.services.company_context_service import CompanyContextService
 from iatoolkit.services.prompt_service import PromptService
 from iatoolkit.common.util import Utility
@@ -33,14 +33,14 @@ class ContextBuilderService:
                  profile_service: ProfileService,
                  profile_repo: ProfileRepo,
                  company_context_service: CompanyContextService,
-                 document_service: DocumentService,
+                 parsing_service: ParsingService,
                  tool_service: ToolService,
                  prompt_service: PromptService,
                  util: Utility):
         self.profile_service = profile_service
         self.profile_repo = profile_repo
         self.company_context_service = company_context_service
-        self.document_service = document_service
+        self.parsing_service = parsing_service
         self.tool_service = tool_service
         self.prompt_service = prompt_service
         self.util = util
@@ -170,7 +170,10 @@ class ContextBuilderService:
                     document_text = json.dumps(document.get('content'))
                 else:
                     file_content = self.util.normalize_base64_payload(base64_content)
-                    document_text = self.document_service.file_to_txt(filename, file_content)
+                    document_text = self.parsing_service.extract_text_for_context(
+                        filename=filename,
+                        content=file_content
+                    )
 
                 context_parts.append(f"\n<document name='{filename}'>\n{document_text}\n</document>\n")
                 text_files_count += 1

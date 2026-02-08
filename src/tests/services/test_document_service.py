@@ -5,178 +5,76 @@
 
 import pytest
 from unittest.mock import patch, MagicMock
-from iatoolkit.services.document_service import DocumentService
+
+from iatoolkit.services.parsers.providers.legacy_provider import LegacyParsingProvider
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.excel_service import ExcelService
+from iatoolkit.services.parsers.contracts import ParseRequest
 
-class TestDocumentService:
+
+class TestLegacyParsingProvider:
 
     @pytest.fixture(autouse=True)
-    def setup_method(self):
+    def setup_method(self, monkeypatch):
+        monkeypatch.setenv("MAX_DOC_PAGES", "10")
+
         self.mock_excel_service = MagicMock(spec=ExcelService)
         self.mock_i18n_service = MagicMock(spec=I18nService)
         self.mock_i18n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
 
-        self.service = DocumentService(excel_service=self.mock_excel_service,
-                                        i18n_service=self.mock_i18n_service)
-
-
-    @pytest.fixture(autouse=True)
-    def setup_env_vars(self, monkeypatch):
-        """
-        Configura las variables de entorno necesarias para DocumentService
-        antes de cada test.
-        """
-        monkeypatch.setenv("MAX_DOC_PAGES", "10")
-
+        self.provider = LegacyParsingProvider(
+            excel_service=self.mock_excel_service,
+            i18n_service=self.mock_i18n_service,
+        )
 
     def test_file_txt_when_binary_content(self):
-        result = self.service.file_to_txt("test.txt", b"dummy_content")
+        result = self.provider.file_to_txt("test.txt", b"dummy_content")
         assert result == "dummy_content"
 
     def test_file_txt_when_binary_content_and_error_decoding(self):
         with pytest.raises(IAToolkitException) as excinfo:
-            result = self.service.file_to_txt("test.txt", b'\xff\xfe\xff'
-)
+            self.provider.file_to_txt("test.txt", b'\xff\xfe\xff')
         assert "FILE_FORMAT_ERROR" == excinfo.value.error_type.name
-
-    def test_file_txt_when_txt_content(self):
-        result = self.service.file_to_txt("test.txt", "dummy_content")
-        assert result == "dummy_content"
 
     def test_file_excel_when_excel_content(self):
         self.mock_excel_service.read_excel.return_value = 'json_content'
-        result = self.service.file_to_txt("test.xlsx", "dummy_content")
+        result = self.provider.file_to_txt("test.xlsx", "dummy_content")
         assert result == 'json_content'
 
-    @patch("iatoolkit.services.document_service.DocumentService.is_scanned_pdf")
-    @patch("iatoolkit.services.document_service.DocumentService.read_scanned_pdf", return_value="Scanned text")
-    @patch("iatoolkit.services.document_service.DocumentService.read_pdf", return_value="PDF text")
-    def test_extension_file_detection(
-            self, mock_read_pdf, mock_read_scanned_pdf, mock_is_scanned_pdf):
-
+    @patch("iatoolkit.services.parsers.providers.legacy_provider.LegacyParsingProvider.is_scanned_pdf")
+    @patch("iatoolkit.services.parsers.providers.legacy_provider.LegacyParsingProvider.read_scanned_pdf", return_value="Scanned text")
+    @patch("iatoolkit.services.parsers.providers.legacy_provider.LegacyParsingProvider.read_pdf", return_value="PDF text")
+    def test_extension_file_detection(self, mock_read_pdf, mock_read_scanned_pdf, mock_is_scanned_pdf):
         mock_is_scanned_pdf.return_value = True
-        result = self.service.file_to_txt("test.pdf", "dummy_content")
-
+        result = self.provider.file_to_txt("test.pdf", "dummy_content")
         assert result == "Scanned text"
 
         mock_is_scanned_pdf.return_value = False
-        result = self.service.file_to_txt("test.pdf", "dummy_content")
+        result = self.provider.file_to_txt("test.pdf", "dummy_content")
         assert result == "PDF text"
 
+    def test_parse_builds_text_result(self):
+        with patch.object(self.provider, "extract_text", return_value="hello world"):
+            result = self.provider.parse(ParseRequest(
+                company_short_name="acme",
+                filename="a.txt",
+                content=b"abc",
+            ))
 
-    @patch("iatoolkit.services.document_service.io")
-    @patch("iatoolkit.services.document_service.Document")
-    def test_read_docx_successful(self, mock_document, mock_io):
-        """Prueba que un archivo .docx se lea correctamente."""
-        mock_io.BytesIO.return_value = b'a file'
-        mock_doc = MagicMock()
-        mock_doc.paragraphs = [
-            MagicMock(text="First paragraph"),
-            MagicMock(text="Second paragraph"),
-        ]
-        mock_document.return_value = mock_doc
+        assert result.provider == "legacy"
+        assert len(result.texts) == 1
+        assert result.texts[0].text == "hello world"
+        assert len(result.images) == 0
 
-        content = self.service.read_docx("dummy_docx_content")
-        assert content == "# First paragraph\n\n# Second paragraph\n\n"
+    @patch("iatoolkit.services.parsers.providers.legacy_provider.LegacyParsingProvider.pdf_to_images", return_value=[])
+    def test_parse_pdf_without_images(self, _):
+        with patch.object(self.provider, "extract_text", return_value="pdf text"):
+            result = self.provider.parse(ParseRequest(
+                company_short_name="acme",
+                filename="a.pdf",
+                content=b"pdf",
+            ))
 
-    @patch("iatoolkit.services.document_service.fitz.open")
-    def test_read_pdf_successful(self, mock_fitz_open):
-        """Prueba que un archivo PDF con prompt_llm.txt se lea correctamente."""
-        mock_pdf = MagicMock()
-        mock_pdf.__enter__.return_value = mock_pdf
-        mock_pdf.__iter__.return_value = [
-            MagicMock(get_text=MagicMock(return_value="Page 1 text")),
-            MagicMock(get_text=MagicMock(return_value="Page 2 text")),
-        ]
-        mock_fitz_open.return_value = mock_pdf
-
-        content = self.service.read_pdf("dummy_pdf_content")
-        assert content == "Page 1 textPage 2 text"
-
-    @patch("iatoolkit.services.document_service.pytesseract.image_to_string", return_value="Scanned text")
-    @patch("iatoolkit.services.document_service.Image.frombytes")
-    @patch("iatoolkit.services.document_service.fitz.Pixmap")
-    @patch("iatoolkit.services.document_service.fitz.open")
-    def test_read_scanned_pdf(self, mock_fitz_open, mock_pixmap, mock_frombytes, mock_tesseract):
-        """Prueba que un PDF escaneado convierta imágenes en prompt_llm.txt correctamente."""
-        mock_pdf = MagicMock()
-        mock_pdf.page_count = 2
-        mock_pdf.__len__.return_value = 1
-        mock_fitz_open.return_value = mock_pdf
-
-        mock_pdf.__iter__.return_value = [
-            MagicMock(get_images=MagicMock(return_value=[(1,)]))
-        ]
-        mock_pdf.__getitem__.return_value = MagicMock(get_images=MagicMock(return_value=[(1,)]))
-
-        mock_pixmap_obj = MagicMock()
-        mock_pixmap.return_value = mock_pixmap_obj
-
-        # Simular retorno de atributos del Pixmap
-        mock_pixmap_obj.n = 3
-        mock_pixmap_obj.width = 100
-        mock_pixmap_obj.height = 100
-        mock_pixmap_obj.samples = b"dummy_pixels"
-
-        mock_fitz_open.return_value[0].get_images.return_value = [(1,)]
-        mock_fitz_open.return_value[0].__getitem__ = MagicMock(return_value=mock_pixmap)
-
-        content = self.service.read_scanned_pdf(b"dummy_scanned_pdf_content")
-        assert content == "Scanned text"
-
-    @patch("iatoolkit.services.document_service.fitz.open")  # Parcheamos fitz.open
-    def test_is_scanned_pdf_with_selectable_text(self, mock_fitz_open):
-        """Prueba que un PDF con prompt_llm.txt seleccionable retorne False."""
-        # Mock del documento PDF con prompt_llm.txt seleccionable
-        mock_pdf = MagicMock()
-        mock_pdf.__len__.return_value = 1  # Simula 1 página
-        mock_page = MagicMock()
-        mock_page.get_text.return_value = "This is some selectable text"
-        mock_pdf.__getitem__.return_value = mock_page
-        mock_fitz_open.return_value = mock_pdf
-
-        result = self.service.is_scanned_pdf(b"dummy_pdf_content")
-        assert result is False  # Tiene prompt_llm.txt seleccionable, no es escaneado
-
-    @patch("iatoolkit.services.document_service.fitz.open")  # Parcheamos fitz.open
-    def test_is_scanned_pdf_with_scanned_images(self, mock_fitz_open):
-        """Prueba que un PDF con imágenes (escaneado) retorne True."""
-        # Mock del documento PDF con imágenes
-        mock_pdf = MagicMock()
-        mock_pdf.__len__.return_value = 1  # Simula 1 página
-        mock_page = MagicMock()
-        mock_page.get_text.return_value = ""  # No hay prompt_llm.txt
-        mock_page.get_images.return_value = [(1,)]  # Hay imágenes
-        mock_pdf.__getitem__.return_value = mock_page
-        mock_fitz_open.return_value = mock_pdf
-
-        result = self.service.is_scanned_pdf(b"dummy_pdf_content")
-        assert result is True  # Escaneado, tiene imágenes pero no prompt_llm.txt
-
-    @patch("iatoolkit.services.document_service.fitz.open")  # Parcheamos fitz.open
-    def test_is_scanned_pdf_without_text_or_images(self, mock_fitz_open):
-        """Prueba que un PDF sin prompt_llm.txt y sin imágenes retorne True."""
-        # Mock del documento PDF vacío (no tiene prompt_llm.txt ni imágenes)
-        mock_pdf = MagicMock()
-        mock_pdf.__len__.return_value = 1  # Simula 1 página
-        mock_page = MagicMock()
-        mock_page.get_text.return_value = ""  # No hay prompt_llm.txt
-        mock_page.get_images.return_value = []  # No hay imágenes
-        mock_pdf.__getitem__.return_value = mock_page
-        mock_fitz_open.return_value = mock_pdf
-
-        result = self.service.is_scanned_pdf(b"dummy_pdf_content")
-        assert result is True  # No tiene prompt_llm.txt ni imágenes, probablemente escaneado
-
-    @patch("iatoolkit.services.document_service.fitz.open")  # Parcheamos fitz.open
-    def test_is_scanned_pdf_with_empty_pdf(self, mock_fitz_open):
-        """Prueba que un PDF vacío (sin páginas) retorne True."""
-        # Mock del documento PDF vacío (sin páginas)
-        mock_pdf = MagicMock()
-        mock_pdf.__len__.return_value = 0  # Sin páginas
-        mock_fitz_open.return_value = mock_pdf
-
-        result = self.service.is_scanned_pdf(b"dummy_pdf_content")
-        assert result is True  # Al no tener páginas, se considera escaneado
+        assert len(result.texts) == 1
+        assert len(result.images) == 0

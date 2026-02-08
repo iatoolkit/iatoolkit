@@ -8,24 +8,21 @@ from iatoolkit.repositories.models import Document, VSDoc, Company, DocumentStat
 from iatoolkit.repositories.document_repo import DocumentRepo
 from iatoolkit.repositories.vs_repo import VSRepo
 from iatoolkit.repositories.models import CollectionType
-from iatoolkit.services.document_service import DocumentService
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.services.storage_service import StorageService
+from iatoolkit.services.parsers.parsing_service import ParsingService
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from iatoolkit.services.visual_kb_service import VisualKnowledgeBaseService
-from iatoolkit.services.docling_service import DoclingService
 from sqlalchemy import desc
-from typing import Dict, Any
+from typing import Any
 import json
 from iatoolkit.common.exceptions import IAToolkitException
-import base64
 import logging
 import hashlib
 from typing import List, Optional, Union
 from datetime import datetime
 from injector import inject
-import fitz
 
 
 class KnowledgeBaseService:
@@ -39,19 +36,17 @@ class KnowledgeBaseService:
                  document_repo: DocumentRepo,
                  vs_repo: VSRepo,
                  visual_kb_service: VisualKnowledgeBaseService,
-                 document_service: DocumentService,
+                 parsing_service: ParsingService,
                  storage_service: StorageService,
                  profile_service: ProfileService,
-                 i18n_service: I18nService,
-                 docling_service: DoclingService):
+                 i18n_service: I18nService):
         self.document_repo = document_repo
         self.vs_repo = vs_repo
         self.visual_kb_service = visual_kb_service
-        self.document_service = document_service
+        self.parsing_service = parsing_service
         self.storage_service = storage_service
         self.profile_service = profile_service
         self.i18n_service = i18n_service
-        self.docling_service = docling_service
 
         # Configure LangChain for intelligent text splitting
         self.text_splitter = RecursiveCharacterTextSplitter(
@@ -69,8 +64,8 @@ class KnowledgeBaseService:
                              collection: str = None) -> Document:
         """
         Synchronously processes a document through the entire RAG pipeline:
-        1. Saves initial metadata and raw content (base64) to the SQL Document table.
-        2. Extracts text using DocumentService (handles OCR, PDF, DOCX).
+        1. Saves initial metadata and raw content reference to the SQL Document table.
+        2. Parses content via configured parsing provider (docling/legacy/custom).
         3. Splits the text into semantic chunks using LangChain.
         4. Vectorizes and saves chunks to the Vector Store (VSRepo).
         5. Updates the document status to ACTIVE or FAILED.
@@ -178,57 +173,50 @@ class KnowledgeBaseService:
             document.status = DocumentStatus.PROCESSING
             session.commit()
 
-            # B. Structured Extraction (Docling) or fallback to legacy text extraction
-            extracted_text = None
-            structured_result = None
-            if self.docling_service and self.docling_service.enabled and self.docling_service.supports(document.filename):
-                try:
-                    structured_result = self.docling_service.convert(document.filename, raw_content)
-                    extracted_text = structured_result.full_text
-                except Exception as e:
-                    logging.warning(f"Docling failed for {document.filename}, falling back to legacy extraction: {e}")
+            # B. Provider-based parsing (docling/legacy/custom)
+            parse_result = self.parsing_service.parse_document(
+                company_short_name=company.short_name,
+                filename=document.filename,
+                content=raw_content,
+                metadata=document.meta or {},
+                collection_id=document.collection_type_id,
+                document_id=document.id,
+            )
 
-            if extracted_text is None:
-                extracted_text = self.document_service.file_to_txt(document.filename, raw_content)
+            extracted_text = "\n\n".join([item.text for item in parse_result.texts if item.text]).strip()
+            if not extracted_text and parse_result.tables:
+                extracted_text = "\n\n".join([item.text for item in parse_result.tables if item.text]).strip()
 
-            if not extracted_text:
-                raise ValueError(self.i18n_service.t('rag.ingestion.empty_text'))
+            # Backward compatibility until document.content is removed in phase 2
+            document.content = extracted_text or ""
 
-            # Update the extracted content in the original document record
-            document.content = extracted_text
+            # Persist parser traceability
+            doc_meta = dict(document.meta or {})
+            doc_meta["parser_provider"] = parse_result.provider
+            if parse_result.provider_version:
+                doc_meta["parser_version"] = parse_result.provider_version
+            if parse_result.warnings:
+                doc_meta["parser_warnings"] = parse_result.warnings
+            document.meta = doc_meta
 
-            # C. Splitting & Chunking (LangChain)
+            # C. Splitting & chunking
             vs_docs = []
             block_index = 0
             n_images = 0
             n_tables = 0
 
-            if structured_result:
-                # 1) Creation of chunks for structured text
-                text_docs, block_index = self._create_structured_text_chunks(document, structured_result, block_index)
-                vs_docs.extend(text_docs)
+            text_docs, block_index = self._create_text_chunks(document, parse_result.texts, block_index)
+            vs_docs.extend(text_docs)
 
-                # 2) Creation of chunks for tables
-                table_docs, block_index, n_tables = self._create_table_chunks(document, structured_result, block_index)
-                vs_docs.extend(table_docs)
-            else:
-                # non-docling results
-                chunks = self.text_splitter.split_text(extracted_text)
-                for chunk_text in chunks:
-                    vs_docs.append(VSDoc(
-                        company_id=document.company_id,
-                        document_id=document.id,
-                        text=chunk_text
-                    ))
+            table_docs, block_index, n_tables = self._create_table_chunks(document, parse_result.tables, block_index)
+            vs_docs.extend(table_docs)
 
-            # E. Add all the chunks to the Vector Storage
-            self.vs_repo.add_document(company.short_name, vs_docs)
+            # E. Add chunks to vector storage
+            if vs_docs:
+                self.vs_repo.add_document(company.short_name, vs_docs)
 
-            # F. Image ingestion (Docling images or fallback)
-            if structured_result and structured_result.images:
-                n_images = self._ingest_structured_images(company, document, structured_result)
-            elif document.filename.lower().endswith('.pdf'):
-                n_images = self._ingest_fallback_images(company, document, raw_content)
+            # F. Image ingestion
+            n_images = self._ingest_parsed_images(company, document, parse_result.images)
 
             # G. Finalize
             document.status = DocumentStatus.ACTIVE
@@ -251,30 +239,26 @@ class KnowledgeBaseService:
             error_msg = self.i18n_service.t('rag.ingestion.processing_failed', error=str(e))
             raise IAToolkitException(IAToolkitException.ErrorType.LOAD_DOCUMENT_ERROR, error_msg)
 
-    def _create_structured_text_chunks(self, document: Document, structured_result, start_block_index: int) -> tuple[List[VSDoc], int]:
-        """Helper 1: Creates text chunks from structured result."""
+    def _create_text_chunks(self, document: Document, parsed_texts, start_block_index: int) -> tuple[List[VSDoc], int]:
+        """Helper 1: Creates text chunks from parser result."""
         vs_docs = []
         block_index = start_block_index
 
-        for block in structured_result.text_blocks:
-            if not block.text:
+        for item in parsed_texts:
+            if not item.text:
                 continue
-            chunks = self.text_splitter.split_text(block.text)
+            chunks = self.text_splitter.split_text(item.text)
             for chunk_index, chunk_text in enumerate(chunks):
                 meta = {
-                    "block_type": block.block_type,
-                    "page_start": block.page_start,
-                    "page_end": block.page_end,
-                    "section_title": block.section_title,
+                    "source_type": "text",
                     "block_index": block_index,
                     "chunk_index": chunk_index
                 }
                 if document.meta:
                     meta.update(document.meta)
 
-                # if docling brings metadata specific to the block, we use it (overrides global if collision)
-                if block.meta:
-                    meta.update(block.meta)
+                if item.meta:
+                    meta.update(item.meta)
                 vs_docs.append(VSDoc(
                     company_id=document.company_id,
                     document_id=document.id,
@@ -284,34 +268,30 @@ class KnowledgeBaseService:
             block_index += 1
         return vs_docs, block_index
 
-    def _create_table_chunks(self, document: Document, structured_result, start_block_index: int) -> tuple[List[VSDoc], int, int]:
-        """Helper 2: Creates chunks for tables."""
+    def _create_table_chunks(self, document: Document, parsed_tables, start_block_index: int) -> tuple[List[VSDoc], int, int]:
+        """Helper 2: Creates chunks for parsed tables."""
         vs_docs = []
         block_index = start_block_index
-        table_index = 0
         n_tables = 0
 
-        for table in structured_result.tables:
+        for table_index, table in enumerate(parsed_tables, start=1):
             n_tables += 1
-            table_index += 1
 
             # 1. Sanitize the JSON to remove heavy visual metadata (bbox, coords)
             clean_json = self._sanitize_table_data(table.table_json)
 
-            # 2. Prefer markdown, fallback to clean JSON string
-            table_text = table.markdown or json.dumps(clean_json, ensure_ascii=False)
+            # 2. Use provider text, fallback to clean JSON string
+            table_text = table.text or json.dumps(clean_json, ensure_ascii=False)
             if not table_text:
                 continue
 
             # 3. Serialize clean JSON for metadata
             table_json_str = json.dumps(clean_json, ensure_ascii=False) if clean_json else None
 
-            # every table in it's own chunk
+            # Every table in its own chunk
             meta = {
-                "block_type": "table",
+                "source_type": "table",
                 "table_index": table_index,
-                "table_title": table.title,
-                "table_page": table.page,
                 "table_json": table_json_str,
                 "block_index": block_index,
             }
@@ -320,6 +300,7 @@ class KnowledgeBaseService:
 
             if table.meta:
                 meta.update(table.meta)
+
             vs_docs.append(VSDoc(
                 company_id=document.company_id,
                 document_id=document.id,
@@ -351,54 +332,23 @@ class KnowledgeBaseService:
         else:
             return data
 
-    def _ingest_structured_images(self, company: Company, document: Document, structured_result) -> int:
-        """Helper 3: Ingests images found in structured result."""
+    def _ingest_parsed_images(self, company: Company, document: Document, parsed_images) -> int:
+        """Helper 3: Ingests normalized images returned by a parsing provider."""
         n_images = 0
-        for image in structured_result.images:
-            image_meta = image.meta or {}
-            if image.caption_text:
-                image_meta["caption_text"] = image.caption_text
-                image_meta["caption_source"] = image.caption_source or "extracted"
+        for image in parsed_images:
             try:
                 self.visual_kb_service.ingest_document_image_sync(
                     company=company,
                     parent_document=document,
                     filename=image.filename,
                     content=image.content,
-                    page=image.page,
-                    image_index=image.image_index,
-                    metadata=image_meta
+                    page=(image.meta or {}).get("page"),
+                    image_index=(image.meta or {}).get("image_index"),
+                    metadata=image.meta or {}
                 )
                 n_images += 1
             except Exception as e:
                 logging.warning(f"Failed to ingest image {image.filename}: {e}")
-        return n_images
-
-    def _ingest_fallback_images(self, company: Company, document: Document, raw_content: bytes) -> int:
-        """Helper 4: Ingests images via fallback method (PDF only)."""
-        n_images = 0
-        fallback_images = self.document_service.pdf_to_images(raw_content)
-        if fallback_images:
-            for index, pix in enumerate(fallback_images, start=1):
-                try:
-                    # FIX: Convertir CMYK a RGB si es necesario antes de guardar como PNG
-                    if pix.n - pix.alpha >= 4:  # cmyk (4) vs rgb (3)
-                        pix = fitz.Pixmap(fitz.csRGB, pix)
-
-                    image_bytes = pix.tobytes("png")
-                    image_filename = f"{document.filename}_img_{index}.png"
-                    self.visual_kb_service.ingest_document_image_sync(
-                        company=company,
-                        parent_document=document,
-                        filename=image_filename,
-                        content=image_bytes,
-                        page=None,
-                        image_index=index,
-                        metadata={}
-                    )
-                    n_images += 1
-                except Exception as e:
-                    logging.warning(f"Failed to ingest fallback image {index}: {e}")
         return n_images
 
 
