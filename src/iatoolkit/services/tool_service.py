@@ -124,12 +124,16 @@ class ToolService:
             doc_meta = item.get("meta") or {}
             source_type = chunk_meta.get("source_type", "unknown")
             filename = item.get("filename", "unknown")
+            document_url = item.get("url")
+            filename_link = ToolService._to_markdown_link(filename, document_url)
             page = chunk_meta.get("page") or chunk_meta.get("page_start")
             caption = chunk_meta.get("caption_text")
 
             header = {
                 "index": index,
-                "filename": filename,
+                "filename": filename_link,
+                "filename_raw": filename,
+                "document_url": document_url,
                 "source_type": source_type,
                 "page": page,
                 "caption_text": caption,
@@ -173,9 +177,19 @@ class ToolService:
                     # keep original string if it cannot be decoded
                     pass
 
+            filename = chunk.get("filename", "unknown")
+            document_url = chunk.get("url")
+            chunk["filename_link"] = ToolService._to_markdown_link(filename, document_url)
             chunk["chunk_meta"] = chunk_meta
             normalized.append(chunk)
         return normalized
+
+    @staticmethod
+    def _to_markdown_link(label: str, url: str | None) -> str:
+        text = label or "unknown"
+        if not url:
+            return text
+        return f"[{text}]({url})"
 
     def register_system_tools(self):
         """

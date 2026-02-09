@@ -233,10 +233,21 @@ class VisualKnowledgeBaseService:
             else:
                 url = None
 
+            if item.get('document_storage_key'):
+                document_url = self.storage_service.generate_presigned_url(
+                    company_short_name,
+                    item['document_storage_key']
+                )
+            else:
+                document_url = None
+
+            filename = item['filename']
             formatted_results.append({
                 "id": item['document_id'],
                 "image_id": item.get('document_image_id'),
-                "filename": item['filename'],
+                "filename": filename,
+                "filename_link": self._to_markdown_link(filename, document_url),
+                "document_url": document_url,
                 "url": url,
                 "score": item['score'],
                 "meta": item.get('meta', {}),
@@ -245,6 +256,13 @@ class VisualKnowledgeBaseService:
                 "image_index": item.get('image_index')
             })
         return formatted_results
+
+    @staticmethod
+    def _to_markdown_link(label: str, url: str | None) -> str:
+        text = label or "unknown"
+        if not url:
+            return text
+        return f"[{text}]({url})"
 
     def _extract_image_meta(self, content: bytes) -> dict:
         try:

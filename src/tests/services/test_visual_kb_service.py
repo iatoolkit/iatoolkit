@@ -157,6 +157,7 @@ class TestVisualKnowledgeBaseService:
         mock_results = [{
             'document_id': 1,
             'filename': 'pic.jpg',
+            'document_storage_key': 'doc_key_1',
             'storage_key': 'key1',
             'meta': {},
             'score': 0.95
@@ -177,6 +178,8 @@ class TestVisualKnowledgeBaseService:
         )
         assert len(results) == 1
         assert results[0]['url'] == "https://signed.url/pic.jpg"
+        assert results[0]['document_url'] == "https://signed.url/pic.jpg"
+        assert results[0]['filename_link'] == "[pic.jpg](https://signed.url/pic.jpg)"
         assert results[0]['score'] == 0.95
 
     def test_search_similar_images_success(self):
@@ -185,6 +188,7 @@ class TestVisualKnowledgeBaseService:
         mock_results = [{
             'document_id': 2,
             'filename': 'similar.jpg',
+            'document_storage_key': 'doc_key_2',
             'storage_key': 'key2',
             'meta': {},
             'score': 0.88
@@ -208,6 +212,8 @@ class TestVisualKnowledgeBaseService:
         )
         assert len(results) == 1
         assert results[0]['url'] == "https://signed.url/similar.jpg"
+        assert results[0]['document_url'] == "https://signed.url/similar.jpg"
+        assert results[0]['filename_link'] == "[similar.jpg](https://signed.url/similar.jpg)"
         assert results[0]['score'] == 0.88
 
     def test_search_similar_images_with_collection(self):
@@ -220,6 +226,7 @@ class TestVisualKnowledgeBaseService:
         mock_results = [{
             'document_id': 3,
             'filename': 'logo.jpg',
+            'document_storage_key': 'doc_key_3',
             'storage_key': 'key3',
             'meta': {},
             'score': 0.99

@@ -200,8 +200,9 @@ class TestVSRepo:
         # 2. Embedding mock (must use model_type='image')
         self.mock_embedding_service.embed_text.return_value = [0.9] # Vector query
 
-        # 3. DB Result (doc_id, filename, image_id, key, image_meta, page, index, doc_meta, distance)
-        db_rows = [(10, "img.jpg", 501, "path/img.jpg", {"w": 100}, 2, 1, {"type": "manual"}, 0.1)]
+        # 3. DB Result
+        # (doc_id, filename, doc_storage_key, image_id, image_storage_key, image_meta, page, index, doc_meta, distance)
+        db_rows = [(10, "img.jpg", "path/doc.pdf", 501, "path/img.jpg", {"w": 100}, 2, 1, {"type": "manual"}, 0.1)]
         self.mock_session.execute.return_value.fetchall.return_value = db_rows
 
         # Act
@@ -218,6 +219,7 @@ class TestVSRepo:
         assert results[0]['filename'] == "img.jpg"
         assert results[0]['score'] == 0.9 # 1 - 0.1 distance
         assert results[0]['document_image_id'] == 501
+        assert results[0]['document_storage_key'] == "path/doc.pdf"
         assert results[0]['document_meta'] == {"type": "manual"}
 
     def test_query_images_applies_metadata_filter(self):
@@ -281,8 +283,9 @@ class TestVSRepo:
         # 2. Embedding mock (must use embed_image)
         self.mock_embedding_service.embed_image.return_value = [0.8, 0.1, 0.1] # Visual vector
 
-        # 3. DB Result (doc_id, filename, image_id, key, image_meta, page, index, doc_meta, distance)
-        db_rows = [(20, "similar_photo.png", 702, "path/photo.png", {"w": 500}, 1, 1, {"type": "photo"}, 0.05)]
+        # 3. DB Result
+        # (doc_id, filename, doc_storage_key, image_id, image_storage_key, image_meta, page, index, doc_meta, distance)
+        db_rows = [(20, "similar_photo.png", "path/doc2.pdf", 702, "path/photo.png", {"w": 500}, 1, 1, {"type": "photo"}, 0.05)]
         self.mock_session.execute.return_value.fetchall.return_value = db_rows
 
         fake_image_bytes = b"fake_content"
@@ -304,6 +307,7 @@ class TestVSRepo:
         assert results[0]['filename'] == "similar_photo.png"
         assert results[0]['score'] == 0.95 # 1 - 0.05 distance
         assert results[0]['document_image_id'] == 702
+        assert results[0]['document_storage_key'] == "path/doc2.pdf"
         assert results[0]['document_meta'] == {"type": "photo"}
 
     def test_query_images_by_image_embedding_failure(self):

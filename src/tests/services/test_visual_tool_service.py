@@ -42,6 +42,7 @@ class TestVisualToolService:
         # Arrange
         mock_results = [
             {'filename': 'logo.png', 'score': 0.95, 'url': 'http://img.url/1',
+             'document_url': 'http://doc.url/1',
              'page': 2, 'image_index': 1,
              'meta': {'caption_text': 'Logo principal'},
              'document_meta': {'type': 'brand_asset'}},
@@ -68,6 +69,7 @@ class TestVisualToolService:
         # Verificar item con URL
         assert "translated[rag.visual.view_image]" in response
         assert '<a href="http://img.url/1"' in response
+        assert '<a href="http://doc.url/1"' in response
         assert "Logo principal" in response
         assert "Document metadata" in response
 
@@ -172,3 +174,26 @@ class TestVisualToolService:
             collection=None,
             metadata_filter={"doc.type": "invoice"}
         )
+
+    def test_image_search_structured_output_serializes_filename_as_document_link(self):
+        self.mock_visual_kb_service.search_images.return_value = [
+            {
+                "filename": "contract.pdf",
+                "document_url": "https://doc.example/contract.pdf",
+                "url": "https://img.example/contract.png",
+                "score": 0.9,
+                "meta": {},
+                "document_meta": {},
+                "page": 1,
+                "image_index": 1,
+            }
+        ]
+
+        payload = self.service.image_search(
+            self.company_short_name,
+            "contract",
+            structured_output=True,
+        )
+
+        assert payload["status"] == "success"
+        assert "[contract.pdf](https://doc.example/contract.pdf)" in payload["serialized_context"]

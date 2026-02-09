@@ -31,6 +31,12 @@ class PromptType(str, enum.Enum):
     AGENT = "agent"
 
 
+# Cross-database JSON type:
+# - PostgreSQL: JSONB (for jsonb operators/functions/indexing)
+# - SQLite/others (tests): JSON
+JSON_NATIVE = JSON().with_variant(JSONB, "postgresql")
+
+
 # relation table for many-to-many relationship between companies and users
 user_company = Table('iat_user_company',
                      Base.metadata,
@@ -207,7 +213,7 @@ class Document(Base):
     user_identifier = Column(String, nullable=True)
     filename = Column(String, nullable=False, index=True)
     status = Column(Enum(DocumentStatus), default=DocumentStatus.PENDING, nullable=False)
-    meta = Column(JSONB, nullable=True)
+    meta = Column(JSON_NATIVE, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
     # Stores the path in the cloud storage (S3/GCS)
@@ -245,7 +251,7 @@ class DocumentImage(Base):
     page = Column(Integer, nullable=True)
     image_index = Column(Integer, nullable=True)
     storage_key = Column(String, index=True, nullable=True)
-    meta = Column(JSONB, nullable=True)
+    meta = Column(JSON_NATIVE, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
     document = relationship("Document", back_populates="document_images")
@@ -291,7 +297,7 @@ class VSDoc(Base):
     document_id = Column(Integer, ForeignKey('iat_documents.id',
                         ondelete='CASCADE'), nullable=False)
     text = Column(Text, nullable=False)
-    meta = Column(JSONB, nullable=True)
+    meta = Column(JSON_NATIVE, nullable=True)
 
     # the size of this vector is dynamic to support multiple models
     # (e.g. OpenAI=1536, HuggingFace=384, etc.)

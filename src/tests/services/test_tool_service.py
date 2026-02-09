@@ -260,6 +260,7 @@ class TestToolService:
             "id": 1,
             "document_id": 10,
             "filename": "invoice.pdf",
+            "url": "https://signed.example/invoice.pdf",
             "text": "Total amount is 1200",
             "meta": {"type": "invoice"},
             "chunk_meta": {"source_type": "table", "caption_text": "Invoice totals", "table_json": "{\"a\":1}"}
@@ -277,7 +278,9 @@ class TestToolService:
         assert result["count"] == 1
         assert isinstance(result["chunks"], list)
         assert isinstance(result["chunks"][0]["chunk_meta"]["table_json"], dict)
+        assert result["chunks"][0]["filename_link"] == "[invoice.pdf](https://signed.example/invoice.pdf)"
         assert "serialized_context" in result
+        assert "[invoice.pdf](https://signed.example/invoice.pdf)" in result["serialized_context"]
         assert "Total amount is 1200" in result["serialized_context"]
         assert "table_json=" in result["serialized_context"]
 

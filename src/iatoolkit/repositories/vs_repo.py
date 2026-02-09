@@ -273,6 +273,7 @@ class VSRepo:
                   SELECT
                       doc.id,
                       doc.filename,
+                      doc.storage_key,
                       img_ref.id,
                       img_ref.storage_key,
                       img_ref.meta,
@@ -314,16 +315,17 @@ class VSRepo:
 
             image_results = []
             for row in rows:
-                score = 1 - row[8]
+                score = 1 - row[9]
                 image_results.append({
                     'document_id': row[0],
                     'filename': row[1],
-                    'document_image_id': row[2],
-                    'storage_key': row[3],
-                    'meta': row[4] or {},
-                    'page': row[5],
-                    'image_index': row[6],
-                    'document_meta': row[7] or {},
+                    'document_storage_key': row[2],
+                    'document_image_id': row[3],
+                    'storage_key': row[4],
+                    'meta': row[5] or {},
+                    'page': row[6],
+                    'image_index': row[7],
+                    'document_meta': row[8] or {},
                     'score': score
                 })
 

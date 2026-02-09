@@ -127,13 +127,19 @@ class VisualToolService:
             filename = item.get("filename", "imagen")
             score = item.get("score", 0.0)
             url = item.get("url")
+            document_url = item.get("document_url")
             page = item.get("page")
             image_index = item.get("image_index")
             image_meta = item.get("meta") or {}
             doc_meta = item.get("document_meta") or {}
             caption_text = image_meta.get("caption_text")
+            filename_html = filename
+            if document_url:
+                filename_html = (
+                    f'<a href="{document_url}" target="_blank" rel="noopener noreferrer">{filename}</a>'
+                )
 
-            response += f"<li><strong>{filename}</strong> (Score: {score:.2f})"
+            response += f"<li><strong>{filename_html}</strong> (Score: {score:.2f})"
             if page is not None:
                 response += f"<br><small>Page: {page}</small>"
             if image_index is not None:
@@ -183,9 +189,13 @@ class VisualToolService:
         for index, item in enumerate(results, start=1):
             meta = item.get("meta") or {}
             doc_meta = item.get("document_meta") or {}
+            filename = item.get("filename")
+            document_url = item.get("document_url")
+            filename_link = VisualToolService._to_markdown_link(filename, document_url)
             lines.append(
-                f"[image {index}] filename={item.get('filename')} score={item.get('score')} "
-                f"page={item.get('page')} image_index={item.get('image_index')} url={item.get('url')}"
+                f"[image {index}] filename={filename_link} score={item.get('score')} "
+                f"page={item.get('page')} image_index={item.get('image_index')} "
+                f"url={item.get('url')} document_url={document_url}"
             )
             if meta:
                 lines.append(f"meta={json.dumps(meta, ensure_ascii=False, default=str)}")
@@ -193,6 +203,13 @@ class VisualToolService:
                 lines.append(f"document_meta={json.dumps(doc_meta, ensure_ascii=False, default=str)}")
             lines.append("")
         return "\n".join(lines).strip()
+
+    @staticmethod
+    def _to_markdown_link(label: str | None, url: str | None) -> str:
+        text = label or "imagen"
+        if not url:
+            return text
+        return f"[{text}]({url})"
 
     @staticmethod
     def _safe_json(value: dict) -> str:
