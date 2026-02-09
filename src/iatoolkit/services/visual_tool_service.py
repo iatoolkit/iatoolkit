@@ -152,10 +152,7 @@ class VisualToolService:
 
             if url:
                 view_text = self.i18n_service.t('rag.visual.view_image')
-                response += (
-                    f' — <a href="{url}" target="_blank" rel="noopener noreferrer">{view_text}</a>'
-                    f'<br><img src="{url}" alt="{filename}" style="max-width: 300px; height: auto; border-radius: 5px; margin-top: 5px;" />'
-                )
+                response += f' — <a href="{url}" target="_blank" rel="noopener noreferrer">{view_text}</a>'
             else:
                 unavailable_text = self.i18n_service.t('rag.visual.image_unavailable')
                 response += f"<br><em>({unavailable_text})</em>"
