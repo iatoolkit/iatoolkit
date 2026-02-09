@@ -15,6 +15,32 @@ from decimal import Decimal
 import yaml
 from cryptography.fernet import Fernet
 import base64
+from PIL import Image
+import io
+import time
+from functools import wraps
+
+
+def measure_time(func):
+    """
+    Decorator to measure execution time of a function or method.
+    Logs the execution time with the function name.
+    """
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start_time = time.time()
+        try:
+            result = func(*args, **kwargs)
+            elapsed = time.time() - start_time
+            func_name = func.__name__
+            logging.info(f"[TIMING] {func_name} executed in {elapsed:.2f} seconds")
+            return result
+        except Exception as e:
+            elapsed = time.time() - start_time
+            func_name = func.__name__
+            logging.error(f"[TIMING] {func_name} failed after {elapsed:.2f} seconds: {str(e)}")
+            raise
+    return wrapper
 
 
 class Utility:
