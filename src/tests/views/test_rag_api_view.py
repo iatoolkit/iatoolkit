@@ -10,6 +10,7 @@ from datetime import datetime
 
 from iatoolkit.views.rag_api_view import RagApiView
 from iatoolkit.services.knowledge_base_service import KnowledgeBaseService
+from iatoolkit.services.visual_kb_service import VisualKnowledgeBaseService
 from iatoolkit.services.auth_service import AuthService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.common.util import Utility
@@ -27,6 +28,7 @@ class TestRagApiView:
 
         # Mock dependencies
         self.mock_kb_service = MagicMock(spec=KnowledgeBaseService)
+        self.mock_visual_kb_service = MagicMock(spec=VisualKnowledgeBaseService)
         self.mock_auth_service = MagicMock(spec=AuthService)
         self.mock_utility = MagicMock(spec=Utility)
         self.mock_i8n_service = MagicMock(spec=I18nService)
@@ -37,6 +39,7 @@ class TestRagApiView:
         rag_view = RagApiView.as_view(
             'rag_api',
             knowledge_base_service=self.mock_kb_service,
+            visual_kb_service=self.mock_visual_kb_service,
             auth_service=self.mock_auth_service,
             i18n_service=self.mock_i8n_service,
             utility=self.mock_utility
@@ -64,6 +67,27 @@ class TestRagApiView:
             view_func=rag_view,
             methods=['POST'],
             defaults={'action': 'search'}
+        )
+
+        self.app.add_url_rule(
+            '/<company_short_name>/api/rag/search/text',
+            view_func=rag_view,
+            methods=['POST'],
+            defaults={'action': 'search_text'}
+        )
+
+        self.app.add_url_rule(
+            '/<company_short_name>/api/rag/search/image',
+            view_func=rag_view,
+            methods=['POST'],
+            defaults={'action': 'search_image'}
+        )
+
+        self.app.add_url_rule(
+            '/<company_short_name>/api/rag/search/visual',
+            view_func=rag_view,
+            methods=['POST'],
+            defaults={'action': 'search_visual'}
         )
 
         # 4. Get Content (New route)
@@ -316,3 +340,128 @@ class TestRagApiView:
         response = self.client.post(f'/{self.company_short_name}/api/rag/search', json={"k": 5})
         assert response.status_code == 400
         assert 'translated:rag.search.query_required' in response.get_json()['message']
+
+    def test_search_text_endpoint_success(self):
+        self.mock_kb_service.search.return_value = [{
+            "id": 11,
+            "document_id": 3,
+            "filename": "contract.pdf",
+            "url": "https://signed/doc",
+            "text": "payment terms",
+            "chunk_meta": {"source_type": "text", "page_start": 2},
+            "meta": {"type": "contract"},
+        }]
+
+        response = self.client.post(f'/{self.company_short_name}/api/rag/search/text', json={
+            "query": "payment terms",
+            "collection": "legal",
+            "n_results": 3,
+            "metadata_filter": [{"key": "source_type", "value": "text"}]
+        })
+
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["result"] == "success"
+        assert data["mode"] == "text"
+        assert data["count"] == 1
+        assert data["results"][0]["filename_link"] == "[contract.pdf](https://signed/doc)"
+        assert "serialized_context" in data
+
+        self.mock_kb_service.search.assert_called_with(
+            company_short_name=self.company_short_name,
+            query="payment terms",
+            n_results=3,
+            collection="legal",
+            metadata_filter=[{"key": "source_type", "value": "text"}],
+        )
+
+    def test_search_image_endpoint_success(self):
+        self.mock_visual_kb_service.search_images.return_value = [{
+            "id": 9,
+            "image_id": 44,
+            "filename": "manual.pdf",
+            "document_url": "https://signed/manual",
+            "filename_link": "[manual.pdf](https://signed/manual)",
+            "url": "https://signed/image",
+            "score": 0.92,
+            "page": 1,
+            "image_index": 1,
+            "meta": {"caption_text": "front page"},
+            "document_meta": {"type": "manual"},
+        }]
+
+        response = self.client.post(f'/{self.company_short_name}/api/rag/search/image', json={
+            "query": "front page",
+            "n_results": 4
+        })
+
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["result"] == "success"
+        assert data["mode"] == "image"
+        assert data["count"] == 1
+        assert data["results"][0]["image_url"] == "https://signed/image"
+        assert data["results"][0]["filename_link"] == "[manual.pdf](https://signed/manual)"
+
+        self.mock_visual_kb_service.search_images.assert_called_with(
+            company_short_name=self.company_short_name,
+            query="front page",
+            n_results=4,
+            collection=None,
+            metadata_filter=None,
+        )
+
+    def test_search_visual_endpoint_success(self):
+        self.mock_utility.normalize_base64_payload.return_value = b"img-bytes"
+        self.mock_visual_kb_service.search_similar_images.return_value = [{
+            "id": 15,
+            "image_id": 77,
+            "filename": "invoice.pdf",
+            "document_url": "https://signed/invoice",
+            "filename_link": "[invoice.pdf](https://signed/invoice)",
+            "url": "https://signed/invoice-img",
+            "score": 0.81,
+            "page": 2,
+            "image_index": 3,
+            "meta": {},
+            "document_meta": {},
+        }]
+
+        response = self.client.post(f'/{self.company_short_name}/api/rag/search/visual', json={
+            "image_base64": "aGVsbG8=",
+            "collection": "invoices",
+            "n_results": 2
+        })
+
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["result"] == "success"
+        assert data["mode"] == "visual"
+        assert data["count"] == 1
+        assert data["results"][0]["filename"] == "invoice.pdf"
+        assert data["results"][0]["image_url"] == "https://signed/invoice-img"
+
+        self.mock_visual_kb_service.search_similar_images.assert_called_with(
+            company_short_name=self.company_short_name,
+            image_content=b"img-bytes",
+            n_results=2,
+            collection="invoices",
+            metadata_filter=None,
+        )
+
+    def test_search_visual_missing_image_base64(self):
+        response = self.client.post(f'/{self.company_short_name}/api/rag/search/visual', json={})
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["result"] == "error"
+        assert data["error_code"] == "INVALID_REQUEST"
+
+    def test_search_text_invalid_n_results(self):
+        response = self.client.post(f'/{self.company_short_name}/api/rag/search/text', json={
+            "query": "x",
+            "n_results": 99
+        })
+        assert response.status_code == 400
+        data = response.get_json()
+        assert data["result"] == "error"
+        assert data["error_code"] == "INVALID_REQUEST"

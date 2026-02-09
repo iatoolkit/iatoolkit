@@ -111,7 +111,6 @@ class IAToolkit:
         self._setup_cli_commands()
         self._setup_request_globals()
         self._setup_context_processors()
-        self._setup_docling()
 
         # Step 9: define the download_dir
         self._setup_download_dir()

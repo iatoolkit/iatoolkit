@@ -138,10 +138,28 @@ def register_views(app):
                      defaults={'action': 'delete_file'})
 
     # 3. Search Lab
-    app.add_url_rule('/api/rag/<company_short_name>/search',
+    app.add_url_rule('/<company_short_name>/api/rag/search',
                      view_func=rag_view,
                      methods=['POST'],
                      defaults={'action': 'search'})
+
+    # 3.1 Direct vector text search (no LLM orchestration)
+    app.add_url_rule('/<company_short_name>/api/rag/search/text',
+                     view_func=rag_view,
+                     methods=['POST'],
+                     defaults={'action': 'search_text'})
+
+    # 3.2 Direct vector image search from text (no LLM orchestration)
+    app.add_url_rule('/<company_short_name>/api/rag/search/image',
+                     view_func=rag_view,
+                     methods=['POST'],
+                     defaults={'action': 'search_image'})
+
+    # 3.3 Direct visual search from one image (no LLM orchestration)
+    app.add_url_rule('/api/rag/<company_short_name>/search/visual',
+                     view_func=rag_view,
+                     methods=['POST'],
+                     defaults={'action': 'search_visual'})
 
     # 4. Get File Content (View/Download)
     app.add_url_rule('/api/rag/<company_short_name>/files/<int:document_id>/content',
@@ -201,7 +219,6 @@ def register_views(app):
 
     app.add_url_rule('/version', 'version',
                      lambda: jsonify({"iatoolkit_version": current_app.config.get('VERSION', 'N/A')}))
-
 
 
 
