@@ -121,6 +121,12 @@ def register_views(app):
         view_func=tool_view,
         methods=['GET', 'PUT', 'DELETE']
     )
+    app.add_url_rule(
+        '/<company_short_name>/api/tools/execute',
+        view_func=tool_view,
+        methods=['POST'],
+        defaults={'action': 'execute'}
+    )
 
     # --- RAG API Routes ---
     rag_view = RagApiView.as_view('rag_api')
@@ -219,6 +225,5 @@ def register_views(app):
 
     app.add_url_rule('/version', 'version',
                      lambda: jsonify({"iatoolkit_version": current_app.config.get('VERSION', 'N/A')}))
-
 
 

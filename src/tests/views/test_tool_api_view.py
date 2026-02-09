@@ -6,7 +6,9 @@ from flask import Flask
 from iatoolkit.views.tool_api_view import ToolApiView
 from iatoolkit.services.auth_service import AuthService
 from iatoolkit.services.tool_service import ToolService
+from iatoolkit.services.dispatcher_service import Dispatcher
 from iatoolkit.repositories.profile_repo import ProfileRepo
+from iatoolkit.repositories.models import Tool
 from iatoolkit.common.exceptions import IAToolkitException
 
 class TestToolApiView:
@@ -21,6 +23,7 @@ class TestToolApiView:
         self.mock_auth = MagicMock(spec=AuthService)
         self.mock_profile_repo = MagicMock(spec=ProfileRepo)
         self.mock_tool_service = MagicMock(spec=ToolService)
+        self.mock_dispatcher = MagicMock(spec=Dispatcher)
 
         # Default Auth Success
         self.mock_auth.verify.return_value = {"success": True, "status_code": 200}
@@ -30,7 +33,8 @@ class TestToolApiView:
             'tool_api',
             auth_service=self.mock_auth,
             profile_repo=self.mock_profile_repo,
-            tool_service=self.mock_tool_service
+            tool_service=self.mock_tool_service,
+            dispatcher=self.mock_dispatcher
         )
 
         # Route registration for testing
@@ -43,6 +47,12 @@ class TestToolApiView:
             '/<company_short_name>/api/tools/<int:tool_id>',
             view_func=view,
             methods=['GET', 'PUT', 'DELETE']
+        )
+        self.app.add_url_rule(
+            '/<company_short_name>/api/tools/execute',
+            view_func=view,
+            methods=['POST'],
+            defaults={'action': 'execute'}
         )
 
     # --- GET (List & Detail) ---
@@ -156,3 +166,63 @@ class TestToolApiView:
 
         resp = self.client.delete(f'/{self.MOCK_COMPANY}/api/tools/1')
         assert resp.status_code == 409
+
+    # --- EXECUTE NATIVE ---
+
+    def test_execute_native_tool_success(self):
+        """POST /api/tools/execute should run a NATIVE tool through dispatcher."""
+        tool_def = MagicMock()
+        tool_def.tool_type = Tool.TYPE_NATIVE
+        self.mock_tool_service.get_tool_definition.return_value = tool_def
+        self.mock_dispatcher.dispatch.return_value = {"status": "ok"}
+
+        payload = {
+            "tool_name": "identity_risk",
+            "kwargs": {"document": "abc"}
+        }
+
+        resp = self.client.post(f'/{self.MOCK_COMPANY}/api/tools/execute', json=payload)
+
+        assert resp.status_code == 200
+        assert resp.json["result"] == "success"
+        assert resp.json["tool_name"] == "identity_risk"
+        assert resp.json["data"] == {"status": "ok"}
+        self.mock_tool_service.get_tool_definition.assert_called_with(self.MOCK_COMPANY, "identity_risk")
+        self.mock_dispatcher.dispatch.assert_called_with(
+            company_short_name=self.MOCK_COMPANY,
+            function_name="identity_risk",
+            document="abc"
+        )
+
+    def test_execute_requires_tool_name(self):
+        """POST /api/tools/execute should return 400 when tool_name is missing."""
+        resp = self.client.post(f'/{self.MOCK_COMPANY}/api/tools/execute', json={"kwargs": {}})
+        assert resp.status_code == 400
+
+    def test_execute_requires_native_tool_type(self):
+        """POST /api/tools/execute should reject non-native tools."""
+        tool_def = MagicMock()
+        tool_def.tool_type = Tool.TYPE_SYSTEM
+        self.mock_tool_service.get_tool_definition.return_value = tool_def
+
+        resp = self.client.post(f'/{self.MOCK_COMPANY}/api/tools/execute', json={"tool_name": "iat_document_search"})
+        assert resp.status_code == 409
+
+    def test_execute_tool_not_found(self):
+        """POST /api/tools/execute should return 404 if tool does not exist."""
+        self.mock_tool_service.get_tool_definition.return_value = None
+
+        resp = self.client.post(f'/{self.MOCK_COMPANY}/api/tools/execute', json={"tool_name": "missing_tool"})
+        assert resp.status_code == 404
+
+    def test_execute_kwargs_must_be_object(self):
+        """POST /api/tools/execute should validate kwargs format."""
+        tool_def = MagicMock()
+        tool_def.tool_type = Tool.TYPE_NATIVE
+        self.mock_tool_service.get_tool_definition.return_value = tool_def
+
+        resp = self.client.post(f'/{self.MOCK_COMPANY}/api/tools/execute', json={
+            "tool_name": "identity_risk",
+            "kwargs": []
+        })
+        assert resp.status_code == 400
