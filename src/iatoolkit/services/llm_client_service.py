@@ -237,7 +237,11 @@ class llmClient:
                 if force_tool_name:
                     tool_choice_value = "required"
 
-                # Subsequent calls: don't send images (tool results contain what's needed)
+                # Subsequent calls: don't send images or tools (tool results contain what's needed)
+                # Exception: if force_tool_name is set (SQL retry), we need tools for the retry
+                tools_for_call = tools if force_tool_name else None
+                tool_choice_for_call = tool_choice_value if force_tool_name else None
+
                 response = self.llm_proxy.create_response(
                     company_short_name=company.short_name,
                     model=model,
@@ -245,8 +249,8 @@ class llmClient:
                     previous_response_id=response.id,
                     context_history=context_history,
                     reasoning=reasoning,
-                    tool_choice=tool_choice_value,
-                    tools=tools,
+                    tool_choice=tool_choice_for_call,  # None unless SQL retry
+                    tools=tools_for_call,  # None unless SQL retry
                     text=text_payload,
                     images=None,  # Don't send images in subsequent calls
                 )
