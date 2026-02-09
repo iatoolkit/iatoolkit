@@ -10,7 +10,8 @@ from iatoolkit.common.exceptions import IAToolkitException
 from typing import List
 import mimetypes
 import re
-
+from iatoolkit.common.util import measure_time
+import json
 
 class OpenAIAdapter:
     """Adaptador para la API de OpenAI"""
@@ -18,6 +19,7 @@ class OpenAIAdapter:
     def __init__(self, openai_client):
         self.client = openai_client
 
+    @measure_time
     def create_response(self,
                         model: str,
                         input: List[Dict],

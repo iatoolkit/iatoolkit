@@ -22,6 +22,7 @@ import tiktoken
 from typing import Dict, Optional, List
 from iatoolkit.services.dispatcher_service import Dispatcher
 from iatoolkit.services.storage_service import StorageService
+from iatoolkit.common.util import measure_time
 
 CONTEXT_ERROR_MESSAGE = 'Tu consulta supera el límite de contexto, utiliza el boton de recarga de contexto.'
 
@@ -61,7 +62,40 @@ class llmClient:
             self._dispatcher = current_iatoolkit().get_injector().get(Dispatcher)
         return self._dispatcher
 
+    def _should_send_images_to_llm(self, context: str, question: str = None) -> bool:
+        """
+        Determines whether images should be sent to the LLM in the first call.
+        Only checks the prompt name from question JSON.
+        """
+        # Prompts that don't need images sent to LLM
+        prompts_without_llm_images = [
+            "risk_faces",
+        ]
 
+        # Extract prompt name from question JSON (always present)
+        if not question:
+            logging.info(f"[IMAGE_DECISION] No question provided, will send images to LLM")
+            return True
+
+        try:
+            question_dict = json.loads(question)
+            if isinstance(question_dict, dict) and "prompt" in question_dict:
+                prompt_name = question_dict["prompt"]
+                logging.info(f"[IMAGE_DECISION] Extracted prompt_name from question: '{prompt_name}'")
+
+                # Check if prompt is in the list
+                if prompt_name.lower() in [p.lower() for p in prompts_without_llm_images]:
+                    logging.info(f"Prompt '{prompt_name}' detected: skipping images to LLM (will send to tools only)")
+                    return False
+            else:
+                logging.info(f"[IMAGE_DECISION] No 'prompt' key in question JSON, will send images to LLM")
+        except (json.JSONDecodeError, TypeError):
+            logging.info(f"[IMAGE_DECISION] Question is not valid JSON, will send images to LLM")
+
+        logging.info(f"[IMAGE_DECISION] Prompt not in exclusion list, will send images to LLM")
+        return True
+
+    @measure_time
     def invoke(self,
                company: Company,
                user_identifier: str,
@@ -88,9 +122,12 @@ class llmClient:
         text_payload = request_params["text"]
         reasoning = request_params["reasoning"]
 
+        # Determine if images should be sent to LLM in first call
+        send_images_to_llm = self._should_send_images_to_llm(context, question)
+
         try:
             start_time = time.time()
-            logging.info(f"calling llm model '{model}' with {self.count_tokens(context, context_history)} tokens...and {len(images)} images...")
+            logging.info(f"calling llm model '{model}' with {self.count_tokens(context, context_history)} tokens... and {len(images)} images...")
 
             # this is the first call to the LLM on the iteration
             try:
@@ -99,6 +136,7 @@ class llmClient:
                     "content": context
                 }]
 
+                # First call: conditionally send images based on decision logic
                 response = self.llm_proxy.create_response(
                     company_short_name=company.short_name,
                     model=model,
@@ -108,7 +146,7 @@ class llmClient:
                     tools=tools,
                     text=text_payload,
                     reasoning=reasoning,
-                    images=images,
+                    images=images if send_images_to_llm else None,
                 )
                 stats = self.get_stats(response)
 
@@ -199,6 +237,7 @@ class llmClient:
                 if force_tool_name:
                     tool_choice_value = "required"
 
+                # Subsequent calls: don't send images (tool results contain what's needed)
                 response = self.llm_proxy.create_response(
                     company_short_name=company.short_name,
                     model=model,
@@ -209,7 +248,7 @@ class llmClient:
                     tool_choice=tool_choice_value,
                     tools=tools,
                     text=text_payload,
-                    images=images,
+                    images=None,  # Don't send images in subsequent calls
                 )
                 stats_fcall = self.add_stats(stats_fcall, self.get_stats(response))
 
