@@ -18,6 +18,7 @@ import logging
 from typing import Optional
 import time
 from dataclasses import dataclass
+from iatoolkit.common.util import measure_time
 
 
 @dataclass
@@ -250,6 +251,47 @@ class QueryService:
             # release the lock
             self.session_context.release_lock(lock_key)
 
+    def _filter_tools_for_prompt(self, tools: list[dict], prompt_name: Optional[str]) -> list[dict]:
+        """
+        Filtra las herramientas según el prompt para optimizar el payload al LLM.
+        Algunos prompts solo necesitan herramientas específicas.
+        
+        Args:
+            tools: Lista completa de herramientas disponibles
+            prompt_name: Nombre del prompt activo
+            
+        Returns:
+            Lista filtrada de herramientas
+        """
+        if not prompt_name:
+            return tools
+        
+        # Mapeo de prompts a herramientas requeridas
+        prompt_tool_mapping = {
+            "risk_faces": ["identity_risk"],  # Solo necesita identity_risk
+            # Agregar más mapeos aquí en el futuro
+        }
+        
+        required_tools = prompt_tool_mapping.get(prompt_name.lower())
+        if not required_tools:
+            # Si el prompt no está en el mapeo, retornar todas las tools
+            return tools
+        
+        # Filtrar tools para incluir solo las requeridas
+        filtered_tools = [
+            tool for tool in tools 
+            if tool.get("name") in required_tools
+        ]
+        
+        if filtered_tools:
+            logging.info(f"[TOOL_FILTER] Prompt '{prompt_name}' detected: filtered {len(tools)} tools to {len(filtered_tools)} tools: {required_tools}")
+        else:
+            logging.warning(f"[TOOL_FILTER] Prompt '{prompt_name}' required tools {required_tools} but none found. Using all tools.")
+            return tools
+        
+        return filtered_tools
+
+    @measure_time
     def llm_query(self,
                   company_short_name: str,
                   user_identifier: str,
@@ -298,6 +340,9 @@ class QueryService:
 
             # get the tools availables for this company
             tools = self.tool_service.get_tools_for_llm(company)
+
+            # Filter tools based on prompt to optimize LLM payload
+            tools = self._filter_tools_for_prompt(tools, prompt_name)
 
             # openai structured output instructions
             output_schema = {}
