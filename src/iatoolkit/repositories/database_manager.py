@@ -47,6 +47,13 @@ class DatabaseManager(DatabaseProvider):
                 pool_recycle=1800,
                 pool_pre_ping=True,
                 pool_use_lifo=True,
+                connect_args={
+                    "keepalives": 1,
+                    "keepalives_idle": 30,
+                    "keepalives_interval": 10,
+                    "keepalives_count": 5,
+                    "connect_timeout": 10,
+                },
                 future=True,
             )
         self.SessionFactory = sessionmaker(bind=self._engine,
