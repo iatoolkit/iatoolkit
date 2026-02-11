@@ -343,9 +343,10 @@ class ConfigurationService:
             if not isinstance(config.get("visual_embedding_provider"), dict):
                 add_error("visual_embedding_provider", "Section must be a dictionary.")
             else:
-                if not config.get("visual_embedding_provider", {}).get("provider"):
+                provider = config.get("visual_embedding_provider", {}).get("provider")
+                if not provider:
                     add_error("visual_embedding_provider", "Missing required key: 'provider'")
-                if not config.get("visual_embedding_provider", {}).get("model"):
+                if provider != 'custom_class' and not config.get("visual_embedding_provider", {}).get("model"):
                     add_error("visual_embedding_provider", "Missing required key: 'model'")
 
         # 4. Data Sources
