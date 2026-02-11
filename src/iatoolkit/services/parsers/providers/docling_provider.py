@@ -42,6 +42,8 @@ class DoclingParsingProvider:
             from docling.datamodel.pipeline_options import PdfPipelineOptions
 
             pipeline_options = PdfPipelineOptions()
+            pipeline_options.do_ocr = False
+            pipeline_options.force_backend_text = True
             pipeline_options.generate_picture_images = True
             pipeline_options.do_table_structure = True
             pipeline_options.generate_table_images = True

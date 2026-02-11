@@ -46,6 +46,7 @@ class DatabaseManager(DatabaseProvider):
                 pool_timeout=30,
                 pool_recycle=1800,
                 pool_pre_ping=True,
+                pool_use_lifo=True,
                 future=True,
             )
         self.SessionFactory = sessionmaker(bind=self._engine,
