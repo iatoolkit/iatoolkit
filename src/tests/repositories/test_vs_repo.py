@@ -117,6 +117,7 @@ class TestVSRepo:
         # Act & Assert
         with pytest.raises(IAToolkitException, match="Error en la consulta"):
             self.vs_repo.query(company_short_name=self.MOCK_COMPANY_SHORT_NAME, query_text="test query")
+        self.mock_session.rollback.assert_called_once()
 
     def test_query_applies_metadata_filter_without_collection(self):
         """Metadata filters should work even when no collection filter is used."""

@@ -22,6 +22,7 @@ class TestLanguageService:
         - Creates a Flask app to provide a request context.
         """
         self.mock_profile_repo = MagicMock(spec=ProfileRepo)
+        self.mock_profile_repo.session = MagicMock()
         self.mock_config_service = MagicMock(spec=ConfigurationService)
         self.language_service = LanguageService(config_service=self.mock_config_service,
                                                 profile_repo=self.mock_profile_repo)
@@ -142,6 +143,7 @@ class TestLanguageService:
 
             # Assert
             assert lang == self.language_service.FALLBACK_LANGUAGE
+            self.mock_profile_repo.session.rollback.assert_called_once()
 
     # --- Caching Test ---
 

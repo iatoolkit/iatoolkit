@@ -42,6 +42,16 @@ class LanguageService:
         self.config_service = config_service
         self.profile_repo = profile_repo
 
+    def _safe_rollback(self):
+        """
+        Best-effort rollback to recover the shared SQLAlchemy scoped session
+        after transient DB failures (e.g. SSL/network errors).
+        """
+        try:
+            self.profile_repo.session.rollback()
+        except Exception as rollback_error:
+            logging.warning(f"LanguageService rollback failed: {rollback_error}")
+
     def _get_company_short_name(self) -> str | None:
         """
         Gets the company_short_name from the current request context.
@@ -118,6 +128,7 @@ class LanguageService:
                 if conf_locale:
                     return conf_locale
             except Exception as e:
+                self._safe_rollback()
                 logging.warning(f"Error fetching configuration for '{company_short_name}': {e}")
 
 

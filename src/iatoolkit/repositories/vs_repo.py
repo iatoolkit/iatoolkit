@@ -195,6 +195,10 @@ class VSRepo:
             logging.error(f"Error en la consulta de documentos: {str(e)}")
             logging.error(f"Failed SQL: {sql_query}")
             logging.error(f"Failed params: {params}")
+            try:
+                self.session.rollback()
+            except Exception as rollback_error:
+                logging.warning(f"VSRepo.query rollback failed: {rollback_error}")
             raise IAToolkitException(IAToolkitException.ErrorType.VECTOR_STORE_ERROR,
                                f"Error en la consulta: {str(e)}")
         finally:
@@ -331,6 +335,10 @@ class VSRepo:
 
             return image_results
         except Exception as e:
+            try:
+                self.session.rollback()
+            except Exception as rollback_error:
+                logging.warning(f"VSRepo._query_images_by_vector rollback failed: {rollback_error}")
             raise e
 
     def _build_metadata_filter_sql(self,

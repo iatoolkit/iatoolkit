@@ -31,6 +31,14 @@ class Dispatcher:
         self._company_registry = None
         self._company_instances = None
 
+    def _safe_rollback(self):
+        """
+        Best-effort rollback for the shared scoped session used by repositories.
+        """
+        try:
+            self.llmquery_repo.rollback()
+        except Exception as rollback_error:
+            logging.warning(f"Dispatcher rollback failed: {rollback_error}")
 
     @property
     def tool_service(self):
@@ -122,8 +130,10 @@ class Dispatcher:
                 return method(**kwargs)
 
             except IAToolkitException as e:
+                self._safe_rollback()
                 raise e
             except Exception as e:
+                self._safe_rollback()
                 logging.exception(e)
                 raise IAToolkitException(IAToolkitException.ErrorType.EXTERNAL_SOURCE_ERROR,
                                          f"Error executing native tool '{method_name}': {str(e)}") from e

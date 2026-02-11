@@ -142,6 +142,20 @@ class TestDispatcher:
             self.dispatcher.dispatch("sample", "some_data")
 
         assert "Method 'some_data' not found in company 'sample' instance." in str(excinfo.value)
+        self.mock_llm_query_repo.rollback.assert_called_once()
+
+    def test_dispatch_native_method_runtime_exception_rolls_back(self):
+        """Native runtime errors should rollback the shared session and wrap the exception."""
+        mock_tool_def = MagicMock(spec=Tool)
+        mock_tool_def.tool_type = Tool.TYPE_NATIVE
+        self.mock_tool_service.get_tool_definition.return_value = mock_tool_def
+        self.mock_sample_company_instance.handle_request.side_effect = Exception("boom")
+
+        with pytest.raises(IAToolkitException) as excinfo:
+            self.dispatcher.dispatch("sample", "handle_request", key="value")
+
+        assert "Error executing native tool 'handle_request': boom" in str(excinfo.value)
+        self.mock_llm_query_repo.rollback.assert_called_once()
 
     def test_dispatch_system_function(self):
         """Tests that dispatch correctly handles system functions via ToolService."""
