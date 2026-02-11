@@ -83,8 +83,6 @@ class Dispatcher:
                 f"Tool '{function_name}' not registered for company '{company_short_name}'"
             )
 
-        logging.error(f"DISPATCHER_SERVICE: {tool_def.parameters}")
-
         # 2. Dispatch based on Tool Type
         if tool_def.tool_type == 'SYSTEM':
             # Map to internal handler

@@ -129,9 +129,6 @@ class llmClient:
                 function_calls = False
                 stats_fcall = {}
                 for tool_call in response.output:
-
-                    logging.error(f"LLM_CLIENT_SERVICE: {tool_call.arguments}")
-
                     if tool_call.type != "function_call":
                         continue
 
