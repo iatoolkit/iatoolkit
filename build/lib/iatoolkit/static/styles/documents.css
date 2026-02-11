@@ -1,0 +1,598 @@
+/* === Article Page Styles === */
+.article-container {
+    max-width: 800px;
+    margin: 40px auto;
+    padding: 20px;
+    font-family: 'Georgia', serif;
+    line-height: 1.8;
+    color: #333;
+    background-color: #fff;
+}
+
+.article-header {
+    margin-bottom: 40px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 20px;
+}
+
+.article-title {
+    font-family: 'Helvetica Neue', sans-serif;
+    font-weight: 700;
+    font-size: 2.5rem;
+    color: #111;
+    line-height: 1.2;
+}
+
+.article-subtitle {
+    font-size: 1.25rem;
+    color: #666;
+    font-style: italic;
+    margin-top: 15px;
+}
+
+.article-date i {
+    margin-right: 0.35rem;
+    color: #6c757d;
+    font-size: 1rem;
+    position: relative;
+    top: 1px;
+}
+
+.article-content h2 {
+    font-family: 'Helvetica Neue', sans-serif;
+    font-weight: 600;
+    font-size: 1.8rem;
+    margin-top: 2.5rem;
+    margin-bottom: 1rem;
+    color: #222;
+}
+
+.article-content h3 {
+    font-family: 'Helvetica Neue', sans-serif;
+    font-weight: 600;
+    font-size: 1.4rem;
+    margin-top: 2rem;
+    margin-bottom: 0.8rem;
+    color: #333;
+}
+
+.article-content p {
+    margin-bottom: 1.5rem;
+    font-size: 1.1rem;
+}
+
+.article-content ul {
+    list-style: none; /* Quitamos los bullets por defecto */
+    padding-left: 0;
+    margin-bottom: 1.5rem;
+}
+
+.article-content li {
+    position: relative; /* Necesario para posicionar el bullet personalizado */
+    padding-left: 1.75em; /* Espacio a la izquierda para el nuevo bullet */
+    margin-bottom: 0.8rem; /* Un poco más de aire entre elementos */
+    font-size: 1.1rem;
+}
+
+.article-content li::before {
+    content: '•'; /* Este es nuestro nuevo bullet */
+    position: absolute;
+    left: 0;
+    top: -0.05em; /* Ajuste fino de la alineación vertical */
+
+    font-weight: bold;
+    font-size: 1.2em; /* Hacemos el bullet un poco más grande */
+}
+
+
+.article-content pre {
+    background-color: #f8f9fa;
+    border: 1px solid #e9ecef;
+    border-radius: 4px;
+    padding: 15px;
+    overflow-x: auto;
+    margin-bottom: 1.5rem;
+    font-size: 0.9em;
+}
+
+.article-content blockquote {
+    border-left: 4px solid #ddd;
+    padding-left: 15px;
+    color: #555;
+    font-style: italic;
+    margin: 1.5em 0;
+}
+
+.article-footer {
+    margin-top: 4rem;
+    padding-top: 2rem;
+    border-top: 1px solid #e9ecef;
+}
+
+.article-content code {
+    color: #343a40;  /* Cambia el color del texto a uno oscuro y neutro */
+    background-color: #f1f3f5; /* Fondo gris claro para resaltar */
+    padding: 0.2em 0.4em;
+    margin: 0;
+    font-size: 85%;
+    border-radius: 3px;
+    font-family: 'Courier New', monospace;
+}
+
+/* Stair-style timeline */
+.iat-stair-timeline {
+    position: relative;
+    margin: 2rem 0 1.5rem;
+    min-height: 10rem;
+}
+
+.iat-stair-step {
+    position: relative;
+    max-width: 260px;
+    background-color: #f8f9fa;
+    border-radius: 10px;
+    padding: 0.75rem 1rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+.iat-stair-header {
+    display: flex;
+    justify-content: flex-start;
+    margin-bottom: 0.35rem;
+}
+
+.iat-stair-phase-badge {
+    display: inline-block;
+    background-color: #4A55A2; /* IAToolkit color */
+    color: #ffffff;
+    font-size: 0.8rem;
+    font-weight: 600;
+    border-radius: 999px;
+    padding: 0.1rem 0.7rem;
+}
+
+.iat-stair-title {
+    font-size: 0.9rem;
+    margin: 0;
+    color: #343a40;
+}
+
+/* Posiciones escalonadas: hacia la derecha y hacia abajo */
+.iat-stair-step.step-1 {
+    left: 0%;
+    top: 0;
+}
+
+.iat-stair-step.step-2 {
+    left: 24%;
+    top: 1.2rem;
+}
+
+.iat-stair-step.step-3 {
+    left: 48%;
+    top: 2.4rem;
+}
+
+.iat-stair-step.step-4 {
+    left: 72%;
+    top: 3.6rem;
+}
+
+/* Ajuste responsive: en pantallas pequeñas, apilar vertical */
+@media (max-width: 768px) {
+    .iat-stair-timeline {
+        min-height: auto;
+    }
+
+    .iat-stair-step {
+        position: static;
+        margin-bottom: 0.75rem;
+        max-width: 100%;
+    }
+}
+
+/* Intelligence bar */
+.iat-intelligence-bar {
+    margin: 1.5rem 0 2.5rem;
+}
+
+.iat-intelligence-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.9rem;
+    color: #495057;
+    margin-bottom: 0.35rem;
+}
+
+.iat-intelligence-end {
+    font-weight: 500;
+}
+
+.iat-intelligence-track {
+    position: relative;
+    height: 6px;
+    border-radius: 999px;
+    background: #e2e5f5;
+    overflow: hidden;
+    margin-bottom: 0.4rem;
+}
+
+.iat-intelligence-fill {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(to right, #cfd3ff, #4A55A2);
+}
+
+.iat-intelligence-marks {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    color: #6c757d;
+}
+
+
+/* -------- IAToolkit Core Diagram -------- */
+
+.iat-core-diagram {
+    max-width: 420px;
+    margin: 2rem auto;
+    padding: 1.5rem 1.75rem;
+    border-radius: 18px;
+    background: #ffffff;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.06);
+    font-family: inherit;
+    color: #1f2933;
+    font-size: 0.9rem;
+}
+
+/* Generic box inside Core diagram */
+.iat-core-diagram .core-box {
+    border-radius: 10px;
+    border: 1px solid rgba(0,0,0,0.08);
+    padding: 0.75rem 1rem;
+    text-align: center;
+    background: #ffffff;
+}
+
+/* Titles & subtitles */
+.iat-core-diagram .core-title {
+    font-weight: 600;
+    margin-bottom: 0.15rem;
+}
+
+.iat-core-diagram .core-sub {
+    font-size: 0.8rem;
+    color: #6c757d;
+}
+
+/* Main Core Box */
+.iat-core-diagram .core-main {
+    background: #f7f8ff;
+    border-color: #d8ddff;
+}
+
+.iat-core-diagram .core-main-title {
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    color: #25316D;
+    font-size: 0.95rem;
+}
+
+.iat-core-diagram .core-main-layers {
+    border-radius: 8px;
+    border: 1px solid rgba(0,0,0,0.06);
+    overflow: hidden;
+    font-size: 0.8rem;
+}
+
+.iat-core-diagram .core-layer {
+    padding: 0.35rem 0.5rem;
+    background: #ffffff;
+}
+
+.iat-core-diagram .core-layer + .core-layer {
+    border-top: 1px solid rgba(0,0,0,0.05);
+}
+
+/* Companies row */
+.iat-core-diagram .core-companies-row {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+    margin-bottom: 0.25rem;
+}
+
+/* Data box spacing */
+.iat-core-diagram .core-data {
+    margin-top: 0.5rem;
+}
+
+/* Vertical arrow */
+.iat-core-diagram .core-arrow {
+    width: 100%;
+    height: 18px;
+    position: relative;
+    margin: 0.4rem 0;
+}
+
+.iat-core-diagram .core-arrow::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 50%;
+    height: 12px;
+    border-left: 1px solid #9ca3af;
+    transform: translateX(-50%);
+}
+
+.iat-core-diagram .core-arrow::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    border-width: 5px 4px 0 4px;
+    border-style: solid;
+    border-color: #9ca3af transparent transparent transparent;
+    transform: translateX(-50%);
+}
+
+/* Split arrow to both companies */
+.iat-core-diagram .core-arrow-split {
+    position: relative;
+    height: 32px;
+    margin-top: 0.4rem;
+}
+
+.iat-core-diagram .core-arrow-split .split-line {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    height: 16px;
+    border-left: 1px solid #9ca3af;
+    transform: translateX(-50%);
+}
+
+.iat-core-diagram .core-arrow-split .split-arrow-left,
+.iat-core-diagram .core-arrow-split .split-arrow-right {
+    position: absolute;
+    top: 18px;
+    width: 50%;
+    height: 12px;
+}
+
+/* Línea horizontal */
+.iat-core-diagram .core-arrow-split .split-arrow-left::before,
+.iat-core-diagram .core-arrow-split .split-arrow-right::before {
+    content: "";
+    position: absolute;
+    top: 7px;
+    width: 100%;
+    border-top: 1px solid #9ca3af;
+}
+
+/* Puntita de la flecha */
+.iat-core-diagram .core-arrow-split .split-arrow-left::after,
+.iat-core-diagram .core-arrow-split .split-arrow-right::after {
+    content: "";
+    position: absolute;
+    top: -1px;
+    border-width: 5px 4px 0 4px;
+    border-style: solid;
+    border-color: #9ca3af transparent transparent transparent;
+}
+
+.iat-core-diagram .core-arrow-split .split-arrow-left {
+    left: 0;
+}
+
+.iat-core-diagram .core-arrow-split .split-arrow-left::after {
+    left: calc(100% - 4px);
+}
+
+.iat-core-diagram .core-arrow-split .split-arrow-right {
+    right: 0;
+}
+
+.iat-core-diagram .core-arrow-split .split-arrow-right::after {
+    right: calc(100% - 4px);
+}
+
+/* Dispatcher Diagram container */
+.dispatcher-diagram {
+    max-width: 420px;
+    margin: 2rem auto;
+    padding: 1.5rem 1.75rem;
+    border-radius: 18px;
+    background: #f8fafc;
+    box-shadow: 0 4px 18px rgba(0,0,0,0.06);
+    font-family: inherit;
+    color: #1f2933;
+    font-size: 0.9rem;
+    position: relative;
+    text-align: center;
+}
+
+/* Generic box */
+.disp-box {
+    border-radius: 14px;
+    border: 1px solid rgba(0,0,0,0.06);
+    background: #ffffff;
+    padding: 0.75rem 1.2rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+/* Dispatcher main box */
+.disp-main {
+    background: #4A55A2;
+    border-color: #4A55A2;
+    color: #ffffff;
+    margin: 0 auto;
+    min-width: 240px;
+    padding: 1rem 1.25rem;     /* ← antes era 0.75rem */
+    padding-top: 1.2rem;       /* más aire vertical */
+    padding-bottom: 1.2rem;
+    border-radius: 16px;       /* más suave */
+    gap: 0.75rem;              /* separa mejor ícono-texto */
+}
+
+.disp-main-text {
+    font-weight: 700;
+    font-size: 1.15rem;
+    letter-spacing: 0.3px;
+    font-family: "Segoe UI", Inter, system-ui, sans-serif;
+}
+
+.disp-icon {
+    font-size: 1.6rem;
+    line-height: 1;
+    margin-right: 0.2rem;
+}
+
+/* Document icon */
+.disp-doc-icon {
+    font-size: 1.1rem;
+    color: #4A55A2;
+    margin-right: 0.35rem;
+}
+
+/* Vertical arrows */
+.disp-arrow-vertical {
+    width: 100%;
+    height: 24px;
+    position: relative;
+    margin: 0.4rem 0 0.2rem;
+}
+
+.disp-arrow-vertical::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 50%;
+    height: 16px;
+    border-left: 1px solid #9ca3af;
+    transform: translateX(-50%);
+}
+
+.disp-arrow-vertical::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    border-width: 5px 4px 0 4px;
+    border-style: solid;
+    border-color: #9ca3af transparent transparent transparent;
+    transform: translateX(-50%);
+}
+
+.disp-arrow-small {
+    height: 20px;
+    margin-top: 0.2rem;
+}
+
+/* Branch row from Dispatcher to both columns */
+.disp-branch-row {
+    position: relative;
+    height: 20px;
+    margin-bottom: 0.3rem;
+}
+
+.disp-branch-line {
+    position: absolute;
+    top: 10px;
+    left: 18%;
+    right: 18%;
+    border-top: 1px solid #9ca3af;
+}
+
+.disp-branch-node {
+    position: absolute;
+    top: 10px;
+    width: 0;
+    height: 10px;
+    border-left: 1px solid #9ca3af;
+}
+
+.disp-branch-node.left {
+    left: 30%;
+}
+
+.disp-branch-node.right {
+    right: 30%;
+}
+
+/* Columns: company + resource */
+.disp-companies-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.9rem;
+    margin-top: 0.2rem;
+}
+
+.disp-column {
+    flex: 1;
+}
+
+/* Company boxes */
+.disp-company {
+    background: #f3f4f6;
+    border-radius: 14px;
+    border-color: rgba(0,0,0,0.04);
+    flex-direction: column;
+    padding: 0.75rem 0.9rem;
+}
+
+/* “Building” icon */
+.disp-company-icon {
+    width: 26px;
+    height: 18px;
+    border-radius: 2px;
+    border: 2px solid #4b5563;
+    border-bottom-width: 4px;
+    margin: 0 auto 0.25rem;
+    position: relative;
+}
+
+.disp-company-icon::before,
+.disp-company-icon::after {
+    content: "";
+    position: absolute;
+    bottom: -4px;
+    width: 6px;
+    height: 4px;
+    background: #4b5563;
+}
+
+.disp-company-icon::before {
+    left: 3px;
+}
+
+.disp-company-icon::after {
+    right: 3px;
+}
+
+.disp-company-text {
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+/* Resource boxes */
+.disp-resource {
+    margin-top: 0.1rem;
+    justify-content: flex-start;
+}
+
+.disp-resource-text {
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+/* Responsive tweak */
+@media (max-width: 480px) {
+    .dispatcher-diagram {
+        padding: 1.3rem 1.1rem;
+        font-size: 0.85rem;
+    }
+}

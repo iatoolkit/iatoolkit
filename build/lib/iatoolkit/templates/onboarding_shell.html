@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}Iniciando {{ branding.name }} IA...{% endblock %}
+
+{% block styles %}
+{% endblock %}
+
+{% block content %}
+
+<link rel="stylesheet" href="{{ url_for('static', filename='styles/llm_output.css', _external=True) }}?v=6">
+<link rel="stylesheet" href="{{ url_for('static', filename='styles/onboarding.css', _external=True) }}?v=6">
+
+<style>
+  {% if branding and branding.css_variables %}
+    {{ branding.css_variables|safe }}
+  {% endif %}
+
+  {# 2. Ahora definimos las reglas que usan esas variables #}
+  .onboarding-shell-root { position: relative; height: 100vh; }
+  .onboarding-shell-root #loader-wrapper { position: absolute; inset: 0; background: #f4f7f6; z-index: 1000; display:flex; align-items:center; justify-content:center; padding:20px; box-sizing:border-box; transition: opacity .5s; }
+  .onboarding-shell-root .ob-stack { width:100%; max-width:520px; display:flex; flex-direction:column; gap:16px; }
+  .onboarding-shell-root .ob-loading-band { display:flex; align-items:center; justify-content:center; gap:12px; padding:12px 14px; background:#fff; border-radius:12px; box-shadow:0 4px 20px rgba(0,0,0,.08); }
+  .onboarding-shell-root .spinner { width:28px; height:28px; border:4px solid rgba(0,0,0,.1); border-top-color: var(--brand-primary-color, #FF5100); border-radius:50%; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .onboarding-shell-root #content-container { width:100%; height:100%; }
+  .onboarding-shell-root #content-container iframe { width:100%; height:100%; border:none; }
+
+  /* Forzar colores de marca (sube especificidad y evita overrides) */
+  .onboarding-shell-root .ob-brand-header { color: var(--brand-secondary-color, #06326B) !important; }
+  .onboarding-shell-root .ob-brand-header .brand-name { color: var(--brand-primary-color, #FF5100) !important; }
+  .onboarding-shell-root .ob-icon { color: var(--brand-primary-color, #FF5100) !important; }
+  .onboarding-shell-root .ob-btn { background-color: var(--brand-secondary-color, #06326B) !important; color: var(--brand-text-on-secondary, #FFFFFF) !important; border:none !important; }
+  .onboarding-shell-root .ob-dots > div.active { background-color: var(--brand-primary-color, #FF5100) !important; }
+</style>
+
+<div class="onboarding-shell-root ob-root">
+  <div id="loader-wrapper">
+    <div class="ob-stack">
+      <h1 id="ob-brand-header" class="ob-brand-header">
+        <span class="brand-name text-brand-primary">{{ branding.name | default('IAToolkit') }}</span>
+      </h1>
+
+      <div id="card-container" class="ob-card">
+        <div id="card-icon" class="ob-icon"><i class="fas fa-lightbulb"></i></div>
+        <h3 id="card-title" class="ob-title">Título de la Tarjeta</h3>
+        <p id="card-text" class="ob-text">Descripción de la tarjeta de capacitación.</p>
+        <p id="card-example" class="ob-example"></p>
+
+        <div class="ob-nav">
+          <button id="prev-card" class="ob-btn btn-branded-primary" aria-label="Anterior">
+            <i class="fas fa-chevron-left"></i>
+          </button>
+          <div id="progress-dots" class="ob-dots"></div>
+          <button id="next-card" class="ob-btn btn-branded-primary" aria-label="Siguiente">
+            <i class="fas fa-chevron-right"></i>
+          </button>
+        </div>
+      </div>
+
+      <div id="loading-status" class="ob-loading-band">
+        <div class="spinner"></div>
+        <p>{{ t('ui.chat.init_context') }} </p>
+      </div>
+    </div>
+  </div>
+
+  <div id="content-container"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+
+<script src="{{ url_for('static', filename='js/chat_onboarding_button.js', _external=True) }}"></script>
+<script>
+  (function() {
+    const cardsData = {{ onboarding_cards | tojson }};
+    const iframeSrc = "{{ iframe_src_url }}";
+
+    if (!window.initOnboarding) {
+      console.error('initOnboarding no está disponible. Verifica la carga de chat_onboarding.js');
+      return;
+    }
+
+    const onboarding = initOnboarding({
+      mode: 'shell',
+      cards: cardsData,
+      ui: {
+        icon: '#card-icon',
+        title: '#card-title',
+        text: '#card-text',
+          example: '#card-example',
+        dots: '#progress-dots',
+        prev: '#prev-card',
+        next: '#next-card',
+        loader: '#loader-wrapper',
+        container: '#content-container'
+      },
+      autoRotateMs: 5000,
+      shell: { iframeSrc: iframeSrc }
+    });
+
+    onboarding.start();
+  })();
+</script>
+{% endblock %}

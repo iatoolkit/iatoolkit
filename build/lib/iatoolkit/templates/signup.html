@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t('ui.signup.title') }} - {{ branding.name }}{% endblock %}
+
+{% block styles %}
+    {# ¡Importante! Añadimos los estilos para el branding #}
+    <style>
+        {{ branding.css_variables | safe }}
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles/chat_public.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+
+{% include '_company_header.html' %}
+
+    <section class="hero-section">
+        <div class="container">
+            <div class="row justify-content-center">
+                <!-- Se ha reducido el ancho de la columna a lg-6 y md-8 -->
+                <div class="col-lg-6 col-md-8">
+                    <div class="branded-form-container">
+                        <h4 class="branded-form-title">{{ t('ui.signup.title') }}</h4>
+                        <form action="{{ url_for('signup', company_short_name=company_short_name) }}" method="post">
+                            <div class="mb-3">
+                                <label for="email" class="form-label text-secondary">{{ t('ui.signup.email_label') }}</label>
+                                <input type="email" autocomplete="off" id="email" name="email"
+                                       class="form-control" required
+                                       value="{{ form_data.email if form_data else '' }}">
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="first_name" class="form-label text-secondary">{{ t('ui.signup.first_name_label') }}</label>
+                                    <input type="text" id="first_name" name="first_name"
+                                           class="form-control" required
+                                           value="{{ form_data.first_name if form_data else '' }}">
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="last_name" class="form-label text-secondary">{{ t('ui.signup.last_name_label') }}</label>
+                                    <input type="text" id="last_name" name="last_name"
+                                           class="form-control" required
+                                           value="{{ form_data.last_name if form_data else '' }}">
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="password" class="form-label text-secondary">{{ t('ui.signup.password_label') }}</label>
+                                <input type="password" id="password" name="password" class="form-control" required>
+                                <div class="d-flex align-items-start text-muted mt-2" style="font-size: 0.8rem;">
+                                    <i class="bi bi-info-circle me-2" style="font-size: 0.9rem; line-height: 1.4;"></i>
+                                    <span>{{ t('ui.change_password.password_instructions') }}</span>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label for="confirm_password" class="form-label text-secondary">{{ t('ui.signup.confirm_password_label') }}</label>
+                                <input type="password" id="confirm_password" name="confirm_password" class="form-control" required>
+                            </div>
+
+                            <!-- language: html -->
+                            <input type="hidden" name="lang" value="{{ lang or 'en' }}">
+
+                            <!-- Botón actualizado con la clase de branding -->
+                            <button type="submit" class="btn btn-branded-primary w-100 fw-bold py-2 mt-3">{{ t('ui.signup.signup_button') }}</button>
+                        </form>
+                        <!-- Nota de privacidad -->
+                        <p class="text-muted small mb-0 text-center mt-4">
+                            {{ t('ui.signup.disclaimer') }}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+</div>
+
+{% endblock %}
