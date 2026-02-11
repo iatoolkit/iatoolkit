@@ -39,7 +39,8 @@ class DoclingParsingProvider:
 
             from docling.document_converter import DocumentConverter, PdfFormatOption
             from docling.datamodel.base_models import InputFormat
-            from docling.datamodel.pipeline_options import PdfPipelineOptions
+            from docling.datamodel.accelerator_options import AcceleratorOptions
+            from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode
 
             pipeline_options = PdfPipelineOptions()
             pipeline_options.do_ocr = False
@@ -47,6 +48,28 @@ class DoclingParsingProvider:
             pipeline_options.generate_picture_images = True
             pipeline_options.do_table_structure = True
             pipeline_options.generate_table_images = True
+
+            # Keep current feature set (tables/images/captions), but reduce memory peaks on small workers.
+            pipeline_options.table_structure_options.mode = TableFormerMode.FAST
+            pipeline_options.layout_batch_size = self._get_int_env("DOCLING_LAYOUT_BATCH_SIZE", 1)
+            pipeline_options.table_batch_size = self._get_int_env("DOCLING_TABLE_BATCH_SIZE", 1)
+            pipeline_options.ocr_batch_size = self._get_int_env("DOCLING_OCR_BATCH_SIZE", 1)
+            pipeline_options.queue_max_size = self._get_int_env("DOCLING_QUEUE_MAX_SIZE", 12)
+            pipeline_options.accelerator_options = AcceleratorOptions(
+                num_threads=self._get_int_env("DOCLING_NUM_THREADS", 1),
+                device=os.getenv("DOCLING_DEVICE", "cpu"),
+            )
+
+            logging.info(
+                "Docling low-memory profile: table_mode=%s layout_batch=%s table_batch=%s ocr_batch=%s queue_max=%s threads=%s device=%s",
+                pipeline_options.table_structure_options.mode,
+                pipeline_options.layout_batch_size,
+                pipeline_options.table_batch_size,
+                pipeline_options.ocr_batch_size,
+                pipeline_options.queue_max_size,
+                pipeline_options.accelerator_options.num_threads,
+                pipeline_options.accelerator_options.device,
+            )
 
             self.converter = DocumentConverter(
                 format_options={
@@ -477,3 +500,15 @@ class DoclingParsingProvider:
         elif isinstance(node, list):
             for value in node:
                 yield from self._walk_items(value)
+
+    @staticmethod
+    def _get_int_env(name: str, default: int) -> int:
+        value = os.getenv(name)
+        if value is None:
+            return default
+        try:
+            parsed = int(value)
+            return parsed if parsed > 0 else default
+        except Exception:
+            logging.warning("Invalid value for %s=%r. Using default=%s", name, value, default)
+            return default
