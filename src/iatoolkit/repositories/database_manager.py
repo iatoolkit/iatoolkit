@@ -96,7 +96,9 @@ class DatabaseManager(DatabaseProvider):
         register_vector(dbapi_connection)
 
     def get_session(self):
-        return self.scoped_session()
+        # Return the scoped_session proxy itself so each operation resolves
+        # against the current request/thread-bound Session.
+        return self.scoped_session
 
     def get_connection(self):
         return self._engine.connect()

@@ -8,6 +8,8 @@ from iatoolkit.repositories.models import (User, Company, UserFeedback,
                                            user_company, AccessLog)
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from datetime import datetime
+from unittest.mock import MagicMock
+from sqlalchemy.exc import OperationalError
 
 
 class TestProfileRepo:
@@ -257,3 +259,22 @@ class TestProfileRepo:
         assert new_feed.message == 'feedback message'
         assert new_feed.rating == 4
 
+    def test_get_company_by_short_name_retries_once_on_operational_error(self):
+        mock_db_manager = MagicMock()
+        mock_session = MagicMock()
+        mock_db_manager.get_session.return_value = mock_session
+
+        repo = ProfileRepo(mock_db_manager)
+        expected_company = Company(name='retry_company', short_name='retry')
+
+        query_chain = mock_session.query.return_value.filter.return_value
+        query_chain.first.side_effect = [
+            OperationalError("SELECT 1", {}, Exception("ssl eof")),
+            expected_company,
+        ]
+
+        result = repo.get_company_by_short_name('retry')
+
+        assert result == expected_company
+        assert query_chain.first.call_count == 2
+        mock_db_manager.remove_session.assert_called_once()

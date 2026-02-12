@@ -34,10 +34,9 @@ class TestDatabaseManager(unittest.TestCase):
         mock_scoped_session.assert_called_once_with(self.mock_sessionmaker)
 
     def test_get_session(self):
-        """Prueba que get_session devuelve una nueva sesión."""
+        """Prueba que get_session devuelve el proxy scoped_session."""
         session = self.db_manager.get_session()
-        self.mock_scoped_session.assert_called_once()
-        self.assertEqual(session, self.mock_scoped_session())
+        self.assertEqual(session, self.mock_scoped_session)
 
     @patch('iatoolkit.repositories.database_manager.Base.metadata.create_all')
     def test_create_all(self, mock_create_all):
@@ -55,5 +54,4 @@ class TestDatabaseManager(unittest.TestCase):
         """Prueba que remove_session limpia la sesión actual."""
         self.db_manager.remove_session()
         self.mock_scoped_session.remove.assert_called_once()
-
 
