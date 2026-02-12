@@ -84,6 +84,7 @@ src/iatoolkit/services/user_feedback_service.py
 src/iatoolkit/services/user_session_context_service.py
 src/iatoolkit/services/visual_kb_service.py
 src/iatoolkit/services/visual_tool_service.py
+src/iatoolkit/services/warmup_service.py
 src/iatoolkit/services/parsers/__init__.py
 src/iatoolkit/services/parsers/contracts.py
 src/iatoolkit/services/parsers/image_normalizer.py

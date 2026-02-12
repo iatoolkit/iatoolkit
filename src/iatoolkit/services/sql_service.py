@@ -120,9 +120,6 @@ class SqlService:
             raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR,
                                      'missing database_name in call to exec_sql')
 
-        logging.error(f"SQL_SERVICE DATABASE_NAME: {database_name}")
-        logging.error(f"SQL_SERVICE QUERY: {query}")
-
         try:
             # 1. Get the abstract provider (could be Direct or Bridge)
             provider = self.get_database_provider(company_short_name, database_name)
