@@ -1,7 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, patch
 import os
-import sys
 from PIL import Image
 
 from iatoolkit.services.parsers.providers.docling_provider import DoclingParsingProvider
@@ -36,50 +35,43 @@ class TestDoclingParsingProvider:
 
     @patch("iatoolkit.services.parsers.providers.docling_provider.tempfile.NamedTemporaryFile")
     def test_parse_success_flow(self, mock_temp, provider):
-        mock_converter_cls = MagicMock()
-        mock_options_cls = MagicMock()
+        mock_tmp_file = MagicMock()
+        mock_tmp_file.name = "/tmp/test.pdf"
+        mock_temp.return_value.__enter__.return_value = mock_tmp_file
 
-        mock_docling_mod = MagicMock()
-        mock_docling_mod.document_converter.DocumentConverter = mock_converter_cls
-        mock_docling_mod.datamodel.pipeline_options.PdfPipelineOptions = mock_options_cls
+        mock_converter = MagicMock()
+        provider.converter = mock_converter
 
-        with patch.dict(sys.modules, {
-            "docling": mock_docling_mod,
-            "docling.document_converter": mock_docling_mod.document_converter,
-            "docling.datamodel.base_models": MagicMock(),
-            "docling.datamodel.pipeline_options": mock_docling_mod.datamodel.pipeline_options,
-        }):
-            mock_converter = mock_converter_cls.return_value
+        mock_doc = MagicMock()
+        mock_res = MagicMock()
+        mock_res.document = mock_doc
+        mock_converter.convert.return_value = mock_res
 
-            mock_doc = MagicMock()
-            mock_res = MagicMock()
-            mock_res.document = mock_doc
-            mock_converter.convert.return_value = mock_res
+        mock_doc.export_to_markdown.return_value = "Contenido Markdown"
+        mock_doc.export_to_dict.return_value = {
+            "body": [
+                {"type": "text", "text": "Texto extraido", "prov": [{"page_no": 1}]},
+                {"type": "list_item", "text": "item"},
+                {"type": "section_header", "text": "Sec"}
+            ]
+        }
 
-            mock_doc.export_to_markdown.return_value = "Contenido Markdown"
-            mock_doc.export_to_dict.return_value = {
-                "body": [
-                    {"type": "text", "text": "Texto extraido", "prov": [{"page_no": 1}]},
-                    {"type": "list_item", "text": "item"},
-                    {"type": "section_header", "text": "Sec"}
-                ]
-            }
+        mock_table_obj = MagicMock()
+        mock_table_obj.export_to_markdown.return_value = "| A | B |"
+        mock_table_obj.export_to_dict.return_value = {"grid": []}
+        mock_table_obj.prov = [MagicMock(page_no=1)]
+        mock_doc.tables = [mock_table_obj]
+        mock_doc.pictures = []
 
-            mock_table_obj = MagicMock()
-            mock_table_obj.export_to_markdown.return_value = "| A | B |"
-            mock_table_obj.export_to_dict.return_value = {"grid": []}
-            mock_table_obj.prov = [MagicMock(page_no=1)]
-            mock_doc.tables = [mock_table_obj]
-            mock_doc.pictures = []
+        request = MagicMock(filename="test.pdf", content=b"fake_content")
+        result = provider.parse(request)
 
-            request = MagicMock(filename="test.pdf", content=b"fake_content")
-            result = provider.parse(request)
-
-            assert result.provider == "docling"
-            assert len(result.texts) == 1
-            assert result.texts[0].text == "Texto extraido"
-            assert result.texts[0].meta.get("source_label") == "text"
-            assert len(result.tables) == 1
+        assert result.provider == "docling"
+        assert len(result.texts) == 1
+        assert result.texts[0].text == "Texto extraido"
+        assert result.texts[0].meta.get("source_label") == "text"
+        assert len(result.tables) == 1
+        mock_converter.convert.assert_called_once_with("/tmp/test.pdf")
 
     def test_extract_texts_skips_list_item_and_section_header(self, provider):
         doc_dict = {

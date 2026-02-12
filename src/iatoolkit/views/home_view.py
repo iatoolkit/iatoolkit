@@ -6,6 +6,7 @@ from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.branding_service import BrandingService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.common.util import Utility
+import logging
 
 class HomeView(MethodView):
     """
@@ -31,6 +32,8 @@ class HomeView(MethodView):
             if not company:
                 return render_template('error.html',
                                        message=self.i18n_service.t('errors.templates.company_not_found')), 404
+
+            self._trigger_warmup(company_short_name, "home_pre_login")
 
             branding_data = self.branding_service.get_company_branding(company_short_name)
 
@@ -61,3 +64,13 @@ class HomeView(MethodView):
                 branding=branding_data,
                 message=message
             ), 500
+
+    def _trigger_warmup(self, company_short_name: str, trigger: str):
+        try:
+            from iatoolkit import current_iatoolkit
+            from iatoolkit.services.warmup_service import WarmupService
+
+            warmup_service = current_iatoolkit().get_injector().get(WarmupService)
+            warmup_service.warmup_company(company_short_name, trigger=trigger)
+        except Exception as e:
+            logging.debug("Warm-up trigger skipped for company='%s' trigger='%s': %s", company_short_name, trigger, e)

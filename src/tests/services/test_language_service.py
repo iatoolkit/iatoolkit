@@ -134,7 +134,7 @@ class TestLanguageService:
         THEN the service fails gracefully and returns the fallback language ('es').
         """
         # Arrange
-        mock_session_manager.get.side_effect = [None, 'acme-en'] # No user, but company context
+        mock_session_manager.get.return_value = 'acme-en'
         self.mock_config_service.get_configuration.side_effect = Exception("YAML file is corrupted")
 
         with self.app.test_request_context():
