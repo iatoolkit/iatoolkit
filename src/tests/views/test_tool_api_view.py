@@ -137,7 +137,28 @@ class TestToolApiView:
 
         assert resp.status_code == 200
         assert resp.json['description'] == "updated"
-        self.mock_tool_service.update_tool.assert_called_with(self.MOCK_COMPANY, 1, payload)
+        self.mock_tool_service.update_tool.assert_called_with(
+            self.MOCK_COMPANY,
+            1,
+            payload,
+            allow_system_update=False
+        )
+
+    def test_update_tool_system_allowed_for_admin_role(self):
+        """PUT should pass allow_system_update=True for admin/owner roles."""
+        self.mock_auth.verify.return_value = {"success": True, "status_code": 200, "user_role": "admin"}
+        payload = {"description": "updated"}
+        self.mock_tool_service.update_tool.return_value = {"id": 1, "description": "updated"}
+
+        resp = self.client.put(f'/{self.MOCK_COMPANY}/api/tools/1', json=payload)
+
+        assert resp.status_code == 200
+        self.mock_tool_service.update_tool.assert_called_with(
+            self.MOCK_COMPANY,
+            1,
+            payload,
+            allow_system_update=True
+        )
 
     def test_update_system_tool_fails(self):
         """PUT should return 409 if trying to update system tool."""
@@ -147,6 +168,12 @@ class TestToolApiView:
 
         resp = self.client.put(f'/{self.MOCK_COMPANY}/api/tools/1', json={})
         assert resp.status_code == 409
+        self.mock_tool_service.update_tool.assert_called_with(
+            self.MOCK_COMPANY,
+            1,
+            {},
+            allow_system_update=False
+        )
 
     # --- DELETE ---
 

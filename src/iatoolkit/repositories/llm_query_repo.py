@@ -66,8 +66,21 @@ class LLMQueryRepo:
             name=tool_name
         ).first()
 
-    def get_tool_by_id(self, company_id: int, tool_id: int) -> Tool | None:
-        return self.session.query(Tool).filter_by(id=tool_id, company_id=company_id).first()
+    def get_tool_by_id(self, company_id: int, tool_id: int, include_system: bool = False) -> Tool | None:
+        query = self.session.query(Tool).filter(Tool.id == tool_id)
+        if include_system:
+            query = query.filter(
+                or_(
+                    Tool.company_id == company_id,
+                    and_(
+                        Tool.company_id.is_(None),
+                        Tool.tool_type == Tool.TYPE_SYSTEM
+                    )
+                )
+            )
+            return query.first()
+
+        return query.filter(Tool.company_id == company_id).first()
 
     def add_tool(self, tool: Tool):
         """Adds a new tool to the session (without checking by name logic)."""
@@ -166,4 +179,3 @@ class LLMQueryRepo:
 
         self.session.commit()
         return category
-

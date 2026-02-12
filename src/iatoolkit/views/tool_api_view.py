@@ -97,7 +97,13 @@ class ToolApiView(MethodView):
 
         try:
             data = request.get_json() or {}
-            updated_tool = self.tool_service.update_tool(company_short_name, tool_id, data)
+            allow_system_update = self._can_edit_system_tools(auth_result)
+            updated_tool = self.tool_service.update_tool(
+                company_short_name,
+                tool_id,
+                data,
+                allow_system_update=allow_system_update
+            )
             return jsonify(updated_tool), 200
 
         except IAToolkitException as e:
@@ -197,3 +203,8 @@ class ToolApiView(MethodView):
             status_code = 409
 
         return jsonify({"error": str(e), "error_type": e.error_type.value}), status_code
+
+    @staticmethod
+    def _can_edit_system_tools(auth_result: dict) -> bool:
+        role = (auth_result.get("user_role") or "").lower()
+        return role in {"admin", "owner"}

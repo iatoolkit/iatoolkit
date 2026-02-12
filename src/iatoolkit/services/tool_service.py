@@ -291,7 +291,7 @@ class ToolService:
         if not company:
             raise IAToolkitException(IAToolkitException.ErrorType.INVALID_NAME, "Company not found")
 
-        tool = self.llm_query_repo.get_tool_by_id(company.id, tool_id)
+        tool = self.llm_query_repo.get_tool_by_id(company.id, tool_id, include_system=True)
         if not tool:
             raise IAToolkitException(IAToolkitException.ErrorType.NOT_FOUND, "Tool not found")
 
@@ -325,18 +325,24 @@ class ToolService:
         created_tool = self.llm_query_repo.add_tool(new_tool)
         return created_tool.to_dict()
 
-    def update_tool(self, company_short_name: str, tool_id: int, tool_data: dict) -> dict:
+    def update_tool(
+        self,
+        company_short_name: str,
+        tool_id: int,
+        tool_data: dict,
+        allow_system_update: bool = False
+    ) -> dict:
         """Updates an existing tool (Only if source=USER usually, but we allow editing YAML ones locally if needed or override)."""
         company = self.profile_repo.get_company_by_short_name(company_short_name)
         if not company:
             raise IAToolkitException(IAToolkitException.ErrorType.INVALID_NAME, "Company not found")
 
-        tool = self.llm_query_repo.get_tool_by_id(company.id, tool_id)
+        tool = self.llm_query_repo.get_tool_by_id(company.id, tool_id, include_system=True)
         if not tool:
             raise IAToolkitException(IAToolkitException.ErrorType.NOT_FOUND, "Tool not found")
 
         # Prevent modifying System tools
-        if tool.tool_type == Tool.TYPE_SYSTEM:
+        if tool.tool_type == Tool.TYPE_SYSTEM and not allow_system_update:
             raise IAToolkitException(IAToolkitException.ErrorType.INVALID_OPERATION, "Cannot modify System Tools")
 
         # Update fields
@@ -358,7 +364,7 @@ class ToolService:
         if not company:
             raise IAToolkitException(IAToolkitException.ErrorType.INVALID_NAME, "Company not found")
 
-        tool = self.llm_query_repo.get_tool_by_id(company.id, tool_id)
+        tool = self.llm_query_repo.get_tool_by_id(company.id, tool_id, include_system=True)
         if not tool:
             raise IAToolkitException(IAToolkitException.ErrorType.NOT_FOUND, "Tool not found")
 

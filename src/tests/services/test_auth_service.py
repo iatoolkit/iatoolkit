@@ -41,7 +41,11 @@ class TestAuthServiceVerify:
 
     def test_verify_success_with_flask_session(self):
         """verify() should succeed if a valid Flask session is found."""
-        session_info = {"user_identifier": "user_session_123", "company_short_name": "testco"}
+        session_info = {
+            "user_identifier": "user_session_123",
+            "company_short_name": "testco",
+            "profile": {"user_role": "admin"}
+        }
         self.mock_profile_service.get_current_session_info.return_value = session_info
 
         with self.app.test_request_context():
@@ -50,6 +54,7 @@ class TestAuthServiceVerify:
         assert result['success'] is True
         assert result['user_identifier'] == "user_session_123"
         assert result['company_short_name'] == "testco"
+        assert result['user_role'] == "admin"
         self.mock_profile_service.get_active_api_key_entry.assert_not_called()
 
     def test_verify_success_with_api_key_and_user_identifier(self):

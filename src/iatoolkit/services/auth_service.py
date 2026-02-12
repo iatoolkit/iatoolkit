@@ -114,6 +114,7 @@ class AuthService:
                 "success": True,
                 "company_short_name": session_info['company_short_name'],
                 "user_identifier": session_info['user_identifier'],
+                "user_role": (session_info.get('profile') or {}).get('user_role'),
             }
 
         # --- Priority 2: Check for a valid API Key in headers ---

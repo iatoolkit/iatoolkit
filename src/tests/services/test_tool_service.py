@@ -244,6 +244,24 @@ class TestToolService:
 
         assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_OPERATION
 
+    def test_update_tool_system_tool_allowed_with_flag(self):
+        """Test that system tools can be updated when explicitly authorized."""
+        existing_tool = MagicMock(spec=Tool)
+        existing_tool.tool_type = Tool.TYPE_SYSTEM
+        existing_tool.to_dict.return_value = {"id": 1, "description": "updated"}
+        self.mock_llm_query_repo.get_tool_by_id.return_value = existing_tool
+
+        result = self.service.update_tool(
+            self.company_short_name,
+            1,
+            {"description": "updated"},
+            allow_system_update=True
+        )
+
+        assert existing_tool.description == "updated"
+        assert result["description"] == "updated"
+        self.mock_llm_query_repo.commit.assert_called_once()
+
     def test_delete_tool_system_tool_fails(self):
         """Test that system tools cannot be deleted via API."""
         existing_tool = MagicMock(spec=Tool)
