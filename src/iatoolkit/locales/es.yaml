@@ -514,6 +514,11 @@ js_messages:
   edit: "Editar"
   conversation: "Conversaciones"
   agents: "Agentes"
+  rag_collections: "Colecciones"
+  rag_active_docs: "Documentos Activos"
+  rag_chunks: "Chunks"
+  rag_images: "Imagenes"
+  rag_tables: "Tablas"
 
 
 

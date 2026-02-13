@@ -289,7 +289,7 @@ ui:
     collection: "Collection"
     manage_collections: "Manage collections"
     all_collections: "All collections"
-    sources: Fuentes
+    sources: "Sources"
     insights: "Insights"
     insights_title: "RAG Insights"
     insights_description: "Historical metrics for active documents, grouped by collection."
@@ -515,6 +515,11 @@ js_messages:
   edit: "Edit"
   conversation: "Conversations"
   agents: "Agents"
+  rag_collections: "Collections"
+  rag_active_docs: "Active Documents"
+  rag_chunks: "Chunks"
+  rag_images: "Images"
+  rag_tables: "Tables"
 
 
 
