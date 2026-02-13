@@ -305,6 +305,7 @@ ui:
     insights_col_chunks: "Chunks"
     insights_col_images: "Imágenes"
     insights_col_tables: "Tablas"
+    insights_col_storage_estimate: "Storage (est.)"
     insights_col_avg_chunks_per_doc: "Prom. chunks/doc"
     insights_col_avg_chunk_size: "Prom. tamaño chunk"
     insights_no_data_loaded: "Aún no hay datos cargados."
@@ -519,7 +520,7 @@ js_messages:
   rag_chunks: "Chunks"
   rag_images: "Imagenes"
   rag_tables: "Tablas"
-
+  rag_storage_estimate: "Storage RAG (est.)"
 
 
 
