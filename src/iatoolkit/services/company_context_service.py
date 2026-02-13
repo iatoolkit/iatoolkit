@@ -82,7 +82,6 @@ class CompanyContextService:
         db_tables=[]
 
         for source in data_sources_config.get('sql', []):
-            logging.error(f"COMPANY_CONTEXT_SERVICE SOURCE: {source}")
             db_name = source.get('database')
             if not db_name:
                 continue

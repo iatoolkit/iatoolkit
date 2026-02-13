@@ -2,7 +2,7 @@ id: sample_company
 name: Sample Company
 locale: en_ES
 llm:
-  model: gpt-5.2
+  model: gemini-3-pro-preview
   available_models:
   - id: gpt-5.2
     label: gpt-5.2
@@ -10,8 +10,8 @@ llm:
   - id: deepseek-chat
     label: deepseek-chat
     description: Fast and cheap.
-  - id: gemini-3-flash-preview
-    label: gemini-3-flash-preview
+  - id: gemini-3-pro-preview
+    label: gemini-3-pro-preview
     description: Fast
   provider_api_keys:
     openai: OPENAI_API_KEY

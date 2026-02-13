@@ -6,7 +6,6 @@
 from iatoolkit.infra.llm_response import LLMResponse, ToolCall, Usage
 from typing import Dict, List, Optional
 from google.genai import types
-from google.protobuf.json_format import MessageToDict
 from iatoolkit.common.exceptions import IAToolkitException
 import logging
 import json
@@ -278,21 +277,6 @@ class GeminiAdapter:
             candidate = response.candidates[0]
             if candidate.content and candidate.content.parts:
                 for idx, part in enumerate(candidate.content.parts):
-                    # --- BLOQUE DE DEBUG PROFUNDO ---
-                    logging.info(f"--- DEBUG PART {idx} START ---")
-                    # Intentamos ver todos los atributos que NO son nulos
-                    attrs = [a for a in dir(part) if not a.startswith('_')]
-                    for attr in attrs:
-                        try:
-                            val = getattr(part, attr)
-                            if val:
-                                if attr in ['inline_data', 'blob']:
-                                    logging.info(f"ATRIBUTO ENCONTRADO: {attr} (MIME: {val.mime_type}, DATA_LEN: {len(val.data)})")
-                                else:
-                                    logging.info(f"ATRIBUTO ENCONTRADO: {attr} = {str(val)[:100]}")
-                        except:
-                            pass
-                    logging.info(f"--- DEBUG PART {idx} END ---")
 
                     # 1. Texto
                     if part.text:
@@ -301,9 +285,7 @@ class GeminiAdapter:
 
                     # 2. Llamada a Herramienta
                     elif part.function_call:
-                        # Usar MessageToDict para convertir el protobuf a dict
-                        fc_dict = MessageToDict(part.function_call._pb)
-                        args = fc_dict.get('args', {})
+                        args = self._extract_function_call_args(part.function_call)
 
                         tool_calls.append(ToolCall(
                             call_id=part.function_call.name,
@@ -348,6 +330,34 @@ class GeminiAdapter:
             usage=usage,
             content_parts=content_parts
         )
+
+    def _extract_function_call_args(self, function_call) -> Dict:
+        """
+        Extract tool-call arguments from Gemini SDK objects.
+        Current google-genai SDK exposes `args` directly.
+        """
+        try:
+            direct_args = getattr(function_call, "args", None)
+            if direct_args is None:
+                return {}
+
+            if isinstance(direct_args, dict):
+                return direct_args
+            if isinstance(direct_args, str):
+                try:
+                    return json.loads(direct_args)
+                except Exception:
+                    return {"value": direct_args}
+            if hasattr(direct_args, "items"):
+                return {k: v for k, v in direct_args.items()}
+            if hasattr(direct_args, "to_dict"):
+                return direct_args.to_dict()
+            if hasattr(direct_args, "model_dump"):
+                return direct_args.model_dump()
+        except Exception as e:
+            logging.debug(f"Could not read function_call.args directly: {e}")
+
+        return {}
 
     def _extract_usage_metadata(self, gemini_response) -> Usage:
         """Extraer información de uso de tokens de manera segura"""

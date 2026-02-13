@@ -25,9 +25,6 @@ class TestGeminiAdapter:
 
         patch('iatoolkit.infra.llm_providers.gemini_adapter.uuid.uuid4', return_value=uuid.UUID('12345678-1234-5678-1234-567812345678')).start()
 
-        self.message_to_dict_patcher = patch('iatoolkit.infra.llm_providers.gemini_adapter.MessageToDict')
-        self.mock_message_to_dict = self.message_to_dict_patcher.start()
-
         # Mockear types.Part para el test multimodal
         self.types_patcher = patch('iatoolkit.infra.llm_providers.gemini_adapter.types')
         self.mock_types = self.types_patcher.start()
@@ -54,10 +51,7 @@ class TestGeminiAdapter:
             # Crea un mock para el objeto `function_call` y asigna sus atributos directamente.
             mock_fc_obj = MagicMock()
             mock_fc_obj.name = function_call['name']
-            mock_fc_obj._pb = "mock_pb"  # Simular el objeto protobuf interno
-
-            # Configura el mock del conversor para que devuelva los args esperados
-            self.mock_message_to_dict.return_value = {'args': function_call['args']}
+            mock_fc_obj.args = function_call['args']
 
             part = MagicMock()
             part.function_call = mock_fc_obj
@@ -119,7 +113,34 @@ class TestGeminiAdapter:
         assert isinstance(tool_call, ToolCall)
         assert tool_call.name == "get_weather"
         assert tool_call.arguments == json.dumps(func_call_data['args'])
-        self.mock_message_to_dict.assert_called_once_with("mock_pb")
+
+    def test_create_response_with_tool_call_args_without_pb(self):
+        """Debe soportar args serializados como string JSON."""
+        mock_response = MagicMock()
+        mock_candidate = MagicMock()
+        part = MagicMock()
+
+        part.text = None
+        part.inline_data = None
+        part.blob = None
+        part.function_call = MagicMock(name="function_call")
+        part.function_call.name = "get_weather"
+        part.function_call.args = "{\"location\": \"Santiago\"}"
+
+        mock_candidate.content.parts = [part]
+        mock_candidate.finish_reason = "STOP"
+        mock_response.candidates = [mock_candidate]
+        del mock_response.usage_metadata
+
+        self.mock_generative_model.generate_content.return_value = mock_response
+
+        response = self.adapter.create_response(model="gemini-flash", input=[], tools=[{}])
+
+        assert len(response.output) == 1
+        tool_call = response.output[0]
+        assert isinstance(tool_call, ToolCall)
+        assert tool_call.name == "get_weather"
+        assert tool_call.arguments == json.dumps({"location": "Santiago"})
 
     def test_create_response_multimodal_input(self):
         """Prueba que se fusionan las imágenes en el mensaje de usuario."""
