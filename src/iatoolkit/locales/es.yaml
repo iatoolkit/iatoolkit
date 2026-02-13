@@ -292,6 +292,22 @@ ui:
     manage_collections: "Administra collections"
     select_collection: "Selecciona una categorìa"
     sources: "Fuentes"
+    insights: "Insights"
+    insights_title: "Insights RAG"
+    insights_description: "Métricas históricas de documentos activos, agrupadas por colección."
+    insights_last_updated: "Última actualización"
+    insights_refresh: "Refrescar"
+    insights_active_documents_by_collection: "Documentos activos por colección"
+    insights_collection_breakdown: "Desglose por colección"
+    insights_col_collection: "Colección"
+    insights_col_docs: "Docs"
+    insights_col_share: "% Participación"
+    insights_col_chunks: "Chunks"
+    insights_col_images: "Imágenes"
+    insights_col_tables: "Tablas"
+    insights_col_avg_chunks_per_doc: "Prom. chunks/doc"
+    insights_col_avg_chunk_size: "Prom. tamaño chunk"
+    insights_no_data_loaded: "Aún no hay datos cargados."
 
   json_editor:
     title: "Editor de Esquema JSON"
@@ -498,7 +514,6 @@ js_messages:
   edit: "Editar"
   conversation: "Conversaciones"
   agents: "Agentes"
-
 
 
 

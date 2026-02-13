@@ -290,6 +290,22 @@ ui:
     manage_collections: "Manage collections"
     all_collections: "All collections"
     sources: Fuentes
+    insights: "Insights"
+    insights_title: "RAG Insights"
+    insights_description: "Historical metrics for active documents, grouped by collection."
+    insights_last_updated: "Last updated"
+    insights_refresh: "Refresh"
+    insights_active_documents_by_collection: "Active Documents by Collection"
+    insights_collection_breakdown: "Collection Breakdown"
+    insights_col_collection: "Collection"
+    insights_col_docs: "Docs"
+    insights_col_share: "% Share"
+    insights_col_chunks: "Chunks"
+    insights_col_images: "Images"
+    insights_col_tables: "Tables"
+    insights_col_avg_chunks_per_doc: "Avg Chunks/Doc"
+    insights_col_avg_chunk_size: "Avg Chunk Size"
+    insights_no_data_loaded: "No data loaded yet."
 
   json_editor:
     title: "JSON Schema Editor"
@@ -499,7 +515,6 @@ js_messages:
   edit: "Edit"
   conversation: "Conversations"
   agents: "Agents"
-
 
 
 
