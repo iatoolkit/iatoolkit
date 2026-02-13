@@ -119,3 +119,18 @@ class TestStorageService(unittest.TestCase):
         args = self.mock_connector_instance.upload_file.call_args.kwargs
         self.assertEqual(args['content'], content)
         self.assertEqual(args['content_type'], mime)
+
+    def test_upload_generated_download(self):
+        content = b"excel content"
+        filename = "report.xlsx"
+        mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+        storage_key = self.service.upload_generated_download(self.company_name, content, filename, mime)
+
+        self.assertTrue(storage_key.startswith(f"companies/{self.company_name}/generated_downloads/"))
+        self.assertTrue(storage_key.endswith(filename))
+
+        self.mock_connector_instance.upload_file.assert_called_once()
+        args = self.mock_connector_instance.upload_file.call_args.kwargs
+        self.assertEqual(args['content'], content)
+        self.assertEqual(args['content_type'], mime)

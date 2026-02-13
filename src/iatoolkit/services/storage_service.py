@@ -10,11 +10,15 @@ import mimetypes
 import os
 from injector import inject
 from typing import Dict
+from flask import current_app, has_app_context
+from itsdangerous import URLSafeSerializer, BadSignature
 
 from iatoolkit.infra.connectors.file_connector import FileConnector
 from iatoolkit.infra.connectors.file_connector_factory import FileConnectorFactory
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.configuration_service import ConfigurationService
+
+DOWNLOAD_TOKEN_SALT = "iatoolkit-download-token-v1"
 
 
 class StorageService:
@@ -118,6 +122,32 @@ class StorageService:
             logging.error(error_msg)
             raise IAToolkitException(IAToolkitException.ErrorType.FILE_IO_ERROR, error_msg)
 
+    def upload_generated_download(self,
+                                  company_short_name: str,
+                                  file_content: bytes,
+                                  filename: str,
+                                  mime_type: str) -> str:
+        """
+        Uploads a generated file intended for user download.
+        Uses a dedicated prefix to make cleanup/retention easier.
+        """
+        try:
+            unique_id = uuid.uuid4()
+            storage_key = f"companies/{company_short_name}/generated_downloads/{unique_id}/{filename}"
+
+            connector = self._get_connector(company_short_name)
+            connector.upload_file(
+                file_path=storage_key,
+                content=file_content,
+                content_type=mime_type
+            )
+            return storage_key
+
+        except Exception as e:
+            error_msg = f"Error uploading generated download: {str(e)}"
+            logging.error(error_msg)
+            raise IAToolkitException(IAToolkitException.ErrorType.FILE_IO_ERROR, error_msg)
+
     def get_document_content(self, company_short_name: str, storage_key: str) -> bytes:
         """Retrieves raw content via the configured connector."""
         try:
@@ -136,3 +166,53 @@ class StorageService:
             connector.delete_file(storage_key)
         except Exception as e:
             raise IAToolkitException(IAToolkitException.ErrorType.FILE_IO_ERROR, f"Error deleting file: {str(e)}")
+
+    def create_download_token(self,
+                              company_short_name: str,
+                              storage_key: str,
+                              filename: str | None = None) -> str:
+        """
+        Creates a signed token that can be used to download or re-read a file from storage.
+        """
+        if not company_short_name or not storage_key:
+            raise IAToolkitException(IAToolkitException.ErrorType.CALL_ERROR, "Invalid download token payload.")
+
+        payload = {
+            "v": 1,
+            "company": company_short_name,
+            "storage_key": storage_key,
+        }
+        if filename:
+            payload["filename"] = filename
+
+        serializer = self._get_download_serializer()
+        return serializer.dumps(payload)
+
+    def resolve_download_token(self, token: str) -> Dict[str, str]:
+        """
+        Resolves and validates a signed download token.
+        """
+        if not token:
+            raise IAToolkitException(IAToolkitException.ErrorType.CALL_ERROR, "Invalid download token.")
+
+        serializer = self._get_download_serializer()
+        try:
+            payload = serializer.loads(token)
+        except BadSignature as e:
+            raise IAToolkitException(IAToolkitException.ErrorType.CALL_ERROR, "Invalid download token.") from e
+
+        company_short_name = payload.get("company")
+        storage_key = payload.get("storage_key")
+        if not company_short_name or not storage_key:
+            raise IAToolkitException(IAToolkitException.ErrorType.CALL_ERROR, "Invalid download token payload.")
+        return payload
+
+    def _get_download_serializer(self) -> URLSafeSerializer:
+        """
+        Returns the serializer used for signed download tokens.
+        """
+        secret_key = os.getenv("IATOOLKIT_SECRET_KEY")
+        if not secret_key:
+            raise IAToolkitException(IAToolkitException.ErrorType.CONFIG_ERROR, "SECRET_KEY is not configured.")
+
+        return URLSafeSerializer(secret_key=secret_key, salt=DOWNLOAD_TOKEN_SALT)

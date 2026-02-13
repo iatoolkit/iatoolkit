@@ -11,6 +11,7 @@ import pytest
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.mail_service import MailService
 from iatoolkit.services.i18n_service import I18nService
+from iatoolkit.services.storage_service import StorageService
 from iatoolkit.infra.brevo_mail_app import BrevoMailApp
 from iatoolkit.common.exceptions import IAToolkitException
 
@@ -22,6 +23,7 @@ class TestMailService:
         self.mock_config_service = MagicMock(spec=ConfigurationService)
         self.mock_brevo_mail_app = MagicMock(spec=BrevoMailApp)
         self.mock_i18n_service = MagicMock(spec=I18nService)
+        self.mock_storage_service = MagicMock(spec=StorageService)
 
         # Traducción mock
         self.mock_i18n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
@@ -36,6 +38,13 @@ class TestMailService:
             mail_app=self.mock_mail_app,
             i18n_service=self.mock_i18n_service,
             brevo_mail_app=self.mock_brevo_mail_app,
+            storage_service=self.mock_storage_service,
+        )
+
+        # Default behavior: invalid token
+        self.mock_storage_service.resolve_download_token.side_effect = IAToolkitException(
+            IAToolkitException.ErrorType.CALL_ERROR,
+            "Invalid download token."
         )
 
         # Datos comunes
@@ -105,23 +114,21 @@ class TestMailService:
 
         assert result == "translated:services.mail_sent"
 
-    def test_send_mail_brevo_with_attachment_token(self, tmp_path, monkeypatch):
-        """Cuando hay attachment_token debe leerse el archivo y normalizar a base64."""
+    def test_send_mail_brevo_with_attachment_token(self, monkeypatch):
+        """Cuando hay attachment_token válido debe leerse desde storage y normalizar a base64."""
         self._set_brevo_config()
         monkeypatch.setenv("BREVO_API_KEY", "dummy_key")
-
-        # Creamos archivo temporal para simular attachment_token
+        self.mock_storage_service.resolve_download_token.side_effect = None
+        self.mock_storage_service.resolve_download_token.return_value = {
+            "company": self.company_short_name,
+            "storage_key": "companies/test_company/generated_downloads/1/test.txt"
+        }
         content_bytes = b"hello world"
-        attach_file = tmp_path / "token123"
-        attach_file.write_bytes(content_bytes)
-
-        # Parchear TEMP_DIR en mail_service para que apunte al tmp_path
-        from iatoolkit.services import mail_service as mail_service_module
-        mail_service_module.TEMP_DIR = tmp_path
+        self.mock_storage_service.get_document_content.return_value = content_bytes
 
         attachment = {
             "filename": "test.txt",
-            "attachment_token": "token123",
+            "attachment_token": "signed-token",
         }
 
         result = self.mail_service.send_mail(
@@ -264,14 +271,10 @@ class TestMailService:
         assert call_args["body"] is None
         assert result == "translated:services.mail_sent"
 
-    def test_send_mail_invalid_attachment_token_raises(self, tmp_path, monkeypatch):
+    def test_send_mail_invalid_attachment_token_raises(self, monkeypatch):
         """attachment_token inválido debe levantar IAToolkitException de tipo MAIL_ERROR."""
         self._set_brevo_config()
         monkeypatch.setenv("BREVO_API_KEY", "dummy_key")
-
-        # TEMP_DIR apunta a tmp_path vacío -> archivo no existe
-        from iatoolkit.services import mail_service as mail_service_module
-        mail_service_module.TEMP_DIR = tmp_path
 
         attachment = {
             "filename": "test.txt",
@@ -288,4 +291,38 @@ class TestMailService:
             )
 
         assert exc.value.error_type == IAToolkitException.ErrorType.MAIL_ERROR
-        assert "attach file not found" in str(exc.value)
+        assert "attachment_token invalid" in str(exc.value)
+
+    def test_send_mail_brevo_with_signed_attachment_token_from_storage(self, monkeypatch):
+        self._set_brevo_config()
+        monkeypatch.setenv("BREVO_API_KEY", "dummy_key")
+        self.mock_storage_service.resolve_download_token.side_effect = None
+        self.mock_storage_service.resolve_download_token.return_value = {
+            "company": self.company_short_name,
+            "storage_key": "companies/test_company/generated_downloads/1/test.xlsx"
+        }
+        self.mock_storage_service.get_document_content.return_value = b"signed-bytes"
+
+        attachment = {
+            "filename": "test.xlsx",
+            "attachment_token": "signed-token",
+        }
+
+        result = self.mail_service.send_mail(
+            company_short_name=self.company_short_name,
+            recipient=self.recipient,
+            subject=self.subject,
+            body=self.body,
+            attachments=[attachment],
+        )
+
+        self.mock_storage_service.resolve_download_token.assert_called_once_with("signed-token")
+        self.mock_storage_service.get_document_content.assert_called_once_with(
+            self.company_short_name,
+            "companies/test_company/generated_downloads/1/test.xlsx"
+        )
+        self.mock_brevo_mail_app.send_email.assert_called_once()
+        call_args = self.mock_brevo_mail_app.send_email.call_args.kwargs
+        decoded = base64.b64decode(call_args["attachments"][0]["content"])
+        assert decoded == b"signed-bytes"
+        assert result == "translated:services.mail_sent"

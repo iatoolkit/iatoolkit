@@ -5,6 +5,7 @@
 
 from iatoolkit.services.excel_service import ExcelService
 from iatoolkit.services.i18n_service import I18nService
+from iatoolkit.services.storage_service import StorageService
 from iatoolkit.common.util import Utility
 import os
 import shutil
@@ -33,7 +34,12 @@ class TestExcelService:
         # Mocks of services
         self.util = MagicMock(spec=Utility)
         self.mock_i18n_service = MagicMock(spec=I18nService)
-        self.excel_service = ExcelService(util=self.util, i18n_service=self.mock_i18n_service)
+        self.mock_storage_service = MagicMock(spec=StorageService)
+        self.excel_service = ExcelService(
+            util=self.util,
+            i18n_service=self.mock_i18n_service,
+            storage_service=self.mock_storage_service
+        )
 
         self.mock_i18n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
 
@@ -318,3 +324,35 @@ class TestExcelService:
         assert result is not None
         data = result.get_json()
         assert data['error'] == 'translated:errors.services.invalid_filename'
+
+    def test_excel_generator_uploads_to_storage_and_returns_signed_download_link(self):
+        self.mock_storage_service.upload_generated_download.return_value = "companies/acme/generated_downloads/1/generated.xlsx"
+        self.mock_storage_service.create_download_token.return_value = "signed-token"
+
+        with self.app.app_context():
+            self.app.config["SECRET_KEY"] = "test-secret"
+            result = self.excel_service.excel_generator(
+                "acme",
+                filename="report.xlsx",
+                data=[{"id": 1, "name": "Alice"}],
+                sheet_name="Sheet1"
+            )
+
+        assert result["filename"] == "report.xlsx"
+        assert result["attachment_token"] == "signed-token"
+        assert result["download_link"] == "/download/signed-token"
+        assert result["content_type"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+        self.mock_storage_service.upload_generated_download.assert_called_once()
+        upload_kwargs = self.mock_storage_service.upload_generated_download.call_args.kwargs
+        assert upload_kwargs["company_short_name"] == "acme"
+        assert upload_kwargs["mime_type"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        assert upload_kwargs["filename"].endswith(".xlsx")
+        assert isinstance(upload_kwargs["file_content"], (bytes, bytearray))
+        assert len(upload_kwargs["file_content"]) > 0
+
+        self.mock_storage_service.create_download_token.assert_called_once_with(
+            company_short_name="acme",
+            storage_key="companies/acme/generated_downloads/1/generated.xlsx",
+            filename="report.xlsx"
+        )

@@ -4,8 +4,8 @@ SYSTEM_TOOLS_DEFINITIONS = [
         "description": "Generador de Excel."
                        "Genera un archivo Excel (.xlsx) a partir de una lista de diccionarios. "
                        "Cada diccionario representa una fila del archivo. "
-                       "el archivo se guarda en directorio de descargas."
-                       "retorna diccionario con filename, attachment_token (para enviar archivo por mail)"
+                       "el archivo se guarda en storage."
+                       "retorna diccionario con filename y attachment_token (para recuperar el archivo)"
                        "content_type y download_link",
         "parameters": {
             "type": "object",

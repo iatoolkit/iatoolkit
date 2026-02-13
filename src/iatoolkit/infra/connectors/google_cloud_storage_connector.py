@@ -65,3 +65,6 @@ class GoogleCloudStorageConnector(FileConnector):
         """
         blob = self.bucket.blob(file_path)
         blob.upload_from_string(content, content_type=content_type)
+
+    def generate_presigned_url(self, file_path: str, expiration: int = 3600) -> str:
+        raise NotImplementedError("not implemented yet")

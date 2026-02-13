@@ -66,3 +66,6 @@ class LocalFileConnector(FileConnector):
         except Exception as e:
             raise IAToolkitException(IAToolkitException.ErrorType.FILE_IO_ERROR,
                                      f"Error eliminando el archivo {file_path}: {e}")
+
+    def generate_presigned_url(self, file_path: str, expiration: int = 3600) -> str:
+        raise NotImplementedError("not implemented yet")

@@ -47,8 +47,7 @@ class TestIAToolkit(unittest.TestCase):
                 patch.object(toolkit, '_instantiate_company_instances') as mock_init_companies, \
                 patch.object(toolkit, '_setup_redis_sessions') as mock_setup_redis, \
                 patch.object(toolkit, '_setup_cors') as mock_setup_cors, \
-                patch.object(toolkit, '_setup_cli_commands') as mock_setup_cli, \
-                patch.object(toolkit, '_setup_download_dir') as mock_setup_dl:
+                patch.object(toolkit, '_setup_cli_commands') as mock_setup_cli:
             # Act
             app = toolkit.create_iatoolkit()
 
@@ -70,7 +69,6 @@ class TestIAToolkit(unittest.TestCase):
             mock_setup_redis.assert_called_once()
             mock_setup_cors.assert_called_once()
             mock_setup_cli.assert_called_once()
-            mock_setup_dl.assert_called_once()
 
     def test_singleton_pattern(self):
         """Test that IAToolkit follows the Singleton pattern strictly."""
@@ -100,8 +98,7 @@ class TestIAToolkit(unittest.TestCase):
                 patch.object(tk1, '_setup_additional_services'), \
                 patch.object(tk1, '_setup_cli_commands'), \
                 patch.object(tk1, '_setup_docling'), \
-                patch.object(tk1, 'register_data_sources'), \
-                patch.object(tk1, '_setup_download_dir'):
+                patch.object(tk1, 'register_data_sources'):
             # Inject dummy objects to allow flow to proceed
             tk1.app = MagicMock()
             tk1.create_iatoolkit()
@@ -201,18 +198,6 @@ class TestIAToolkit(unittest.TestCase):
         mock_iatoolkit_cls.assert_called_with(config)
         mock_instance.create_iatoolkit.assert_called_once()
         self.assertEqual(app, "flask_app_instance")
-
-    @patch('iatoolkit.core.os.makedirs')
-    def test_setup_download_dir_creates_directory(self, mock_makedirs):
-        """Test that the download directory is created."""
-        config = {'IATOOLKIT_DOWNLOAD_DIR': '/custom/path'}
-        toolkit = IAToolkit(config)
-        toolkit.app = Flask(__name__)
-
-        toolkit._setup_download_dir()
-
-        mock_makedirs.assert_called_once_with('/custom/path', exist_ok=True)
-        self.assertEqual(toolkit.app.config['IATOOLKIT_DOWNLOAD_DIR'], '/custom/path')
 
     @patch('iatoolkit.company_registry.get_company_registry')
     @patch('iatoolkit.core.CORS')

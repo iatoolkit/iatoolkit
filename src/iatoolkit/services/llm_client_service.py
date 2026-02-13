@@ -474,9 +474,9 @@ class llmClient:
     def add_stats(self, stats1: dict, stats2: dict) -> dict:
         stats_dict = {
             "model": stats1.get('model', ''),
-            "input_tokens": stats1.get('input_tokens', 0) + stats2.get('input_tokens', 0),
-            "output_tokens": stats1.get('output_tokens', 0) + stats2.get('output_tokens', 0),
-            "total_tokens": stats1.get('total_tokens', 0) + stats2.get('total_tokens', 0),
+            "input_tokens": (stats1.get('input_tokens') or 0) + (stats2.get('input_tokens') or 0),
+            "output_tokens": (stats1.get('output_tokens') or 0) + (stats2.get('output_tokens') or 0),
+            "total_tokens": (stats1.get('total_tokens') or 0) + (stats2.get('total_tokens') or 0),
         }
         return stats_dict
 

@@ -3,8 +3,11 @@
 #
 # IAToolkit is open source software.
 
-from flask import render_template, redirect, url_for,send_from_directory, current_app, abort
+from io import BytesIO
+import mimetypes
+from flask import render_template, redirect, url_for, current_app, abort, send_file
 from flask import jsonify
+from iatoolkit.common.exceptions import IAToolkitException
 
 
 # this function register all the views
@@ -204,26 +207,42 @@ def register_views(app):
     @app.route('/download/<path:filename>')
     def download_file(filename):
         """
-        Esta vista sirve un archivo previamente generado desde el directorio
-        configurado en IATOOLKIT_DOWNLOAD_DIR.
+        Downloads a generated file.
+        Uses StorageService + signed token.
         """
-        # Valida que la configuración exista
-        if 'IATOOLKIT_DOWNLOAD_DIR' not in current_app.config:
-            abort(500, "Error de configuración: IATOOLKIT_DOWNLOAD_DIR no está definido.")
-
-        download_dir = current_app.config['IATOOLKIT_DOWNLOAD_DIR']
-
         try:
-            return send_from_directory(
-                download_dir,
-                filename,
-                as_attachment=True  # Fuerza la descarga en lugar de la visualización
+            from iatoolkit.core import current_iatoolkit
+            from iatoolkit.services.storage_service import StorageService
+            storage_service = current_iatoolkit().get_injector().get(StorageService)
+            token_payload = storage_service.resolve_download_token(filename)
+            company_short_name = token_payload["company"]
+            storage_key = token_payload["storage_key"]
+            output_filename = token_payload.get("filename") or storage_key.split("/")[-1]
+
+            try:
+                signed_url = storage_service.generate_presigned_url(company_short_name, storage_key)
+            except NotImplementedError:
+                signed_url = None
+
+            # Fast path: redirect to object storage when a presigned URL is available.
+            if signed_url:
+                return redirect(signed_url)
+
+            # Fallback path: stream bytes from storage through Flask.
+            file_bytes = storage_service.get_document_content(company_short_name, storage_key)
+            guessed_mime, _ = mimetypes.guess_type(output_filename)
+            return send_file(
+                BytesIO(file_bytes),
+                as_attachment=True,
+                download_name=output_filename,
+                mimetype=guessed_mime or "application/octet-stream",
             )
-        except FileNotFoundError:
-            abort(404)
+
+        except IAToolkitException as e:
+            if e.error_type == IAToolkitException.ErrorType.CALL_ERROR:
+                abort(404)
+            abort(500, str(e))
 
 
     app.add_url_rule('/version', 'version',
                      lambda: jsonify({"iatoolkit_version": current_app.config.get('VERSION', 'N/A')}))
-
-

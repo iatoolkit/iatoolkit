@@ -2,7 +2,7 @@ id: sample_company
 name: Sample Company
 locale: en_ES
 llm:
-  model: gemini-3-pro-preview
+  model: gpt-5.2
   available_models:
   - id: gpt-5.2
     label: gpt-5.2

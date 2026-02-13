@@ -5,17 +5,14 @@
 
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.i18n_service import I18nService
+from iatoolkit.services.storage_service import StorageService
 from iatoolkit.infra.brevo_mail_app import BrevoMailApp
 from injector import inject
-from pathlib import Path
 import base64
 import os
 import smtplib
 from email.message import EmailMessage
 from iatoolkit.common.exceptions import IAToolkitException
-
-
-TEMP_DIR = Path("static/temp")
 
 class MailService:
     @inject
@@ -23,11 +20,13 @@ class MailService:
                  config_service: ConfigurationService,
                  mail_app: BrevoMailApp,
                  i18n_service: I18nService,
-                 brevo_mail_app: BrevoMailApp):
+                 brevo_mail_app: BrevoMailApp,
+                 storage_service: StorageService):
         self.mail_app = mail_app
         self.config_service = config_service
         self.i18n_service = i18n_service
         self.brevo_mail_app = brevo_mail_app
+        self.storage_service = storage_service
 
 
     def send_mail(self, company_short_name: str, **kwargs):
@@ -40,7 +39,7 @@ class MailService:
         norm_attachments = []
         for a in attachments or []:
             if a.get("attachment_token"):
-                raw = self._read_token_bytes(a["attachment_token"])
+                raw = self._read_token_bytes(company_short_name, a["attachment_token"])
                 norm_attachments.append({
                     "filename": a["filename"],
                     "content": base64.b64encode(raw).decode("utf-8"),
@@ -201,13 +200,18 @@ class MailService:
                 server.send_message(msg)
 
 
-    def _read_token_bytes(self, token: str) -> bytes:
-        # Defensa simple contra path traversal
-        if not token or "/" in token or "\\" in token or token.startswith("."):
-            raise IAToolkitException(IAToolkitException.ErrorType.MAIL_ERROR,
-                               "attachment_token invalid")
-        path = TEMP_DIR / token
-        if not path.is_file():
-            raise IAToolkitException(IAToolkitException.ErrorType.MAIL_ERROR,
-                               f"attach file not found: {token}")
-        return path.read_bytes()
+    def _read_token_bytes(self, company_short_name: str, token: str) -> bytes:
+        if not token:
+            raise IAToolkitException(IAToolkitException.ErrorType.MAIL_ERROR, "attachment_token invalid")
+
+        try:
+            payload = self.storage_service.resolve_download_token(token)
+            token_company = payload.get("company")
+            storage_key = payload.get("storage_key")
+            if token_company != company_short_name:
+                raise IAToolkitException(IAToolkitException.ErrorType.MAIL_ERROR, "attachment_token company mismatch")
+            return self.storage_service.get_document_content(company_short_name, storage_key)
+        except IAToolkitException as e:
+            if e.error_type == IAToolkitException.ErrorType.CALL_ERROR:
+                raise IAToolkitException(IAToolkitException.ErrorType.MAIL_ERROR, "attachment_token invalid")
+            raise
