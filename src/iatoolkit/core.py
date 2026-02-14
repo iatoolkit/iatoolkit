@@ -301,12 +301,14 @@ class IAToolkit:
             )
 
     def _bind_repositories(self, binder: Binder):
+        from iatoolkit.repositories.api_key_repo import ApiKeyRepo
         from iatoolkit.repositories.document_repo import DocumentRepo
         from iatoolkit.repositories.profile_repo import ProfileRepo
         from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
         from iatoolkit.repositories.vs_repo import VSRepo
         from iatoolkit.repositories.filesystem_asset_repository import FileSystemAssetRepository
 
+        binder.bind(ApiKeyRepo, to=ApiKeyRepo)
         binder.bind(DocumentRepo, to=DocumentRepo)
         binder.bind(ProfileRepo, to=ProfileRepo)
         binder.bind(LLMQueryRepo, to=LLMQueryRepo)
@@ -318,6 +320,7 @@ class IAToolkit:
 
     def _bind_services(self, binder: Binder):
         from iatoolkit.services.query_service import QueryService
+        from iatoolkit.services.api_key_service import ApiKeyService
         from iatoolkit.services.benchmark_service import BenchmarkService
         from iatoolkit.services.parsers.parsing_service import ParsingService
         from iatoolkit.services.parsers.provider_factory import ParsingProviderFactory
@@ -345,6 +348,7 @@ class IAToolkit:
         from iatoolkit.services.warmup_service import WarmupService
 
         binder.bind(QueryService, to=QueryService)
+        binder.bind(ApiKeyService, to=ApiKeyService)
         binder.bind(BenchmarkService, to=BenchmarkService)
         binder.bind(ParsingService, to=ParsingService)
         binder.bind(ParsingProviderFactory, to=ParsingProviderFactory)

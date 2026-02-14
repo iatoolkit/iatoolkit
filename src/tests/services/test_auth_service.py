@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 from iatoolkit.services.auth_service import AuthService
 from iatoolkit.services.profile_service import ProfileService
+from iatoolkit.services.api_key_service import ApiKeyService
 from iatoolkit.services.jwt_service import JWTService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.repositories.database_manager import DatabaseManager
@@ -21,12 +22,14 @@ class TestAuthServiceVerify:
     def setup_method(self):
         """Set up mocks for verify() tests."""
         self.mock_profile_service = MagicMock(spec=ProfileService)
+        self.mock_api_key_service = MagicMock(spec=ApiKeyService)
         self.mock_jwt_service = MagicMock(spec=JWTService)
         self.mock_db_manager = MagicMock(spec=DatabaseManager)
         self.mock_i18n_service = MagicMock(spec=I18nService)
 
         self.service = AuthService(
             profile_service=self.mock_profile_service,
+            api_key_service=self.mock_api_key_service,
             jwt_service=self.mock_jwt_service,
             db_manager=self.mock_db_manager,
             i18n_service=self.mock_i18n_service
@@ -55,12 +58,12 @@ class TestAuthServiceVerify:
         assert result['user_identifier'] == "user_session_123"
         assert result['company_short_name'] == "testco"
         assert result['user_role'] == "admin"
-        self.mock_profile_service.get_active_api_key_entry.assert_not_called()
+        self.mock_api_key_service.get_active_api_key_entry.assert_not_called()
 
     def test_verify_success_with_api_key_and_user_identifier(self):
         """verify() should succeed if a valid API key and user_identifier in JSON are provided."""
         self.mock_profile_service.get_current_session_info.return_value = {}
-        self.mock_profile_service.get_active_api_key_entry.return_value = self.mock_api_key_entry
+        self.mock_api_key_service.get_active_api_key_entry.return_value = self.mock_api_key_entry
 
         # FIX: Added json body with user_identifier, which is required by the service
         with self.app.test_request_context(
@@ -72,12 +75,12 @@ class TestAuthServiceVerify:
         assert result['success'] is True
         assert result['company_short_name'] == "apico"
         assert result['user_identifier'] == "api-user-456"
-        self.mock_profile_service.get_active_api_key_entry.assert_called_once_with("valid-api-key")
+        self.mock_api_key_service.get_active_api_key_entry.assert_called_once_with("valid-api-key")
 
     def test_verify_fails_with_api_key_but_no_user_identifier(self):
         """REPURPOSED: verify() should fail with 403 if API key is valid but user_identifier is missing."""
         self.mock_profile_service.get_current_session_info.return_value = {}
-        self.mock_profile_service.get_active_api_key_entry.return_value = self.mock_api_key_entry
+        self.mock_api_key_service.get_active_api_key_entry.return_value = self.mock_api_key_entry
 
         # Test without a JSON body
         with self.app.test_request_context(headers={'Authorization': 'Bearer valid-api-key'}):
@@ -90,7 +93,7 @@ class TestAuthServiceVerify:
     def test_verify_success_with_api_key_and_anonymous_flag(self):
         """NEW: verify(anonymous=True) should succeed even without a user_identifier."""
         self.mock_profile_service.get_current_session_info.return_value = {}
-        self.mock_profile_service.get_active_api_key_entry.return_value = self.mock_api_key_entry
+        self.mock_api_key_service.get_active_api_key_entry.return_value = self.mock_api_key_entry
 
         # Call verify with anonymous=True and no user_identifier in the body
         with self.app.test_request_context(headers={'Authorization': 'Bearer valid-api-key'}):
@@ -103,7 +106,7 @@ class TestAuthServiceVerify:
     def test_verify_fails_with_invalid_api_key(self):
         """verify() should fail with 402 if the API key is invalid or inactive."""
         self.mock_profile_service.get_current_session_info.return_value = {}
-        self.mock_profile_service.get_active_api_key_entry.return_value = None
+        self.mock_api_key_service.get_active_api_key_entry.return_value = None
 
         with self.app.test_request_context(headers={'Authorization': 'Bearer invalid-key'}):
             result = self.service.verify()
@@ -135,6 +138,7 @@ class TestAuthServiceLoginFlows:
     def setup_method(self, monkeypatch):
         """Set up a mocked environment and patch the log_access method."""
         self.mock_profile_service = MagicMock(spec=ProfileService)
+        self.mock_api_key_service = MagicMock(spec=ApiKeyService)
         self.mock_jwt_service = MagicMock(spec=JWTService)
         self.mock_db_manager = MagicMock(spec=DatabaseManager, scoped_session=MagicMock())
         self.mock_i18n_service = MagicMock(spec=I18nService)
@@ -144,6 +148,7 @@ class TestAuthServiceLoginFlows:
 
         self.service = AuthService(
             profile_service=self.mock_profile_service,
+            api_key_service=self.mock_api_key_service,
             jwt_service=self.mock_jwt_service,
             db_manager=self.mock_db_manager,
             i18n_service=self.mock_i18n_service
@@ -252,6 +257,7 @@ class TestAuthServiceLogAccess:
     def setup_method(self):
         """Set up mocks for log_access() tests."""
         self.mock_profile_service = MagicMock(spec=ProfileService)
+        self.mock_api_key_service = MagicMock(spec=ApiKeyService)
         self.mock_jwt_service = MagicMock(spec=JWTService)
 
         # Use create_autospec to create a mock that correctly reflects
@@ -268,6 +274,7 @@ class TestAuthServiceLogAccess:
 
         self.service = AuthService(
             profile_service=self.mock_profile_service,
+            api_key_service=self.mock_api_key_service,
             jwt_service=self.mock_jwt_service,
             db_manager=self.mock_db_manager,
             i18n_service=self.mock_i18n_service

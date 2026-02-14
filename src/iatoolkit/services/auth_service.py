@@ -6,6 +6,7 @@
 from flask import request
 from injector import inject
 from iatoolkit.services.profile_service import ProfileService
+from iatoolkit.services.api_key_service import ApiKeyService
 from iatoolkit.services.jwt_service import JWTService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.repositories.database_manager import DatabaseManager
@@ -23,11 +24,13 @@ class AuthService:
 
     @inject
     def __init__(self, profile_service: ProfileService,
+                 api_key_service: ApiKeyService,
                  jwt_service: JWTService,
                  db_manager: DatabaseManager,
                  i18n_service: I18nService
                  ):
         self.profile_service = profile_service
+        self.api_key_service = api_key_service
         self.jwt_service = jwt_service
         self.db_manager = db_manager
         self.i18n_service = i18n_service
@@ -131,7 +134,7 @@ class AuthService:
                     "status_code": 401}
 
         # check if the api-key is valid and active
-        api_key_entry = self.profile_service.get_active_api_key_entry(api_key)
+        api_key_entry = self.api_key_service.get_active_api_key_entry(api_key)
         if not api_key_entry:
             logging.error(f"Invalid or inactive IAToolkit API Key: {api_key}")
             return {"success": False,

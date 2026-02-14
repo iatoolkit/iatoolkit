@@ -7,7 +7,7 @@ from flask import request, jsonify
 from flask.views import MethodView
 from injector import inject
 from iatoolkit.services.auth_service import AuthService
-from iatoolkit.services.profile_service import ProfileService
+from iatoolkit.services.api_key_service import ApiKeyService
 
 
 class ApiKeyApiView(MethodView):
@@ -16,9 +16,9 @@ class ApiKeyApiView(MethodView):
     """
 
     @inject
-    def __init__(self, auth_service: AuthService, profile_service: ProfileService):
+    def __init__(self, auth_service: AuthService, api_key_service: ApiKeyService):
         self.auth_service = auth_service
-        self.profile_service = profile_service
+        self.api_key_service = api_key_service
 
     def _require_admin_auth(self, company_short_name: str) -> dict | tuple:
         auth_result = self.auth_service.verify()
@@ -47,10 +47,10 @@ class ApiKeyApiView(MethodView):
             return auth
 
         if api_key_id is not None:
-            result = self.profile_service.get_api_key(company_short_name, api_key_id)
+            result = self.api_key_service.get_api_key(company_short_name, api_key_id)
             return self._build_response(result, success_status_code=200)
 
-        result = self.profile_service.list_api_keys(company_short_name)
+        result = self.api_key_service.list_api_keys(company_short_name)
         return self._build_response(result, success_status_code=200)
 
     def post(self, company_short_name: str):
@@ -60,7 +60,7 @@ class ApiKeyApiView(MethodView):
 
         data = request.get_json() or {}
         key_name = (data.get("key_name") or "").strip()
-        result = self.profile_service.create_api_key_entry(company_short_name, key_name)
+        result = self.api_key_service.create_api_key_entry(company_short_name, key_name)
         return self._build_response(result, success_status_code=201)
 
     def put(self, company_short_name: str, api_key_id: int):
@@ -75,7 +75,7 @@ class ApiKeyApiView(MethodView):
 
         is_active = data["is_active"] if "is_active" in data else None
 
-        result = self.profile_service.update_api_key_entry(
+        result = self.api_key_service.update_api_key_entry(
             company_short_name=company_short_name,
             api_key_id=api_key_id,
             key_name=key_name,
@@ -88,7 +88,7 @@ class ApiKeyApiView(MethodView):
         if isinstance(auth, tuple):
             return auth
 
-        result = self.profile_service.delete_api_key_entry(company_short_name, api_key_id)
+        result = self.api_key_service.delete_api_key_entry(company_short_name, api_key_id)
         if "error" in result:
             return jsonify({"error": result["error"]}), result.get("status_code", 400)
         return jsonify({"status": "success"}), 200

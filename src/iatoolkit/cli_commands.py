@@ -6,7 +6,7 @@
 import click
 import logging
 from iatoolkit.core import IAToolkit, current_iatoolkit
-from iatoolkit.services.profile_service import ProfileService
+from iatoolkit.services.api_key_service import ApiKeyService
 
 
 def register_core_commands(app):
@@ -18,9 +18,9 @@ def register_core_commands(app):
     def api_key(company_short_name: str, key_name: str):
         """⚙️ Genera una nueva API key para una compañía ya registrada."""
         try:
-            profile_service = IAToolkit.get_instance().get_injector().get(ProfileService)
+            api_key_service = IAToolkit.get_instance().get_injector().get(ApiKeyService)
             click.echo(f"🔑 Generating API-KEY for company: '{company_short_name}'...")
-            result = profile_service.new_api_key(company_short_name, key_name)
+            result = api_key_service.new_api_key(company_short_name, key_name)
 
             if 'error' in result:
                 click.echo(f"❌ Error: {result['error']}")
@@ -55,6 +55,5 @@ def register_core_commands(app):
         except Exception as e:
             logging.exception(e)
             click.echo(f"Error: {str(e)}")
-
 
 
