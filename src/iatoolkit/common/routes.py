@@ -38,6 +38,7 @@ def register_views(app):
     from iatoolkit.views.categories_api_view import CategoriesApiView
     from iatoolkit.views.connectors_api_view import ConnectorsApiView
     from iatoolkit.views.tool_api_view import ToolApiView
+    from iatoolkit.views.api_key_api_view import ApiKeyApiView
 
     # assign root '/' to our new redirect logic
     app.add_url_rule('/home', view_func=RootRedirectView.as_view('root_redirect'))
@@ -129,6 +130,19 @@ def register_views(app):
         view_func=tool_view,
         methods=['POST'],
         defaults={'action': 'execute'}
+    )
+
+    # --- API Keys Management API ---
+    api_key_view = ApiKeyApiView.as_view('api_key_api')
+    app.add_url_rule(
+        '/<company_short_name>/api/api-keys',
+        view_func=api_key_view,
+        methods=['GET', 'POST']
+    )
+    app.add_url_rule(
+        '/<company_short_name>/api/api-keys/<int:api_key_id>',
+        view_func=api_key_view,
+        methods=['GET', 'PUT', 'DELETE']
     )
 
     # --- RAG API Routes ---

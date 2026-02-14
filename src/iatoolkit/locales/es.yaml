@@ -10,6 +10,8 @@ ui:
     order: "Orden"
     period: "Período"
     refresh: "Actualizar"
+    delete: "Borrar"
+
 
   dates:
     last_7_days: "Últimos 7 días"
@@ -245,6 +247,32 @@ ui:
     modal_desc_placeholder: "Explica brevemente qué hace esta herramienta..."
     modal_cancel: "Cancelar"
     modal_create_btn: "Crear Herramienta"
+
+  api_key:
+    title: "API Keys"
+    subtitle: "Administra las API keys de la empresa para autenticar solicitudes externas."
+    new_btn: "Nueva API Key"
+    search_placeholder: "Filtrar API keys..."
+    empty_state: "Todavía no hay API keys registradas."
+    key_name: "Nombre"
+    key_name_placeholder: "ej. integrations_prod"
+    key_name_required: "El nombre de la API key es obligatorio."
+    key_value: "API Key"
+    status: "Estado"
+    active: "Activa"
+    inactive: "Inactiva"
+    created_at: "Creada"
+    last_used_at: "Último uso"
+    create_modal_title: "Crear API Key"
+    edit_modal_title: "Editar API Key"
+    delete_confirmation: "¿Eliminar API Key?"
+    delete_message: "Esta acción no se puede deshacer. La API key se eliminará permanentemente."
+    create_success: "API key creada correctamente."
+    update_success: "API key actualizada correctamente."
+    delete_success: "API key eliminada correctamente."
+    load_error: "Error al cargar las API keys."
+    save_error: "Error al guardar la API key."
+    delete_error: "Error al eliminar la API key."
 
   config:
     editor_description: "Editor de configuración"
@@ -521,7 +549,6 @@ js_messages:
   rag_images: "Imagenes"
   rag_tables: "Tablas"
   rag_storage_estimate: "Storage RAG (est.)"
-
 
 
 

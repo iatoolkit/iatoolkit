@@ -10,6 +10,7 @@ ui:
     period: "Period"
     refresh: "Refresh"
     time: "Time"
+    delete: "Delete"
 
   dates:
     last_7_days: "Last 7 Days"
@@ -243,6 +244,32 @@ ui:
     modal_desc_placeholder: "Briefly explain what this tool does..."
     modal_cancel: "Cancel"
     modal_create_btn: "Create Tool"
+
+  api_key:
+    title: "API Keys"
+    subtitle: "Manage company API keys used to authenticate external requests."
+    new_btn: "New API Key"
+    search_placeholder: "Filter API keys..."
+    empty_state: "No API keys registered yet."
+    key_name: "Name"
+    key_name_placeholder: "e.g. integrations_prod"
+    key_name_required: "API key name is required."
+    key_value: "API Key"
+    status: "Status"
+    active: "Active"
+    inactive: "Inactive"
+    created_at: "Created"
+    last_used_at: "Last Used"
+    create_modal_title: "Create API Key"
+    edit_modal_title: "Edit API Key"
+    delete_confirmation: "Delete API Key?"
+    delete_message: "This action cannot be undone. The API key will be permanently removed."
+    create_success: "API key created successfully."
+    update_success: "API key updated successfully."
+    delete_success: "API key deleted successfully."
+    load_error: "Error loading API keys."
+    save_error: "Error saving API key."
+    delete_error: "Error deleting API key."
 
   config:
     editor_description: "IAToolkit configuration file"
@@ -522,7 +549,6 @@ js_messages:
   rag_images: "Images"
   rag_tables: "Tables"
   rag_storage_estimate: "RAG Storage (est.)"
-
 
 
 
