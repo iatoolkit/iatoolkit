@@ -340,6 +340,31 @@ ui:
     save_error: "Error al guardar la API key."
     delete_error: "Error al eliminar la API key."
 
+  secrets:
+    title: "Secrets"
+    subtitle: "Administra los secrets de la empresa usados por integraciones y servicios."
+    new_btn: "Nuevo Secret"
+    search_placeholder: "Filtrar secrets..."
+    empty_state: "Todavía no hay secrets configurados."
+    key_name: "Clave"
+    key_name_placeholder: "ej. OPENAI_API_KEY"
+    key_name_required: "El nombre del secret es obligatorio."
+    value: "Valor"
+    value_placeholder: "Pegue el valor del secret"
+    value_required: "El valor del secret es obligatorio."
+    updated_at: "Actualizado"
+    create_modal_title: "Crear Secret"
+    rotate_modal_title: "Rotar Secret"
+    delete_confirmation: "¿Eliminar Secret?"
+    delete_message: "Esta acción no se puede deshacer. El secret se eliminará permanentemente."
+    encrypted_hint: "Se guarda encriptado. Los valores se muestran enmascarados en la lista."
+    create_success: "Secret creado correctamente."
+    update_success: "Secret actualizado correctamente."
+    delete_success: "Secret eliminado correctamente."
+    load_error: "Error al cargar los secrets."
+    save_error: "Error al guardar el secret."
+    delete_error: "Error al eliminar el secret."
+
   config:
     editor_description: "Editor de configuración"
     title: "Editor de configuraciones"
@@ -615,4 +640,3 @@ js_messages:
   rag_images: "Imagenes"
   rag_tables: "Tablas"
   rag_storage_estimate: "Storage RAG (est.)"
-

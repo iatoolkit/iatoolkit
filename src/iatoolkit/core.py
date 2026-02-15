@@ -11,6 +11,7 @@ from flask_cors import CORS
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.repositories.database_manager import DatabaseManager
 from iatoolkit.common.interfaces.asset_storage import AssetRepository
+from iatoolkit.common.interfaces.secret_provider import SecretProvider
 from iatoolkit.company_registry import get_registered_companies
 from werkzeug.middleware.proxy_fix import ProxyFix
 from injector import Binder, Injector, singleton
@@ -307,6 +308,7 @@ class IAToolkit:
         from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
         from iatoolkit.repositories.vs_repo import VSRepo
         from iatoolkit.repositories.filesystem_asset_repository import FileSystemAssetRepository
+        from iatoolkit.repositories.env_secret_provider import EnvSecretProvider
 
         binder.bind(ApiKeyRepo, to=ApiKeyRepo)
         binder.bind(DocumentRepo, to=DocumentRepo)
@@ -317,6 +319,10 @@ class IAToolkit:
         # this class can be setup befor by iatoolkit enterprise
         if not is_bound(self._injector, AssetRepository):
             binder.bind(AssetRepository, to=FileSystemAssetRepository)
+
+        # this class can be setup before by iatoolkit enterprise
+        if not is_bound(self._injector, SecretProvider):
+            binder.bind(SecretProvider, to=EnvSecretProvider)
 
     def _bind_services(self, binder: Binder):
         from iatoolkit.services.query_service import QueryService
