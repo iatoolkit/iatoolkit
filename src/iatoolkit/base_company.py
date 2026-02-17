@@ -13,9 +13,9 @@ class BaseCompany(ABC):
     def handle_request(self, tag: str, params: dict) -> dict:
         raise NotImplementedError("La subclase debe implementar el método handle_request()")
 
-    @abstractmethod
     def register_cli_commands(self, app):
-        pass
+        # Optional extension point. Community/Enterprise can override as needed.
+        return None
 
     def unsupported_operation(self, tag):
         raise NotImplementedError(f"La operación '{tag}' no está soportada por esta empresa.")

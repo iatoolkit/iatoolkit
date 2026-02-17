@@ -102,7 +102,7 @@ class IAToolkit:
         self._setup_logging()
 
         # Step 7: load company configuration file
-        self._load_company_configuration()
+        self._hydrate_company_configuration()
 
         # Step 8: Finalize setup within the application context
         self._setup_redis_sessions()
@@ -405,12 +405,20 @@ class IAToolkit:
         # instantiate all the registered companies
         get_company_registry().instantiate_companies(self._injector)
 
-    def _load_company_configuration(self):
-        from iatoolkit.services.dispatcher_service import Dispatcher
+    def _hydrate_company_configuration(self):
+        from iatoolkit.company_registry import get_company_registry
 
-        # use the dispatcher to load the company config.yaml file and prepare the execution
-        dispatcher = self._injector.get(Dispatcher)
-        dispatcher.load_company_configs()
+        config_service = self._injector.get(ConfigurationService)
+        all_company_instances = get_company_registry().get_all_company_instances()
+
+        for company_short_name, company_instance in all_company_instances.items():
+            try:
+                config, _errors = config_service.load_configuration(company_short_name)
+                company_instance.company_short_name = company_short_name
+                company_instance.company = config.get('company')
+            except Exception as e:
+                logging.error(f"❌ Failed to register configuration for '{company_short_name}': {e}")
+                raise e
 
     def _setup_cli_commands(self):
         from iatoolkit.cli_commands import register_core_commands
@@ -425,8 +433,7 @@ class IAToolkit:
             # Iterate through the registered company names
             all_company_instances = get_company_registry().get_all_company_instances()
             for company_name, company_instance in all_company_instances.items():
-                if hasattr(company_instance, "register_cli_commands"):
-                    company_instance.register_cli_commands(self.app)
+                company_instance.register_cli_commands(self.app)
 
         except Exception as e:
             logging.error(f"❌ error while registering company commands: {e}")
@@ -507,7 +514,7 @@ class IAToolkit:
             )
         return self.db_manager
 
-    def bootstrap_company(self, company_short_name: str):
+    def bootstrap_defaults(self, company_short_name: str):
         from iatoolkit.services.prompt_service import PromptService
         from iatoolkit.services.tool_service import ToolService
 

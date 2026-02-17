@@ -19,6 +19,19 @@ class CompanyRegistry:
     def __init__(self):
         self._company_classes: Dict[str, Type[BaseCompany]] = {}
         self._company_instances: Dict[str, BaseCompany] = {}
+        self._revision: int = 0
+
+    def _bump_revision(self) -> None:
+        self._revision += 1
+
+    def get_revision(self) -> int:
+        return self._revision
+
+    def _store_company_class(self, name: str, company_class: Type[BaseCompany]) -> str:
+        company_key = name.lower()
+        self._company_classes[company_key] = company_class
+        self._bump_revision()
+        return company_key
 
     def register(self, name: str, company_class: Type[BaseCompany]) -> None:
         """
@@ -42,7 +55,7 @@ class CompanyRegistry:
                 "Upgrade to IAToolkit Enterprise to enable multi-tenancy."
             )
 
-        self._company_classes[company_key] = company_class
+        self._store_company_class(name, company_class)
         logging.info(f"Company registered: {name}")
 
     def instantiate_companies(self, injector) -> Dict[str, BaseCompany]:
@@ -57,6 +70,7 @@ class CompanyRegistry:
 
                     # save the created instance in the registry
                     self._company_instances[company_key] = company_instance
+                    self._bump_revision()
 
                 except Exception as e:
                     logging.error(f"Error while creating company instance for {company_key}: {e}")
@@ -74,8 +88,11 @@ class CompanyRegistry:
         return self._company_classes.copy()
 
     def clear(self) -> None:
+        had_entries = bool(self._company_classes or self._company_instances)
         self._company_classes.clear()
         self._company_instances.clear()
+        if had_entries:
+            self._bump_revision()
 
 # --- Singleton Management ---
 
@@ -116,4 +133,3 @@ def register_company(name: str, company_class: Type[BaseCompany]) -> None:
         company_class: Class that inherits from BaseCompany
     """
     _company_registry.register(name, company_class)
-

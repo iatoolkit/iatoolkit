@@ -581,8 +581,7 @@ class ConfigurationService:
 
         # verify existence of the main configuration file
         if not self.asset_repo.exists(company_short_name, AssetType.CONFIG, main_config_filename):
-            # raise FileNotFoundError(f"Main configuration file not found: {main_config_filename}")
-            logging.exception(f"Main configuration file not found: {main_config_filename}")
+            logging.warning(f"Main configuration file not found: {main_config_filename}")
 
             # return the minimal configuration needed for starting the IAToolkit
             # this is a for solving a chicken/egg problem when trying to migrate the configuration
@@ -591,7 +590,18 @@ class ConfigurationService:
             return {
                 'id': company_short_name,
                 'name': company_short_name,
-                'llm': {'model': 'gpt-5', 'provider_api_keys': {'openai':''} },
+                'llm': {'model': 'gpt-5', 'provider_api_keys': {'openai': ''}},
+                'data_sources': {'sql': []},
+                'tools': [],
+                'prompts': {'prompt_categories': [], 'prompt_list': []},
+                'branding': {},
+                'onboarding_cards': [],
+                'help_content': {
+                    'example_questions': [],
+                    'data_sources': [],
+                    'best_practices': [],
+                    'capabilities': {'can_do': [], 'cannot_do': []},
+                },
                 }
 
         # read text and parse

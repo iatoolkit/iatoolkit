@@ -5,7 +5,7 @@
 
 from flask.views import MethodView
 from flask import (request, redirect, render_template, url_for,
-                   render_template_string, flash, make_response)
+                   render_template_string, flash)
 from injector import inject
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.jwt_service import JWTService
@@ -49,6 +49,15 @@ class LoginView(BaseLoginView):
             home_template = self.utility.get_company_template(company_short_name, template_name)
 
             if not home_template:
+                if self.utility.is_hosted_company_runtime(company_short_name):
+                    return render_template(
+                        "home_hosted_default.html",
+                        company_short_name=company_short_name,
+                        company=company,
+                        branding=branding_data,
+                        form_data={"email": email},
+                    ), 400
+
                 return render_template('error.html',
                                        message=f'Home template ({template_name}) not found.'), 500
 

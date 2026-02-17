@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}{{ branding.name }}{% endblock %}
+
+{% block styles %}
+    <style>
+        {{ branding.css_variables | safe }}
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles/chat_public.css') }}">
+{% endblock %}
+
+{% block content %}
+{% set lang = request.args.get('lang', 'en') %}
+<div class="container mt-4">
+{% include '_company_header.html' %}
+
+<div class="container my-4 my-md-5">
+    <div class="row start g-5">
+        <div class="col-lg-7">
+            <h1 class="home-title">
+                {% if lang == 'es' %}
+                    Bienvenido a {{ branding.name }}
+                {% else %}
+                    Welcome to {{ branding.name }}
+                {% endif %}
+            </h1>
+            <p class="lead">
+                {% if lang == 'es' %}
+                    Esta es tu compañía hosted en IAToolkit Enterprise. Puedes iniciar sesión o crear una cuenta para empezar.
+                {% else %}
+                    This is your hosted company on IAToolkit Enterprise. You can sign in or create an account to get started.
+                {% endif %}
+            </p>
+            <p class="fs-5 mb-4">
+                {% if lang == 'es' %}
+                    Primeros pasos recomendados:
+                {% else %}
+                    Recommended first steps:
+                {% endif %}
+            </p>
+            <ul class="list-unstyled mt-4 fs-5 fw-normal">
+                <li class="mb-3">
+                    <i class="bi bi-person-check-fill me-2 text-brand-primary"></i>
+                    {% if lang == 'es' %}
+                        <strong>Acceso</strong> Inicia sesión con tu usuario de la compañía.
+                    {% else %}
+                        <strong>Access</strong> Sign in with your company user account.
+                    {% endif %}
+                </li>
+                <li class="mb-3">
+                    <i class="bi bi-person-plus-fill me-2 text-brand-primary"></i>
+                    {% if lang == 'es' %}
+                        <strong>Registro</strong> Si no tienes cuenta, créala desde el formulario.
+                    {% else %}
+                        <strong>Signup</strong> If you do not have an account yet, create one from the form.
+                    {% endif %}
+                </li>
+                <li class="mb-3">
+                    <i class="bi bi-gear-fill me-2 text-brand-primary"></i>
+                    {% if lang == 'es' %}
+                        <strong>Administración</strong> Después de ingresar podrás completar configuración y herramientas.
+                    {% else %}
+                        <strong>Admin setup</strong> After login you can continue with configuration and tools.
+                    {% endif %}
+                </li>
+            </ul>
+        </div>
+
+        <div class="col-lg-5">
+            {% include '_login_widget.html' %}
+        </div>
+    </div>
+</div>
+</div>
+{% endblock %}

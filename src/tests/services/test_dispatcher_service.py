@@ -12,10 +12,6 @@ from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.excel_service import ExcelService
-from iatoolkit.services.prompt_service import PromptService
-from iatoolkit.services.profile_service import ProfileService
-from iatoolkit.services.mail_service import MailService
-from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.tool_service import ToolService
 from iatoolkit.common.util import Utility
 import base64
@@ -36,21 +32,16 @@ class TestDispatcher:
         registry.clear()
 
         # Mocks for services that are injected into the Dispatcher
-        self.mock_prompt_manager = MagicMock(spec=PromptService)
-        self.profile_service = MagicMock(spec=ProfileService)
         self.mock_llm_query_repo = MagicMock(spec=LLMQueryRepo)
         self.excel_service = MagicMock(spec=ExcelService)
-        self.mail_service = MagicMock(spec=MailService)
         self.util = MagicMock(spec=Utility)
         self.mock_profile_repo = MagicMock(spec=ProfileRepo)
-        self.mock_config_service = MagicMock(spec=ConfigurationService)
         self.mock_tool_service = MagicMock(spec=ToolService)
 
         # Create a mock injector that will be used for instantiation.
         mock_injector = Injector()
         mock_injector.binder.bind(ProfileRepo, to=self.mock_profile_repo)
         mock_injector.binder.bind(LLMQueryRepo, to=self.mock_llm_query_repo)
-        mock_injector.binder.bind(PromptService, to=self.mock_prompt_manager)
         mock_injector.binder.bind(ToolService, to=self.mock_tool_service)  # Bind ToolService
 
         # Create a mock IAToolkit instance that returns our injector.
@@ -82,12 +73,8 @@ class TestDispatcher:
         # Instantiate all registered companies. The registry will use our mock_injector.
         registry.instantiate_companies(mock_injector)
 
-        self.mock_config_service.load_configuration.return_value = {"sample": {"key": "value"}}, []
-
         # Initialize the Dispatcher within the patched context
         self.dispatcher = Dispatcher(
-            config_service=self.mock_config_service,
-            prompt_service=self.mock_prompt_manager,
             llmquery_repo=self.mock_llm_query_repo,
             inference_service=MagicMock(),
             util=self.util,
@@ -229,43 +216,11 @@ class TestDispatcher:
         registry = get_company_registry()
         registry.clear()
 
-        # 2. Reset the internal cache of the dispatcher instance created in setup()
-        # This forces it to re-fetch from the (now empty) registry on next access property access
-        self.dispatcher._company_instances = None
-
-        # 3. Verify state
+        # 2. Verify state (cache invalidation should happen automatically by revision)
         assert len(self.dispatcher.company_instances) == 0
 
-        # 4. Execute dispatch and expect error
+        # 3. Execute dispatch and expect error
         with pytest.raises(IAToolkitException) as excinfo:
             self.dispatcher.dispatch("any_company", "some_action")
 
         assert "Company 'any_company' not configured" in str(excinfo.value)
-
-
-    def test_load_company_configs_success(self):
-        """Test load_company_configs loads configuration for all companies."""
-        # Dispatcher uses self.company_instances which is populated by registry.
-        # We have "sample" registered in setup()
-
-        # Call method under test
-        result = self.dispatcher.load_company_configs()
-
-        # Verify config_service.load_configuration called for "sample"
-        self.mock_config_service.load_configuration.assert_called_once_with(
-            "sample"
-        )
-
-        assert result is True
-
-    def test_load_company_configs_handles_exception(self):
-        """Test load_company_configs raises exception on failure."""
-        self.dispatcher.setup_iatoolkit_system = MagicMock()
-
-        # Simulate error during configuration loading
-        self.mock_config_service.load_configuration.side_effect = Exception("Config Error")
-
-        with pytest.raises(Exception) as excinfo:
-            self.dispatcher.load_company_configs()
-
-        assert "Config Error" in str(excinfo.value)

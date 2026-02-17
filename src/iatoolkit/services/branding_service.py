@@ -76,7 +76,8 @@ class BrandingService:
         """
         final_branding_values = self._default_branding.copy()
         branding_data = self.config_service.get_configuration(company_short_name, 'branding')
-        final_branding_values.update(branding_data)
+        if isinstance(branding_data, dict):
+            final_branding_values.update(branding_data)
 
 
         # Función para convertir HEX a RGB
@@ -141,6 +142,7 @@ class BrandingService:
 
         # get the company name from configuration for the branding render
         company_name = self.config_service.get_configuration(company_short_name, 'name')
+        company_name = company_name or company_short_name
 
         return {
             "name": company_name,

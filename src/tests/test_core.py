@@ -92,7 +92,7 @@ class TestIAToolkit(unittest.TestCase):
                 patch.object(tk1, '_configure_core_dependencies'), \
                 patch.object(tk1, '_register_routes'), \
                 patch.object(tk1, '_instantiate_company_instances'), \
-                patch.object(tk1, '_load_company_configuration'), \
+                patch.object(tk1, '_hydrate_company_configuration'), \
                 patch.object(tk1, '_setup_redis_sessions'), \
                 patch.object(tk1, '_setup_cors'), \
                 patch.object(tk1, '_setup_additional_services'), \

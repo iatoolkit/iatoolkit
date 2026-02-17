@@ -37,7 +37,7 @@ def register_core_commands(app):
     def init_company(company_short_name: str):
         """⚙️ Bootstrap a new company."""
         try:
-            current_iatoolkit().bootstrap_company(company_short_name)
+            current_iatoolkit().bootstrap_defaults(company_short_name)
             click.echo(f"✅ Company {company_short_name} initialized successfully!")
         except Exception as e:
             logging.exception(e)
@@ -55,5 +55,4 @@ def register_core_commands(app):
         except Exception as e:
             logging.exception(e)
             click.echo(f"Error: {str(e)}")
-
 

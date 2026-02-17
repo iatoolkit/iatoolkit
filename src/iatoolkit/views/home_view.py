@@ -1,5 +1,5 @@
 # iatoolkit/views/home_view.py
-from flask import render_template,  render_template_string, request
+from flask import render_template, render_template_string
 from flask.views import MethodView
 from injector import inject
 from iatoolkit.services.profile_service import ProfileService
@@ -42,6 +42,15 @@ class HomeView(MethodView):
 
             # 2. Verificamos si el archivo de plantilla personalizado no existe.
             if not home_template:
+                # Hosted tenants do not require filesystem home templates.
+                if self.util.is_hosted_company_runtime(company_short_name):
+                    return render_template(
+                        "home_hosted_default.html",
+                        company_short_name=company_short_name,
+                        company=company,
+                        branding=branding_data,
+                    )
+
                 message = self.i18n_service.t('errors.templates.home_template_not_found', company_name=company_short_name)
                 return render_template(
                     "error.html",
