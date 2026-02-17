@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from injector import inject
 
@@ -74,6 +75,19 @@ class WarmupService:
             return False
 
         inference_tools = self.config_service.get_configuration(company_short_name, "inference_tools") or {}
+        defaults = inference_tools.get("_defaults") or {}
+        if not isinstance(defaults, dict):
+            defaults = {}
+
         tool_cfg = inference_tools.get(tool_name) or {}
-        endpoint_url = (tool_cfg.get("endpoint_url") or "").strip()
+        if not isinstance(tool_cfg, dict):
+            return False
+
+        resolved_cfg = {**defaults, **tool_cfg}
+        endpoint_url = (resolved_cfg.get("endpoint_url") or "").strip()
+        if not endpoint_url:
+            endpoint_url_env = (resolved_cfg.get("endpoint_url_env") or "").strip()
+            if endpoint_url_env:
+                endpoint_url = (os.getenv(endpoint_url_env) or "").strip()
+
         return bool(endpoint_url)

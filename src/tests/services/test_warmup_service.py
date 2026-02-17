@@ -51,6 +51,24 @@ class TestWarmupService:
 
         self.mock_embedding_service.embed_text.assert_not_called()
 
+    @patch("iatoolkit.services.warmup_service.os.getenv", return_value="https://hf.endpoint")
+    def test_warmup_company_uses_defaults_endpoint_url_env(self, _mock_getenv):
+        def config_side_effect(company_short_name, key):
+            if key == "embedding_provider":
+                return {"provider": "huggingface", "tool_name": "text_embeddings"}
+            if key == "inference_tools":
+                return {
+                    "_defaults": {"endpoint_url_env": "HF_INFERENCE_ENDPOINT_URL"},
+                    "text_embeddings": {"model_id": "sentence-transformers/all-MiniLM-L6-v2"},
+                }
+            return None
+
+        self.mock_config_service.get_configuration.side_effect = config_side_effect
+
+        self.service.warmup_company("acme", trigger="test")
+
+        self.mock_embedding_service.embed_text.assert_called_once_with("acme", "hello")
+
     def test_warmup_registered_companies_calls_each_company(self):
         self.service.warmup_company = MagicMock()
 

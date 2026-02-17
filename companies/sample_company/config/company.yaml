@@ -177,28 +177,25 @@ visual_embedding_provider:
 
 # Definición centralizada de herramientas de inferencia
 inference_tools:
-  # Ancla para reutilizar la configuración base
-  _defaults: &hf_config
-    endpoint_url: https://wj5yzzh7hw21srg9.us-east-1.aws.endpoints.huggingface.cloud
+  # Configuración base compartida por todas las herramientas.
+  # endpoint_url_env apunta al nombre de la variable de entorno que contiene la URL del endpoint.
+  _defaults:
+    endpoint_url_env: HF_INFERENCE_ENDPOINT_URL
     api_key_name: HF_TOKEN
 
   # Herramienta para CLIP (usada por visual_embedding_provider)
   clip_embeddings:
-    <<: *hf_config
     model_id: openai/clip-vit-base-patch32
     model_parameters:
       from_tf: true
 
   # Herramienta para Texto (usada por embedding_provider)
   text_embeddings:
-    <<: *hf_config
     model_id: sentence-transformers/all-MiniLM-L6-v2
 
   # Otras herramientas disponibles para el futuro (Voice, Whisper, etc.)
   vibe_voice:
-    <<: *hf_config
     model_id: microsoft/VibeVoice-1.5B
 
   whisper:
-    <<: *hf_config
     model_id: openai/whisper-large-v3

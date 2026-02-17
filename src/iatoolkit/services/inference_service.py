@@ -47,11 +47,17 @@ class InferenceService:
         config = self._get_tool_config(company_short_name, tool_name)
 
         endpoint_url = config.get('endpoint_url')
+        endpoint_url_env = config.get('endpoint_url_env')
         api_key_name = config.get('api_key_name', 'HF_TOKEN')
         model_id = config.get('model_id')
         model_parameters = config.get('model_parameters', {})
 
         if not endpoint_url:
+            if endpoint_url_env:
+                raise ValueError(
+                    f"Missing endpoint URL for tool '{tool_name}' in company '{company_short_name}'. "
+                    f"Environment variable '{endpoint_url_env}' is not set."
+                )
             raise ValueError(f"Missing 'endpoint_url' for tool '{tool_name}' in company '{company_short_name}'.")
 
         # 2. Get the API Key
@@ -159,7 +165,10 @@ class InferenceService:
             return {"error": True, "message": "Failed to save generated content."}
 
     def _get_tool_config(self, company_short_name: str, tool_name: str) -> dict:
-        """Helper to safely extract tool configuration from company.yaml."""
+        """
+        Helper to safely extract and resolve tool configuration from company.yaml.
+        It supports shared defaults via inference_tools._defaults and endpoint URL indirection via endpoint_url_env.
+        """
         inference_config = self.config_service.get_configuration(company_short_name, 'inference_tools')
 
         if not inference_config:
@@ -169,7 +178,27 @@ class InferenceService:
         if not tool_config:
             raise ValueError(f"Tool '{tool_name}' not configured in 'inference_tools' for '{company_short_name}'.")
 
-        return tool_config
+        defaults = inference_config.get("_defaults") or {}
+        if not isinstance(defaults, dict):
+            defaults = {}
+
+        if not isinstance(tool_config, dict):
+            raise ValueError(
+                f"Tool '{tool_name}' config must be a dictionary in 'inference_tools' for '{company_short_name}'."
+            )
+
+        resolved_config = {**defaults, **tool_config}
+
+        endpoint_url = (resolved_config.get("endpoint_url") or "").strip()
+        if not endpoint_url:
+            endpoint_url_env = (resolved_config.get("endpoint_url_env") or "").strip()
+            if endpoint_url_env:
+                endpoint_url = (os.getenv(endpoint_url_env) or "").strip()
+
+        if endpoint_url:
+            resolved_config["endpoint_url"] = endpoint_url
+
+        return resolved_config
 
     def _call_endpoint(self, url: str, api_key: str, payload: dict) -> Any:
         """Performs the POST request to the HF Endpoint."""
