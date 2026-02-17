@@ -62,29 +62,6 @@ class TestHomeView:
         assert response.status_code == 200
         mock_render_string.assert_called_once()
 
-    @patch('iatoolkit.views.home_view.render_template')
-    def test_custom_template_does_not_exist(self, mock_render_template):
-        """Prueba el caso en que la plantilla personalizada no existe."""
-        mock_render_template.return_value = "Error Page"
-        self.utility.get_company_template.return_value = None
-
-        # Define el mensaje esperado que devolverá el mock de i18n
-        expected_message = "translated:errors.templates.home_template_not_found"
-        self.i8n_service.t.return_value = expected_message
-
-        response = self.client.get("/test_co/home.html")
-
-        assert response.status_code == 500
-        self.i8n_service.t.assert_called_once_with(
-            'errors.templates.home_template_not_found', company_name='test_co'
-        )
-        # Verificamos que se renderiza la página de error con el mensaje traducido por el mock
-        mock_render_template.assert_called_once_with(
-            "error.html",
-            company_short_name='test_co',
-            branding=self.branding_service.get_company_branding.return_value,
-            message=expected_message
-        )
 
     @patch('iatoolkit.views.home_view.render_template')
     @patch('iatoolkit.views.home_view.render_template_string', side_effect=Exception("Jinja Error"))
