@@ -211,6 +211,99 @@ class TestToolService:
         assert args.source == Tool.SOURCE_USER
         assert args.tool_type == Tool.TYPE_INFERENCE
 
+    def test_create_http_tool_requires_execution_config(self):
+        self.mock_llm_query_repo.get_tool_definition.return_value = None
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.create_tool(self.company_short_name, {
+                "name": "http_orders",
+                "description": "Orders API",
+                "tool_type": Tool.TYPE_HTTP
+            })
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.MISSING_PARAMETER
+        self.mock_llm_query_repo.add_tool.assert_not_called()
+
+    def test_create_http_tool_rejects_non_https_url(self):
+        self.mock_llm_query_repo.get_tool_definition.return_value = None
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.create_tool(self.company_short_name, {
+                "name": "http_orders",
+                "description": "Orders API",
+                "tool_type": Tool.TYPE_HTTP,
+                "execution_config": {
+                    "version": 1,
+                    "request": {
+                        "method": "GET",
+                        "url": "http://api.example.com/orders"
+                    }
+                }
+            })
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_PARAMETER
+        self.mock_llm_query_repo.add_tool.assert_not_called()
+
+    def test_create_http_tool_success(self):
+        self.mock_llm_query_repo.get_tool_definition.return_value = None
+
+        mock_created = MagicMock(spec=Tool)
+        mock_created.to_dict.return_value = {"name": "http_orders"}
+        self.mock_llm_query_repo.add_tool.return_value = mock_created
+
+        result = self.service.create_tool(self.company_short_name, {
+            "name": "http_orders",
+            "description": "Orders API",
+            "tool_type": Tool.TYPE_HTTP,
+            "execution_config": {
+                "version": 1,
+                "request": {
+                    "method": "GET",
+                    "url": "https://api.example.com/orders",
+                    "timeout_ms": 15000
+                }
+            }
+        })
+
+        assert result["name"] == "http_orders"
+        args = self.mock_llm_query_repo.add_tool.call_args[0][0]
+        assert args.tool_type == Tool.TYPE_HTTP
+        assert args.execution_config["request"]["url"] == "https://api.example.com/orders"
+
+    def test_create_http_tool_rejects_invalid_security_allowed_hosts(self):
+        self.mock_llm_query_repo.get_tool_definition.return_value = None
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.create_tool(self.company_short_name, {
+                "name": "http_orders",
+                "description": "Orders API",
+                "tool_type": Tool.TYPE_HTTP,
+                "execution_config": {
+                    "version": 1,
+                    "request": {"method": "GET", "url": "https://api.example.com/orders"},
+                    "security": {"allowed_hosts": "api.example.com"}
+                }
+            })
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_PARAMETER
+
+    def test_create_http_tool_rejects_allow_private_network_true(self):
+        self.mock_llm_query_repo.get_tool_definition.return_value = None
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.create_tool(self.company_short_name, {
+                "name": "http_orders",
+                "description": "Orders API",
+                "tool_type": Tool.TYPE_HTTP,
+                "execution_config": {
+                    "version": 1,
+                    "request": {"method": "GET", "url": "https://api.example.com/orders"},
+                    "security": {"allow_private_network": True}
+                }
+            })
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_PARAMETER
+
     def test_create_tool_duplicate_error(self):
         """Test creating a duplicate tool throws exception."""
         self.mock_llm_query_repo.get_tool_definition.return_value = MagicMock() # Exists
@@ -224,6 +317,7 @@ class TestToolService:
         """Test updating a tool."""
         existing_tool = MagicMock(spec=Tool)
         existing_tool.tool_type = Tool.TYPE_NATIVE
+        existing_tool.execution_config = None
         existing_tool.to_dict.return_value = {}
         self.mock_llm_query_repo.get_tool_by_id.return_value = existing_tool
 
@@ -232,6 +326,52 @@ class TestToolService:
 
         assert existing_tool.description == "new desc"
         self.mock_llm_query_repo.commit.assert_called_once()
+
+    def test_update_tool_switch_to_http_requires_execution_config(self):
+        existing_tool = MagicMock(spec=Tool)
+        existing_tool.tool_type = Tool.TYPE_NATIVE
+        existing_tool.execution_config = None
+        self.mock_llm_query_repo.get_tool_by_id.return_value = existing_tool
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.update_tool(self.company_short_name, 1, {"tool_type": Tool.TYPE_HTTP})
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.MISSING_PARAMETER
+
+    def test_update_http_tool_success_with_existing_execution_config(self):
+        existing_tool = MagicMock(spec=Tool)
+        existing_tool.tool_type = Tool.TYPE_HTTP
+        existing_tool.execution_config = {
+            "version": 1,
+            "request": {"method": "GET", "url": "https://api.example.com/orders"}
+        }
+        existing_tool.to_dict.return_value = {"id": 1, "description": "updated"}
+        self.mock_llm_query_repo.get_tool_by_id.return_value = existing_tool
+
+        result = self.service.update_tool(self.company_short_name, 1, {"description": "updated"})
+
+        assert result["description"] == "updated"
+        self.mock_llm_query_repo.commit.assert_called_once()
+
+    def test_update_http_tool_rejects_invalid_success_status_codes(self):
+        existing_tool = MagicMock(spec=Tool)
+        existing_tool.tool_type = Tool.TYPE_HTTP
+        existing_tool.execution_config = {
+            "version": 1,
+            "request": {"method": "GET", "url": "https://api.example.com/orders"}
+        }
+        self.mock_llm_query_repo.get_tool_by_id.return_value = existing_tool
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.update_tool(self.company_short_name, 1, {
+                "execution_config": {
+                    "version": 1,
+                    "request": {"method": "GET", "url": "https://api.example.com/orders"},
+                    "response": {"success_status_codes": [700]}
+                }
+            })
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_PARAMETER
 
     def test_update_tool_system_tool_fails(self):
         """Test that system tools cannot be updated."""

@@ -22,6 +22,7 @@ class Dispatcher:
         self.util = util
 
         self._tool_service = None
+        self._http_tool_service = None
         self._company_registry = None
         self._company_instances = None
         self._company_instances_revision = -1
@@ -43,6 +44,15 @@ class Dispatcher:
             from iatoolkit.services.tool_service import ToolService
             self._tool_service = current_iatoolkit().get_injector().get(ToolService)
         return self._tool_service
+
+    @property
+    def http_tool_service(self):
+        """Lazy-loads and returns the HttpToolService instance."""
+        if self._http_tool_service is None:
+            from iatoolkit import current_iatoolkit
+            from iatoolkit.services.http_tool_service import HttpToolService
+            self._http_tool_service = current_iatoolkit().get_injector().get(HttpToolService)
+        return self._http_tool_service
 
     @property
     def company_registry(self):
@@ -97,6 +107,15 @@ class Dispatcher:
             return self.inference_service.predict(
                 company_short_name=company_short_name,
                 tool_name=function_name,
+                input_data=kwargs,
+            )
+
+        elif tool_def.tool_type == 'HTTP':
+            logging.debug(f"Dispatching HTTP tool: {function_name}")
+            return self.http_tool_service.execute(
+                company_short_name=company_short_name,
+                tool_name=function_name,
+                execution_config=tool_def.execution_config or {},
                 input_data=kwargs,
             )
 

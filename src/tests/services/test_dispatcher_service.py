@@ -13,6 +13,7 @@ from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.excel_service import ExcelService
 from iatoolkit.services.tool_service import ToolService
+from iatoolkit.services.http_tool_service import HttpToolService
 from iatoolkit.common.util import Utility
 import base64
 
@@ -37,12 +38,14 @@ class TestDispatcher:
         self.util = MagicMock(spec=Utility)
         self.mock_profile_repo = MagicMock(spec=ProfileRepo)
         self.mock_tool_service = MagicMock(spec=ToolService)
+        self.mock_http_tool_service = MagicMock(spec=HttpToolService)
 
         # Create a mock injector that will be used for instantiation.
         mock_injector = Injector()
         mock_injector.binder.bind(ProfileRepo, to=self.mock_profile_repo)
         mock_injector.binder.bind(LLMQueryRepo, to=self.mock_llm_query_repo)
         mock_injector.binder.bind(ToolService, to=self.mock_tool_service)  # Bind ToolService
+        mock_injector.binder.bind(HttpToolService, to=self.mock_http_tool_service)
 
         # Create a mock IAToolkit instance that returns our injector.
         self.toolkit_mock = MagicMock()
@@ -207,6 +210,28 @@ class TestDispatcher:
             self.dispatcher.dispatch("sample", "unknown_tool")
 
         assert "Tool 'unknown_tool' not registered" in str(excinfo.value)
+
+    def test_dispatch_http_tool_success(self):
+        """HTTP tools should be delegated to HttpToolService."""
+        mock_tool_def = MagicMock(spec=Tool)
+        mock_tool_def.tool_type = Tool.TYPE_HTTP
+        mock_tool_def.execution_config = {
+            "version": 1,
+            "request": {"method": "GET", "url": "https://api.example.com/orders"}
+        }
+        self.mock_tool_service.get_tool_definition.return_value = mock_tool_def
+        self.mock_http_tool_service.execute.return_value = {"status": "success", "data": {"id": 1}}
+
+        result = self.dispatcher.dispatch("sample", "http_orders", order_id=1)
+
+        self.mock_tool_service.get_tool_definition.assert_called_once_with("sample", "http_orders")
+        self.mock_http_tool_service.execute.assert_called_once_with(
+            company_short_name="sample",
+            tool_name="http_orders",
+            execution_config=mock_tool_def.execution_config,
+            input_data={"order_id": 1},
+        )
+        assert result == {"status": "success", "data": {"id": 1}}
 
 
     def test_dispatcher_with_no_companies_registered(self):

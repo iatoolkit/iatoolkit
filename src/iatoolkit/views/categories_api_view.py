@@ -12,7 +12,7 @@ from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.knowledge_base_service import KnowledgeBaseService
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
-from iatoolkit.repositories.models import PromptType, PromptCategory
+from iatoolkit.repositories.models import PromptType, PromptCategory, Tool
 import logging
 
 class CategoriesApiView(MethodView):
@@ -53,7 +53,12 @@ class CategoriesApiView(MethodView):
                 "prompt_types": [t.value for t in PromptType],
                 "prompt_categories": [],
                 "collection_types": [],
-                # Future categories can be added here (e.g., tool_types, user_roles)
+                "tool_types": [
+                    Tool.TYPE_NATIVE,
+                    Tool.TYPE_INFERENCE,
+                    Tool.TYPE_HTTP,
+                    Tool.TYPE_SYSTEM
+                ]
             }
 
             # A. Prompt Categories (from DB)

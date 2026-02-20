@@ -221,13 +221,38 @@ class TestToolApiView:
             document="abc"
         )
 
+    def test_execute_http_tool_success(self):
+        """POST /api/tools/execute should run an HTTP tool through dispatcher."""
+        tool_def = MagicMock()
+        tool_def.tool_type = Tool.TYPE_HTTP
+        self.mock_tool_service.get_tool_definition.return_value = tool_def
+        self.mock_dispatcher.dispatch.return_value = {"status": "success", "data": {"id": 10}}
+
+        payload = {
+            "tool_name": "http_orders",
+            "kwargs": {"order_id": 10}
+        }
+
+        resp = self.client.post(f'/{self.MOCK_COMPANY}/api/tools/execute', json=payload)
+
+        assert resp.status_code == 200
+        assert resp.json["result"] == "success"
+        assert resp.json["tool_name"] == "http_orders"
+        assert resp.json["data"] == {"status": "success", "data": {"id": 10}}
+        self.mock_tool_service.get_tool_definition.assert_called_with(self.MOCK_COMPANY, "http_orders")
+        self.mock_dispatcher.dispatch.assert_called_with(
+            company_short_name=self.MOCK_COMPANY,
+            function_name="http_orders",
+            order_id=10
+        )
+
     def test_execute_requires_tool_name(self):
         """POST /api/tools/execute should return 400 when tool_name is missing."""
         resp = self.client.post(f'/{self.MOCK_COMPANY}/api/tools/execute', json={"kwargs": {}})
         assert resp.status_code == 400
 
-    def test_execute_requires_native_tool_type(self):
-        """POST /api/tools/execute should reject non-native tools."""
+    def test_execute_rejects_non_executable_tool_type(self):
+        """POST /api/tools/execute should reject non-executable tool types."""
         tool_def = MagicMock()
         tool_def.tool_type = Tool.TYPE_SYSTEM
         self.mock_tool_service.get_tool_definition.return_value = tool_def

@@ -103,6 +103,7 @@ class LLMQueryRepo:
             tool.name = new_tool.name
             tool.description = new_tool.description
             tool.parameters = new_tool.parameters
+            tool.execution_config = new_tool.execution_config
             tool.tool_type = new_tool.tool_type
             tool.source = new_tool.source
         else:

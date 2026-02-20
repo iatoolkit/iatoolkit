@@ -114,6 +114,51 @@ class TestLLMQueryRepo:
         assert result.parameters == {'a': 2}
         assert result.tool_type == Tool.TYPE_INFERENCE
 
+    def test_create_or_update_http_tool_persists_execution_config(self):
+        """HTTP tools should persist execution_config on create and update."""
+        new_tool = Tool(
+            name="http_customer_lookup",
+            company_id=self.company.id,
+            description="Calls customer API",
+            parameters={"type": "object"},
+            execution_config={
+                "version": 1,
+                "request": {"method": "GET", "url": "https://api.example.com/customers"}
+            },
+            tool_type=Tool.TYPE_HTTP,
+            source=Tool.SOURCE_USER,
+        )
+
+        created = self.repo.create_or_update_tool(new_tool)
+        self.session.commit()
+
+        assert created.tool_type == Tool.TYPE_HTTP
+        assert created.execution_config["version"] == 1
+        assert created.execution_config["request"]["method"] == "GET"
+
+        updated_tool_data = Tool(
+            name="http_customer_lookup",
+            company_id=self.company.id,
+            description="Calls customer API with timeout",
+            parameters={"type": "object"},
+            execution_config={
+                "version": 1,
+                "request": {
+                    "method": "GET",
+                    "url": "https://api.example.com/customers",
+                    "timeout_ms": 15000
+                }
+            },
+            tool_type=Tool.TYPE_HTTP,
+            source=Tool.SOURCE_USER,
+        )
+
+        updated = self.repo.create_or_update_tool(updated_tool_data)
+        self.session.commit()
+
+        assert updated.id == created.id
+        assert updated.execution_config["request"]["timeout_ms"] == 15000
+
     def test_delete_system_tools(self):
         """Test deleting only system tools."""
         t1 = Tool(name="s1", tool_type=Tool.TYPE_SYSTEM, description="s", parameters={})

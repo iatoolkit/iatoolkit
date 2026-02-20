@@ -9,7 +9,7 @@ from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.knowledge_base_service import KnowledgeBaseService
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
-from iatoolkit.repositories.models import PromptType, Company, PromptCategory
+from iatoolkit.repositories.models import PromptType, Company, PromptCategory, Tool
 from iatoolkit.services.prompt_service import PromptService
 
 class TestCategoriesView:
@@ -86,6 +86,10 @@ class TestCategoriesView:
         assert "llm_models" in data
         assert "gpt-4" in data["llm_models"]
         assert "claude-3" in data["llm_models"]
+
+        assert "tool_types" in data
+        assert Tool.TYPE_HTTP in data["tool_types"]
+        assert Tool.TYPE_NATIVE in data["tool_types"]
 
     def test_post_sync_categories(self):
         """

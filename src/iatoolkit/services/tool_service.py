@@ -6,6 +6,7 @@
 from injector import inject
 import os
 import json
+from urllib.parse import urlparse
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.visual_kb_service import VisualKnowledgeBaseService
@@ -21,6 +22,11 @@ from iatoolkit import current_iatoolkit
 
 
 class ToolService:
+    HTTP_ALLOWED_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
+    HTTP_ALLOWED_BODY_MODES = {"none", "json_map", "full_args"}
+    HTTP_ALLOWED_AUTH_TYPES = {"none", "bearer", "api_key_header", "api_key_query", "basic"}
+    HTTP_ALLOWED_RESPONSE_MODES = {"json", "text", "raw"}
+
     @inject
     def __init__(self,
                  llm_query_repo: LLMQueryRepo,
@@ -191,6 +197,196 @@ class ToolService:
             return text
         return f"[{text}]({url})"
 
+    def _validate_tool_contract(self, tool_type: str, execution_config):
+        if tool_type != Tool.TYPE_HTTP:
+            return
+
+        if execution_config is None:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.MISSING_PARAMETER,
+                "execution_config is required for HTTP tools"
+            )
+
+        self._validate_http_execution_config(execution_config)
+
+    def _validate_http_execution_config(self, execution_config):
+        if not isinstance(execution_config, dict):
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "execution_config must be a JSON object"
+            )
+
+        version = execution_config.get("version")
+        if version != 1:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "execution_config.version must be 1"
+            )
+
+        request_cfg = execution_config.get("request")
+        if not isinstance(request_cfg, dict):
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "execution_config.request must be a JSON object"
+            )
+
+        method = str(request_cfg.get("method", "")).upper()
+        if method not in self.HTTP_ALLOWED_METHODS:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                f"execution_config.request.method must be one of {sorted(self.HTTP_ALLOWED_METHODS)}"
+            )
+
+        url = request_cfg.get("url")
+        if not isinstance(url, str) or not url.strip():
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "execution_config.request.url is required and must be a non-empty string"
+            )
+
+        parsed = urlparse(url)
+        if parsed.scheme.lower() != "https" or not parsed.netloc:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "execution_config.request.url must be an absolute HTTPS URL"
+            )
+
+        timeout_ms = request_cfg.get("timeout_ms")
+        if timeout_ms is not None:
+            if not isinstance(timeout_ms, int) or timeout_ms <= 0 or timeout_ms > 120000:
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.request.timeout_ms must be an integer between 1 and 120000"
+                )
+
+        for dict_key in ("path_params", "query_params", "headers"):
+            value = request_cfg.get(dict_key)
+            if value is not None and not isinstance(value, dict):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    f"execution_config.request.{dict_key} must be a JSON object"
+                )
+
+        body_cfg = request_cfg.get("body")
+        if body_cfg is not None:
+            if not isinstance(body_cfg, dict):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.request.body must be a JSON object"
+                )
+
+            body_mode = str(body_cfg.get("mode", "none")).lower()
+            if body_mode not in self.HTTP_ALLOWED_BODY_MODES:
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    f"execution_config.request.body.mode must be one of {sorted(self.HTTP_ALLOWED_BODY_MODES)}"
+                )
+            if body_mode == "json_map" and not isinstance(body_cfg.get("json_map"), dict):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.request.body.json_map must be a JSON object when mode is 'json_map'"
+                )
+
+        auth_cfg = execution_config.get("auth")
+        if auth_cfg is not None:
+            if not isinstance(auth_cfg, dict):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.auth must be a JSON object"
+                )
+
+            auth_type = str(auth_cfg.get("type", "none")).lower()
+            if auth_type not in self.HTTP_ALLOWED_AUTH_TYPES:
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    f"execution_config.auth.type must be one of {sorted(self.HTTP_ALLOWED_AUTH_TYPES)}"
+                )
+
+            if auth_type == "bearer" and not auth_cfg.get("secret_ref"):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.auth.secret_ref is required for bearer auth"
+                )
+            if auth_type == "api_key_header":
+                if not auth_cfg.get("header_name") or not auth_cfg.get("secret_ref"):
+                    raise IAToolkitException(
+                        IAToolkitException.ErrorType.INVALID_PARAMETER,
+                        "execution_config.auth.header_name and secret_ref are required for api_key_header auth"
+                    )
+            if auth_type == "api_key_query":
+                if not auth_cfg.get("query_param") or not auth_cfg.get("secret_ref"):
+                    raise IAToolkitException(
+                        IAToolkitException.ErrorType.INVALID_PARAMETER,
+                        "execution_config.auth.query_param and secret_ref are required for api_key_query auth"
+                    )
+            if auth_type == "basic":
+                if not auth_cfg.get("username_secret_ref") or not auth_cfg.get("password_secret_ref"):
+                    raise IAToolkitException(
+                        IAToolkitException.ErrorType.INVALID_PARAMETER,
+                        "execution_config.auth.username_secret_ref and password_secret_ref are required for basic auth"
+                    )
+
+        response_cfg = execution_config.get("response")
+        if response_cfg is not None:
+            if not isinstance(response_cfg, dict):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.response must be a JSON object"
+                )
+
+            response_mode = str(response_cfg.get("mode", "json")).lower()
+            if response_mode not in self.HTTP_ALLOWED_RESPONSE_MODES:
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    f"execution_config.response.mode must be one of {sorted(self.HTTP_ALLOWED_RESPONSE_MODES)}"
+                )
+
+            success_codes = response_cfg.get("success_status_codes")
+            if success_codes is not None:
+                if (not isinstance(success_codes, list) or
+                        not success_codes or
+                        any(not isinstance(code, int) or code < 100 or code > 599 for code in success_codes)):
+                    raise IAToolkitException(
+                        IAToolkitException.ErrorType.INVALID_PARAMETER,
+                        "execution_config.response.success_status_codes must be a non-empty list of HTTP status codes"
+                    )
+
+            max_bytes = response_cfg.get("max_response_bytes")
+            if max_bytes is not None and (not isinstance(max_bytes, int) or max_bytes <= 0):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.response.max_response_bytes must be a positive integer"
+                )
+
+        security_cfg = execution_config.get("security")
+        if security_cfg is not None:
+            if not isinstance(security_cfg, dict):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.security must be a JSON object"
+                )
+
+            allowed_hosts = security_cfg.get("allowed_hosts")
+            if allowed_hosts is not None:
+                if not isinstance(allowed_hosts, list):
+                    raise IAToolkitException(
+                        IAToolkitException.ErrorType.INVALID_PARAMETER,
+                        "execution_config.security.allowed_hosts must be a list"
+                    )
+                for host in allowed_hosts:
+                    if not isinstance(host, str) or not host.strip():
+                        raise IAToolkitException(
+                            IAToolkitException.ErrorType.INVALID_PARAMETER,
+                            "execution_config.security.allowed_hosts must contain non-empty strings"
+                        )
+
+            allow_private_network = security_cfg.get("allow_private_network")
+            if allow_private_network is True:
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.security.allow_private_network=true is not supported"
+                )
+
     def register_system_tools(self):
         """
         Creates or updates system functions in the database.
@@ -307,12 +503,17 @@ class ToolService:
         if not tool_data.get('name') or not tool_data.get('description'):
             raise IAToolkitException(IAToolkitException.ErrorType.MISSING_PARAMETER, "Name and Description are required")
 
+        tool_type = tool_data.get('tool_type', Tool.TYPE_NATIVE)
+        execution_config = tool_data.get('execution_config')
+        self._validate_tool_contract(tool_type, execution_config)
+
         new_tool = Tool(
             company_id=company.id,
             name=tool_data['name'],
             description=tool_data['description'],
             parameters=tool_data.get('parameters', {"type": "object", "properties": {}}),
-            tool_type=tool_data.get('tool_type', Tool.TYPE_NATIVE),
+            execution_config=execution_config,
+            tool_type=tool_type,
             source=Tool.SOURCE_USER,
             is_active=tool_data.get('is_active', True)
         )
@@ -345,6 +546,10 @@ class ToolService:
         if tool.tool_type == Tool.TYPE_SYSTEM and not allow_system_update:
             raise IAToolkitException(IAToolkitException.ErrorType.INVALID_OPERATION, "Cannot modify System Tools")
 
+        effective_tool_type = tool_data.get('tool_type', tool.tool_type)
+        effective_execution_config = tool_data.get('execution_config', tool.execution_config)
+        self._validate_tool_contract(effective_tool_type, effective_execution_config)
+
         # Update fields
         if 'name' in tool_data:
             tool.name = tool_data['name']
@@ -352,6 +557,10 @@ class ToolService:
             tool.description = tool_data['description']
         if 'parameters' in tool_data:
             tool.parameters = tool_data['parameters']
+        if 'execution_config' in tool_data:
+            tool.execution_config = tool_data['execution_config']
+        if 'tool_type' in tool_data:
+            tool.tool_type = tool_data['tool_type']
         if 'is_active' in tool_data:
             tool.is_active = tool_data['is_active']
 

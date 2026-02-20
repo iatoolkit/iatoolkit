@@ -351,6 +351,7 @@ class IAToolkit:
         from iatoolkit.services.sql_service import SqlService
         from iatoolkit.services.knowledge_base_service import KnowledgeBaseService
         from iatoolkit.services.inference_service import InferenceService
+        from iatoolkit.services.http_tool_service import HttpToolService
         from iatoolkit.services.warmup_service import WarmupService
 
         binder.bind(QueryService, to=QueryService)
@@ -379,6 +380,7 @@ class IAToolkit:
         binder.bind(SqlService, to=SqlService)
         binder.bind(KnowledgeBaseService, to=KnowledgeBaseService)
         binder.bind(InferenceService, to=InferenceService)
+        binder.bind(HttpToolService, to=HttpToolService)
         binder.bind(WarmupService, to=WarmupService)
 
     def _bind_infrastructure(self, binder: Binder):

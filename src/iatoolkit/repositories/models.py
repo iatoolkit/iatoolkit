@@ -159,6 +159,7 @@ class Tool(Base):
     TYPE_SYSTEM = 'SYSTEM'
     TYPE_NATIVE = 'NATIVE'       # executed by company class in Python
     TYPE_INFERENCE = 'INFERENCE' # executed by InferenceService
+    TYPE_HTTP = 'HTTP'           # executed by HttpToolService
 
     # source of the definition (Source of Truth)
     SOURCE_SYSTEM = 'SYSTEM'
@@ -175,6 +176,7 @@ class Tool(Base):
 
     description = Column(Text, nullable=False)
     parameters = Column(JSON, nullable=False)
+    execution_config = Column(JSON_NATIVE, nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.now)
 

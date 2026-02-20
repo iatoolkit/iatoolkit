@@ -348,6 +348,47 @@ tools:
 *   **`description`**: A clear, natural language description telling the AI *when* and *why* it should use this tool.
 *   **`params`**: An OpenAPI-style schema defining the parameters the function accepts.
 
+#### 3.3.1 HTTP Tools (GUI/API first)
+
+For GUI-managed tools, you can create `tool_type: HTTP` tools using `POST /<company>/api/tools`.
+In this mode, the tool definition is stored in database (`iat_tools`) and executed by the HTTP dispatcher.
+
+Minimum payload for a HTTP tool:
+
+```json
+{
+  "name": "http_orders",
+  "description": "Fetches order details from external API",
+  "tool_type": "HTTP",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "order_id": { "type": "integer" }
+    },
+    "required": ["order_id"]
+  },
+  "execution_config": {
+    "version": 1,
+    "request": {
+      "method": "GET",
+      "url": "https://api.example.com/orders/{order_id}",
+      "path_params": { "order_id": "order_id" }
+    }
+  }
+}
+```
+
+`execution_config` supports:
+- `request`: `method`, `url`, optional `path_params`, `query_params`, `headers`, `timeout_ms`, `body`.
+- `auth`: `none`, `bearer`, `api_key_header`, `api_key_query`, `basic` (by secret references).
+- `response`: `mode`, `extract_path`, `success_status_codes`, `max_response_bytes`.
+- `security.allowed_hosts`: optional per-tool host allowlist.
+
+Security defaults:
+- only absolute HTTPS URLs are allowed.
+- localhost, `.local`, and private/link-local/loopback IP targets are blocked.
+- you can define company-level allowlist in `parameters.http_tools.allowed_hosts`.
+
 ### 3.4 Prompts
 
 Prompts are pre-configured, reusable conversation starters that appear in your 
@@ -430,6 +471,12 @@ parameters:
   # External URLs for the login and logout buttons
   external_urls:
     logout_url: ""
+
+  # Optional host allowlist for HTTP tools (GUI/API tools with tool_type=HTTP)
+  http_tools:
+    allowed_hosts:
+      - "api.example.com"
+      - "*.partner.com"
 ```
 
 ### 3.6 Knowledge Base (RAG)

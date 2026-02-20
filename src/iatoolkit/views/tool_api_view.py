@@ -132,7 +132,7 @@ class ToolApiView(MethodView):
 
     def execute(self, company_short_name: str):
         """
-        POST /<company>/api/tools/execute -> Execute a NATIVE tool by name.
+        POST /<company>/api/tools/execute -> Execute a NATIVE or HTTP tool by name.
         Body:
         {
             "tool_name": "identity_risk",
@@ -166,10 +166,10 @@ class ToolApiView(MethodView):
                     f"Tool '{tool_name}' not found"
                 )
 
-            if tool_def.tool_type != Tool.TYPE_NATIVE:
+            if tool_def.tool_type not in {Tool.TYPE_NATIVE, Tool.TYPE_HTTP}:
                 raise IAToolkitException(
                     IAToolkitException.ErrorType.INVALID_OPERATION,
-                    f"Tool '{tool_name}' is not NATIVE"
+                    f"Tool '{tool_name}' is not executable via this endpoint"
                 )
 
             # Reuse dispatcher invocation for exact NATIVE execution path.
