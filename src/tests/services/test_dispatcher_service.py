@@ -113,7 +113,10 @@ class TestDispatcher:
 
     def test_dispatch_invalid_company(self):
         """Tests that dispatch raises an exception for an unconfigured company."""
-        # Dispatcher checks company existence BEFORE checking tool def
+        mock_tool_def = MagicMock(spec=Tool)
+        mock_tool_def.tool_type = Tool.TYPE_NATIVE
+        self.mock_tool_service.get_tool_definition.return_value = mock_tool_def
+
         with pytest.raises(IAToolkitException) as excinfo:
             self.dispatcher.dispatch("invalid_company", "some_tag")
         assert "Company 'invalid_company' not configured." in str(excinfo.value)
@@ -233,6 +236,31 @@ class TestDispatcher:
         )
         assert result == {"status": "success", "data": {"id": 1}}
 
+    def test_dispatch_http_tool_does_not_require_registered_company(self):
+        """HTTP tool dispatch should not depend on company registry instances."""
+        registry = get_company_registry()
+        registry.clear()
+        assert len(self.dispatcher.company_instances) == 0
+
+        mock_tool_def = MagicMock(spec=Tool)
+        mock_tool_def.tool_type = Tool.TYPE_HTTP
+        mock_tool_def.execution_config = {
+            "version": 1,
+            "request": {"method": "GET", "url": "https://api.example.com/orders"}
+        }
+        self.mock_tool_service.get_tool_definition.return_value = mock_tool_def
+        self.mock_http_tool_service.execute.return_value = {"status": "success", "data": {"id": 77}}
+
+        result = self.dispatcher.dispatch("ent_company", "http_orders", order_id=77)
+
+        self.mock_http_tool_service.execute.assert_called_once_with(
+            company_short_name="ent_company",
+            tool_name="http_orders",
+            execution_config=mock_tool_def.execution_config,
+            input_data={"order_id": 77},
+        )
+        assert result == {"status": "success", "data": {"id": 77}}
+
 
     def test_dispatcher_with_no_companies_registered(self):
         """Tests that the dispatcher works if no company is registered."""
@@ -243,6 +271,10 @@ class TestDispatcher:
 
         # 2. Verify state (cache invalidation should happen automatically by revision)
         assert len(self.dispatcher.company_instances) == 0
+
+        mock_tool_def = MagicMock(spec=Tool)
+        mock_tool_def.tool_type = Tool.TYPE_NATIVE
+        self.mock_tool_service.get_tool_definition.return_value = mock_tool_def
 
         # 3. Execute dispatch and expect error
         with pytest.raises(IAToolkitException) as excinfo:

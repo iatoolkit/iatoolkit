@@ -73,15 +73,6 @@ class Dispatcher:
 
 
     def dispatch(self, company_short_name: str, function_name: str, **kwargs) -> dict:
-        company_key = company_short_name.lower()
-
-        if company_key not in self.company_instances:
-            available_companies = list(self.company_instances.keys())
-            raise IAToolkitException(
-                IAToolkitException.ErrorType.EXTERNAL_SOURCE_ERROR,
-                f"Company '{company_short_name}' not configured. available companies: {available_companies}"
-            )
-
         # 1. Consult the Database (Source of Truth) for the tool definition
         tool_def = self.tool_service.get_tool_definition(company_short_name, function_name)
         if not tool_def:
@@ -122,7 +113,15 @@ class Dispatcher:
         elif tool_def.tool_type == 'NATIVE':
             # Delegate to Company Python Class
             logging.debug(f"Dispatching NATIVE tool: {function_name}")
-            company_instance = self.company_instances[company_short_name]
+            company_key = company_short_name.lower()
+            if company_key not in self.company_instances:
+                available_companies = list(self.company_instances.keys())
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.EXTERNAL_SOURCE_ERROR,
+                    f"Company '{company_short_name}' not configured. available companies: {available_companies}"
+                )
+
+            company_instance = self.company_instances[company_key]
             method_name = function_name
 
             try:
