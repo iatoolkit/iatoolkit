@@ -86,7 +86,7 @@ class Dispatcher:
             # Map to internal handler
             handler = self.tool_service.get_system_handler(function_name)
             if not handler:
-                raise IAToolkitException(IAToolkitException.ErrorType.INTERNAL_ERROR,
+                raise IAToolkitException(IAToolkitException.ErrorType.SYSTEM_ERROR,
                                          f"Handler for system tool '{function_name}' not found.")
 
             logging.debug(f"Dispatching SYSTEM tool: {function_name}")

@@ -203,6 +203,19 @@ class TestDispatcher:
         self.mock_tool_service.get_tool_definition.assert_called_once_with("sample", "iat_visual_search")
         self.mock_tool_service.get_system_handler.assert_called_once_with("iat_visual_search")
 
+    def test_dispatch_system_tool_without_handler_raises_system_error(self):
+        """System tools without handler must raise IAToolkitException with SYSTEM_ERROR."""
+        mock_tool_def = MagicMock(spec=Tool)
+        mock_tool_def.tool_type = Tool.TYPE_SYSTEM
+        self.mock_tool_service.get_tool_definition.return_value = mock_tool_def
+        self.mock_tool_service.get_system_handler.return_value = None
+
+        with pytest.raises(IAToolkitException) as excinfo:
+            self.dispatcher.dispatch("sample", "iat_web_search", query="test")
+
+        assert excinfo.value.error_type == IAToolkitException.ErrorType.SYSTEM_ERROR
+        assert "Handler for system tool 'iat_web_search' not found." in str(excinfo.value)
+
     def test_dispatch_tool_not_found(self):
         """Test that dispatch raises exception if tool definition is missing."""
         # Arrange
