@@ -463,11 +463,17 @@ class IAToolkit:
             def translate_for_template(key: str, **kwargs):
                 return i18n_service.t(key, **kwargs)
 
+            # Flask-Injector can wrap annotated globals from Jinja and try to inject
+            # typing.Any parameters (e.g., Flask's url_for annotations on newer Flask).
+            # Expose a local unannotated wrapper for template usage.
+            def template_url_for(endpoint, **values):
+                return url_for(endpoint, **values)
+
             # Get user profile if a session exists
             user_profile = profile_service.get_current_session_info().get('profile', {})
 
             return {
-                'url_for': url_for,
+                'url_for': template_url_for,
                 'iatoolkit_version': f'{self.version}',
                 'license': self.license,
                 'app_name': 'IAToolkit',
