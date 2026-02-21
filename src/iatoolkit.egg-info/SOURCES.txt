@@ -22,6 +22,7 @@ src/iatoolkit/common/util.py
 src/iatoolkit/common/interfaces/__init__.py
 src/iatoolkit/common/interfaces/asset_storage.py
 src/iatoolkit/common/interfaces/database_provider.py
+src/iatoolkit/common/interfaces/secret_provider.py
 src/iatoolkit/infra/__init__.py
 src/iatoolkit/infra/brevo_mail_app.py
 src/iatoolkit/infra/call_service.py
@@ -46,14 +47,17 @@ src/iatoolkit/infra/llm_providers/openai_adapter.py
 src/iatoolkit/locales/en.yaml
 src/iatoolkit/locales/es.yaml
 src/iatoolkit/repositories/__init__.py
+src/iatoolkit/repositories/api_key_repo.py
 src/iatoolkit/repositories/database_manager.py
 src/iatoolkit/repositories/document_repo.py
+src/iatoolkit/repositories/env_secret_provider.py
 src/iatoolkit/repositories/filesystem_asset_repository.py
 src/iatoolkit/repositories/llm_query_repo.py
 src/iatoolkit/repositories/models.py
 src/iatoolkit/repositories/profile_repo.py
 src/iatoolkit/repositories/vs_repo.py
 src/iatoolkit/services/__init__.py
+src/iatoolkit/services/api_key_service.py
 src/iatoolkit/services/auth_service.py
 src/iatoolkit/services/benchmark_service.py
 src/iatoolkit/services/branding_service.py
@@ -127,9 +131,11 @@ src/iatoolkit/templates/chat.html
 src/iatoolkit/templates/chat_modals.html
 src/iatoolkit/templates/error.html
 src/iatoolkit/templates/forgot_password.html
+src/iatoolkit/templates/home_hosted_default.html
 src/iatoolkit/templates/onboarding_shell.html
 src/iatoolkit/templates/signup.html
 src/iatoolkit/views/__init__.py
+src/iatoolkit/views/api_key_api_view.py
 src/iatoolkit/views/base_login_view.py
 src/iatoolkit/views/categories_api_view.py
 src/iatoolkit/views/change_password_view.py
