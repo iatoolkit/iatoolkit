@@ -10,6 +10,7 @@ from iatoolkit.common.util import Utility
 from injector import inject
 import logging
 import os
+from urllib.parse import urlparse
 
 
 class ConfigurationService:
@@ -492,6 +493,64 @@ class ConfigurationService:
                 continue
             if not self.asset_repo.exists(company_short_name, AssetType.CONFIG, filename):
                 add_error(f"help_files.{key}", f"Help file not found: {filename}")
+
+        # 12. Web Search
+        web_search = config.get("web_search")
+        if web_search is not None:
+            if not isinstance(web_search, dict):
+                add_error("web_search", "Section must be a dictionary.")
+            else:
+                enabled = web_search.get("enabled", True)
+                if not isinstance(enabled, bool):
+                    add_error("web_search.enabled", "Must be a boolean.")
+
+                provider = web_search.get("provider")
+                normalized_provider = None
+                if provider is not None:
+                    if not isinstance(provider, str) or not provider.strip():
+                        add_error("web_search.provider", "Must be a non-empty string.")
+                    else:
+                        normalized_provider = provider.strip().lower()
+                        if normalized_provider not in {"brave"}:
+                            add_error("web_search.provider", "Unsupported provider. Must be 'brave'.")
+                elif enabled:
+                    add_error("web_search.provider", "Missing required key: 'provider'.")
+
+                max_results = web_search.get("max_results")
+                if max_results is not None:
+                    if not isinstance(max_results, int) or max_results <= 0 or max_results > 20:
+                        add_error("web_search.max_results", "Must be an integer between 1 and 20.")
+
+                timeout_ms = web_search.get("timeout_ms")
+                if timeout_ms is not None:
+                    if not isinstance(timeout_ms, int) or timeout_ms <= 0 or timeout_ms > 120000:
+                        add_error("web_search.timeout_ms", "Must be an integer between 1 and 120000.")
+
+                providers_cfg = web_search.get("providers")
+                if providers_cfg is not None and not isinstance(providers_cfg, dict):
+                    add_error("web_search.providers", "Must be a dictionary.")
+
+                if normalized_provider:
+                    provider_cfg = (providers_cfg or {}).get(normalized_provider)
+                    if not isinstance(provider_cfg, dict):
+                        add_error(f"web_search.providers.{normalized_provider}",
+                                  "Provider configuration is required and must be a dictionary.")
+                    elif normalized_provider == "brave":
+                        secret_ref = provider_cfg.get("secret_ref")
+                        if not isinstance(secret_ref, str) or not secret_ref.strip():
+                            add_error("web_search.providers.brave.secret_ref",
+                                      "Missing required key: 'secret_ref'.")
+
+                        api_base_url = provider_cfg.get("api_base_url")
+                        if api_base_url is not None:
+                            if not isinstance(api_base_url, str) or not api_base_url.strip():
+                                add_error("web_search.providers.brave.api_base_url",
+                                          "Must be a non-empty string.")
+                            else:
+                                parsed = urlparse(api_base_url)
+                                if parsed.scheme.lower() != "https" or not parsed.netloc:
+                                    add_error("web_search.providers.brave.api_base_url",
+                                              "Must be an absolute HTTPS URL.")
 
 
         # If any errors were found, log all messages and raise an exception

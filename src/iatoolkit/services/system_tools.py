@@ -235,4 +235,39 @@ SYSTEM_TOOLS_DEFINITIONS = [
             "required": ["n_results", "image_index", "collection",  "metadata_filter"]
         }
     },
+    {
+        "function_name": "iat_web_search",
+        "description": "Realiza una búsqueda web externa para obtener información pública actualizada.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Texto de búsqueda."
+                },
+                "n_results": {
+                    "type": "integer",
+                    "description": "Cantidad de resultados a devolver.",
+                    "minimum": 1,
+                    "maximum": 20
+                },
+                "recency_days": {
+                    "type": "integer",
+                    "description": "Opcional. Limita resultados recientes en cantidad de días.",
+                    "minimum": 1
+                },
+                "include_domains": {
+                    "type": "array",
+                    "description": "Opcional. Lista de dominios a priorizar (ej: ['openai.com']).",
+                    "items": {"type": "string"}
+                },
+                "exclude_domains": {
+                    "type": "array",
+                    "description": "Opcional. Lista de dominios a excluir.",
+                    "items": {"type": "string"}
+                }
+            },
+            "required": ["query"]
+        }
+    },
 ]

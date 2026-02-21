@@ -25,6 +25,7 @@ class TestToolService:
         self.knowledge_base_service = MagicMock(spec=KnowledgeBaseService)
         self.mock_visual_kb_service = MagicMock(spec=VisualKnowledgeBaseService)
         self.mock_visual_tool_service = MagicMock(spec=VisualToolService)
+        self.mock_web_search_service = MagicMock()
 
         self.service = ToolService(
             llm_query_repo=self.mock_llm_query_repo,
@@ -34,7 +35,8 @@ class TestToolService:
             mail_service=self.mock_mail_service,
             knowledge_base_service=self.knowledge_base_service,
             visual_kb_service=self.mock_visual_kb_service,
-            visual_tool_service=self.mock_visual_tool_service
+            visual_tool_service=self.mock_visual_tool_service,
+            web_search_service=self.mock_web_search_service,
         )
 
         # Mock del modelo de base de datos (Company Model)
@@ -462,6 +464,34 @@ class TestToolService:
             request_images=[],
             n_results=3,
             structured_output=True,
+        )
+        assert result["status"] == "success"
+
+    def test_system_web_search_delegates_to_web_search_service(self):
+        self.mock_web_search_service.search.return_value = {
+            "status": "success",
+            "provider": "brave",
+            "count": 1,
+            "results": [{"title": "A", "url": "https://example.com"}]
+        }
+
+        handler = self.service.get_system_handler("iat_web_search")
+        result = handler(
+            company_short_name=self.company_short_name,
+            query="latest ai news",
+            n_results=3,
+            recency_days=2,
+            include_domains=["example.com"],
+            exclude_domains=["spam.com"],
+        )
+
+        self.mock_web_search_service.search.assert_called_once_with(
+            company_short_name=self.company_short_name,
+            query="latest ai news",
+            n_results=3,
+            recency_days=2,
+            include_domains=["example.com"],
+            exclude_domains=["spam.com"],
         )
         assert result["status"] == "success"
     def test_get_tools_for_llm_format(self):

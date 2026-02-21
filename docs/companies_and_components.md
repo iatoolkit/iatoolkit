@@ -479,6 +479,28 @@ parameters:
       - "*.partner.com"
 ```
 
+### 3.5.1 Web Search
+
+`web_search` is a dedicated top-level section used by the built-in system tool `iat_web_search`.
+It defines provider selection and provider-specific credentials/settings.
+
+```yaml
+web_search:
+  enabled: true
+  provider: "brave"
+  max_results: 5
+  timeout_ms: 10000
+  providers:
+    brave:
+      api_base_url: "https://api.search.brave.com/res/v1/web/search"
+      secret_ref: "BRAVE_SEARCH_API_KEY"
+```
+
+Notes:
+- `provider` currently supports `brave`.
+- `secret_ref` is resolved via the configured `SecretProvider`.
+- `max_results` can be overridden per tool call using the `n_results` argument.
+
 ### 3.6 Knowledge Base (RAG)
 
 This section enables one of the most valuable AI capabilities: the ability to answer 

@@ -509,3 +509,44 @@ class TestConfigurationService:
 
         errors = self.service.validate_configuration(self.COMPANY_NAME)
         assert any("knowledge_base.collections[0].parser_provider" in e for e in errors)
+
+    def test_validate_configuration_accepts_web_search_section(self):
+        valid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        valid_config["web_search"] = {
+            "enabled": True,
+            "provider": "brave",
+            "max_results": 5,
+            "timeout_ms": 10000,
+            "providers": {
+                "brave": {
+                    "api_base_url": "https://api.search.brave.com/res/v1/web/search",
+                    "secret_ref": "BRAVE_SEARCH_API_KEY",
+                }
+            }
+        }
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = valid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert errors == []
+
+    def test_validate_configuration_rejects_web_search_missing_secret_ref(self):
+        invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        invalid_config["web_search"] = {
+            "enabled": True,
+            "provider": "brave",
+            "providers": {
+                "brave": {
+                    "api_base_url": "https://api.search.brave.com/res/v1/web/search",
+                }
+            }
+        }
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = invalid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert any("web_search.providers.brave.secret_ref" in e for e in errors)

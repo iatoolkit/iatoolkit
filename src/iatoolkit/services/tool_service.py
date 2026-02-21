@@ -36,7 +36,8 @@ class ToolService:
                  profile_repo: ProfileRepo,
                  sql_service: SqlService,
                  excel_service: ExcelService,
-                 mail_service: MailService):
+                 mail_service: MailService,
+                 web_search_service=None):
         self.llm_query_repo = llm_query_repo
         self.profile_repo = profile_repo
         self.sql_service = sql_service
@@ -45,6 +46,7 @@ class ToolService:
         self.knowledge_base_service = knowledge_base_service
         self.visual_kb_service = visual_kb_service
         self.visual_tool_service = visual_tool_service
+        self._web_search_service = web_search_service
 
         # execution mapper for system tools
         self.system_handlers = {
@@ -53,8 +55,16 @@ class ToolService:
             "iat_sql_query": self.sql_service.exec_sql,
             "iat_image_search": self._handle_image_search_tool,
             "iat_visual_search": self._handle_visual_search_tool,
-            "iat_document_search": self._handle_document_search_tool
+            "iat_document_search": self._handle_document_search_tool,
+            "iat_web_search": self._handle_web_search_tool,
         }
+
+    @property
+    def web_search_service(self):
+        if self._web_search_service is None:
+            from iatoolkit.services.web_search_service import WebSearchService
+            self._web_search_service = current_iatoolkit().get_injector().get(WebSearchService)
+        return self._web_search_service
 
     def _handle_document_search_tool(self,
                                      company_short_name: str,
@@ -115,6 +125,24 @@ class ToolService:
             collection=collection,
             metadata_filter=metadata_filter,
             structured_output=True,
+        )
+
+    def _handle_web_search_tool(self,
+                                company_short_name: str,
+                                query: str,
+                                n_results: int | None = None,
+                                recency_days: int | None = None,
+                                include_domains: list[str] | None = None,
+                                exclude_domains: list[str] | None = None,
+                                **kwargs):
+        return self.web_search_service.search(
+            company_short_name=company_short_name,
+            query=query,
+            n_results=n_results,
+            recency_days=recency_days,
+            include_domains=include_domains,
+            exclude_domains=exclude_domains,
+            **kwargs,
         )
 
     @staticmethod

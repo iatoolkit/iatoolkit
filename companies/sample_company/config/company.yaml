@@ -94,6 +94,15 @@ parameters:
   - https://portal-interno.empresa_de_ejemplo.cl
   external_urls:
     logout_url: ''
+web_search:
+  enabled: true
+  provider: brave
+  max_results: 5
+  timeout_ms: 10000
+  providers:
+    brave:
+      api_base_url: https://api.search.brave.com/res/v1/web/search
+      secret_ref: BRAVE_SEARCH_API_KEY
 branding:
   header_background_color: '#4C6A8D'
   header_text_color: '#FFFFFF'

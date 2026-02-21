@@ -352,6 +352,9 @@ class IAToolkit:
         from iatoolkit.services.knowledge_base_service import KnowledgeBaseService
         from iatoolkit.services.inference_service import InferenceService
         from iatoolkit.services.http_tool_service import HttpToolService
+        from iatoolkit.services.web_search_service import WebSearchService
+        from iatoolkit.services.web_search.provider_factory import WebSearchProviderFactory
+        from iatoolkit.services.web_search.providers.brave_provider import BraveWebSearchProvider
         from iatoolkit.services.warmup_service import WarmupService
 
         binder.bind(QueryService, to=QueryService)
@@ -381,6 +384,9 @@ class IAToolkit:
         binder.bind(KnowledgeBaseService, to=KnowledgeBaseService)
         binder.bind(InferenceService, to=InferenceService)
         binder.bind(HttpToolService, to=HttpToolService)
+        binder.bind(WebSearchService, to=WebSearchService)
+        binder.bind(WebSearchProviderFactory, to=WebSearchProviderFactory)
+        binder.bind(BraveWebSearchProvider, to=BraveWebSearchProvider)
         binder.bind(WarmupService, to=WarmupService)
 
     def _bind_infrastructure(self, binder: Binder):
