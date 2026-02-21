@@ -1,0 +1,32 @@
+
+example_questions:
+  - category: "Sales"
+    questions:
+      - "What were the total sales for 'Science Fiction' books last month?"
+      - "List the top 5 customers by total order value."
+      - "Show me items in pending orders."
+  - category: "Inventory"
+    questions:
+      - "Which books have low stock (less than 10)?"
+      - "List all books by 'Isaac Asimov'."
+
+data_sources:
+  - source: "Books & Authors"
+    description: "Catalog of books, genres, prices, and author biographies."
+  - source: "Sales & Orders"
+    description: "Customer orders, order items, and sales history."
+  - source: "Customers & Reviews"
+    description: "Customer profiles and book reviews."
+
+best_practices:
+  - title: "Be Specific"
+    description: "Mention specific dates, genres, or author names for better results."
+
+capabilities:
+  can_do:
+    - "Query the SQL database for sales and inventory data."
+    - "Search store policy documents."
+    - "Generate tables and summaries."
+  cannot_do:
+    - "Place new orders or process payments."
+    - "Modify database records."

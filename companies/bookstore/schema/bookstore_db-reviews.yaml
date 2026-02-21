@@ -1,0 +1,20 @@
+
+reviews:
+  description: "Customer reviews for books."
+  columns:
+    review_id:
+      type: INTEGER
+      pk: true
+    book_id:
+      type: INTEGER
+      description: "Foreign key to the books table."
+    customer_id:
+      type: INTEGER
+      description: "Foreign key to the customers table."
+    rating:
+      type: INTEGER
+      description: "Rating from 1 to 5 stars."
+    comment:
+      type: TEXT
+    review_date:
+      type: DATE

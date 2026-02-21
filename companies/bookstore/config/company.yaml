@@ -1,0 +1,62 @@
+
+id: bookstore
+name: "Bookstore"
+locale: en_US
+llm:
+  model: gpt-4o
+  provider_api_keys:
+    openai: OPENAI_API_KEY
+
+data_sources:
+  sql:
+    - database: bookstore_db
+      connection_string_env: BOOKSTORE_DATABASE_URI
+      description: |
+        The bookstore's main database containing books, authors, 
+        customers, orders, and reviews.
+      include_all_tables: true
+
+tools:
+  - function_name: document_search
+    description: "Search store policies, return policies, and FAQs."
+    params:
+      type: object
+      properties:
+        query:
+          type: string
+          description: "Text or question to search in store documents."
+      required: ["query"]
+
+prompts:
+  prompt_categories: ["Reports", "Analysis"]
+  prompt_list:
+    - category: Reports
+      name: sales_report
+      description: "Monthly sales report"
+      order: 1
+      custom_fields:
+        - data_key: month
+          label: "Month (e.g. January 2025)"
+    - category: Analysis
+      name: author_analysis
+      description: "Author performance analysis"
+      order: 2
+      custom_fields:
+        - data_key: author_name
+          label: "Author name"
+
+branding:
+  header_background_color: "#5D4037"
+  header_text_color: "#FFFFFF"
+  brand_primary_color: "#8D6E63"
+  brand_secondary_color: "#D7CCC8"
+  brand_text_on_primary: "#FFFFFF"
+  brand_text_on_secondary: "#3E2723"
+
+parameters:
+  verify_account: false
+  cors_origin: []
+
+help_files:
+  onboarding_cards: onboarding_cards.yaml
+  help_content: help_content.yaml
