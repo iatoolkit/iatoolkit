@@ -6,6 +6,7 @@ from iatoolkit.infra.llm_proxy import LLMProxy
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.common.model_registry import ModelRegistry
+from iatoolkit.common.interfaces.secret_provider import SecretProvider
 
 class TestLLMProxy:
     def setup_method(self):
@@ -14,6 +15,10 @@ class TestLLMProxy:
         self.util_mock = MagicMock()
         self.config_service_mock = MagicMock(spec=ConfigurationService)
         self.model_registry_mock = MagicMock(spec=ModelRegistry)
+        self.secret_provider_mock = MagicMock(spec=SecretProvider)
+        self.secret_provider_mock.get_secret.side_effect = (
+            lambda _company, key_name, default=None: os.getenv(key_name, default)
+        )
 
         # Empresa base
         self.company_short_name = "test_company"
@@ -45,7 +50,8 @@ class TestLLMProxy:
         self.proxy = LLMProxy(
             util=self.util_mock,
             configuration_service=self.config_service_mock,
-            model_registry=self.model_registry_mock
+            model_registry=self.model_registry_mock,
+            secret_provider=self.secret_provider_mock,
         )
 
         # Aseguramos que el cache global esté limpio para cada test
@@ -147,3 +153,13 @@ class TestLLMProxy:
             self.mock_deepseek_adapter_instance.create_response.assert_called_once()
             self.mock_openai_adapter_instance.create_response.assert_not_called()
             self.mock_gemini_adapter_instance.create_response.assert_not_called()
+
+    def test_clear_runtime_cache_clears_adapter_and_client_caches(self):
+        self.proxy.adapters = {LLMProxy.PROVIDER_OPENAI: MagicMock()}
+        LLMProxy._clients_cache[(LLMProxy.PROVIDER_OPENAI, "key")] = MagicMock()
+
+        self.proxy.clear_runtime_cache()
+        LLMProxy.clear_low_level_clients_cache()
+
+        assert self.proxy.adapters == {}
+        assert LLMProxy._clients_cache == {}

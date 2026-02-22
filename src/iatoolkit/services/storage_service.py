@@ -16,6 +16,7 @@ from itsdangerous import URLSafeSerializer, BadSignature
 from iatoolkit.infra.connectors.file_connector import FileConnector
 from iatoolkit.infra.connectors.file_connector_factory import FileConnectorFactory
 from iatoolkit.common.exceptions import IAToolkitException
+from iatoolkit.common.interfaces.secret_provider import SecretProvider
 from iatoolkit.services.configuration_service import ConfigurationService
 
 DOWNLOAD_TOKEN_SALT = "iatoolkit-download-token-v1"
@@ -28,8 +29,11 @@ class StorageService:
     """
 
     @inject
-    def __init__(self, config_service: ConfigurationService):
+    def __init__(self,
+                 config_service: ConfigurationService,
+                 secret_provider: SecretProvider):
         self.config_service = config_service
+        self.secret_provider = secret_provider
         # Cache connectors to avoid re-authenticating on every request
         self._connectors: Dict[str, FileConnector] = {}
 
@@ -48,7 +52,11 @@ class StorageService:
             )
 
         try:
-            return FileConnectorFactory.create(connector_config)
+            return FileConnectorFactory.create(
+                connector_config,
+                company_short_name=company_short_name,
+                secret_provider=self.secret_provider,
+            )
         except Exception as e:
             error_msg = f"Failed to initialize storage connector '{storage_alias}' for '{company_short_name}': {str(e)}"
             logging.error(error_msg)

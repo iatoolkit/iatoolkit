@@ -68,6 +68,8 @@ which is a fundamental security best practice.
 - The company.yaml file defines a company's configuration and refers to the secrets by their variable name.
 This separation makes your company configurations portable and secure. For example, company.yaml might specify that the LLM API key should be read from a variable named OPENAI_API_KEY, while the actual key value sk-xxxx... lives only in your local .env file.
 
+If you run Enterprise, secret references are resolved through the company secrets manager first, with `.env` as fallback.
+
 ### Step 3: Run the Application
 You are now ready to start the IAToolkit web server.
 ```bash

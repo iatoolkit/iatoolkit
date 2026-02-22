@@ -4,6 +4,7 @@
 # IAToolkit is open source software.
 
 import base64
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -14,6 +15,7 @@ from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.services.storage_service import StorageService
 from iatoolkit.infra.brevo_mail_app import BrevoMailApp
 from iatoolkit.common.exceptions import IAToolkitException
+from iatoolkit.common.interfaces.secret_provider import SecretProvider
 
 
 class TestMailService:
@@ -24,6 +26,21 @@ class TestMailService:
         self.mock_brevo_mail_app = MagicMock(spec=BrevoMailApp)
         self.mock_i18n_service = MagicMock(spec=I18nService)
         self.mock_storage_service = MagicMock(spec=StorageService)
+        self.mock_secret_provider = MagicMock(spec=SecretProvider)
+        self.mock_secret_provider.get_secret.side_effect = (
+            lambda _company, key_name, default=None: os.getenv(
+                key_name,
+                {
+                    "BREVO_API_KEY": "dummy_key",
+                    "SMTP_HOST": "smtp.test.com",
+                    "SMTP_PORT": "587",
+                    "SMTP_USERNAME": "user",
+                    "SMTP_PASSWORD": "pass",
+                    "SMTP_USE_TLS": "true",
+                    "SMTP_USE_SSL": "false",
+                }.get(key_name, default),
+            )
+        )
 
         # Traducción mock
         self.mock_i18n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
@@ -39,6 +56,7 @@ class TestMailService:
             i18n_service=self.mock_i18n_service,
             brevo_mail_app=self.mock_brevo_mail_app,
             storage_service=self.mock_storage_service,
+            secret_provider=self.mock_secret_provider,
         )
 
         # Default behavior: invalid token

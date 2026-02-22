@@ -2,11 +2,12 @@
 # Copyright (c) 2024 Fernando Libedinsky
 # Product: IAToolkit
 
-import os
 import base64
 import numpy as np
 from openai import OpenAI
 from injector import inject
+from iatoolkit.common.interfaces.secret_provider import SecretProvider
+from iatoolkit.common.secret_resolver import resolve_secret
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.repositories.profile_repo import ProfileRepo
@@ -143,10 +144,12 @@ class EmbeddingClientFactory:
     def __init__(self,
                  config_service: ConfigurationService,
                  call_service: CallServiceClient,
-                 inference_service: InferenceService):
+                 inference_service: InferenceService,
+                 secret_provider: SecretProvider):
         self.config_service = config_service
         self.call_service = call_service
         self.inference_service = inference_service
+        self.secret_provider = secret_provider
         self._clients = {}  # Cache for storing initialized client wrappers
 
     def get_client(self, company_short_name: str, model_type: str = 'text') -> EmbeddingClientWrapper:
@@ -201,7 +204,7 @@ class EmbeddingClientFactory:
                 params = sig.parameters
 
                 if 'api_key' in params:
-                    init_params['api_key'] = self._get_api_key_from_config(embedding_config)
+                    init_params['api_key'] = self._get_api_key_from_config(company_short_name, embedding_config)
                 if 'call_service' in params:
                     init_params['call_service'] = self.call_service
                 if 'model' in params and 'model' not in init_params:
@@ -244,7 +247,7 @@ class EmbeddingClientFactory:
             )
 
         elif provider == 'openai':
-            api_key = self._get_api_key_from_config(embedding_config)
+            api_key = self._get_api_key_from_config(company_short_name, embedding_config)
 
             client = OpenAI(api_key=api_key)
             if not model:
@@ -257,14 +260,23 @@ class EmbeddingClientFactory:
         self._clients[cache_key] = wrapper
         return wrapper
 
-    def _get_api_key_from_config(self, embedding_config: dict):
-        api_key_name = embedding_config.get('api_key_name')
-        if not api_key_name:
-            raise ValueError(f"Missing configuration for embedding api_key_name in config.yaml.")
+    def clear_runtime_cache(self, company_short_name: str | None = None):
+        if not company_short_name:
+            self._clients.clear()
+            return
 
-        api_key = os.getenv(api_key_name)
+        keys_to_clear = [key for key in self._clients if key[0] == company_short_name]
+        for key in keys_to_clear:
+            self._clients.pop(key, None)
+
+    def _get_api_key_from_config(self, company_short_name: str, embedding_config: dict):
+        api_key_ref = embedding_config.get('api_key_secret_ref') or embedding_config.get('api_key_name')
+        if not api_key_ref:
+            raise ValueError("Missing configuration for embedding api_key_secret_ref (or legacy api_key_name).")
+
+        api_key = resolve_secret(self.secret_provider, company_short_name, api_key_ref)
         if not api_key:
-            raise ValueError(f"Environment variable '{api_key_name}' is not set.")
+            raise ValueError(f"Secret reference '{api_key_ref}' is not set.")
 
         return api_key
 

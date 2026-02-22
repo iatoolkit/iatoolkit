@@ -20,6 +20,7 @@ from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.infra.call_service import CallServiceClient
 from iatoolkit.services.inference_service import InferenceService
+from iatoolkit.common.interfaces.secret_provider import SecretProvider
 
 class TestEmbeddingService:
     """
@@ -90,12 +91,20 @@ class TestEmbeddingService:
         self.mock_i18n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
         self.mock_call_service = MagicMock(spec=CallServiceClient)
         self.mock_inference_service = MagicMock(spec=InferenceService)
+        self.mock_secret_provider = MagicMock(spec=SecretProvider)
+        self.mock_secret_provider.get_secret.side_effect = (
+            lambda _company, key_name, default=None: {
+                "OPENAI_KEY": "fake-openai-key",
+                "CUSTOM_KEY": "fake-custom-key",
+            }.get(key_name, default)
+        )
 
         # Instantiate the classes under test
         self.client_factory = EmbeddingClientFactory(
             config_service=self.mock_config_service,
             call_service=self.mock_call_service,
-            inference_service=self.mock_inference_service
+            inference_service=self.mock_inference_service,
+            secret_provider=self.mock_secret_provider,
         )
         self.embedding_service = EmbeddingService(client_factory=self.client_factory,
                                                   profile_repo=self.mock_profile_repo,
@@ -181,6 +190,19 @@ class TestEmbeddingService:
         assert wrapper_text is not wrapper_image
         assert wrapper_text.model == 'openai-model' # From MOCK_CONFIG_OPENAI
         assert wrapper_image.model == 'clip-vit-base' # From MOCK_CONFIG_VISUAL
+
+    def test_factory_clear_runtime_cache_for_specific_company(self):
+        self.client_factory._clients = {
+            ("company_openai", "text"): MagicMock(),
+            ("company_openai", "image"): MagicMock(),
+            ("other_company", "text"): MagicMock(),
+        }
+
+        self.client_factory.clear_runtime_cache("company_openai")
+
+        assert ("company_openai", "text") not in self.client_factory._clients
+        assert ("company_openai", "image") not in self.client_factory._clients
+        assert ("other_company", "text") in self.client_factory._clients
 
     # --- Service Tests (Provider Agnostic) ---
 

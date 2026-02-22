@@ -6,10 +6,11 @@
 from __future__ import annotations
 
 import logging
-import os
 import time
 from injector import inject
 
+from iatoolkit.common.interfaces.secret_provider import SecretProvider
+from iatoolkit.common.secret_resolver import resolve_secret
 from iatoolkit.company_registry import get_registered_companies
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.embedding_service import EmbeddingService
@@ -24,9 +25,11 @@ class WarmupService:
     @inject
     def __init__(self,
                  config_service: ConfigurationService,
-                 embedding_service: EmbeddingService):
+                 embedding_service: EmbeddingService,
+                 secret_provider: SecretProvider):
         self.config_service = config_service
         self.embedding_service = embedding_service
+        self.secret_provider = secret_provider
 
     def warmup_company(self, company_short_name: str, trigger: str = "manual"):
         start = time.perf_counter()
@@ -86,8 +89,16 @@ class WarmupService:
         resolved_cfg = {**defaults, **tool_cfg}
         endpoint_url = (resolved_cfg.get("endpoint_url") or "").strip()
         if not endpoint_url:
+            endpoint_url_secret_ref = (resolved_cfg.get("endpoint_url_secret_ref") or "").strip()
+            if endpoint_url_secret_ref:
+                endpoint_url = (
+                    resolve_secret(self.secret_provider, company_short_name, endpoint_url_secret_ref, default="") or ""
+                ).strip()
+        if not endpoint_url:
             endpoint_url_env = (resolved_cfg.get("endpoint_url_env") or "").strip()
             if endpoint_url_env:
-                endpoint_url = (os.getenv(endpoint_url_env) or "").strip()
+                endpoint_url = (
+                    resolve_secret(self.secret_provider, company_short_name, endpoint_url_env, default="") or ""
+                ).strip()
 
         return bool(endpoint_url)

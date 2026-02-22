@@ -304,7 +304,8 @@ data_sources:
 
 *   **`database`**: A logical name for this database.
 *   **`schema`**: The name of a schema within this database (postgres only)
-*   **`connection_string_env`**: The name of the environment variable containing the database connection URI.
+*   **`connection_string_secret_ref`**: Preferred secret reference for the database URI (resolved through `SecretProvider`).
+*   **`connection_string_env`**: Legacy alias for `connection_string_secret_ref` (still supported).
 *   **`description`**: A crucial high-level summary that helps the AI understand when to use this database.
 *   **`include_all_tables`**: If `true`, IAToolkit will automatically inspect the database and load all table schemas.
 *   **`exclude_tables`**: Global rules to hide specific tables from the AI.
@@ -608,18 +609,21 @@ This section configures which embedding model your company will use to convert d
 embedding_provider:
   provider: "openai"
   model: "text-embedding-ada-002"
-  api_key_name: "OPENAI_API_KEY"          # value in .env file
+  api_key_secret_ref: "OPENAI_API_KEY"    # preferred
+  api_key_name: "OPENAI_API_KEY"          # legacy alias
 ```
 *   **`provider`**: The embedding service. Currently supports `openai` and `huggingface`.
 *   **`model`**: The specific embedding model to use.
-*   **`api_key_name`**: The **name of the environment variable** that holds the API key for the embedding provider. Often, this is the same as the LLM's API key.
+*   **`api_key_secret_ref`**: Preferred secret reference for the embedding API key.
+*   **`api_key_name`**: Legacy alias for `api_key_secret_ref`.
 
 **Alternative configuration for HuggingFace:**
 ```yaml
 embedding_provider:
   provider: "huggingface"
   model: "sentence-transformers/all-MiniLM-L6-v2"
-  api_key_name: "huggingface_token"       # value in .env file
+  api_key_secret_ref: "huggingface_token" # preferred
+  api_key_name: "huggingface_token"       # legacy alias
 ```
 ## 3.9 Mail Provider Configuration
 
@@ -638,17 +642,17 @@ mail_provider:
   sender_name: "Sample Company IA"
 
   brevo_mail:
-    # name of the env var that holds the Brevo API key
-    brevo_api: "BREVO_API_KEY"
+    # preferred secret reference (legacy: brevo_api)
+    brevo_api_secret_ref: "BREVO_API_KEY"
 
   smtplib:
-    # names of the env vars used by smtplib
-    host_env: "SMTP_HOST"
-    port_env: "SMTP_PORT"
-    username_env: "SMTP_USERNAME"
-    password_env: "SMTP_PASSWORD"
-    use_tls_env: "SMTP_USE_TLS"
-    use_ssl_env: "SMTP_USE_SSL"
+    # preferred secret references (legacy: *_env)
+    host_secret_ref: "SMTP_HOST"
+    port_secret_ref: "SMTP_PORT"
+    username_secret_ref: "SMTP_USERNAME"
+    password_secret_ref: "SMTP_PASSWORD"
+    use_tls_secret_ref: "SMTP_USE_TLS"
+    use_ssl_secret_ref: "SMTP_USE_SSL"
 ```
 
 #### Key Parameters
@@ -662,10 +666,10 @@ mail_provider:
 #### Provider-Specific Blocks
 
 *   **`brevo_mail`**: This block is required if `provider` is set to `"brevo_mail"`.
-    *   **`brevo_api`**: Defines the **name of the environment variable** that holds your Brevo API key. The actual key should be stored securely in your `.env` file.
+    *   **`brevo_api_secret_ref`**: Preferred secret reference for the Brevo API key (`brevo_api` remains supported as legacy alias).
 
-*   **`smtplib`**: This block is required if `provider` is set to `"smtplib"`. It contains keys that map to the **names of the environment variables** for your SMTP server credentials.
-    *   `host_env`: The environment variable for the SMTP server hostname (e.g., `smtp.gmail.com`).
+*   **`smtplib`**: This block is required if `provider` is set to `"smtplib"`. It accepts preferred `*_secret_ref` keys and legacy `*_env` aliases.
+    *   `host_secret_ref` / `host_env`: SMTP server hostname (e.g., `smtp.gmail.com`).
     *   `port_env`: The environment variable for the SMTP port (e.g., `587`).
     *   `username_env`: The environment variable for the SMTP username.
     *   `password_env`: The environment variable for the SMTP password or app-specific password.

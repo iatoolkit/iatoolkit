@@ -4,6 +4,8 @@
 
 from iatoolkit.repositories.models import Company
 from iatoolkit.common.interfaces.asset_storage import AssetRepository, AssetType
+from iatoolkit.common.interfaces.secret_provider import SecretProvider
+from iatoolkit.common.secret_resolver import resolve_secret
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.common.util import Utility
@@ -24,11 +26,13 @@ class ConfigurationService:
                  asset_repo: AssetRepository,
                  llm_query_repo: LLMQueryRepo,
                  profile_repo: ProfileRepo,
-                 utility: Utility):
+                 utility: Utility,
+                 secret_provider: SecretProvider):
         self.asset_repo = asset_repo
         self.llm_query_repo = llm_query_repo
         self.profile_repo = profile_repo
         self.utility = utility
+        self.secret_provider = secret_provider
         self._loaded_configs = {}   # cache for store loaded configurations
 
     def _ensure_config_loaded(self, company_short_name: str):
@@ -62,11 +66,17 @@ class ConfigurationService:
             # 5. Register Knowledge base information
             self._register_knowledge_base(company_short_name, config)
 
+        # Keep runtime cache aligned with the latest loaded configuration.
+        self._loaded_configs[company_short_name] = config or {}
+
         # Final step: validate the configuration against platform
         errors = self._validate_configuration(company_short_name, config)
 
         logging.info(f"✅ Company '{company_short_name}' configured successfully.")
         return config, errors
+
+    def invalidate_configuration_cache(self, company_short_name: str):
+        self._loaded_configs.pop(company_short_name, None)
 
     def get_configuration(self, company_short_name: str, content_key: str):
         """
@@ -236,16 +246,16 @@ class ConfigurationService:
             }
 
             # Resolve URI if env var is present (Required for 'direct', optional for others)
-            db_env_var = source.get('connection_string_env')
-            if db_env_var:
-                db_uri = os.getenv(db_env_var)
+            db_secret_ref = source.get('connection_string_secret_ref') or source.get('connection_string_env')
+            if db_secret_ref:
+                db_uri = resolve_secret(self.secret_provider, company_short_name, db_secret_ref)
                 if db_uri:
                     db_config['db_uri'] = db_uri
 
             # Validation: 'direct' connections MUST have a URI
             if db_config['connection_type'] == 'direct' and not db_config.get('db_uri'):
                 logging.error(
-                    f"-> Skipping DB '{db_name}' for '{company_short_name}': missing URI in env '{db_env_var}'.")
+                    f"-> Skipping DB '{db_name}' for '{company_short_name}': missing DB URI ref '{db_secret_ref}'.")
                 continue
 
             elif db_config['connection_type'] == 'bridge' and not db_config.get('bridge_id'):
@@ -356,8 +366,12 @@ class ConfigurationService:
                 add_error(f"data_sources.sql[{i}]", "Missing required key: 'database'")
 
             connection_type = source.get("connection_type")
-            if connection_type == 'direct' and not source.get("connection_string_env"):
-                add_error(f"data_sources.sql[{i}]", "Missing required key: 'connection_string_env'")
+            has_db_ref = bool(source.get("connection_string_secret_ref") or source.get("connection_string_env"))
+            if connection_type == 'direct' and not has_db_ref:
+                add_error(
+                    f"data_sources.sql[{i}]",
+                    "Missing required key: 'connection_string_secret_ref' (or legacy 'connection_string_env')"
+                )
             elif connection_type == 'bridge' and not source.get("bridge_id"):
                 add_error(f"data_sources.sql[{i}]", "Missing bridge_id'")
 
@@ -445,9 +459,34 @@ class ConfigurationService:
 
             prod_connector = kb_config.get("connectors", {}).get("production", {})
             if prod_connector.get("type") == "s3":
-                for key in ["bucket", "prefix", "aws_access_key_id_env", "aws_secret_access_key_env", "aws_region_env"]:
+                for key in ["bucket", "prefix"]:
                     if not prod_connector.get(key):
                         add_error("knowledge_base.connectors.production", f"S3 connector is missing '{key}'.")
+
+                has_access_key = bool(
+                    prod_connector.get("aws_access_key_id_secret_ref") or prod_connector.get("aws_access_key_id_env")
+                )
+                has_secret_key = bool(
+                    prod_connector.get("aws_secret_access_key_secret_ref") or prod_connector.get("aws_secret_access_key_env")
+                )
+                has_region = bool(
+                    prod_connector.get("aws_region_secret_ref") or prod_connector.get("aws_region_env")
+                )
+                if not has_access_key:
+                    add_error(
+                        "knowledge_base.connectors.production",
+                        "S3 connector is missing 'aws_access_key_id_secret_ref' (or legacy 'aws_access_key_id_env')."
+                    )
+                if not has_secret_key:
+                    add_error(
+                        "knowledge_base.connectors.production",
+                        "S3 connector is missing 'aws_secret_access_key_secret_ref' (or legacy 'aws_secret_access_key_env')."
+                    )
+                if not has_region:
+                    add_error(
+                        "knowledge_base.connectors.production",
+                        "S3 connector is missing 'aws_region_secret_ref' (or legacy 'aws_region_env')."
+                    )
 
         # 9. Mail Provider
         mail_config = config.get("mail_provider", {})

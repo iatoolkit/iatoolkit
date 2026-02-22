@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, call, patch
 from iatoolkit.services.warmup_service import WarmupService
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.embedding_service import EmbeddingService
+from iatoolkit.common.interfaces.secret_provider import SecretProvider
 
 
 class TestWarmupService:
@@ -11,9 +12,11 @@ class TestWarmupService:
     def setup_method(self):
         self.mock_config_service = MagicMock(spec=ConfigurationService)
         self.mock_embedding_service = MagicMock(spec=EmbeddingService)
+        self.mock_secret_provider = MagicMock(spec=SecretProvider)
         self.service = WarmupService(
             config_service=self.mock_config_service,
             embedding_service=self.mock_embedding_service,
+            secret_provider=self.mock_secret_provider,
         )
 
     def test_warmup_company_calls_embed_text_for_remote_hf(self):
@@ -51,8 +54,7 @@ class TestWarmupService:
 
         self.mock_embedding_service.embed_text.assert_not_called()
 
-    @patch("iatoolkit.services.warmup_service.os.getenv", return_value="https://hf.endpoint")
-    def test_warmup_company_uses_defaults_endpoint_url_env(self, _mock_getenv):
+    def test_warmup_company_uses_defaults_endpoint_url_env(self):
         def config_side_effect(company_short_name, key):
             if key == "embedding_provider":
                 return {"provider": "huggingface", "tool_name": "text_embeddings"}
@@ -64,6 +66,7 @@ class TestWarmupService:
             return None
 
         self.mock_config_service.get_configuration.side_effect = config_side_effect
+        self.mock_secret_provider.get_secret.return_value = "https://hf.endpoint"
 
         self.service.warmup_company("acme", trigger="test")
 

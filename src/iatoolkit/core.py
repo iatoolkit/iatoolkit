@@ -356,6 +356,8 @@ class IAToolkit:
         from iatoolkit.services.web_search.provider_factory import WebSearchProviderFactory
         from iatoolkit.services.web_search.providers.brave_provider import BraveWebSearchProvider
         from iatoolkit.services.warmup_service import WarmupService
+        from iatoolkit.common.interfaces.signup_policy_resolver import SignupPolicyResolver
+        from iatoolkit.services.signup_policy_resolver import AllowAllSignupPolicyResolver
 
         binder.bind(QueryService, to=QueryService)
         binder.bind(ApiKeyService, to=ApiKeyService)
@@ -388,6 +390,9 @@ class IAToolkit:
         binder.bind(WebSearchProviderFactory, to=WebSearchProviderFactory)
         binder.bind(BraveWebSearchProvider, to=BraveWebSearchProvider)
         binder.bind(WarmupService, to=WarmupService)
+
+        if not is_bound(self._injector, SignupPolicyResolver):
+            binder.bind(SignupPolicyResolver, to=AllowAllSignupPolicyResolver)
 
     def _bind_infrastructure(self, binder: Binder):
         from iatoolkit.infra.llm_proxy import LLMProxy

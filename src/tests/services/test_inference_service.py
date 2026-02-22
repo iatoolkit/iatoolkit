@@ -20,6 +20,7 @@ from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.infra.call_service import CallServiceClient
 from iatoolkit.services.inference_service import InferenceService
+from iatoolkit.common.interfaces.secret_provider import SecretProvider
 
 
 class TestEmbeddingService:
@@ -93,12 +94,20 @@ class TestEmbeddingService:
 
         # New dependency: InferenceService
         self.mock_inference_service = MagicMock(spec=InferenceService)
+        self.mock_secret_provider = MagicMock(spec=SecretProvider)
+        self.mock_secret_provider.get_secret.side_effect = (
+            lambda _company, key_name, default=None: {
+                "OPENAI_KEY": "fake-openai-key",
+                "CUSTOM_KEY": "fake-custom-key",
+            }.get(key_name, default)
+        )
 
         # Instantiate the classes under test
         self.client_factory = EmbeddingClientFactory(
             config_service=self.mock_config_service,
             call_service=self.mock_call_service,
-            inference_service=self.mock_inference_service
+            inference_service=self.mock_inference_service,
+            secret_provider=self.mock_secret_provider,
         )
 
         self.embedding_service = EmbeddingService(

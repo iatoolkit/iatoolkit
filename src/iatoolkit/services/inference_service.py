@@ -2,12 +2,13 @@
 # Copyright (c) 2024 Fernando Libedinsky
 # Product: IAToolkit
 
-import os
 import logging
 import base64
 import uuid
 from typing import Optional, Dict, Any
 from injector import inject
+from iatoolkit.common.interfaces.secret_provider import SecretProvider
+from iatoolkit.common.secret_resolver import resolve_secret
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.infra.call_service import CallServiceClient
@@ -25,11 +26,13 @@ class InferenceService:
                  config_service: ConfigurationService,
                  call_service: CallServiceClient,
                  storage_service: StorageService,
-                 i18n_service: I18nService):
+                 i18n_service: I18nService,
+                 secret_provider: SecretProvider):
         self.config_service = config_service
         self.call_service = call_service
         self.storage_service = storage_service
         self.i18n_service = i18n_service
+        self.secret_provider = secret_provider
 
     def predict(self, company_short_name: str, tool_name: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -48,7 +51,7 @@ class InferenceService:
 
         endpoint_url = config.get('endpoint_url')
         endpoint_url_env = config.get('endpoint_url_env')
-        api_key_name = config.get('api_key_name', 'HF_TOKEN')
+        api_key_ref = config.get('api_key_secret_ref') or config.get('api_key_name', 'HF_TOKEN')
         model_id = config.get('model_id')
         model_parameters = config.get('model_parameters', {})
 
@@ -61,9 +64,9 @@ class InferenceService:
             raise ValueError(f"Missing 'endpoint_url' for tool '{tool_name}' in company '{company_short_name}'.")
 
         # 2. Get the API Key
-        api_key = os.getenv(api_key_name)
+        api_key = resolve_secret(self.secret_provider, company_short_name, api_key_ref)
         if not api_key:
-            raise ValueError(f"Environment variable '{api_key_name}' is not set.")
+            raise ValueError(f"Secret reference '{api_key_ref}' is not set.")
 
         # 3. Construct the payload
         payload = {
@@ -191,9 +194,15 @@ class InferenceService:
 
         endpoint_url = (resolved_config.get("endpoint_url") or "").strip()
         if not endpoint_url:
+            endpoint_url_secret_ref = (resolved_config.get("endpoint_url_secret_ref") or "").strip()
+            if endpoint_url_secret_ref:
+                endpoint_url = (
+                    resolve_secret(self.secret_provider, company_short_name, endpoint_url_secret_ref, default="") or ""
+                ).strip()
+        if not endpoint_url:
             endpoint_url_env = (resolved_config.get("endpoint_url_env") or "").strip()
             if endpoint_url_env:
-                endpoint_url = (os.getenv(endpoint_url_env) or "").strip()
+                endpoint_url = (resolve_secret(self.secret_provider, company_short_name, endpoint_url_env, default="") or "").strip()
 
         if endpoint_url:
             resolved_config["endpoint_url"] = endpoint_url

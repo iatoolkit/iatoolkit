@@ -12,11 +12,12 @@ from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.common.util import Utility
 from iatoolkit.infra.llm_response import LLMResponse
 from iatoolkit.common.model_registry import ModelRegistry
+from iatoolkit.common.interfaces.secret_provider import SecretProvider
+from iatoolkit.common.secret_resolver import resolve_secret
 
 from openai import OpenAI         # For OpenAI and xAI (OpenAI-compatible)
 
 from typing import Dict, List, Any, Tuple
-import os
 import threading
 from injector import inject
 
@@ -43,6 +44,7 @@ class LLMProxy:
         util: Utility,
         configuration_service: ConfigurationService,
         model_registry: ModelRegistry,
+        secret_provider: SecretProvider,
     ):
         """
         Init a new instance of the proxy. It can be a base factory or a working instance with configured clients.
@@ -51,6 +53,7 @@ class LLMProxy:
         self.util = util
         self.configuration_service = configuration_service
         self.model_registry = model_registry
+        self.secret_provider = secret_provider
 
         # adapter cache por provider
         self.adapters: Dict[str, Any] = {}
@@ -253,7 +256,12 @@ class LLMProxy:
                 f"for provider '{provider}'."
             )
 
-        api_key_value = os.getenv(env_var_name, "")
+        api_key_value = resolve_secret(
+            self.secret_provider,
+            company_short_name,
+            env_var_name,
+            default="",
+        )
 
         if not api_key_value:
             raise IAToolkitException(
@@ -263,3 +271,11 @@ class LLMProxy:
             )
 
         return api_key_value
+
+    @classmethod
+    def clear_low_level_clients_cache(cls):
+        with cls._clients_cache_lock:
+            cls._clients_cache.clear()
+
+    def clear_runtime_cache(self):
+        self.adapters.clear()

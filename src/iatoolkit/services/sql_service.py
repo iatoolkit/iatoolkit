@@ -83,6 +83,19 @@ class SqlService:
             logging.error(f"Failed to register DB '{db_name}': {e}")
             # We don't raise here to allow other DBs to load if one fails
 
+    def clear_company_connections(self, company_short_name: str):
+        keys_to_clear = [key for key in self._db_connections if key[0] == company_short_name]
+        for key in keys_to_clear:
+            provider = self._db_connections.pop(key, None)
+            self._db_schemas.pop(key, None)
+            # Release resources for providers backed by SQLAlchemy engines.
+            try:
+                engine = getattr(provider, "engine", None)
+                if engine and hasattr(engine, "dispose"):
+                    engine.dispose()
+            except Exception:
+                logging.debug("Failed to dispose SQL engine for key=%s", key)
+
     def get_db_names(self, company_short_name: str) -> list[str]:
         """
         Returns list of logical database names available ONLY for the specified company.

@@ -9,6 +9,7 @@ from iatoolkit.services.storage_service import StorageService
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.infra.connectors.file_connector import FileConnector
 from iatoolkit.common.exceptions import IAToolkitException
+from iatoolkit.common.interfaces.secret_provider import SecretProvider
 
 # ... existing code ...
 class TestStorageService(unittest.TestCase):
@@ -16,6 +17,7 @@ class TestStorageService(unittest.TestCase):
     def setUp(self):
         # 1. Mock ConfigurationService
         self.mock_config_service = MagicMock(spec=ConfigurationService)
+        self.mock_secret_provider = MagicMock(spec=SecretProvider)
 
         # 2. Patch FileConnectorFactory to intercept connector creation
         self.factory_patch = patch('iatoolkit.services.storage_service.FileConnectorFactory')
@@ -26,7 +28,10 @@ class TestStorageService(unittest.TestCase):
         self.mock_factory.create.return_value = self.mock_connector_instance
 
         # 4. Instantiate Service with dependencies
-        self.service = StorageService(config_service=self.mock_config_service)
+        self.service = StorageService(
+            config_service=self.mock_config_service,
+            secret_provider=self.mock_secret_provider,
+        )
 
         self.company_name = "test_co"
 

@@ -214,6 +214,7 @@ def test_prompt_execution_with_gemini_document_search_and_inference_embeddings()
         config_service=FakeConfigService(),
         call_service=MagicMock(),
         inference_service=inference_service,
+        secret_provider=MagicMock(),
     )
     embedding_service = EmbeddingService(
         client_factory=embedding_factory,

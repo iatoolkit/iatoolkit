@@ -6,10 +6,11 @@
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.services.storage_service import StorageService
+from iatoolkit.common.interfaces.secret_provider import SecretProvider
+from iatoolkit.common.secret_resolver import resolve_secret
 from iatoolkit.infra.brevo_mail_app import BrevoMailApp
 from injector import inject
 import base64
-import os
 import smtplib
 from email.message import EmailMessage
 from iatoolkit.common.exceptions import IAToolkitException
@@ -21,12 +22,14 @@ class MailService:
                  mail_app: BrevoMailApp,
                  i18n_service: I18nService,
                  brevo_mail_app: BrevoMailApp,
-                 storage_service: StorageService):
+                 storage_service: StorageService,
+                 secret_provider: SecretProvider):
         self.mail_app = mail_app
         self.config_service = config_service
         self.i18n_service = i18n_service
         self.brevo_mail_app = brevo_mail_app
         self.storage_service = storage_service
+        self.secret_provider = secret_provider
 
 
     def send_mail(self, company_short_name: str, **kwargs):
@@ -105,21 +108,28 @@ class MailService:
         # get parameters depending on provider
         if provider == "brevo_mail":
             brevo_cfg = mail_config.get("brevo_mail", {})
-            api_key_env = brevo_cfg.get("brevo_api", "BREVO_API_KEY")
+            api_key_ref = brevo_cfg.get("brevo_api_secret_ref") or brevo_cfg.get("brevo_api", "BREVO_API_KEY")
             return provider, {
-                "api_key": os.getenv(api_key_env),
+                "api_key": resolve_secret(self.secret_provider, company_short_name, api_key_ref),
                 "sender_name": sender_name,
                 "sender_email": sender_email,
             }
 
         if provider == "smtplib":
             smtp_cfg = mail_config.get("smtplib", {})
-            host = os.getenv(smtp_cfg.get("host_env", "SMTP_HOST"))
-            port = os.getenv(smtp_cfg.get("port_env", "SMTP_PORT"))
-            username = os.getenv(smtp_cfg.get("username_env", "SMTP_USERNAME"))
-            password = os.getenv(smtp_cfg.get("password_env", "SMTP_PASSWORD"))
-            use_tls = os.getenv(smtp_cfg.get("use_tls_env", "SMTP_USE_TLS"))
-            use_ssl = os.getenv(smtp_cfg.get("use_ssl_env", "SMTP_USE_SSL"))
+            host_ref = smtp_cfg.get("host_secret_ref") or smtp_cfg.get("host_env", "SMTP_HOST")
+            port_ref = smtp_cfg.get("port_secret_ref") or smtp_cfg.get("port_env", "SMTP_PORT")
+            username_ref = smtp_cfg.get("username_secret_ref") or smtp_cfg.get("username_env", "SMTP_USERNAME")
+            password_ref = smtp_cfg.get("password_secret_ref") or smtp_cfg.get("password_env", "SMTP_PASSWORD")
+            use_tls_ref = smtp_cfg.get("use_tls_secret_ref") or smtp_cfg.get("use_tls_env", "SMTP_USE_TLS")
+            use_ssl_ref = smtp_cfg.get("use_ssl_secret_ref") or smtp_cfg.get("use_ssl_env", "SMTP_USE_SSL")
+
+            host = resolve_secret(self.secret_provider, company_short_name, host_ref)
+            port = resolve_secret(self.secret_provider, company_short_name, port_ref)
+            username = resolve_secret(self.secret_provider, company_short_name, username_ref)
+            password = resolve_secret(self.secret_provider, company_short_name, password_ref)
+            use_tls = resolve_secret(self.secret_provider, company_short_name, use_tls_ref)
+            use_ssl = resolve_secret(self.secret_provider, company_short_name, use_ssl_ref)
 
             return provider, {
                 "host": host,

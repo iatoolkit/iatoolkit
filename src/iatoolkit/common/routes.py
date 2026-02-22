@@ -205,9 +205,16 @@ def register_views(app):
     )
 
     # company configuration
+    configuration_view = ConfigurationApiView.as_view('configuration')
     app.add_url_rule('/<company_short_name>/api/configuration',
-                     view_func=ConfigurationApiView.as_view('configuration'),
+                     view_func=configuration_view,
                      methods=['GET', 'POST', 'PATCH'],)
+
+    # explicit runtime reload endpoint used by admin/dashboard integrations
+    app.add_url_rule('/<company_short_name>/api/load_configuration',
+                     view_func=configuration_view,
+                     methods=['GET'],
+                     defaults={'action': 'load_configuration'})
 
     app.add_url_rule('/<company_short_name>/api/configuration/validate',
                      view_func=ValidateConfigurationApiView.as_view('configuration-validate'),

@@ -20,6 +20,8 @@ import re
 import string
 import logging
 from typing import List, Dict
+from iatoolkit.common.interfaces.signup_policy_resolver import SignupPolicyResolver
+from iatoolkit.services.signup_policy_resolver import AllowAllSignupPolicyResolver
 
 
 class ProfileService:
@@ -31,7 +33,8 @@ class ProfileService:
                  config_service: ConfigurationService,
                  lang_service: LanguageService,
                  dispatcher: Dispatcher,
-                 mail_service: MailService):
+                 mail_service: MailService,
+                 signup_policy_resolver: SignupPolicyResolver = None):
         self.i18n_service = i18n_service
         self.profile_repo = profile_repo
         self.dispatcher = dispatcher
@@ -39,6 +42,7 @@ class ProfileService:
         self.config_service = config_service
         self.lang_service = lang_service
         self.mail_service = mail_service
+        self.signup_policy_resolver = signup_policy_resolver or AllowAllSignupPolicyResolver()
         self.bcrypt = Bcrypt()
 
     def _safe_rollback(self):
@@ -177,7 +181,8 @@ class ProfileService:
                last_name: str,
                password: str,
                confirm_password: str,
-               verification_url: str) -> dict:
+               verification_url: str,
+               invite_token: str = None) -> dict:
         try:
 
             # get company info
@@ -188,6 +193,18 @@ class ProfileService:
 
             # normalize  format's
             email = email.lower()
+
+            policy_decision = self.signup_policy_resolver.evaluate_signup(
+                company_short_name=company_short_name,
+                email=email,
+                invite_token=invite_token,
+            )
+            if not policy_decision.allowed:
+                if policy_decision.reason_message:
+                    return {"error": policy_decision.reason_message}
+                if policy_decision.reason_key:
+                    return {"error": self.i18n_service.t(policy_decision.reason_key)}
+                return {"error": self.i18n_service.t('errors.signup.signup_not_allowed')}
 
             # check if user exists
             existing_user = self.profile_repo.get_user_by_email(email)

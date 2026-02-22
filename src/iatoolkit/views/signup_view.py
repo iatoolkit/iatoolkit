@@ -57,6 +57,7 @@ class SignupView(MethodView):
 
             # get the language from the form, then query
             current_lang = request.form.get("lang") or request.args.get("lang")
+            invite_token = request.form.get("invite_token") or request.args.get("invite_token")
 
             # create verification token and url for verification
             token = self.serializer.dumps(email, salt='email-confirm')
@@ -69,7 +70,8 @@ class SignupView(MethodView):
                 email=email,
                 first_name=first_name, last_name=last_name,
                 password=password, confirm_password=confirm_password,
-                verification_url=verification_url)
+                verification_url=verification_url,
+                invite_token=invite_token)
 
             if "error" in response:
                 flash(response["error"], 'error')
