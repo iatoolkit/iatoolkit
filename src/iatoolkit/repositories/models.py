@@ -72,6 +72,8 @@ class Company(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     short_name = Column(String, nullable=False, unique=True, index=True)
     name = Column(String, nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True, index=True)
+    runtime_mode = Column(String(32), nullable=False, default='static', index=True)
 
     parameters = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
