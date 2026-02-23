@@ -8,6 +8,7 @@ from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.infra.llm_providers.openai_adapter import OpenAIAdapter
 from iatoolkit.infra.llm_providers.gemini_adapter import GeminiAdapter
 from iatoolkit.infra.llm_providers.deepseek_adapter import DeepseekAdapter
+from iatoolkit.infra.llm_providers.anthropic_adapter import AnthropicAdapter
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.common.util import Utility
 from iatoolkit.infra.llm_response import LLMResponse
@@ -55,8 +56,8 @@ class LLMProxy:
         self.model_registry = model_registry
         self.secret_provider = secret_provider
 
-        # adapter cache por provider
-        self.adapters: Dict[str, Any] = {}
+        # adapter cache by (provider, api_key)
+        self.adapters: Dict[Tuple[str, str], Any] = {}
 
     # -------------------------------------------------------------------------
     # Public API
@@ -120,12 +121,15 @@ class LLMProxy:
         Return an adapter instance for the given provider.
         If none exists yet, create it using a cached or new low-level client.
         """
-        # If already created, just return it
-        if provider in self.adapters and self.adapters[provider] is not None:
-            return self.adapters[provider]
-
-        # Otherwise, create a low-level client from configuration
+        # Resolve API key first so adapter cache is provider+key scoped
         api_key = self._get_api_key_from_config(company_short_name, provider)
+        adapter_cache_key = (provider, api_key or "")
+
+        # If already created for this provider+key, just return it
+        if adapter_cache_key in self.adapters and self.adapters[adapter_cache_key] is not None:
+            return self.adapters[adapter_cache_key]
+
+        # Otherwise, create low-level client from configuration
         client = self._get_or_create_client(provider, api_key)
 
         # Wrap client with the correct adapter
@@ -135,19 +139,15 @@ class LLMProxy:
             adapter = GeminiAdapter(client)
         elif provider == self.PROVIDER_DEEPSEEK:
             adapter = DeepseekAdapter(client)
+        elif provider == self.PROVIDER_ANTHROPIC:
+            adapter = AnthropicAdapter(client)
         else:
             raise IAToolkitException(
                 IAToolkitException.ErrorType.MODEL,
                 f"Provider not supported in _get_or_create_adapter: {provider}"
             )
 
-        '''
-        elif provider == self.PROVIDER_XAI:
-            adapter = XAIAdapter(client)
-        elif provider == self.PROVIDER_ANTHROPIC:
-            adapter = AnthropicAdapter(client)
-        '''
-        self.adapters[provider] = adapter
+        self.adapters[adapter_cache_key] = adapter
         return adapter
 
     # -------------------------------------------------------------------------
@@ -203,14 +203,15 @@ class LLMProxy:
 
             return Client(api_key=api_key, http_options={'api_version': 'v1alpha'})
         if provider == self.PROVIDER_ANTHROPIC:
-            # Example using Anthropic official client:
-            #
-            # from anthropic import Anthropic
-            # return Anthropic(api_key=api_key)
-            raise IAToolkitException(
-                IAToolkitException.ErrorType.API_KEY,
-                "Anthropic client creation must be implemented in _create_client_for_provider."
-            )
+            try:
+                from anthropic import Anthropic
+            except Exception as ex:
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.LLM_ERROR,
+                    "Anthropic SDK is not installed. Add 'anthropic' to requirements."
+                ) from ex
+
+            return Anthropic(api_key=api_key)
 
         raise IAToolkitException(
             IAToolkitException.ErrorType.MODEL,

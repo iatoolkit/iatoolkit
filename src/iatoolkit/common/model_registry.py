@@ -123,15 +123,15 @@ class ModelRegistry:
         Returns the history strategy for a given model.
 
         Current rules:
-        - openai/xai/anthropic: server_side (API manages conversation state via ids)
-        - gemini/deepseek/unknown: client_side (we manage full message history)
+        - openai/xai: server_side (API manages conversation state via ids)
+        - gemini/deepseek/anthropic/unknown: client_side (we manage full message history)
         """
         provider = self.get_provider(model)
 
-        if provider in ("openai", "xai", "anthropic"):
+        if provider in ("openai", "xai"):
             return "server_side"
 
-        # Default for gemini, deepseek and any unknown provider
+        # Default for gemini, deepseek, anthropic and any unknown provider
         return "client_side"
 
     # ------------------------------------------------------------------
