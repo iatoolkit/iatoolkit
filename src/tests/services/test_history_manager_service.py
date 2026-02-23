@@ -160,11 +160,12 @@ class TestHistoryManager(unittest.TestCase):
         ]
         self.mock_session_context.get_context_history.return_value = existing_history
 
-        # Limit is 200,000. We set message size to 60,000.
-        # Initial 3 messages = 180,000 (fits).
-        # Adding "New User Prompt" (4th msg) = 240,000 (exceeds).
-        # Should evict index 1 ("Oldest") -> Total 180,000 (fits).
-        self.mock_llm_client.count_tokens.return_value = 60000
+        # Choose a size that guarantees:
+        # - 4 messages exceed the limit
+        # - 3 messages fit within the limit
+        # This ensures only the oldest message gets evicted.
+        tokens_per_message = HistoryManagerService.MAX_TOKENS_CONTEXT_HISTORY // 3
+        self.mock_llm_client.count_tokens.return_value = tokens_per_message
 
         self.manager.populate_request_params(handle, "New User Prompt")
 

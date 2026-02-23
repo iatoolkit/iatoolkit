@@ -27,7 +27,7 @@ class HistoryManagerService:
     TYPE_SERVER_SIDE = 'server_side'  # For models like OpenAI
     TYPE_CLIENT_SIDE = 'client_side'  # For models like Gemini and Deepseek
 
-    GEMINI_MAX_TOKENS_CONTEXT_HISTORY = 400000
+    MAX_TOKENS_CONTEXT_HISTORY = 400000
 
 
     @inject
@@ -177,7 +177,7 @@ class HistoryManagerService:
             logging.error(f"Error counting tokens for history: {e}.")
             return
 
-        while total_tokens > self.GEMINI_MAX_TOKENS_CONTEXT_HISTORY and len(context_history) > 1:
+        while total_tokens > self.MAX_TOKENS_CONTEXT_HISTORY and len(context_history) > 1:
             try:
                 # Remove the oldest message after system prompt
                 removed_message = context_history.pop(1)
