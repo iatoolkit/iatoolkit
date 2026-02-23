@@ -27,7 +27,7 @@ class HistoryManagerService:
     TYPE_SERVER_SIDE = 'server_side'  # For models like OpenAI
     TYPE_CLIENT_SIDE = 'client_side'  # For models like Gemini and Deepseek
 
-    GEMINI_MAX_TOKENS_CONTEXT_HISTORY = 200000
+    GEMINI_MAX_TOKENS_CONTEXT_HISTORY = 400000
 
 
     @inject
