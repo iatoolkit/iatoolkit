@@ -397,7 +397,7 @@ class ProfileService:
                                 <tr>
                                     <td style="text-align: left; font-size: 16px; color: #333;">
                                         <p>Hola <strong>{new_user.first_name}</strong>,</p>
-                                        <p>¡Bienvenido a <strong>{company_short_name}</strong>! Estamos encantados de tenerte con nosotros.</p>
+                                        <p>¡Bienvenido a <strong>IAToolkit</strong>! Estamos encantados de tenerte con nosotros.</p>
                                         <p>Para comenzar, verifica tu cuenta haciendo clic en el siguiente botón:</p>
                                         <p style="text-align: center; margin: 20px 0;">
                                             <a href="{new_user.verification_url}"
