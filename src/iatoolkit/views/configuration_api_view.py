@@ -47,13 +47,14 @@ class ConfigurationApiView(MethodView):
 
             config, errors = self.configuration_service.load_configuration(company_short_name)
 
-            # Register data sources to ensure services are up to date with loaded config
-            if config:
-                self.configuration_service.register_data_sources(company_short_name, config=config)
-
             runtime_refresh = {}
             if refresh_runtime:
                 runtime_refresh = self._refresh_runtime_clients(company_short_name)
+
+            # Register data sources to ensure services are up to date with loaded config.
+            # IMPORTANT: this must run AFTER runtime refresh to avoid clearing newly-registered SQL connections.
+            if config:
+                self.configuration_service.register_data_sources(company_short_name, config=config)
 
             # Remove non-serializable objects
             serializable_config = dict(config or {})

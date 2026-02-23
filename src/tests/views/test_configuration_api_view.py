@@ -186,6 +186,41 @@ class TestConfigurationApiView:
         )
         mock_runtime_refresh.assert_called_once_with(MOCK_COMPANY_SHORT_NAME)
 
+    def test_get_load_configuration_refreshes_runtime_before_registering_data_sources(self):
+        mock_company = MagicMock()
+        self.mock_profile_service.get_company_by_short_name.return_value = mock_company
+        config = {"id": MOCK_COMPANY_SHORT_NAME, "name": "Sample Company", "company": mock_company}
+
+        call_order = []
+
+        def invalidate_side_effect(*args, **kwargs):
+            call_order.append("invalidate")
+
+        def load_side_effect(*args, **kwargs):
+            call_order.append("load")
+            return config, []
+
+        def register_side_effect(*args, **kwargs):
+            call_order.append("register")
+
+        def refresh_side_effect(*args, **kwargs):
+            call_order.append("refresh")
+            return {"llm_proxy": True, "embedding_clients": True, "sql_connections": True}
+
+        self.mock_config_service.invalidate_configuration_cache.side_effect = invalidate_side_effect
+        self.mock_config_service.load_configuration.side_effect = load_side_effect
+        self.mock_config_service.register_data_sources.side_effect = register_side_effect
+
+        with patch.object(
+            ConfigurationApiView,
+            "_refresh_runtime_clients",
+            side_effect=refresh_side_effect,
+        ):
+            resp = self.client.get(self.load_config_url)
+
+        assert resp.status_code == 200
+        assert call_order == ["invalidate", "load", "refresh", "register"]
+
     # --- PATCH Tests (Update Configuration) ---
 
     def test_patch_fails_auth(self):
