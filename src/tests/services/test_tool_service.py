@@ -13,6 +13,7 @@ from iatoolkit.services.mail_service import MailService
 from iatoolkit.services.knowledge_base_service import KnowledgeBaseService
 from iatoolkit.services.visual_kb_service import VisualKnowledgeBaseService
 from iatoolkit.services.visual_tool_service import VisualToolService
+from iatoolkit.services.system_tools import SYSTEM_TOOLS_DEFINITIONS
 
 class TestToolService:
     @pytest.fixture(autouse=True)
@@ -69,6 +70,13 @@ class TestToolService:
             assert created_tool.source == Tool.SOURCE_SYSTEM
 
             self.mock_llm_query_repo.commit.assert_called_once()
+
+    def test_system_tools_required_matches_properties_for_strict_schema(self):
+        for tool_def in SYSTEM_TOOLS_DEFINITIONS:
+            parameters = tool_def.get("parameters", {})
+            properties = parameters.get("properties", {})
+            required = parameters.get("required", [])
+            assert sorted(required) == sorted(properties.keys())
 
     def test_register_system_tools_rollback_on_exception(self):
         """
