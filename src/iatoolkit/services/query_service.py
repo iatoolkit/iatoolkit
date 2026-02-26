@@ -15,7 +15,7 @@ from iatoolkit.services.context_builder_service import ContextBuilderService
 from iatoolkit.common.model_registry import ModelRegistry
 from injector import inject
 import logging
-from typing import Optional
+from typing import Optional, Callable
 import time
 from dataclasses import dataclass
 
@@ -31,6 +31,8 @@ class HistoryHandle:
 
 
 class QueryService:
+    _tool_selector_hook: Callable | None = None
+
     @inject
     def __init__(self,
                  dispatcher: Dispatcher,
@@ -54,6 +56,115 @@ class QueryService:
         self.history_manager = history_manager
         self.model_registry = model_registry
         self.context_builder = context_builder
+
+    @classmethod
+    def register_tool_selector_hook(cls, hook: Callable | None):
+        """Registers an optional hook that can reduce the tools list before LLM invocation."""
+        cls._tool_selector_hook = hook
+
+    @classmethod
+    def clear_tool_selector_hook(cls):
+        cls._tool_selector_hook = None
+
+    def _select_tools_for_llm(self,
+                              company_short_name: str,
+                              company,
+                              user_identifier: str,
+                              question: str,
+                              tools: list[dict]) -> list[dict]:
+        """
+        Optional enterprise hook to reduce candidate tools (top-k routing).
+        Fallback behavior is always the full tool list for compatibility.
+        """
+        hook = type(self)._tool_selector_hook
+        if not callable(hook):
+            return tools
+
+        try:
+            selected_tools = hook(
+                company_short_name=company_short_name,
+                company=company,
+                user_identifier=user_identifier,
+                question=question,
+                tools=tools,
+            )
+        except Exception:
+            logging.exception(
+                "Tool selector hook failed for company '%s'. Falling back to full tool list.",
+                company_short_name,
+            )
+            return tools
+
+        if not isinstance(selected_tools, list) or not selected_tools:
+            return tools
+        if any(not isinstance(item, dict) or not item.get("name") for item in selected_tools):
+            return tools
+
+        return selected_tools
+
+    def _select_tools_for_llm_with_metrics(self,
+                                           company_short_name: str,
+                                           company,
+                                           user_identifier: str,
+                                           question: str,
+                                           tools: list[dict]) -> tuple[list[dict], dict]:
+        started_at = time.time()
+        candidate_count = len(tools) if isinstance(tools, list) else 0
+        metrics = {
+            "candidate_count": candidate_count,
+            "selected_count": candidate_count,
+            "selection_mode": "all_tools",
+            "fallback_reason": "hook_not_registered",
+            "selector_latency_ms": 0,
+        }
+
+        def _finalize(selected_tools: list[dict], *, reason: str | None, mode: str = "all_tools", hook_metadata: dict | None = None):
+            metrics["selected_count"] = len(selected_tools) if isinstance(selected_tools, list) else candidate_count
+            metrics["selection_mode"] = mode
+            metrics["fallback_reason"] = reason
+            metrics["selector_latency_ms"] = max(0, int((time.time() - started_at) * 1000))
+            if hook_metadata:
+                metrics["hook_metadata"] = hook_metadata
+            return selected_tools, metrics
+
+        if not isinstance(tools, list) or not tools:
+            return _finalize(tools or [], reason="no_tools")
+
+        hook = type(self)._tool_selector_hook
+        if not callable(hook):
+            return _finalize(tools, reason="hook_not_registered")
+
+        try:
+            hook_response = hook(
+                company_short_name=company_short_name,
+                company=company,
+                user_identifier=user_identifier,
+                question=question,
+                tools=tools,
+            )
+        except Exception:
+            logging.exception(
+                "Tool selector hook failed for company '%s'. Falling back to full tool list.",
+                company_short_name,
+            )
+            return _finalize(tools, reason="hook_error")
+
+        hook_metadata = None
+        selected_tools = hook_response
+        if isinstance(hook_response, dict):
+            selected_tools = hook_response.get("tools")
+            hook_metadata_candidate = hook_response.get("metadata")
+            if isinstance(hook_metadata_candidate, dict):
+                hook_metadata = hook_metadata_candidate
+
+        if not isinstance(selected_tools, list):
+            return _finalize(tools, reason="invalid_hook_response", hook_metadata=hook_metadata)
+        if not selected_tools:
+            return _finalize(tools, reason="empty_selection", hook_metadata=hook_metadata)
+        if any(not isinstance(item, dict) or not item.get("name") for item in selected_tools):
+            return _finalize(tools, reason="invalid_tool_schema", hook_metadata=hook_metadata)
+
+        return _finalize(selected_tools, reason=None, mode="router_selected", hook_metadata=hook_metadata)
 
     def _resolve_model(self, company_short_name: str, model: Optional[str]) -> str:
         # Priority: 1. Explicit model -> 2. Company config
@@ -299,6 +410,14 @@ class QueryService:
             # get the tools availables for this company
             tools = self.tool_service.get_tools_for_llm(company)
 
+            tools, tool_router_metrics = self._select_tools_for_llm_with_metrics(
+                company_short_name=company_short_name,
+                company=company,
+                user_identifier=user_identifier,
+                question=effective_question,
+                tools=tools,
+            )
+
             # openai structured output instructions
             output_schema = {}
 
@@ -320,6 +439,7 @@ class QueryService:
                 tools=tools,
                 text=output_schema,
                 images=images,
+                execution_metadata={"tool_router": tool_router_metrics},
             )
 
             if not response.get('valid_response'):

@@ -19,7 +19,7 @@ from iatoolkit.common.exceptions import IAToolkitException
 import threading
 import re
 import tiktoken
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Any
 from iatoolkit.services.dispatcher_service import Dispatcher
 from iatoolkit.services.storage_service import StorageService
 
@@ -73,7 +73,8 @@ class llmClient:
                model: str,
                context_history: Optional[List[Dict]] = None,
                images: list = None,
-               task_id: Optional[int] = None
+               task_id: Optional[int] = None,
+               execution_metadata: Optional[Dict[str, Any]] = None
                ) -> dict:
 
         images = images or []
@@ -222,6 +223,13 @@ class llmClient:
             stats['sql_retry_count'] = sql_retry_count
             stats['model'] = model
 
+            combined_stats = self.add_stats(stats, stats_fcall)
+            if isinstance(execution_metadata, dict):
+                combined_stats = dict(combined_stats or {})
+                for key, value in execution_metadata.items():
+                    if value is not None:
+                        combined_stats[key] = value
+
             # decode the LLM response
             decoded_response = self.decode_response(response)
 
@@ -237,7 +245,7 @@ class llmClient:
                              valid_response=decoded_response.get('status', False),
                              response=self.serialize_response(response, decoded_response),
                              function_calls=f_calls,
-                             stats=self.add_stats(stats, stats_fcall),
+                             stats=combined_stats,
                              answer_time=stats['response_time']
                              )
             self.llmquery_repo.add_query(query)
@@ -248,7 +256,7 @@ class llmClient:
             return {
                 'valid_response': decoded_response.get('status', False),
                 'answer': self.format_html(decoded_response.get('answer', '')),
-                'stats': stats,
+                'stats': combined_stats,
                 'answer_format': decoded_response.get('answer_format', ''),
                 'error_message': decoded_response.get('error_message', ''),
                 'aditional_data': decoded_response.get('aditional_data', {}),

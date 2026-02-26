@@ -6,6 +6,7 @@
 from injector import inject
 import os
 import json
+import logging
 from urllib.parse import urlparse
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.repositories.profile_repo import ProfileRepo
@@ -26,6 +27,11 @@ class ToolService:
     HTTP_ALLOWED_BODY_MODES = {"none", "json_map", "full_args"}
     HTTP_ALLOWED_AUTH_TYPES = {"none", "bearer", "api_key_header", "api_key_query", "basic"}
     HTTP_ALLOWED_RESPONSE_MODES = {"json", "text", "raw"}
+
+    TOOL_EVENT_CREATED = "created"
+    TOOL_EVENT_UPDATED = "updated"
+    TOOL_EVENT_DELETED = "deleted"
+    _tool_lifecycle_hook = None
 
     @inject
     def __init__(self,
@@ -65,6 +71,14 @@ class ToolService:
             from iatoolkit.services.web_search_service import WebSearchService
             self._web_search_service = current_iatoolkit().get_injector().get(WebSearchService)
         return self._web_search_service
+
+    @classmethod
+    def register_tool_lifecycle_hook(cls, hook):
+        cls._tool_lifecycle_hook = hook
+
+    @classmethod
+    def clear_tool_lifecycle_hook(cls):
+        cls._tool_lifecycle_hook = None
 
     def _handle_document_search_tool(self,
                                      company_short_name: str,
@@ -415,6 +429,59 @@ class ToolService:
                     "execution_config.security.allow_private_network=true is not supported"
                 )
 
+    @staticmethod
+    def _build_tool_snapshot(tool_obj) -> dict:
+        if tool_obj is None:
+            return {}
+        if isinstance(tool_obj, dict):
+            return dict(tool_obj)
+
+        snapshot = {}
+        for key in (
+            "id",
+            "company_id",
+            "name",
+            "description",
+            "parameters",
+            "execution_config",
+            "tool_type",
+            "source",
+            "is_active",
+        ):
+            if hasattr(tool_obj, key):
+                snapshot[key] = getattr(tool_obj, key)
+        return snapshot
+
+    def _notify_tool_lifecycle_hook(
+        self,
+        event: str,
+        company_short_name: str,
+        tool_obj,
+        actor_identifier: str | None = None,
+    ) -> None:
+        hook = type(self)._tool_lifecycle_hook
+        if not callable(hook):
+            return
+
+        tool_snapshot = self._build_tool_snapshot(tool_obj)
+        if not tool_snapshot:
+            return
+
+        try:
+            hook(
+                event=event,
+                company_short_name=company_short_name,
+                tool_snapshot=tool_snapshot,
+                actor_identifier=actor_identifier,
+            )
+        except Exception:
+            logging.exception(
+                "Tool lifecycle hook failed: event=%s company=%s tool_id=%s",
+                event,
+                company_short_name,
+                tool_snapshot.get("id"),
+            )
+
     def register_system_tools(self):
         """
         Creates or updates system functions in the database.
@@ -448,7 +515,7 @@ class ToolService:
         - WE ONLY TOUCH TOOLS WHERE source='YAML'.
         - We Upsert tools present in the YAML list.
         - We Delete tools present in DB (source='YAML') but missing in YAML list.
-        - We IGNORE tools where source='USER' (GUI) or source='SYSTEM'.
+        - We IGNORE tools where source is not YAML (SYSTEM/USER/PACK).
         """
 
         # enterprise edition has its own tool management
@@ -467,6 +534,11 @@ class ToolService:
         try:
             # 1. Get all current tools to identify what needs to be deleted
             all_tools = self.llm_query_repo.get_company_tools(company)
+            company_tools_by_name = {
+                tool.name: tool
+                for tool in all_tools
+                if tool.company_id == company.id
+            }
 
             # Set of tool names defined in the current YAML
             yaml_tool_names = set()
@@ -475,6 +547,15 @@ class ToolService:
             for tool_data in tools_config:
                 name = tool_data['function_name']
                 yaml_tool_names.add(name)
+
+                # Protect non-YAML tools from being overwritten by company.yaml.
+                existing_tool = company_tools_by_name.get(name)
+                if existing_tool and existing_tool.source != Tool.SOURCE_YAML:
+                    logging.warning(
+                        f"Skipping YAML tool '{name}' for '{company_short_name}': "
+                        f"name is already used by source '{existing_tool.source}'."
+                    )
+                    continue
 
                 # Tools from YAML are always NATIVE and source=YAML
                 tool_obj = Tool(
@@ -521,7 +602,12 @@ class ToolService:
 
         return tool.to_dict()
 
-    def create_tool(self, company_short_name: str, tool_data: dict) -> dict:
+    def create_tool(
+        self,
+        company_short_name: str,
+        tool_data: dict,
+        actor_identifier: str | None = None,
+    ) -> dict:
         """Creates a new tool via API (Source=USER)."""
         company = self.profile_repo.get_company_by_short_name(company_short_name)
         if not company:
@@ -552,6 +638,12 @@ class ToolService:
             raise IAToolkitException(IAToolkitException.ErrorType.DUPLICATE_ENTRY, f"Tool '{new_tool.name}' already exists.")
 
         created_tool = self.llm_query_repo.add_tool(new_tool)
+        self._notify_tool_lifecycle_hook(
+            event=self.TOOL_EVENT_CREATED,
+            company_short_name=company_short_name,
+            tool_obj=created_tool,
+            actor_identifier=actor_identifier,
+        )
         return created_tool.to_dict()
 
     def update_tool(
@@ -559,7 +651,8 @@ class ToolService:
         company_short_name: str,
         tool_id: int,
         tool_data: dict,
-        allow_system_update: bool = False
+        allow_system_update: bool = False,
+        actor_identifier: str | None = None,
     ) -> dict:
         """Updates an existing tool (Only if source=USER usually, but we allow editing YAML ones locally if needed or override)."""
         company = self.profile_repo.get_company_by_short_name(company_short_name)
@@ -573,6 +666,8 @@ class ToolService:
         # Prevent modifying System tools
         if tool.tool_type == Tool.TYPE_SYSTEM and not allow_system_update:
             raise IAToolkitException(IAToolkitException.ErrorType.INVALID_OPERATION, "Cannot modify System Tools")
+        if tool.source == Tool.SOURCE_PACK:
+            raise IAToolkitException(IAToolkitException.ErrorType.INVALID_OPERATION, "Cannot modify PACK tools")
 
         effective_tool_type = tool_data.get('tool_type', tool.tool_type)
         effective_execution_config = tool_data.get('execution_config', tool.execution_config)
@@ -593,9 +688,20 @@ class ToolService:
             tool.is_active = tool_data['is_active']
 
         self.llm_query_repo.commit()
+        self._notify_tool_lifecycle_hook(
+            event=self.TOOL_EVENT_UPDATED,
+            company_short_name=company_short_name,
+            tool_obj=tool,
+            actor_identifier=actor_identifier,
+        )
         return tool.to_dict()
 
-    def delete_tool(self, company_short_name: str, tool_id: int):
+    def delete_tool(
+        self,
+        company_short_name: str,
+        tool_id: int,
+        actor_identifier: str | None = None,
+    ):
         """Deletes a tool."""
         company = self.profile_repo.get_company_by_short_name(company_short_name)
         if not company:
@@ -607,8 +713,17 @@ class ToolService:
 
         if tool.tool_type == Tool.TYPE_SYSTEM:
             raise IAToolkitException(IAToolkitException.ErrorType.INVALID_OPERATION, "Cannot delete System Tools")
+        if tool.source == Tool.SOURCE_PACK:
+            raise IAToolkitException(IAToolkitException.ErrorType.INVALID_OPERATION, "Cannot delete PACK tools")
 
+        tool_snapshot = self._build_tool_snapshot(tool)
         self.llm_query_repo.delete_tool(tool)
+        self._notify_tool_lifecycle_hook(
+            event=self.TOOL_EVENT_DELETED,
+            company_short_name=company_short_name,
+            tool_obj=tool_snapshot,
+            actor_identifier=actor_identifier,
+        )
 
     def get_tool_definition(self, company_short_name: str, tool_name: str) -> Tool:
         """Helper to retrieve tool metadata for the Dispatcher."""
@@ -624,6 +739,21 @@ class ToolService:
 
         # 2. Fallback to system tools
         return self.llm_query_repo.get_system_tool(tool_name)
+    def _is_strict_compatible_schema(self, parameters: dict) -> bool:
+        if not isinstance(parameters, dict):
+            return False
+
+        properties = parameters.get("properties")
+        if not isinstance(properties, dict):
+            return False
+
+        required = parameters.get("required")
+        if not isinstance(required, list):
+            return False
+        if any(not isinstance(item, str) for item in required):
+            return False
+
+        return set(required) == set(properties.keys())
 
     def get_tools_for_llm(self, company: Company) -> list[dict]:
         """
@@ -647,7 +777,7 @@ class ToolService:
                 "name": function.name,
                 "description": function.description,
                 "parameters": params,
-                "strict": True
+                "strict": self._is_strict_compatible_schema(params)
             }
 
             tools.append(ai_tool)

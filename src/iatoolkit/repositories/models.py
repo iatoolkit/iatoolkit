@@ -167,6 +167,7 @@ class Tool(Base):
     SOURCE_SYSTEM = 'SYSTEM'
     SOURCE_YAML = 'YAML'         # defined in company.yaml
     SOURCE_USER = 'USER'         # defined via GUI/API
+    SOURCE_PACK = 'PACK'         # materialized by enterprise control-plane
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     company_id = Column(Integer,

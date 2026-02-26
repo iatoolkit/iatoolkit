@@ -106,7 +106,11 @@ class TestToolApiView:
 
         assert resp.status_code == 201
         assert resp.json['id'] == 5
-        self.mock_tool_service.create_tool.assert_called_with(self.MOCK_COMPANY, payload)
+        self.mock_tool_service.create_tool.assert_called_with(
+            self.MOCK_COMPANY,
+            payload,
+            actor_identifier=None,
+        )
 
     def test_create_tool_duplicate(self):
         """POST should return 409 on duplicate."""
@@ -141,7 +145,8 @@ class TestToolApiView:
             self.MOCK_COMPANY,
             1,
             payload,
-            allow_system_update=False
+            allow_system_update=False,
+            actor_identifier=None,
         )
 
     def test_update_tool_system_allowed_for_admin_role(self):
@@ -157,7 +162,8 @@ class TestToolApiView:
             self.MOCK_COMPANY,
             1,
             payload,
-            allow_system_update=True
+            allow_system_update=True,
+            actor_identifier=None,
         )
 
     def test_update_system_tool_fails(self):
@@ -172,7 +178,8 @@ class TestToolApiView:
             self.MOCK_COMPANY,
             1,
             {},
-            allow_system_update=False
+            allow_system_update=False,
+            actor_identifier=None,
         )
 
     # --- DELETE ---
@@ -183,7 +190,11 @@ class TestToolApiView:
 
         assert resp.status_code == 200
         assert resp.json['status'] == 'success'
-        self.mock_tool_service.delete_tool.assert_called_with(self.MOCK_COMPANY, 1)
+        self.mock_tool_service.delete_tool.assert_called_with(
+            self.MOCK_COMPANY,
+            1,
+            actor_identifier=None,
+        )
 
     def test_delete_tool_exception(self):
         """DELETE should handle exceptions (e.g. system tool)."""

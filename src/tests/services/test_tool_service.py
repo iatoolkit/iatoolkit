@@ -28,6 +28,8 @@ class TestToolService:
         self.mock_visual_tool_service = MagicMock(spec=VisualToolService)
         self.mock_web_search_service = MagicMock()
 
+        ToolService.clear_tool_lifecycle_hook()
+
         self.service = ToolService(
             llm_query_repo=self.mock_llm_query_repo,
             profile_repo=self.mock_profile_repo,
@@ -170,6 +172,25 @@ class TestToolService:
         assert excinfo.value.error_type == IAToolkitException.ErrorType.DATABASE_ERROR
         self.mock_llm_query_repo.rollback.assert_called_once()
 
+    def test_sync_company_tools_skips_name_collision_with_non_yaml_source(self):
+        pack_tool = MagicMock(spec=Tool)
+        pack_tool.name = "pipedrive.search_deals"
+        pack_tool.company_id = self.mock_company.id
+        pack_tool.source = Tool.SOURCE_PACK
+
+        self.mock_llm_query_repo.get_company_tools.return_value = [pack_tool]
+        tools_config = [{
+            "function_name": "pipedrive.search_deals",
+            "description": "Search deals",
+            "params": {"type": "object", "properties": {}}
+        }]
+
+        self.service.sync_company_tools(self.company_short_name, tools_config)
+
+        self.mock_llm_query_repo.create_or_update_tool.assert_not_called()
+        self.mock_llm_query_repo.delete_tool.assert_not_called()
+        self.mock_llm_query_repo.commit.assert_called_once()
+
     def test_get_tools_for_llm_format(self):
         """
         GIVEN a company with tools
@@ -180,7 +201,7 @@ class TestToolService:
         tool1 = MagicMock(spec=Tool)
         tool1.name = 'tool1'
         tool1.description = 'desc1'
-        tool1.parameters = {'prop': 1}
+        tool1.parameters = {'type': 'object', 'properties': {'query': {'type': 'string'}}, 'required': ['query']}
 
         self.mock_llm_query_repo.get_company_tools.return_value = [tool1]
 
@@ -394,6 +415,17 @@ class TestToolService:
 
         assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_OPERATION
 
+    def test_update_tool_pack_tool_fails(self):
+        existing_tool = MagicMock(spec=Tool)
+        existing_tool.tool_type = Tool.TYPE_HTTP
+        existing_tool.source = Tool.SOURCE_PACK
+        self.mock_llm_query_repo.get_tool_by_id.return_value = existing_tool
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.update_tool(self.company_short_name, 1, {"description": "x"})
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_OPERATION
+
     def test_update_tool_system_tool_allowed_with_flag(self):
         """Test that system tools can be updated when explicitly authorized."""
         existing_tool = MagicMock(spec=Tool)
@@ -422,6 +454,146 @@ class TestToolService:
             self.service.delete_tool(self.company_short_name, 1)
 
         assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_OPERATION
+
+    def test_delete_tool_pack_tool_fails(self):
+        existing_tool = MagicMock(spec=Tool)
+        existing_tool.tool_type = Tool.TYPE_HTTP
+        existing_tool.source = Tool.SOURCE_PACK
+        self.mock_llm_query_repo.get_tool_by_id.return_value = existing_tool
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.delete_tool(self.company_short_name, 1)
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_OPERATION
+
+    def test_delete_tool_notifies_lifecycle_hook(self):
+        existing_tool = MagicMock(spec=Tool)
+        existing_tool.id = 7
+        existing_tool.company_id = self.mock_company.id
+        existing_tool.name = "topic_lookup"
+        existing_tool.description = "Topic lookup"
+        existing_tool.parameters = {"type": "object", "properties": {}}
+        existing_tool.execution_config = None
+        existing_tool.tool_type = Tool.TYPE_NATIVE
+        existing_tool.source = Tool.SOURCE_USER
+        existing_tool.is_active = True
+        self.mock_llm_query_repo.get_tool_by_id.return_value = existing_tool
+
+        captured = {}
+
+        def hook(**kwargs):
+            captured.update(kwargs)
+
+        ToolService.register_tool_lifecycle_hook(hook)
+
+        self.service.delete_tool(self.company_short_name, 7, actor_identifier="owner@corp.com")
+
+        self.mock_llm_query_repo.delete_tool.assert_called_once_with(existing_tool)
+        assert captured["event"] == ToolService.TOOL_EVENT_DELETED
+        assert captured["company_short_name"] == self.company_short_name
+        assert captured["tool_snapshot"]["id"] == 7
+        assert captured["actor_identifier"] == "owner@corp.com"
+
+    def test_create_tool_notifies_lifecycle_hook(self):
+        tool_data = {
+            "name": "api_tool",
+            "description": "desc",
+            "tool_type": Tool.TYPE_INFERENCE,
+            "execution_config": {"url": "http"}
+        }
+        self.mock_llm_query_repo.get_tool_definition.return_value = None
+
+        created_tool = MagicMock(spec=Tool)
+        created_tool.id = 11
+        created_tool.company_id = self.mock_company.id
+        created_tool.name = "api_tool"
+        created_tool.description = "desc"
+        created_tool.parameters = {"type": "object", "properties": {}}
+        created_tool.execution_config = {"url": "http"}
+        created_tool.tool_type = Tool.TYPE_INFERENCE
+        created_tool.source = Tool.SOURCE_USER
+        created_tool.is_active = True
+        created_tool.to_dict.return_value = {"id": 11, "name": "api_tool"}
+        self.mock_llm_query_repo.add_tool.return_value = created_tool
+
+        captured = {}
+
+        def hook(**kwargs):
+            captured.update(kwargs)
+
+        ToolService.register_tool_lifecycle_hook(hook)
+
+        result = self.service.create_tool(self.company_short_name, tool_data, actor_identifier="owner@corp.com")
+
+        assert result["id"] == 11
+        assert captured["event"] == ToolService.TOOL_EVENT_CREATED
+        assert captured["tool_snapshot"]["id"] == 11
+        assert captured["actor_identifier"] == "owner@corp.com"
+
+    def test_update_tool_notifies_lifecycle_hook(self):
+        existing_tool = MagicMock(spec=Tool)
+        existing_tool.id = 12
+        existing_tool.company_id = self.mock_company.id
+        existing_tool.name = "author_lookup"
+        existing_tool.description = "old"
+        existing_tool.parameters = {"type": "object", "properties": {}}
+        existing_tool.execution_config = None
+        existing_tool.tool_type = Tool.TYPE_NATIVE
+        existing_tool.source = Tool.SOURCE_USER
+        existing_tool.is_active = True
+        existing_tool.to_dict.return_value = {"id": 12, "description": "updated"}
+        self.mock_llm_query_repo.get_tool_by_id.return_value = existing_tool
+
+        captured = {}
+
+        def hook(**kwargs):
+            captured.update(kwargs)
+
+        ToolService.register_tool_lifecycle_hook(hook)
+
+        result = self.service.update_tool(
+            self.company_short_name,
+            12,
+            {"description": "updated"},
+            actor_identifier="admin@corp.com",
+        )
+
+        assert result["description"] == "updated"
+        assert captured["event"] == ToolService.TOOL_EVENT_UPDATED
+        assert captured["tool_snapshot"]["id"] == 12
+        assert captured["actor_identifier"] == "admin@corp.com"
+
+    def test_lifecycle_hook_failure_does_not_break_create_tool(self):
+        tool_data = {
+            "name": "api_tool",
+            "description": "desc",
+            "tool_type": Tool.TYPE_INFERENCE,
+            "execution_config": {"url": "http"}
+        }
+        self.mock_llm_query_repo.get_tool_definition.return_value = None
+
+        created_tool = MagicMock(spec=Tool)
+        created_tool.id = 99
+        created_tool.company_id = self.mock_company.id
+        created_tool.name = "api_tool"
+        created_tool.description = "desc"
+        created_tool.parameters = {"type": "object", "properties": {}}
+        created_tool.execution_config = {"url": "http"}
+        created_tool.tool_type = Tool.TYPE_INFERENCE
+        created_tool.source = Tool.SOURCE_USER
+        created_tool.is_active = True
+        created_tool.to_dict.return_value = {"id": 99, "name": "api_tool"}
+        self.mock_llm_query_repo.add_tool.return_value = created_tool
+
+        def failing_hook(**kwargs):
+            raise RuntimeError("boom")
+
+        ToolService.register_tool_lifecycle_hook(failing_hook)
+
+        result = self.service.create_tool(self.company_short_name, tool_data, actor_identifier="owner@corp.com")
+
+        assert result["id"] == 99
+        self.mock_llm_query_repo.add_tool.assert_called_once()
 
     def test_system_document_search_returns_structured_payload(self):
         self.knowledge_base_service.search.return_value = [{
@@ -512,7 +684,7 @@ class TestToolService:
         tool1 = MagicMock(spec=Tool)
         tool1.name = 'tool1'
         tool1.description = 'desc1'
-        tool1.parameters = {'prop': 1}
+        tool1.parameters = {'type': 'object', 'properties': {'query': {'type': 'string'}}, 'required': ['query']}
 
         self.mock_llm_query_repo.get_company_tools.return_value = [tool1]
 
@@ -524,6 +696,32 @@ class TestToolService:
         assert result[0]['type'] == 'function'
         assert result[0]['name'] == 'tool1'
         assert result[0]['description'] == 'desc1'
-        assert result[0]['parameters']['prop'] == 1
+        assert 'query' in result[0]['parameters']['properties']
         assert result[0]['parameters']['additionalProperties'] is False
         assert result[0]['strict'] is True
+
+    def test_get_tools_for_llm_sets_strict_false_for_non_strict_schema(self):
+        """
+        GIVEN a tool schema with optional properties
+        WHEN get_tools_for_llm is called
+        THEN strict is disabled to avoid OpenAI strict-schema validation errors.
+        """
+        tool1 = MagicMock(spec=Tool)
+        tool1.name = 'tool_optional'
+        tool1.description = 'desc optional'
+        tool1.parameters = {
+            'type': 'object',
+            'properties': {
+                'search': {'type': 'string'},
+                'filter': {'type': 'string'},
+            },
+            'required': ['search'],
+        }
+
+        self.mock_llm_query_repo.get_company_tools.return_value = [tool1]
+
+        result = self.service.get_tools_for_llm(self.mock_company)
+
+        assert len(result) == 1
+        assert result[0]['strict'] is False
+        assert result[0]['parameters']['additionalProperties'] is False

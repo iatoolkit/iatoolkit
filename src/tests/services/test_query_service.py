@@ -44,6 +44,8 @@ class TestQueryService:
         # New dependency mock
         self.mock_context_builder = MagicMock(spec=ContextBuilderService)
 
+        QueryService.clear_tool_selector_hook()
+
         # --- Instancia del servicio bajo prueba ---
         self.service = QueryService(
             dispatcher=self.mock_dispatcher,
@@ -223,3 +225,76 @@ class TestQueryService:
         result = self.service.llm_query("invalid_company", "user")
         assert result['error'] is True
         assert "translated:errors.company_not_found" in result['error_message']
+
+    def test_llm_query_applies_tool_selector_hook_when_registered(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = [
+            {"type": "function", "name": "tool_one", "description": "one", "parameters": {}, "strict": True},
+            {"type": "function", "name": "tool_two", "description": "two", "parameters": {}, "strict": True},
+        ]
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "authors metrics", [])
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        hook_kwargs = {}
+
+        def selector_hook(**kwargs):
+            hook_kwargs.update(kwargs)
+            return [kwargs["tools"][1]]
+
+        QueryService.register_tool_selector_hook(selector_hook)
+
+        result = self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            question="authors metrics",
+            model='gpt-test'
+        )
+
+        assert result["valid_response"] is True
+        self.mock_llm_client.invoke.assert_called_once()
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert [tool["name"] for tool in invoke_kwargs["tools"]] == ["tool_two"]
+        assert hook_kwargs["company_short_name"] == MOCK_COMPANY_SHORT_NAME
+        assert "execution_metadata" in invoke_kwargs
+        assert "tool_router" in invoke_kwargs["execution_metadata"]
+        assert invoke_kwargs["execution_metadata"]["tool_router"]["selection_mode"] == "router_selected"
+        assert hook_kwargs["question"] == "authors metrics"
+
+    def test_llm_query_falls_back_to_all_tools_when_selector_hook_fails(self):
+        full_tools = [
+            {"type": "function", "name": "tool_one", "description": "one", "parameters": {}, "strict": True},
+            {"type": "function", "name": "tool_two", "description": "two", "parameters": {}, "strict": True},
+        ]
+        self.mock_tool_service.get_tools_for_llm.return_value = full_tools
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "authors metrics", [])
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        def selector_hook(**kwargs):
+            _ = kwargs
+            raise RuntimeError("selector failure")
+
+        QueryService.register_tool_selector_hook(selector_hook)
+
+        result = self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            question="authors metrics",
+            model='gpt-test'
+        )
+
+        assert result["valid_response"] is True
+        self.mock_llm_client.invoke.assert_called_once()
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert [tool["name"] for tool in invoke_kwargs["tools"]] == ["tool_one", "tool_two"]
+        assert invoke_kwargs["execution_metadata"]["tool_router"]["fallback_reason"] == "hook_error"

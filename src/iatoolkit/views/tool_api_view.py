@@ -78,7 +78,12 @@ class ToolApiView(MethodView):
 
         try:
             data = request.get_json() or {}
-            new_tool = self.tool_service.create_tool(company_short_name, data)
+            actor = auth_result.get("user_identifier")
+            new_tool = self.tool_service.create_tool(
+                company_short_name,
+                data,
+                actor_identifier=actor,
+            )
             return jsonify(new_tool), 201
 
         except IAToolkitException as e:
@@ -98,11 +103,13 @@ class ToolApiView(MethodView):
         try:
             data = request.get_json() or {}
             allow_system_update = self._can_edit_system_tools(auth_result)
+            actor = auth_result.get("user_identifier")
             updated_tool = self.tool_service.update_tool(
                 company_short_name,
                 tool_id,
                 data,
-                allow_system_update=allow_system_update
+                allow_system_update=allow_system_update,
+                actor_identifier=actor,
             )
             return jsonify(updated_tool), 200
 
@@ -121,7 +128,12 @@ class ToolApiView(MethodView):
             return jsonify(auth_result), auth_result.get("status_code", 401)
 
         try:
-            self.tool_service.delete_tool(company_short_name, tool_id)
+            actor = auth_result.get("user_identifier")
+            self.tool_service.delete_tool(
+                company_short_name,
+                tool_id,
+                actor_identifier=actor,
+            )
             return jsonify({"status": "success"}), 200
 
         except IAToolkitException as e:
