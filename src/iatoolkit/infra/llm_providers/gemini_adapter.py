@@ -4,7 +4,7 @@
 # IAToolkit is open source software.
 
 from iatoolkit.infra.llm_response import LLMResponse, ToolCall, Usage
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from google.genai import types
 from iatoolkit.common.exceptions import IAToolkitException
 import logging
@@ -104,7 +104,7 @@ class GeminiAdapter:
             elif "blocked" in str(e).lower():
                 error_message = "El contenido fue bloqueado por las políticas de seguridad de Gemini"
             elif "token" in str(e).lower():
-                error_message = "Tu consulta supera el límite de contexto de Gemini"
+                error_message = f"Tu consulta supera el límite de contexto de Gemini: {str(e)}"
 
             raise IAToolkitException(IAToolkitException.ErrorType.LLM_ERROR, error_message)
 
@@ -219,23 +219,32 @@ class GeminiAdapter:
         """Limpiar campos específicos de OpenAI que Gemini no entiende"""
         clean_params = {}
 
-        # Campos permitidos por Gemini según su Schema protobuf
-        # Estos son los únicos campos que Gemini acepta en sus esquemas
+        # Campos permitidos por Gemini (SDK google-genai / Schema).
         allowed_fields = {
-            "type",  # Tipo de datos: string, number, object, array, boolean
-            "properties",  # Para objetos: define las propiedades
-            "required",  # Array de propiedades requeridas
-            "items",  # Para arrays: define el tipo de elementos
-            "description",  # Descripción del campo
-            "enum",  # Lista de valores permitidos
-            # Gemini NO soporta estos campos comunes de JSON Schema:
-            # "pattern", "format", "minimum", "maximum", "minItems", "maxItems",
-            # "minLength", "maxLength", "additionalProperties", "strict"
+            "type",
+            "properties",
+            "required",
+            "items",
+            "description",
+            "enum",
+            "nullable",
+            "anyOf",
+            "oneOf",
+            "pattern",
+            "format",
+            "minimum",
+            "maximum",
+            "minItems",
+            "maxItems",
+            "minLength",
+            "maxLength",
         }
 
         for key, value in parameters.items():
             if key in allowed_fields:
-                if key == "properties" and isinstance(value, dict):
+                if key == "type":
+                    clean_params.update(self._normalize_type_field(value))
+                elif key == "properties" and isinstance(value, dict):
                     # Limpiar recursivamente las propiedades
                     clean_props = {}
                     for prop_name, prop_def in value.items():
@@ -247,12 +256,59 @@ class GeminiAdapter:
                 elif key == "items" and isinstance(value, dict):
                     # Limpiar recursivamente los items de array
                     clean_params[key] = self._clean_openai_specific_fields(value)
+                elif key in {"anyOf", "oneOf"} and isinstance(value, list):
+                    clean_params[key] = [
+                        self._clean_openai_specific_fields(item)
+                        for item in value
+                        if isinstance(item, dict)
+                    ]
                 else:
                     clean_params[key] = value
             else:
                 logging.debug(f"Campo '{key}' removido (no soportado por Gemini)")
 
         return clean_params
+
+    def _normalize_type_field(self, value: Any) -> Dict:
+        """
+        Gemini no acepta type como lista (ej: ["string", "null"]).
+        Convierte ese formato a:
+        - {"type": "string", "nullable": True} cuando aplica
+        - {"anyOf": [...]} para uniones de múltiples tipos no-null.
+        """
+        if isinstance(value, str):
+            return {"type": value.lower()}
+
+        if not isinstance(value, list):
+            return {}
+
+        normalized_types = []
+        for item in value:
+            if isinstance(item, str):
+                item_lower = item.lower()
+                if item_lower not in normalized_types:
+                    normalized_types.append(item_lower)
+
+        if not normalized_types:
+            return {}
+
+        has_null = "null" in normalized_types
+        non_null_types = [item for item in normalized_types if item != "null"]
+
+        if not non_null_types:
+            return {"type": "null"}
+
+        if len(non_null_types) == 1:
+            result = {"type": non_null_types[0]}
+            if has_null:
+                result["nullable"] = True
+            return result
+
+        union_types = [{"type": type_name} for type_name in non_null_types]
+        if has_null:
+            union_types.append({"type": "null"})
+
+        return {"anyOf": union_types}
 
     def _prepare_generation_config(self, text: Optional[Dict], tool_choice: str) -> Dict:
         """Preparar configuración de generación para Gemini"""

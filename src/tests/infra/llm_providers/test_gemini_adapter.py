@@ -249,3 +249,55 @@ class TestGeminiAdapter:
 
         # Verificar que output_text tenga el placeholder
         assert "[Imagen Generada]" in response.output_text
+
+
+def test_prepare_gemini_tools_normalizes_nullable_type_lists():
+    adapter = GeminiAdapter(gemini_client=MagicMock())
+    tools = [
+        {
+            "type": "function",
+            "name": "search_tweets",
+            "description": "Busca tweets",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "max_results": {"type": ["integer", "null"]},
+                    "next_token": {"type": ["string", "null"]},
+                },
+                "required": [],
+            },
+        }
+    ]
+
+    gemini_tools = adapter._prepare_gemini_tools(tools)
+
+    assert gemini_tools is not None
+    declaration = gemini_tools[0].function_declarations[0]
+    max_results = declaration.parameters.properties["max_results"]
+    next_token = declaration.parameters.properties["next_token"]
+
+    assert max_results.type.value == "INTEGER"
+    assert max_results.nullable is True
+    assert next_token.type.value == "STRING"
+    assert next_token.nullable is True
+
+
+def test_prepare_gemini_tools_removes_additional_properties():
+    adapter = GeminiAdapter(gemini_client=MagicMock())
+    raw_schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "data": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": {"type": "string"},
+                },
+            }
+        },
+    }
+    clean_schema = adapter._clean_openai_specific_fields(raw_schema)
+
+    assert "additionalProperties" not in clean_schema
+    assert "additionalProperties" not in clean_schema["properties"]["data"]["items"]
