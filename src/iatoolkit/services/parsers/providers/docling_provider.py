@@ -14,6 +14,7 @@ from injector import inject
 
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.i18n_service import I18nService
+from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.parsers.contracts import ParseRequest, ParseResult, ParsedImage, ParsedTable, ParsedText
 from iatoolkit.services.parsers.image_normalizer import normalize_image
 
@@ -24,18 +25,25 @@ class DoclingParsingProvider:
 
     @inject
     def __init__(self,
-                 i18n_service: I18nService):
+                 i18n_service: I18nService,
+                 config_service: ConfigurationService):
         self.i18n_service = i18n_service
+        self.config_service = config_service
         self.enabled = os.getenv("DOCLING_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
         self.converter = None
+        self._converter_cache: dict[bool, Any] = {}
 
-    def init(self):
+    def init(self, do_ocr: bool = False):
         if not self.enabled:
             logging.info("DoclingParsingProvider is disabled via environment variables.")
             return
 
+        if do_ocr in self._converter_cache:
+            self.converter = self._converter_cache[do_ocr]
+            return
+
         try:
-            logging.info("Initializing Docling models...")
+            logging.info("Initializing Docling models (do_ocr=%s)...", do_ocr)
 
             from docling.document_converter import DocumentConverter, PdfFormatOption
             from docling.datamodel.base_models import InputFormat
@@ -43,8 +51,8 @@ class DoclingParsingProvider:
             from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode
 
             pipeline_options = PdfPipelineOptions()
-            pipeline_options.do_ocr = False
-            pipeline_options.force_backend_text = True
+            pipeline_options.do_ocr = do_ocr
+            pipeline_options.force_backend_text = not do_ocr
             pipeline_options.generate_picture_images = True
             pipeline_options.do_table_structure = True
             pipeline_options.generate_table_images = True
@@ -61,7 +69,8 @@ class DoclingParsingProvider:
             )
 
             logging.info(
-                "Docling low-memory profile: table_mode=%s layout_batch=%s table_batch=%s ocr_batch=%s queue_max=%s threads=%s device=%s",
+                "Docling profile: do_ocr=%s table_mode=%s layout_batch=%s table_batch=%s ocr_batch=%s queue_max=%s threads=%s device=%s",
+                pipeline_options.do_ocr,
                 pipeline_options.table_structure_options.mode,
                 pipeline_options.layout_batch_size,
                 pipeline_options.table_batch_size,
@@ -76,6 +85,7 @@ class DoclingParsingProvider:
                     InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
                 }
             )
+            self._converter_cache[do_ocr] = self.converter
             logging.info("Docling models successfully loaded.")
         except Exception as e:
             logging.error(f"Failed to initialize DoclingParsingProvider: {e}")
@@ -96,9 +106,17 @@ class DoclingParsingProvider:
                 if self.i18n_service else "Docling is disabled"
             )
 
-        if self.converter is None:
-            self.init()
-            if self.converter is None:
+        do_ocr = self._resolve_do_ocr(request.company_short_name)
+
+        if self.converter is not None and do_ocr not in self._converter_cache and not self._converter_cache:
+            self._converter_cache[do_ocr] = self.converter
+
+        converter = self._converter_cache.get(do_ocr)
+        if converter is None:
+            self.init(do_ocr=do_ocr)
+            converter = self._converter_cache.get(do_ocr)
+
+            if converter is None:
                 raise IAToolkitException(
                     IAToolkitException.ErrorType.CONFIG_ERROR,
                     "Docling converter failed to initialize."
@@ -109,7 +127,8 @@ class DoclingParsingProvider:
             tmp_path = tmp.name
 
         try:
-            conversion_result = self.converter.convert(tmp_path)
+            self.converter = converter
+            conversion_result = converter.convert(tmp_path)
             doc = conversion_result.document
 
             markdown = ""
@@ -500,6 +519,55 @@ class DoclingParsingProvider:
         elif isinstance(node, list):
             for value in node:
                 yield from self._walk_items(value)
+
+    def _resolve_do_ocr(self, company_short_name: str | None) -> bool:
+        env_override = self._parse_bool_value(os.getenv("DOCLING_DO_OCR"))
+        if env_override is not None:
+            return env_override
+
+        if not isinstance(company_short_name, str) or not company_short_name.strip():
+            return False
+
+        try:
+            kb_config = self.config_service.get_configuration(company_short_name, "knowledge_base") or {}
+        except Exception as e:
+            logging.warning(
+                "Could not resolve knowledge_base config for '%s' while resolving Docling OCR flag: %s",
+                company_short_name,
+                e,
+            )
+            return False
+
+        if not isinstance(kb_config, dict):
+            return False
+
+        docling_cfg = kb_config.get("docling")
+        if not isinstance(docling_cfg, dict):
+            return False
+
+        parsed_cfg = self._parse_bool_value(docling_cfg.get("do_ocr"))
+        return parsed_cfg if parsed_cfg is not None else False
+
+    @staticmethod
+    def _parse_bool_value(value) -> Optional[bool]:
+        if isinstance(value, bool):
+            return value
+
+        if isinstance(value, (int, float)):
+            if value == 1:
+                return True
+            if value == 0:
+                return False
+            return None
+
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "yes", "on"}:
+                return True
+            if normalized in {"0", "false", "no", "off"}:
+                return False
+
+        return None
 
     @staticmethod
     def _get_int_env(name: str, default: int) -> int:

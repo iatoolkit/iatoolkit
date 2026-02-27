@@ -457,6 +457,18 @@ class ConfigurationService:
                             add_error(f"knowledge_base.collections[{i}]",
                                       "Each collection must be a string or an object with keys like {name, parser_provider}.")
 
+            docling_config = kb_config.get("docling")
+            if docling_config is not None:
+                if not isinstance(docling_config, dict):
+                    add_error("knowledge_base.docling", "Must be a dictionary.")
+                else:
+                    docling_do_ocr = docling_config.get("do_ocr")
+                    if docling_do_ocr is not None and not isinstance(docling_do_ocr, bool):
+                        add_error(
+                            "knowledge_base.docling.do_ocr",
+                            "Must be a boolean if provided.",
+                        )
+
             prod_connector = kb_config.get("connectors", {}).get("production", {})
             if prod_connector.get("type") == "s3":
                 for key in ["bucket", "prefix"]:
