@@ -38,6 +38,7 @@ class TestContextBuilderService:
         )
 
         self.mock_company = Company(short_name=MOCK_COMPANY_SHORT_NAME)
+        self.mock_company.id = 1
         self.mock_profile_repo.get_company_by_short_name.return_value = self.mock_company
 
     def test_build_system_context_success(self):
@@ -58,6 +59,7 @@ class TestContextBuilderService:
         assert "Rendered System Prompt" in context
         assert profile == mock_profile
         self.mock_util.render_prompt_from_string.assert_called_once()
+        self.mock_prompt_service.get_system_prompt.assert_called_once_with(1)
 
     def test_build_system_context_company_not_found(self):
         """Should return None if company does not exist."""

@@ -190,12 +190,12 @@ class PromptService:
         # 1. Remove from DB
         self.llm_query_repo.delete_prompt(prompt_db)
 
-    def get_system_prompt(self):
+    def get_system_prompt(self, company_id: int):
         try:
             system_prompt_content = []
 
             # read all the system prompts from the database
-            system_prompts = self.llm_query_repo.get_system_prompts()
+            system_prompts = self.llm_query_repo.get_system_prompts(company_id)
 
             for prompt in system_prompts:
                 try:

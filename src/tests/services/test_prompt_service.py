@@ -62,7 +62,7 @@ class TestPromptService:
             'Contenido 2'
         ]
 
-        result = self.prompt_service.get_system_prompt()
+        result = self.prompt_service.get_system_prompt(company_id=1)
 
         assert result == "Contenido 1\nContenido 2"
         assert mock_read_text.call_count == 2
@@ -74,7 +74,7 @@ class TestPromptService:
         prompt1 = Prompt(filename='missing.prompt')
         self.llm_query_repo.get_system_prompts.return_value = [prompt1]
 
-        result = self.prompt_service.get_system_prompt()
+        result = self.prompt_service.get_system_prompt(company_id=1)
 
         assert result == ""
         mock_logging.warning.assert_called_once()
@@ -85,7 +85,7 @@ class TestPromptService:
         self.llm_query_repo.get_system_prompts.side_effect = Exception("DB Connection Error")
 
         with pytest.raises(IAToolkitException) as exc_info:
-            self.prompt_service.get_system_prompt()
+            self.prompt_service.get_system_prompt(company_id=1)
 
         assert exc_info.value.error_type == IAToolkitException.ErrorType.PROMPT_ERROR
         assert "DB Connection Error" in str(exc_info.value)

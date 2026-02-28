@@ -503,16 +503,42 @@ class TestLLMQueryRepo:
 
     def test_get_system_prompts(self):
         """Test get_system_prompts filters correctly."""
-        p1 = Prompt(name="s1", description="s1", filename="s1", prompt_type=PromptType.SYSTEM.value, order=2)
-        p2 = Prompt(name="s2", description="s2", filename="s2", prompt_type=PromptType.SYSTEM.value, order=1)
+        p1 = Prompt(
+            name="s1",
+            company_id=self.company.id,
+            description="s1",
+            filename="s1",
+            prompt_type=PromptType.SYSTEM.value,
+            order=2
+        )
+        p2 = Prompt(
+            name="s2",
+            company_id=self.company.id,
+            description="s2",
+            filename="s2",
+            prompt_type=PromptType.SYSTEM.value,
+            order=1
+        )
         # Non-system prompt
         p3 = Prompt(name="c1", company_id=self.company.id, description="c1", filename="c1",
                     prompt_type=PromptType.COMPANY.value)
+        # System prompt for another company (must be excluded)
+        other_company = Company(name="Other", short_name="other-system")
+        self.session.add(other_company)
+        self.session.commit()
+        p4 = Prompt(
+            name="s_other",
+            company_id=other_company.id,
+            description="s_other",
+            filename="s_other",
+            prompt_type=PromptType.SYSTEM.value,
+            order=0
+        )
 
-        self.session.add_all([p1, p2, p3])
+        self.session.add_all([p1, p2, p3, p4])
         self.session.commit()
 
-        sys_prompts = self.repo.get_system_prompts()
+        sys_prompts = self.repo.get_system_prompts(self.company.id)
 
         assert len(sys_prompts) == 2
         # Verify ordering

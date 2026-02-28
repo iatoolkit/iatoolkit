@@ -59,7 +59,7 @@ class ContextBuilderService:
         user_profile = self.profile_service.get_profile_by_identifier(company_short_name, user_identifier)
 
         # 2. Render the base system prompt (iatoolkit standard)
-        system_prompt_template = self.prompt_service.get_system_prompt()
+        system_prompt_template = self.prompt_service.get_system_prompt(company.id)
         rendered_system_prompt = self.util.render_prompt_from_string(
             template_string=system_prompt_template,
             question=None,
