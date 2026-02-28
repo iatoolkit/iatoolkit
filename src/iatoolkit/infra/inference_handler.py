@@ -22,6 +22,19 @@ from transformers import (
 )
 
 class EndpointHandler:
+    TEXT_EMBEDDING_MODEL_HINTS = (
+        "minilm",
+        "bge",
+        "e5",
+        "gte",
+        "mpnet",
+        "instructor",
+        "nomic-embed",
+        "jina-embeddings",
+        "snowflake-arctic-embed",
+        "stella",
+    )
+
     def __init__(self, path: str = ""):
         self.current_model_id = None
         self.model_instance = None
@@ -37,6 +50,15 @@ class EndpointHandler:
             self.device = "cpu"
             self.dtype = torch.float32 # CPU = Compatible
             logging.info("Handler initialized on CPU with float32")
+
+    @classmethod
+    def _is_text_embedding_model(cls, model_id: str) -> bool:
+        if not isinstance(model_id, str):
+            return False
+        model_lower = model_id.lower()
+        if "clip" in model_lower:
+            return False
+        return any(hint in model_lower for hint in cls.TEXT_EMBEDDING_MODEL_HINTS)
 
     def _clean_memory(self):
         if self.model_instance is not None:
@@ -62,13 +84,13 @@ class EndpointHandler:
         self._clean_memory()
 
         try:
-            # CLIP, MiniLM, Whisper...
+            # CLIP, text embeddings, Whisper...
             if "clip" in model_id.lower():
                 self.processor_instance = CLIPProcessor.from_pretrained(model_id)
                 self.model_instance = CLIPModel.from_pretrained(model_id).to(self.device)
                 self.model_instance.eval()
 
-            elif "minilm" in model_id.lower():
+            elif self._is_text_embedding_model(model_id):
                 self.processor_instance = AutoTokenizer.from_pretrained(model_id)
                 self.model_instance = AutoModel.from_pretrained(model_id).to(self.device)
                 self.model_instance.eval()
@@ -131,6 +153,9 @@ class EndpointHandler:
                 if self.device == "cuda":
                     self.pipeline_instance.enable_model_cpu_offload()
 
+            else:
+                raise ValueError(f"No handler logic defined for model: {model_id}")
+
             self.current_model_id = model_id
             logging.info(f"Model {model_id} loaded successfully.")
 
@@ -163,17 +188,33 @@ class EndpointHandler:
         vec = emb[0].cpu().tolist()
         return {"embedding": vec}
 
-    def _handle_minilm(self, inputs: dict) -> dict:
+    def _handle_text_embedding(self, inputs: dict) -> dict:
         text = inputs.get("text")
-        encoded_input = self.processor_instance(text, padding=True, truncation=True, return_tensors='pt').to(self.device)
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError("Expected inputs.text for text embedding generation.")
+
+        encoded_input = self.processor_instance(
+            text,
+            padding=True,
+            truncation=True,
+            return_tensors='pt'
+        ).to(self.device)
         with torch.no_grad():
             model_output = self.model_instance(**encoded_input)
+
         token_embeddings = model_output[0]
         attention_mask = encoded_input['attention_mask']
         input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
-        sentence_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(input_mask_expanded.sum(1), min=1e-9)
+        sentence_embeddings = torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(
+            input_mask_expanded.sum(1),
+            min=1e-9
+        )
         sentence_embeddings = torch.nn.functional.normalize(sentence_embeddings, p=2, dim=1)
         return {"embedding": sentence_embeddings[0].cpu().tolist()}
+
+    # Backward-compatible alias: existing tests/callers may still refer to _handle_minilm
+    def _handle_minilm(self, inputs: dict) -> dict:
+        return self._handle_text_embedding(inputs)
 
     def _handle_tts(self, inputs: dict) -> dict:
         text = inputs.get("text")
@@ -218,8 +259,8 @@ class EndpointHandler:
         try:
             if "clip" in model_lower:
                 return self._handle_clip(inputs)
-            elif "minilm" in model_lower:
-                return self._handle_minilm(inputs)
+            elif self._is_text_embedding_model(requested_model_id):
+                return self._handle_text_embedding(inputs)
             elif any(x in model_lower for x in ["stable-diffusion", "tiny-sd", "sd"]):
                 return self._handle_text_to_image(inputs)
             elif any(x in model_lower for x in ["mms", "speech", "tts", "vibevoice"]):

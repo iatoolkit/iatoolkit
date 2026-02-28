@@ -112,6 +112,7 @@ class IAToolkit:
         self._setup_cli_commands()
         self._setup_request_globals()
         self._setup_context_processors()
+        self._sync_system_tools_on_boot()
 
         # register data sources
         if start:
@@ -127,6 +128,24 @@ class IAToolkit:
         configuration_service = self._injector.get(ConfigurationService)
         for company in get_registered_companies():
             configuration_service.register_data_sources(company)
+
+    def _sync_system_tools_on_boot(self):
+        from iatoolkit.services.tool_service import ToolService
+
+        try:
+            tool_service = self._injector.get(ToolService)
+            result = tool_service.sync_system_tools_if_catalog_changed()
+            data = (result or {}).get("data", {})
+            logging.info(
+                "System tools boot sync: status=%s reason=%s source=%s upserted=%s deactivated=%s",
+                data.get("status", "unknown"),
+                data.get("reason", "-"),
+                data.get("catalog_source", "-"),
+                data.get("upserted_tools", 0),
+                data.get("deactivated_tools", 0),
+            )
+        except Exception as exc:
+            logging.warning("⚠️ Unable to sync system tools on boot: %s", exc)
 
     def _get_config_value(self, key: str, default=None):
         # get a value from the config dict or the environment variable

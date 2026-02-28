@@ -114,6 +114,36 @@ class TestLLMQueryRepo:
         assert result.parameters == {'a': 2}
         assert result.tool_type == Tool.TYPE_INFERENCE
 
+    def test_create_or_update_tool_keeps_existing_is_active_when_not_provided(self):
+        tool = Tool(
+            name="func_update_active",
+            company_id=self.company.id,
+            description="Original",
+            parameters={'a': 1},
+            tool_type=Tool.TYPE_NATIVE,
+            source=Tool.SOURCE_USER,
+            is_active=True,
+        )
+        self.session.add(tool)
+        self.session.commit()
+
+        updated_tool_data = Tool(
+            name="func_update_active",
+            company_id=self.company.id,
+            description="Updated",
+            parameters={'a': 2},
+            tool_type=Tool.TYPE_NATIVE,
+            source=Tool.SOURCE_USER,
+            is_active=None,
+        )
+
+        result = self.repo.create_or_update_tool(updated_tool_data)
+        self.session.commit()
+
+        assert result.id == tool.id
+        assert result.description == "Updated"
+        assert result.is_active is True
+
     def test_create_or_update_http_tool_persists_execution_config(self):
         """HTTP tools should persist execution_config on create and update."""
         new_tool = Tool(

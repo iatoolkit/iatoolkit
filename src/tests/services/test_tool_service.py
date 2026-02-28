@@ -55,21 +55,23 @@ class TestToolService:
         """
         GIVEN a call to register_system_tools
         WHEN executed
-        THEN it should delete old system tools, create new ones with TYPE_SYSTEM, and commit.
+        THEN it should validate handlers, upsert configured tools, and commit.
         """
+        self.service.system_handlers["sys_1"] = MagicMock()
+
         # Mock the system definitions imported in service
         with patch('iatoolkit.services.tool_service.SYSTEM_TOOLS_DEFINITIONS', [{'function_name': 'sys_1', 'description': 'd', 'parameters': {}}]):
             # Act
             self.service.register_system_tools()
 
             # Assert
-            self.mock_llm_query_repo.delete_system_tools.assert_called_once()
             self.mock_llm_query_repo.create_or_update_tool.assert_called_once()
 
             # Check args
             created_tool = self.mock_llm_query_repo.create_or_update_tool.call_args[0][0]
             assert created_tool.tool_type == Tool.TYPE_SYSTEM
             assert created_tool.source == Tool.SOURCE_SYSTEM
+            assert created_tool.is_active is True
 
             self.mock_llm_query_repo.commit.assert_called_once()
 
@@ -86,15 +88,86 @@ class TestToolService:
         WHEN register_system_tools is executed
         THEN it should rollback and raise IAToolkitException.
         """
+        self.service.system_handlers["sys_1"] = MagicMock()
+
         # Arrange
-        self.mock_llm_query_repo.delete_system_tools.side_effect = Exception("DB Error")
+        self.mock_llm_query_repo.create_or_update_tool.side_effect = Exception("DB Error")
 
         # Act & Assert
         with pytest.raises(IAToolkitException) as excinfo:
-            self.service.register_system_tools()
+            with patch('iatoolkit.services.tool_service.SYSTEM_TOOLS_DEFINITIONS', [{'function_name': 'sys_1', 'description': 'd', 'parameters': {}}]):
+                self.service.register_system_tools()
 
         assert excinfo.value.error_type == IAToolkitException.ErrorType.DATABASE_ERROR
         self.mock_llm_query_repo.rollback.assert_called_once()
+
+    def test_register_system_tools_raises_if_handler_missing(self):
+        with pytest.raises(IAToolkitException) as excinfo:
+            with patch('iatoolkit.services.tool_service.SYSTEM_TOOLS_DEFINITIONS', [{'function_name': 'sys_1', 'description': 'd', 'parameters': {}}]):
+                self.service.register_system_tools()
+
+        assert excinfo.value.error_type == IAToolkitException.ErrorType.SYSTEM_ERROR
+        self.mock_llm_query_repo.create_or_update_tool.assert_not_called()
+        self.mock_llm_query_repo.rollback.assert_called_once()
+
+    def test_sync_system_tools_if_catalog_changed_skips_when_no_drift(self):
+        existing_tool = MagicMock(spec=Tool)
+        existing_tool.name = "iat_sql_query"
+        existing_tool.description = "d"
+        existing_tool.parameters = {"type": "object"}
+        existing_tool.tool_type = Tool.TYPE_SYSTEM
+        existing_tool.company_id = None
+        existing_tool.source = Tool.SOURCE_SYSTEM
+        existing_tool.is_active = True
+        self.mock_llm_query_repo.list_system_tools.return_value = [existing_tool]
+        self.service.system_handlers["iat_sql_query"] = MagicMock()
+
+        definitions = [{"function_name": "iat_sql_query", "description": "d", "parameters": {"type": "object"}}]
+        with patch("iatoolkit.services.tool_service.SYSTEM_TOOLS_DEFINITIONS", definitions), \
+             patch("iatoolkit.services.tool_service.get_system_tools_catalog_source", return_value="yaml"):
+            result = self.service.sync_system_tools_if_catalog_changed()
+
+        assert result["data"]["status"] == "skipped"
+        assert result["data"]["reason"] == "no_changes"
+        self.mock_llm_query_repo.create_or_update_tool.assert_not_called()
+        self.mock_llm_query_repo.commit.assert_not_called()
+
+    def test_sync_system_tools_if_catalog_changed_upserts_and_deactivates_removed(self):
+        changed_tool = MagicMock(spec=Tool)
+        changed_tool.name = "iat_sql_query"
+        changed_tool.description = "old"
+        changed_tool.parameters = {"type": "object"}
+        changed_tool.tool_type = Tool.TYPE_SYSTEM
+        changed_tool.company_id = None
+        changed_tool.source = Tool.SOURCE_SYSTEM
+        changed_tool.is_active = True
+
+        removed_tool = MagicMock(spec=Tool)
+        removed_tool.name = "legacy_system_tool"
+        removed_tool.description = "legacy"
+        removed_tool.parameters = {"type": "object"}
+        removed_tool.tool_type = Tool.TYPE_SYSTEM
+        removed_tool.company_id = None
+        removed_tool.source = Tool.SOURCE_SYSTEM
+        removed_tool.is_active = True
+
+        self.mock_llm_query_repo.list_system_tools.return_value = [changed_tool, removed_tool]
+        self.service.system_handlers["iat_sql_query"] = MagicMock()
+
+        definitions = [{"function_name": "iat_sql_query", "description": "new", "parameters": {"type": "object"}}]
+        with patch("iatoolkit.services.tool_service.SYSTEM_TOOLS_DEFINITIONS", definitions), \
+             patch("iatoolkit.services.tool_service.get_system_tools_catalog_source", return_value="yaml"):
+            result = self.service.sync_system_tools_if_catalog_changed()
+
+        assert result["data"]["status"] == "synced"
+        assert result["data"]["upserted_tools"] == 1
+        assert result["data"]["deactivated_tools"] == 1
+        self.mock_llm_query_repo.create_or_update_tool.assert_called_once()
+        updated_tool = self.mock_llm_query_repo.create_or_update_tool.call_args[0][0]
+        assert updated_tool.name == "iat_sql_query"
+        assert updated_tool.description == "new"
+        assert removed_tool.is_active is False
+        self.mock_llm_query_repo.commit.assert_called_once()
 
     def test_sync_company_tools_logic(self):
         """

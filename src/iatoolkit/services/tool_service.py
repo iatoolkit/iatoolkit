@@ -18,7 +18,10 @@ from iatoolkit.services.sql_service import SqlService
 from iatoolkit.services.excel_service import ExcelService
 from iatoolkit.services.mail_service import MailService
 from iatoolkit.services.visual_tool_service import VisualToolService
-from iatoolkit.services.system_tools import SYSTEM_TOOLS_DEFINITIONS
+from iatoolkit.services.system_tools import (
+    SYSTEM_TOOLS_DEFINITIONS,
+    get_system_tools_catalog_source,
+)
 from iatoolkit import current_iatoolkit
 
 
@@ -488,10 +491,9 @@ class ToolService:
         Called by the init_company cli command, the IAToolkit bootstrap process.
         """
         try:
-            # delete all system tools
-            self.llm_query_repo.delete_system_tools()
+            self._validate_configured_system_handlers(SYSTEM_TOOLS_DEFINITIONS)
 
-            # create new system tools
+            # Upsert configured system tools. This is idempotent and avoids destructive deletes.
             for function in SYSTEM_TOOLS_DEFINITIONS:
                 new_tool = Tool(
                     company_id=None,
@@ -499,11 +501,137 @@ class ToolService:
                     description=function['description'],
                     parameters=function['parameters'],
                     tool_type=Tool.TYPE_SYSTEM,
-                    source=Tool.SOURCE_SYSTEM
+                    source=Tool.SOURCE_SYSTEM,
+                    is_active=True,
                 )
                 self.llm_query_repo.create_or_update_tool(new_tool)
 
             self.llm_query_repo.commit()
+        except IAToolkitException:
+            self.llm_query_repo.rollback()
+            raise
+        except Exception as e:
+            self.llm_query_repo.rollback()
+            raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR, str(e))
+
+    def _validate_configured_system_handlers(self, definitions: list[dict]) -> None:
+        # Validate upfront that all configured system tools have a local handler.
+        # SYSTEM tools must be executed internally (never over HTTP).
+        for function in definitions:
+            function_name = function.get("function_name")
+            if not function_name:
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "Invalid system tool definition: missing function_name.",
+                )
+            if not self.get_system_handler(function_name):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.SYSTEM_ERROR,
+                    f"Handler for system tool '{function_name}' not found.",
+                )
+
+    @staticmethod
+    def _system_tool_matches_definition(tool: Tool, definition: dict) -> bool:
+        return (
+            tool is not None
+            and tool.tool_type == Tool.TYPE_SYSTEM
+            and tool.company_id is None
+            and tool.source == Tool.SOURCE_SYSTEM
+            and bool(tool.is_active)
+            and tool.description == definition.get("description")
+            and (tool.parameters or {}) == (definition.get("parameters") or {})
+        )
+
+    def _system_tools_catalog_has_drift(
+        self,
+        definitions: list[dict],
+        existing_by_name: dict[str, Tool],
+    ) -> bool:
+        desired_names = {str(item.get("function_name") or "").strip() for item in definitions}
+        desired_names.discard("")
+
+        for name, tool in existing_by_name.items():
+            if name not in desired_names and bool(tool.is_active):
+                return True
+
+        for item in definitions:
+            function_name = str(item.get("function_name") or "").strip()
+            if not function_name:
+                continue
+            existing_tool = existing_by_name.get(function_name)
+            if not self._system_tool_matches_definition(existing_tool, item):
+                return True
+
+        return False
+
+    def sync_system_tools_if_catalog_changed(self) -> dict:
+        definitions = SYSTEM_TOOLS_DEFINITIONS or []
+        catalog_source = get_system_tools_catalog_source()
+
+        try:
+            self._validate_configured_system_handlers(definitions)
+            existing_system_tools = self.llm_query_repo.list_system_tools() or []
+            existing_by_name = {tool.name: tool for tool in existing_system_tools if tool and tool.name}
+
+            if not self._system_tools_catalog_has_drift(definitions, existing_by_name):
+                return {
+                    "data": {
+                        "status": "skipped",
+                        "reason": "no_changes",
+                        "catalog_source": catalog_source,
+                        "upserted_tools": 0,
+                        "deactivated_tools": 0,
+                    }
+                }
+
+            upserted_tools = 0
+            for function in definitions:
+                function_name = str(function.get("function_name") or "").strip()
+                if not function_name:
+                    continue
+                existing_tool = existing_by_name.get(function_name)
+                if self._system_tool_matches_definition(existing_tool, function):
+                    continue
+
+                new_tool = Tool(
+                    company_id=None,
+                    name=function_name,
+                    description=function.get("description"),
+                    parameters=function.get("parameters") or {},
+                    tool_type=Tool.TYPE_SYSTEM,
+                    source=Tool.SOURCE_SYSTEM,
+                    is_active=True,
+                )
+                self.llm_query_repo.create_or_update_tool(new_tool)
+                upserted_tools += 1
+
+            desired_names = {str(item.get("function_name") or "").strip() for item in definitions}
+            desired_names.discard("")
+            deactivated_tools = 0
+            for name, tool in existing_by_name.items():
+                if name in desired_names or not bool(tool.is_active):
+                    continue
+                tool.is_active = False
+                deactivated_tools += 1
+
+            self.llm_query_repo.commit()
+            logging.info(
+                "System tools sync applied: upserted=%s deactivated=%s",
+                upserted_tools,
+                deactivated_tools,
+            )
+            return {
+                "data": {
+                    "status": "synced",
+                    "reason": "catalog_drift",
+                    "catalog_source": catalog_source,
+                    "upserted_tools": upserted_tools,
+                    "deactivated_tools": deactivated_tools,
+                }
+            }
+        except IAToolkitException:
+            self.llm_query_repo.rollback()
+            raise
         except Exception as e:
             self.llm_query_repo.rollback()
             raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR, str(e))

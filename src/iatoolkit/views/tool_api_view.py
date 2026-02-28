@@ -218,5 +218,5 @@ class ToolApiView(MethodView):
 
     @staticmethod
     def _can_edit_system_tools(auth_result: dict) -> bool:
-        role = (auth_result.get("user_role") or "").lower()
-        return role in {"admin", "owner"}
+        _ = auth_result
+        return False

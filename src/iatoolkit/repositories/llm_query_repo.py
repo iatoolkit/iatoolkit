@@ -66,6 +66,15 @@ class LLMQueryRepo:
             name=tool_name
         ).first()
 
+    def list_system_tools(self) -> list[Tool]:
+        return (
+            self.session.query(Tool)
+            .filter(Tool.tool_type == Tool.TYPE_SYSTEM)
+            .filter(Tool.company_id.is_(None))
+            .order_by(Tool.name.asc())
+            .all()
+        )
+
     def get_tool_by_id(self, company_id: int, tool_id: int, include_system: bool = False) -> Tool | None:
         query = self.session.query(Tool).filter(Tool.id == tool_id)
         if include_system:
@@ -106,6 +115,8 @@ class LLMQueryRepo:
             tool.execution_config = new_tool.execution_config
             tool.tool_type = new_tool.tool_type
             tool.source = new_tool.source
+            if new_tool.is_active is not None:
+                tool.is_active = new_tool.is_active
         else:
             self.session.add(new_tool)
             tool = new_tool

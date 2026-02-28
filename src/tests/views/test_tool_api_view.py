@@ -149,8 +149,8 @@ class TestToolApiView:
             actor_identifier=None,
         )
 
-    def test_update_tool_system_allowed_for_admin_role(self):
-        """PUT should pass allow_system_update=True for admin/owner roles."""
+    def test_update_tool_system_still_blocked_for_admin_role(self):
+        """PUT should keep allow_system_update=False even for admin/owner roles."""
         self.mock_auth.verify.return_value = {"success": True, "status_code": 200, "user_role": "admin"}
         payload = {"description": "updated"}
         self.mock_tool_service.update_tool.return_value = {"id": 1, "description": "updated"}
@@ -162,7 +162,7 @@ class TestToolApiView:
             self.MOCK_COMPANY,
             1,
             payload,
-            allow_system_update=True,
+            allow_system_update=False,
             actor_identifier=None,
         )
 
