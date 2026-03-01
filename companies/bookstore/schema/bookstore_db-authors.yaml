@@ -1,0 +1,15 @@
+
+authors:
+  description: "Information about book authors."
+  columns:
+    author_id:
+      type: INTEGER
+      pk: true
+    name:
+      type: VARCHAR(255)
+      description: "Full name of the author."
+    country:
+      type: VARCHAR(100)
+    bio:
+      type: TEXT
+      description: "Short biography."

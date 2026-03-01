@@ -1,0 +1,17 @@
+
+Context: The user wants a monthly sales report.
+
+The month to analyze is: {{month}}
+
+### **Output Format (OBLIGATORIA)**
+- **Container:** Wrap ALL sections in `<div class="ficha-categorias">`.
+- **Sections:** Wrap EACH section in `<div class="categoria">`.
+
+### **Section: Monthly Overview**
+Give me the total revenue (sum of order total_amount) and the total number of orders for the specified month.
+
+### **Section: Top 5 Best-Selling Books**
+List the top 5 books by quantity sold in that month. Columns: Book Title, Author Name, Quantity Sold, Total Revenue.
+
+### **Section: Sales by Genre**
+Present a table showing total revenue per genre for that month.
