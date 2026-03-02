@@ -185,6 +185,7 @@ class QueryService:
     def _ensure_valid_history(self, company,
                               user_identifier: str,
                               effective_model: str,
+                              question: str,
                               user_turn_prompt: str,
                               ignore_history: bool
                               ) -> tuple[Optional[HistoryHandle], Optional[dict]]:
@@ -211,7 +212,11 @@ class QueryService:
             logging.warning(f"No valid history for {company.short_name}/{user_identifier}. Rebuilding context...")
 
             # try to rebuild the context
-            self.prepare_context(company_short_name=company.short_name, user_identifier=user_identifier)
+            self.prepare_context(
+                company_short_name=company.short_name,
+                user_identifier=user_identifier,
+                query_text=question,
+            )
             self.set_context_for_llm(company_short_name=company.short_name, user_identifier=user_identifier,
                                      model=effective_model)
 
@@ -264,7 +269,12 @@ class QueryService:
 
         return response
 
-    def prepare_context(self, company_short_name: str, user_identifier: str) -> dict:
+    def prepare_context(
+        self,
+        company_short_name: str,
+        user_identifier: str,
+        query_text: str | None = None,
+    ) -> dict:
         """
         Prepares the static context (Company + User Profile + Tools) and checks if it needs to be rebuilt.
         Delegates construction to ContextBuilderService.
@@ -273,9 +283,14 @@ class QueryService:
             return {'rebuild_needed': True, 'error': 'Invalid user identifier'}
 
         # Delegate context construction to the builder
-        final_system_context, user_profile = self.context_builder.build_system_context(
-            company_short_name, user_identifier
+        context_build_result = self.context_builder.build_system_context(
+            company_short_name, user_identifier, query_text=query_text
         )
+        if isinstance(context_build_result, tuple) and len(context_build_result) == 3:
+            final_system_context, user_profile, selected_system_prompt_keys = context_build_result
+        else:
+            final_system_context, user_profile = context_build_result
+            selected_system_prompt_keys = []
 
         if not final_system_context:
             logging.error(f"Failed to build system context for {company_short_name}")
@@ -284,6 +299,11 @@ class QueryService:
         # save the user information in the session context
         # it's needed for the jinja predefined prompts (filtering)
         self.session_context.save_profile_data(company_short_name, user_identifier, user_profile)
+        self.session_context.save_selected_system_prompt_keys(
+            company_short_name,
+            user_identifier,
+            selected_system_prompt_keys if isinstance(selected_system_prompt_keys, list) else [],
+        )
 
         # calculate the context version using the builder
         current_version = self.context_builder.compute_context_version(final_system_context)
@@ -401,6 +421,7 @@ class QueryService:
                 company=company,
                 user_identifier=user_identifier,
                 effective_model=effective_model,
+                question=effective_question,
                 user_turn_prompt=user_turn_prompt,
                 ignore_history=ignore_history
             )
@@ -417,6 +438,41 @@ class QueryService:
                 question=effective_question,
                 tools=tools,
             )
+            selected_system_prompt_keys = []
+            try:
+                selected_system_prompt_keys = self.session_context.get_selected_system_prompt_keys(
+                    company_short_name,
+                    user_identifier,
+                )
+            except Exception as e:
+                logging.debug(
+                    "Could not read selected system prompt keys from session telemetry cache (company='%s'): %s",
+                    company_short_name,
+                    e,
+                )
+
+            if not selected_system_prompt_keys:
+                try:
+                    selected_system_prompt_keys = self.context_builder.get_selected_system_prompt_keys(
+                        company,
+                        query_text=effective_question,
+                    )
+                    self.session_context.save_selected_system_prompt_keys(
+                        company_short_name,
+                        user_identifier,
+                        selected_system_prompt_keys,
+                    )
+                except Exception as e:
+                    logging.debug(
+                        "Could not resolve selected system prompt keys for telemetry (company='%s'): %s",
+                        company_short_name,
+                        e,
+                    )
+                    selected_system_prompt_keys = []
+
+            if selected_system_prompt_keys:
+                tool_router_metrics = dict(tool_router_metrics or {})
+                tool_router_metrics["selected_system_prompt_keys"] = selected_system_prompt_keys
 
             # openai structured output instructions
             output_schema = {}

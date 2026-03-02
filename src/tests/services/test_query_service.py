@@ -70,8 +70,10 @@ class TestQueryService:
         self.mock_user_profile = {"id": MOCK_LOCAL_USER_ID, "name": "Test User"}
 
         self.mock_context_builder.build_system_context.return_value = (
-            self.mock_final_context, self.mock_user_profile
+            self.mock_final_context, self.mock_user_profile, ["query_main", "format_styles"]
         )
+        self.mock_context_builder.get_selected_system_prompt_keys.return_value = ["query_main", "format_styles"]
+        self.mock_session_context.get_selected_system_prompt_keys.return_value = ["query_main", "format_styles"]
         self.mock_context_builder.compute_context_version.return_value = "v_hash_123"
 
     # --- Tests para prepare_context ---
@@ -87,7 +89,7 @@ class TestQueryService:
 
         # 1. Verifica delegación al builder
         self.mock_context_builder.build_system_context.assert_called_once_with(
-            MOCK_COMPANY_SHORT_NAME, MOCK_LOCAL_USER_ID
+            MOCK_COMPANY_SHORT_NAME, MOCK_LOCAL_USER_ID, query_text=None
         )
         self.mock_context_builder.compute_context_version.assert_called_once_with(
             self.mock_final_context
@@ -96,6 +98,9 @@ class TestQueryService:
         # 2. Verifica interacción con session context
         self.mock_session_context.save_profile_data.assert_called_once_with(
             MOCK_COMPANY_SHORT_NAME, MOCK_LOCAL_USER_ID, self.mock_user_profile
+        )
+        self.mock_session_context.save_selected_system_prompt_keys.assert_called_once_with(
+            MOCK_COMPANY_SHORT_NAME, MOCK_LOCAL_USER_ID, ["query_main", "format_styles"]
         )
         self.mock_session_context.save_prepared_context.assert_called_once_with(
             MOCK_COMPANY_SHORT_NAME, MOCK_LOCAL_USER_ID, self.mock_final_context, mock_version
@@ -198,6 +203,14 @@ class TestQueryService:
         assert kwargs['context'] == user_prompt
         assert kwargs['question'] == effective_q
         assert kwargs['previous_response_id'] == 'existing_id'
+        assert kwargs["execution_metadata"]["tool_router"]["selected_system_prompt_keys"] == [
+            "query_main", "format_styles"
+        ]
+        self.mock_session_context.get_selected_system_prompt_keys.assert_called_once_with(
+            MOCK_COMPANY_SHORT_NAME,
+            MOCK_LOCAL_USER_ID,
+        )
+        self.mock_context_builder.get_selected_system_prompt_keys.assert_not_called()
 
         # Verificar actualización de historia
         self.mock_history_manager.update_history.assert_called_once()
@@ -298,3 +311,34 @@ class TestQueryService:
         invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
         assert [tool["name"] for tool in invoke_kwargs["tools"]] == ["tool_one", "tool_two"]
         assert invoke_kwargs["execution_metadata"]["tool_router"]["fallback_reason"] == "hook_error"
+
+    def test_llm_query_resolves_selected_system_prompt_keys_from_builder_when_session_cache_is_empty(self):
+        self.mock_session_context.get_selected_system_prompt_keys.return_value = []
+        self.mock_tool_service.get_tools_for_llm.return_value = [
+            {"type": "function", "name": "tool_one", "description": "one", "parameters": {}, "strict": True},
+        ]
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "question", [])
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            question="question",
+            model='gpt-test'
+        )
+
+        self.mock_context_builder.get_selected_system_prompt_keys.assert_called_once_with(
+            self.mock_company,
+            query_text="question",
+        )
+        self.mock_session_context.save_selected_system_prompt_keys.assert_called_with(
+            MOCK_COMPANY_SHORT_NAME,
+            MOCK_LOCAL_USER_ID,
+            ["query_main", "format_styles"],
+        )

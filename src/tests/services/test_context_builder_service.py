@@ -46,29 +46,38 @@ class TestContextBuilderService:
         # Arrange
         mock_profile = {"name": "John Doe"}
         self.mock_profile_service.get_profile_by_identifier.return_value = mock_profile
-        self.mock_prompt_service.get_system_prompt.return_value = "System Template"
+        self.mock_prompt_service.get_system_prompt_payload.return_value = {
+            "content": "System Template",
+            "selected_keys": ["query_main", "format_styles"],
+        }
         self.mock_tool_service.get_tools_for_llm.return_value = []
         self.mock_util.render_prompt_from_string.return_value = "Rendered System Prompt"
         self.mock_company_context.get_company_context.return_value = "DB Schema Context"
 
         # Act
-        context, profile = self.service.build_system_context(MOCK_COMPANY_SHORT_NAME, MOCK_USER_ID)
+        context, profile, selected_keys = self.service.build_system_context(MOCK_COMPANY_SHORT_NAME, MOCK_USER_ID)
 
         # Assert
         assert "DB Schema Context" in context
         assert "Rendered System Prompt" in context
         assert profile == mock_profile
+        assert selected_keys == ["query_main", "format_styles"]
         self.mock_util.render_prompt_from_string.assert_called_once()
-        self.mock_prompt_service.get_system_prompt.assert_called_once_with(1)
+        self.mock_prompt_service.get_system_prompt_payload.assert_called_once_with(
+            company_id=1,
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            query_text=None,
+        )
 
     def test_build_system_context_company_not_found(self):
         """Should return None if company does not exist."""
         self.mock_profile_repo.get_company_by_short_name.return_value = None
 
-        context, profile = self.service.build_system_context("unknown", MOCK_USER_ID)
+        context, profile, selected_keys = self.service.build_system_context("unknown", MOCK_USER_ID)
 
         assert context is None
         assert profile is None
+        assert selected_keys == []
 
     def test_build_user_turn_prompt_basic(self):
         """Should build a simple prompt with a direct question and no files."""

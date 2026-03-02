@@ -391,6 +391,7 @@ class ConfigurationService:
         prompt_list, categories_config = self._get_prompt_config(config)
 
         category_set = set(categories_config)
+        allowed_prompt_types = {"company", "agent"}
         for i, prompt in enumerate(prompt_list):
             prompt_name = prompt.get("name")
             if not prompt_name:
@@ -406,6 +407,12 @@ class ConfigurationService:
 
             prompt_cat = prompt.get("category")
             prompt_type = prompt.get("prompt_type", 'company').lower()
+            if prompt_type not in allowed_prompt_types:
+                add_error(
+                    f"prompts[{i}]",
+                    f"Unsupported prompt_type '{prompt_type}'. Must be one of: {sorted(allowed_prompt_types)}."
+                )
+                continue
             if prompt_type == 'company':
                 if not prompt_cat:
                     add_error(f"prompts[{i}]", "Missing required key: 'category'")

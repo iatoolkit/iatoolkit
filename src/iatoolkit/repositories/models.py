@@ -26,7 +26,6 @@ class DocumentStatus(str, enum.Enum):
     FAILED = "failed"
 
 class PromptType(str, enum.Enum):
-    SYSTEM = "system"
     COMPANY = "company"
     AGENT = "agent"
 
@@ -367,7 +366,7 @@ class PromptCategory(Base):
 
 
 class Prompt(Base):
-    """Represents a system or user-defined prompt template for the LLM."""
+    """Represents a user-defined prompt template for the LLM."""
     __tablename__ = 'iat_prompt'
 
     id = Column(Integer, primary_key=True, autoincrement=True)

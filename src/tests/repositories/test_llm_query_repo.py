@@ -239,7 +239,7 @@ class TestLLMQueryRepo:
             description="New Desc",
             filename="new.txt",
             order=10,
-            prompt_type=PromptType.SYSTEM.value,
+            prompt_type=PromptType.AGENT.value,
             custom_fields=[{'key': 'val'}]
         )
 
@@ -252,7 +252,7 @@ class TestLLMQueryRepo:
         assert result.description == "New Desc"
         assert result.filename == "new.txt"
         assert result.order == 10
-        assert result.prompt_type == PromptType.SYSTEM.value
+        assert result.prompt_type == PromptType.AGENT.value
         assert result.custom_fields == [{'key': 'val'}]
 
     def test_create_prompt_category(self):
@@ -490,8 +490,8 @@ class TestLLMQueryRepo:
         p2 = Prompt(name="p2", company_id=other_company.id, description="d2", filename="f2",
                     prompt_type=PromptType.COMPANY.value)
 
-        # System prompt (should be filtered out by logic usually, but strict company filter applies first)
-        p3 = Prompt(name="sys", description="sys", filename="sys", prompt_type=PromptType.SYSTEM.value)
+        # Agent prompt (should be filtered out by get_prompts, which only returns company prompts)
+        p3 = Prompt(name="agent_prompt", description="sys", filename="sys", prompt_type=PromptType.AGENT.value)
 
         self.session.add_all([p1, p2, p3])
         self.session.commit()
@@ -501,49 +501,59 @@ class TestLLMQueryRepo:
         assert len(prompts) == 1
         assert prompts[0].name == "p1"
 
-    def test_get_system_prompts(self):
-        """Test get_system_prompts filters correctly."""
+    def test_get_prompts_include_all_excludes_legacy_system_type(self):
         p1 = Prompt(
-            name="s1",
+            name="company_prompt",
             company_id=self.company.id,
-            description="s1",
-            filename="s1",
-            prompt_type=PromptType.SYSTEM.value,
-            order=2
+            description="d1",
+            filename="f1",
+            prompt_type=PromptType.COMPANY.value,
         )
         p2 = Prompt(
-            name="s2",
+            name="agent_prompt",
             company_id=self.company.id,
-            description="s2",
-            filename="s2",
-            prompt_type=PromptType.SYSTEM.value,
-            order=1
+            description="d2",
+            filename="f2",
+            prompt_type=PromptType.AGENT.value,
         )
-        # Non-system prompt
-        p3 = Prompt(name="c1", company_id=self.company.id, description="c1", filename="c1",
-                    prompt_type=PromptType.COMPANY.value)
-        # System prompt for another company (must be excluded)
-        other_company = Company(name="Other", short_name="other-system")
-        self.session.add(other_company)
-        self.session.commit()
-        p4 = Prompt(
-            name="s_other",
-            company_id=other_company.id,
-            description="s_other",
-            filename="s_other",
-            prompt_type=PromptType.SYSTEM.value,
-            order=0
+        p3 = Prompt(
+            name="legacy_system_prompt",
+            company_id=self.company.id,
+            description="legacy",
+            filename="f3",
+            prompt_type="system",
         )
-
-        self.session.add_all([p1, p2, p3, p4])
+        self.session.add_all([p1, p2, p3])
         self.session.commit()
 
-        sys_prompts = self.repo.get_system_prompts(self.company.id)
+        prompts = self.repo.get_prompts(self.company, include_all=True)
+        prompt_names = {p.name for p in prompts}
 
-        assert len(sys_prompts) == 2
-        # Verify ordering
-        assert sys_prompts[0].name == "s2"
-        assert sys_prompts[1].name == "s1"
+        assert prompt_names == {"company_prompt", "agent_prompt"}
+
+    def test_delete_prompts_by_type(self):
+        p1 = Prompt(
+            name="legacy_system_prompt",
+            company_id=self.company.id,
+            description="legacy",
+            filename="f1",
+            prompt_type="system",
+        )
+        p2 = Prompt(
+            name="company_prompt",
+            company_id=self.company.id,
+            description="active",
+            filename="f2",
+            prompt_type=PromptType.COMPANY.value,
+        )
+        self.session.add_all([p1, p2])
+        self.session.commit()
+
+        deleted = self.repo.delete_prompts_by_type(self.company.id, ["system"])
+        remaining = self.repo.get_prompts(self.company, include_all=True)
+
+        assert deleted == 1
+        assert {p.name for p in remaining} == {"company_prompt"}
 
     def test_get_prompt_by_name(self):
         """Test get_prompt_by_name returns the correct prompt."""

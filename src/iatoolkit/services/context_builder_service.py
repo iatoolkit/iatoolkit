@@ -45,21 +45,48 @@ class ContextBuilderService:
         self.prompt_service = prompt_service
         self.util = util
 
-    def build_system_context(self, company_short_name: str, user_identifier: str) -> Tuple[Optional[str], Optional[dict]]:
+    def get_selected_system_prompt_keys(self, company: Company, query_text: str | None = None) -> list[str]:
+        if not company:
+            return []
+
+        payload = self.prompt_service.get_system_prompt_payload(
+            company_id=company.id,
+            company_short_name=company.short_name,
+            query_text=query_text,
+        )
+        selected_keys = payload.get("selected_keys")
+        if not isinstance(selected_keys, list):
+            return []
+        return [key for key in selected_keys if isinstance(key, str) and key.strip()]
+
+    def build_system_context(
+        self,
+        company_short_name: str,
+        user_identifier: str,
+        query_text: str | None = None,
+    ) -> Tuple[Optional[str], Optional[dict], list[str]]:
         """
         Builds the complete System Prompt including company context, user profile, and available tools.
         Returns:
-            Tuple(final_context_string, user_profile_dict)
+            Tuple(final_context_string, user_profile_dict, selected_system_prompt_keys)
         """
         company = self.profile_repo.get_company_by_short_name(company_short_name)
         if not company:
-            return None, None
+            return None, None, []
 
         # 1. Get user profile
         user_profile = self.profile_service.get_profile_by_identifier(company_short_name, user_identifier)
 
         # 2. Render the base system prompt (iatoolkit standard)
-        system_prompt_template = self.prompt_service.get_system_prompt(company.id)
+        system_prompt_payload = self.prompt_service.get_system_prompt_payload(
+            company_id=company.id,
+            company_short_name=company.short_name,
+            query_text=query_text,
+        )
+        system_prompt_template = system_prompt_payload.get("content", "")
+        selected_system_prompt_keys = system_prompt_payload.get("selected_keys")
+        if not isinstance(selected_system_prompt_keys, list):
+            selected_system_prompt_keys = []
         rendered_system_prompt = self.util.render_prompt_from_string(
             template_string=system_prompt_template,
             question=None,
@@ -74,7 +101,7 @@ class ContextBuilderService:
         # 4. Merge contexts
         final_system_context = f"{company_specific_context}\n{rendered_system_prompt}"
 
-        return final_system_context, user_profile
+        return final_system_context, user_profile, selected_system_prompt_keys
 
     def build_user_turn_prompt(self,
                                company: Company,

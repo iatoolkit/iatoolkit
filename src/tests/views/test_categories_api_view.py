@@ -9,7 +9,7 @@ from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.knowledge_base_service import KnowledgeBaseService
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
-from iatoolkit.repositories.models import PromptType, Company, PromptCategory, Tool
+from iatoolkit.repositories.models import Company, PromptCategory, Tool
 from iatoolkit.services.prompt_service import PromptService
 
 class TestCategoriesView:
@@ -75,7 +75,7 @@ class TestCategoriesView:
         data = response.json
 
         assert "prompt_types" in data
-        assert PromptType.COMPANY.value in data["prompt_types"]
+        assert data["prompt_types"] == ["company", "agent"]
 
         assert "prompt_categories" in data
         assert "Sales" in data["prompt_categories"]

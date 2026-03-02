@@ -134,10 +134,12 @@ class LLMQueryRepo:
         return self.session.query(Prompt).filter_by(company_id=company.id, name=prompt_name).first()
 
     def get_prompts(self, company: Company, include_all: bool = False) -> list[Prompt]:
+        editable_types = [PromptType.COMPANY.value, PromptType.AGENT.value]
         if include_all:
             # Include all prompts (for the prompt admin dashboard)
             return self.session.query(Prompt).filter(
                 Prompt.company_id == company.id,
+                Prompt.prompt_type.in_(editable_types),
             ).all()
         else:
             # Only active company prompts (default behavior for end users)
@@ -147,12 +149,20 @@ class LLMQueryRepo:
                 Prompt.active == True
             ).all()
 
-    def get_system_prompts(self, company_id: int) -> list[Prompt]:
-        return self.session.query(Prompt).filter(
-            Prompt.company_id == company_id,
-            Prompt.prompt_type == PromptType.SYSTEM.value,
-            Prompt.active == True
-        ).order_by(Prompt.order).all()
+    def delete_prompts_by_type(self, company_id: int, prompt_types: list[str]) -> int:
+        if not prompt_types:
+            return 0
+
+        deleted_count = (
+            self.session.query(Prompt)
+            .filter(
+                Prompt.company_id == company_id,
+                Prompt.prompt_type.in_(prompt_types),
+            )
+            .delete(synchronize_session=False)
+        )
+        self.session.commit()
+        return int(deleted_count or 0)
 
     def create_or_update_prompt(self, new_prompt: Prompt):
         prompt = self.session.query(Prompt).filter_by(company_id=new_prompt.company_id,

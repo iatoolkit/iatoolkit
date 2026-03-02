@@ -547,12 +547,9 @@ class IAToolkit:
         return self.db_manager
 
     def bootstrap_defaults(self, company_short_name: str):
-        from iatoolkit.services.prompt_service import PromptService
         from iatoolkit.services.tool_service import ToolService
 
-        prompt_service = self.get_injector().get(PromptService)
         tool_service = self.get_injector().get(ToolService)
-        prompt_service.register_system_prompts(company_short_name)
         tool_service.register_system_tools()
 
     def _setup_docling(self):

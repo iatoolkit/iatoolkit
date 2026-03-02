@@ -12,7 +12,7 @@ from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.knowledge_base_service import KnowledgeBaseService
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
-from iatoolkit.repositories.models import PromptType, PromptCategory, Tool
+from iatoolkit.repositories.models import PromptCategory, Tool
 import logging
 
 class CategoriesApiView(MethodView):
@@ -50,7 +50,7 @@ class CategoriesApiView(MethodView):
 
             # 3. Gather Categories
             response_data = {
-                "prompt_types": [t.value for t in PromptType],
+                "prompt_types": list(self.SUPPORTED_PROMPT_TYPES),
                 "prompt_categories": [],
                 "collection_types": [],
                 "tool_types": [
@@ -114,3 +114,7 @@ class CategoriesApiView(MethodView):
         except Exception as e:
             logging.exception(f"Error syncing categories for {company_short_name}: {e}")
             return jsonify({"status": "error", "message": str(e)}), 500
+    SUPPORTED_PROMPT_TYPES = [
+        "company",
+        "agent",
+    ]
