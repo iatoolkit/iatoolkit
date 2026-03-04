@@ -62,7 +62,7 @@ class DoclingParsingProvider:
             pipeline_options.layout_batch_size = self._get_int_env("DOCLING_LAYOUT_BATCH_SIZE", 1)
             pipeline_options.table_batch_size = self._get_int_env("DOCLING_TABLE_BATCH_SIZE", 1)
             pipeline_options.ocr_batch_size = self._get_int_env("DOCLING_OCR_BATCH_SIZE", 1)
-            pipeline_options.queue_max_size = self._get_int_env("DOCLING_QUEUE_MAX_SIZE", 12)
+            pipeline_options.queue_max_size = self._get_int_env("DOCLING_QUEUE_MAX_SIZE", 6)
             pipeline_options.accelerator_options = AcceleratorOptions(
                 num_threads=self._get_int_env("DOCLING_NUM_THREADS", 1),
                 device=os.getenv("DOCLING_DEVICE", "cpu"),
