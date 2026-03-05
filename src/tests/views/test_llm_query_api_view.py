@@ -89,6 +89,47 @@ class TestLLMQueryApiView:
         assert "Invalid API Key" in response.json['error_message']
         self.mock_query.llm_query.assert_not_called()
 
+    def test_api_query_returns_structured_output_and_hides_schema_diagnostics(self):
+        self.mock_query.llm_query.return_value = {
+            "answer": "ok",
+            "structured_output": {"employees": [{"employeeid": 1}]},
+            "schema_valid": True,
+            "schema_errors": [],
+            "schema_mode": "best_effort",
+            "schema_applied": True,
+        }
+
+        response = self.client.post(self.url, json={"external_user_id": MOCK_EXTERNAL_USER_ID})
+
+        assert response.status_code == 200
+        body = response.json
+        assert body["structured_output"] == {"employees": [{"employeeid": 1}]}
+        assert "schema_valid" not in body
+        assert "schema_errors" not in body
+        assert "schema_mode" not in body
+        assert "schema_applied" not in body
+
+    def test_api_query_returns_null_structured_output_when_not_available(self):
+        self.mock_query.llm_query.return_value = {
+            "answer": "ok",
+            "structured_output": None,
+            "schema_valid": False,
+            "schema_errors": ["$.employees: is required."],
+            "schema_mode": "best_effort",
+            "schema_applied": True,
+        }
+
+        response = self.client.post(self.url, json={"external_user_id": MOCK_EXTERNAL_USER_ID})
+
+        assert response.status_code == 200
+        body = response.json
+        assert "structured_output" in body
+        assert body["structured_output"] is None
+        assert "schema_valid" not in body
+        assert "schema_errors" not in body
+        assert "schema_mode" not in body
+        assert "schema_applied" not in body
+
     def test_api_query_for_when_no_data(self):
         self.mock_query.llm_query.return_value = {"answer": "Welcome back!"}
 

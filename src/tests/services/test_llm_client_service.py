@@ -266,3 +266,153 @@ class TestLLMClient:
             assert decoded['status'] is True
             assert decoded['answer'] == 'hola'
             assert decoded['answer_format'] == 'json_string'
+
+    def test_apply_response_contract_sets_structured_output_on_valid_schema(self):
+        decoded = {
+            "status": False,
+            "output_text": '{"customer_id":"c-100"}',
+            "answer": "",
+            "aditional_data": {},
+            "answer_format": "plaintext",
+            "error_message": "legacy error",
+        }
+        contract = {
+            "schema": {
+                "type": "object",
+                "required": ["customer_id"],
+                "properties": {
+                    "customer_id": {"type": "string"},
+                },
+            },
+            "schema_mode": "strict",
+            "response_mode": "structured_only",
+        }
+
+        result = self.client._apply_response_contract(decoded, contract)
+
+        assert result["status"] is True
+        assert result["schema_applied"] is True
+        assert result["schema_valid"] is True
+        assert result["structured_output"]["customer_id"] == "c-100"
+        assert result["answer_format"] == "structured_only"
+
+    def test_apply_response_contract_accepts_legacy_answer_with_aditional_data_payload(self):
+        decoded = {
+            "status": True,
+            "output_text": json.dumps({
+                "answer": "ok",
+                "aditional_data": {"customer_id": "c-legacy"},
+            }),
+            "parsed_json": {
+                "answer": "ok",
+                "aditional_data": {"customer_id": "c-legacy"},
+            },
+            "answer": "ok",
+            "aditional_data": {"customer_id": "c-legacy"},
+            "answer_format": "json_string",
+            "error_message": "",
+        }
+        contract = {
+            "schema": {
+                "type": "object",
+                "required": ["customer_id"],
+                "properties": {
+                    "customer_id": {"type": "string"},
+                },
+            },
+            "schema_mode": "best_effort",
+            "response_mode": "chat_compatible",
+        }
+
+        result = self.client._apply_response_contract(decoded, contract)
+
+        assert result["schema_applied"] is True
+        assert result["schema_valid"] is True
+        assert result["structured_output"] == {"customer_id": "c-legacy"}
+        # Keeps chat-compatible answer but exposes structured payload.
+        assert result["answer"] == "ok"
+
+    def test_apply_response_contract_raises_on_strict_schema_mismatch(self):
+        decoded = {
+            "status": True,
+            "output_text": '{"score": 10}',
+            "answer": "fallback",
+            "aditional_data": {},
+            "answer_format": "plaintext",
+            "error_message": "",
+        }
+        contract = {
+            "schema": {
+                "type": "object",
+                "required": ["customer_id"],
+                "properties": {
+                    "customer_id": {"type": "string"},
+                },
+            },
+            "schema_mode": "strict",
+            "response_mode": "chat_compatible",
+        }
+
+        with pytest.raises(IAToolkitException):
+            self.client._apply_response_contract(decoded, contract)
+
+    def test_apply_response_contract_accepts_json_payload_embedded_in_answer_field(self):
+        decoded = {
+            "status": True,
+            "output_text": json.dumps({
+                "answer": "{\"sales_2025\":[{\"id\":1,\"country\":\"Chile\",\"sales\":100.5}]}",
+                "aditional_data": {},
+            }),
+            "parsed_json": {
+                "answer": "{\"sales_2025\":[{\"id\":1,\"country\":\"Chile\",\"sales\":100.5}]}",
+                "aditional_data": {},
+            },
+            "answer": "{\"sales_2025\":[{\"id\":1,\"country\":\"Chile\",\"sales\":100.5}]}",
+            "aditional_data": {},
+            "answer_format": "json_string",
+            "error_message": "",
+        }
+        contract = {
+            "schema": {
+                "type": "object",
+                "required": ["sales_2025"],
+                "properties": {
+                    "sales_2025": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["id", "country", "sales"],
+                            "properties": {
+                                "id": {"type": "integer"},
+                                "country": {"type": "string"},
+                                "sales": {"type": "number"},
+                            },
+                        },
+                    }
+                },
+            },
+            "schema_mode": "strict",
+            "response_mode": "chat_compatible",
+        }
+
+        result = self.client._apply_response_contract(decoded, contract)
+
+        assert result["schema_applied"] is True
+        assert result["schema_valid"] is True
+        assert result["structured_output"]["sales_2025"][0]["country"] == "Chile"
+
+    def test_apply_response_contract_uses_legacy_aditional_data_when_no_contract(self):
+        decoded = {
+            "status": True,
+            "output_text": '{"answer":"ok","aditional_data":{"employees":[{"id":1}]}}',
+            "answer": "ok",
+            "aditional_data": {"employees": [{"id": 1}]},
+            "answer_format": "json_string",
+            "error_message": "",
+        }
+
+        result = self.client._apply_response_contract(decoded, None)
+
+        assert result["structured_output"] == {"employees": [{"id": 1}]}
+        assert result["schema_applied"] is False
+        assert result["schema_valid"] is None

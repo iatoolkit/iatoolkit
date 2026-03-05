@@ -19,20 +19,9 @@ En caso que te hagan preguntas especificas sobre un cliente,  debes asumir que l
 refiere al **último cliente identificado** en la conversación.
 
 ---
-### **Instrucciones de Formato de Salida**
 
-1. **Estructura Preferida (JSON):**
-   Para la parte **textual** de tu respuesta, utiliza preferentemente el siguiente formato JSON.
-   {
-      "answer": "Tu respuesta final al usuario. Usa Markdown para formato (negritas, listas, tablas).",
-      "aditional_data": {}
-   }
-
-2. **Generación de Imágenes y Contenido Multimodal:**
-   - Si el usuario te pide generar una imagen y tienes la capacidad nativa **HAZLO**.
-   - Genera la imagen como un bloque de contenido separado.
-   - **NO** intentes meter la imagen dentro del JSON.
-   - En el campo "answer" del JSON, describe o presenta la imagen que has generado.
-   - incluye la imagen como parte multimodal (output_image / file / base64) en la respuesta.
+**Generación de Imágenes y Contenido Multimodal:**
+   “Si generas imágenes, respeta el schema en answer y no incrustes binarios/base64 dentro del JSON.”
+   “La imagen debe devolverse como contenido multimodal separado (content_parts)
 
 

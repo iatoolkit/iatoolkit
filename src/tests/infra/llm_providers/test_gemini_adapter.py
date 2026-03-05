@@ -250,6 +250,65 @@ class TestGeminiAdapter:
         # Verificar que output_text tenga el placeholder
         assert "[Imagen Generada]" in response.output_text
 
+    def test_create_response_uses_response_schema_in_generate_config(self):
+        mock_response = self._create_mock_gemini_response(text_content='{"sales_2025":[]}')
+        self.mock_generative_model.generate_content.return_value = mock_response
+
+        response_schema = {
+            "type": "object",
+            "required": ["sales_2025"],
+            "properties": {
+                "sales_2025": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "id": {"type": "integer"},
+                        },
+                    },
+                }
+            },
+            "additionalProperties": False,
+        }
+
+        self.adapter.create_response(
+            model="gemini-pro",
+            input=[{"role": "user", "content": "test"}],
+            text={
+                "response_mime_type": "application/json",
+                "response_schema": response_schema,
+            },
+        )
+
+        config_kwargs = self.mock_types.GenerateContentConfig.call_args.kwargs
+        assert config_kwargs["response_mime_type"] == "application/json"
+        assert "response_schema" in config_kwargs
+        assert "additionalProperties" not in config_kwargs["response_schema"]
+        assert "additionalProperties" not in config_kwargs["response_schema"]["properties"]["sales_2025"]["items"]
+
+    def test_create_response_retries_without_response_schema_when_sdk_does_not_support_it(self):
+        mock_response = self._create_mock_gemini_response(text_content='{"sales_2025":[]}')
+        self.mock_generative_model.generate_content.return_value = mock_response
+        self.mock_types.GenerateContentConfig.side_effect = [TypeError("unexpected keyword"), MagicMock()]
+
+        result = self.adapter.create_response(
+            model="gemini-pro",
+            input=[{"role": "user", "content": "test"}],
+            text={
+                "response_mime_type": "application/json",
+                "response_schema": {"type": "object", "properties": {"sales_2025": {"type": "array"}}},
+            },
+        )
+
+        assert isinstance(result, LLMResponse)
+        assert self.mock_types.GenerateContentConfig.call_count == 2
+        first_kwargs = self.mock_types.GenerateContentConfig.call_args_list[0].kwargs
+        second_kwargs = self.mock_types.GenerateContentConfig.call_args_list[1].kwargs
+        assert "response_schema" in first_kwargs
+        assert "response_schema" not in second_kwargs
+        assert "response_mime_type" not in second_kwargs
+
 
 def test_prepare_gemini_tools_normalizes_nullable_type_lists():
     adapter = GeminiAdapter(gemini_client=MagicMock())

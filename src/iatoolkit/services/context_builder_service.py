@@ -15,6 +15,7 @@ from iatoolkit.services.tool_service import ToolService
 from iatoolkit.services.parsers.parsing_service import ParsingService
 from iatoolkit.services.company_context_service import CompanyContextService
 from iatoolkit.services.prompt_service import PromptService
+from iatoolkit.services.structured_output_service import StructuredOutputService
 from iatoolkit.common.util import Utility
 from iatoolkit.repositories.models import Company
 
@@ -58,6 +59,49 @@ class ContextBuilderService:
         if not isinstance(selected_keys, list):
             return []
         return [key for key in selected_keys if isinstance(key, str) and key.strip()]
+
+    def get_prompt_output_contract(self, company: Company, prompt_name: str | None) -> dict:
+        if not company or not prompt_name:
+            return {}
+
+        prompt_obj = self.prompt_service.get_prompt_definition(company, prompt_name)
+        if not prompt_obj:
+            return {}
+
+        schema = prompt_obj.output_schema
+
+        if isinstance(schema, str):
+            schema_text = schema.strip()
+            if schema_text:
+                try:
+                    schema = json.loads(schema_text)
+                except Exception:
+                    try:
+                        schema = StructuredOutputService.parse_yaml_schema(schema_text)
+                    except Exception:
+                        schema = None
+
+        if not isinstance(schema, dict):
+            try:
+                schema = StructuredOutputService.parse_yaml_schema(prompt_obj.output_schema_yaml)
+            except Exception:
+                schema = None
+
+        if not isinstance(schema, dict):
+            return {}
+
+        try:
+            schema = StructuredOutputService.normalize_schema(schema)
+        except Exception:
+            return {}
+
+        return {
+            "prompt_name": prompt_obj.name,
+            "schema": schema,
+            "schema_yaml": prompt_obj.output_schema_yaml,
+            "schema_mode": prompt_obj.output_schema_mode or "best_effort",
+            "response_mode": prompt_obj.output_response_mode or "chat_compatible",
+        }
 
     def build_system_context(
         self,

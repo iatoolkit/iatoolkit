@@ -342,3 +342,109 @@ class TestQueryService:
             MOCK_LOCAL_USER_ID,
             ["query_main", "format_styles"],
         )
+
+    def test_llm_query_ignores_invalid_selected_system_prompt_keys_from_session_cache(self):
+        self.mock_session_context.get_selected_system_prompt_keys.return_value = MagicMock()
+        self.mock_tool_service.get_tools_for_llm.return_value = [
+            {"type": "function", "name": "tool_one", "description": "one", "parameters": {}, "strict": True},
+        ]
+        self.mock_context_builder.get_selected_system_prompt_keys.return_value = ["query_main"]
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "question", [])
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            question="question",
+            model='gpt-test'
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["execution_metadata"]["tool_router"]["selected_system_prompt_keys"] == ["query_main"]
+
+    def test_llm_query_passes_openai_json_schema_text_payload_when_prompt_contract_is_configured(self):
+        self.model_registry.get_provider.return_value = "openai"
+        self.mock_tool_service.get_tools_for_llm.return_value = []
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt content", "question", [])
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "scored_prompt",
+            "schema": {
+                "type": "object",
+                "required": ["customer_id"],
+                "properties": {
+                    "customer_id": {"type": "string"},
+                },
+            },
+            "schema_mode": "strict",
+            "response_mode": "structured_only",
+        }
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="scored_prompt",
+            model="gpt-5"
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert "format" in invoke_kwargs["text"]
+        assert invoke_kwargs["text"]["format"]["type"] == "json_schema"
+        assert invoke_kwargs["text"]["format"]["strict"] is True
+        assert invoke_kwargs["response_contract"]["schema_mode"] == "strict"
+        assert invoke_kwargs["response_contract"]["response_mode"] == "structured_only"
+
+    def test_llm_query_passes_gemini_response_schema_payload_when_prompt_contract_is_configured(self):
+        self.model_registry.get_provider.return_value = "gemini"
+        self.mock_tool_service.get_tools_for_llm.return_value = []
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt content", "question", [])
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "sales_prompt",
+            "schema": {
+                "type": "object",
+                "required": ["sales_2025"],
+                "properties": {
+                    "sales_2025": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                    },
+                },
+            },
+            "schema_mode": "strict",
+            "response_mode": "structured_only",
+        }
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="sales_prompt",
+            model="gemini-2.5-flash"
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert "prompt content" in invoke_kwargs["context"]
+        assert "OUTPUT CONTRACT (MANDATORY)" in invoke_kwargs["context"]
+        assert "format" not in invoke_kwargs["text"]
+        assert invoke_kwargs["text"]["response_mime_type"] == "application/json"
+        assert invoke_kwargs["text"]["response_schema"]["required"] == ["sales_2025"]
+        assert invoke_kwargs["response_contract"]["schema_mode"] == "strict"
+        assert invoke_kwargs["response_contract"]["response_mode"] == "structured_only"

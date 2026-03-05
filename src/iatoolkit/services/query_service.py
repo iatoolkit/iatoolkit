@@ -17,6 +17,8 @@ from injector import inject
 import logging
 from typing import Optional, Callable
 import time
+import json
+import re
 from dataclasses import dataclass
 
 
@@ -181,6 +183,98 @@ class QueryService:
             return HistoryManagerService.TYPE_SERVER_SIDE
         else:
             return HistoryManagerService.TYPE_CLIENT_SIDE
+
+    def _normalize_selected_system_prompt_keys(self, keys) -> list[str]:
+        if not isinstance(keys, list):
+            return []
+        normalized: list[str] = []
+        for item in keys:
+            if isinstance(item, str):
+                candidate = item.strip()
+                if candidate:
+                    normalized.append(candidate)
+        return normalized
+
+    def _get_provider(self, model: str) -> str:
+        get_provider_fn = getattr(self.model_registry, "get_provider", None)
+        if not callable(get_provider_fn):
+            return "unknown"
+        try:
+            provider = get_provider_fn(model)
+            return provider or "unknown"
+        except Exception:
+            return "unknown"
+
+    def _resolve_prompt_output_contract(self, company, prompt_name: str | None) -> dict:
+        if not prompt_name:
+            return {}
+        try:
+            contract = self.context_builder.get_prompt_output_contract(company, prompt_name)
+            if not isinstance(contract, dict):
+                return {}
+            if not isinstance(contract.get("schema"), dict):
+                return {}
+            contract["schema_mode"] = str(contract.get("schema_mode") or "best_effort").strip().lower()
+            contract["response_mode"] = str(contract.get("response_mode") or "chat_compatible").strip().lower()
+            contract["provider"] = self._get_provider(contract.get("model") or "")
+            return contract
+        except Exception as e:
+            logging.debug(
+                "Could not resolve prompt output contract for '%s' in company '%s': %s",
+                prompt_name,
+                company.short_name if company else "-",
+                e,
+            )
+            return {}
+
+    def _sanitize_schema_name(self, raw_name: str) -> str:
+        candidate = re.sub(r"[^a-zA-Z0-9_]", "_", (raw_name or "").strip())
+        candidate = candidate.strip("_")
+        if not candidate:
+            candidate = "prompt_output_schema"
+        return candidate[:64]
+
+    def _build_output_text_schema_payload(self, model: str, contract: dict) -> dict:
+        schema = contract.get("schema") if isinstance(contract, dict) else None
+        if not isinstance(schema, dict):
+            return {}
+
+        provider = self._get_provider(model)
+        schema_mode = str(contract.get("schema_mode") or "best_effort").strip().lower()
+        if provider in ("openai", "xai"):
+            return {
+                "format": {
+                    "type": "json_schema",
+                    "name": self._sanitize_schema_name(contract.get("prompt_name") or "prompt_output"),
+                    "schema": schema,
+                    "strict": schema_mode == "strict",
+                }
+            }
+
+        if provider == "gemini":
+            # Gemini structured output (native): keep app-side strict validation as source of truth.
+            return {
+                "response_mime_type": "application/json",
+                "response_schema": schema,
+            }
+
+        return {}
+
+    def _append_structured_schema_instruction(self, user_turn_prompt: str, contract: dict) -> str:
+        schema = contract.get("schema")
+        if not isinstance(schema, dict):
+            return user_turn_prompt
+
+        schema_json = json.dumps(schema, ensure_ascii=False)
+        return (
+            f"{user_turn_prompt}\n\n"
+            "### OUTPUT CONTRACT (MANDATORY)\n"
+            "Return ONLY one valid JSON object matching this schema.\n"
+            "Do not include markdown fences, explanations, or extra text.\n"
+            "Do NOT use wrapper keys like `answer` or `aditional_data`.\n"
+            "Ignore any previous output-format instruction that conflicts with this contract.\n"
+            f"Schema: {schema_json}\n"
+        )
 
     def _ensure_valid_history(self, company,
                               user_identifier: str,
@@ -406,6 +500,9 @@ class QueryService:
             # --- Model Resolution ---
             effective_model = self._resolve_model(company_short_name, model)
 
+            prompt_output_contract = self._resolve_prompt_output_contract(company, prompt_name)
+            output_schema = self._build_output_text_schema_payload(effective_model, prompt_output_contract)
+
             # --- Build User-Facing Prompt (Delegated to Builder) ---
             user_turn_prompt, effective_question, images = self.context_builder.build_user_turn_prompt(
                 company=company,
@@ -415,6 +512,15 @@ class QueryService:
                 prompt_name=prompt_name,
                 question=question
             )
+
+            provider = self._get_provider(effective_model)
+            if prompt_output_contract.get("schema") and (
+                not output_schema or provider == "gemini"
+            ):
+                user_turn_prompt = self._append_structured_schema_instruction(
+                    user_turn_prompt=user_turn_prompt,
+                    contract=prompt_output_contract,
+                )
 
             # --- History Management (Strategy Pattern) ---
             history_handle, error_response = self._ensure_valid_history(
@@ -440,9 +546,11 @@ class QueryService:
             )
             selected_system_prompt_keys = []
             try:
-                selected_system_prompt_keys = self.session_context.get_selected_system_prompt_keys(
-                    company_short_name,
-                    user_identifier,
+                selected_system_prompt_keys = self._normalize_selected_system_prompt_keys(
+                    self.session_context.get_selected_system_prompt_keys(
+                        company_short_name,
+                        user_identifier,
+                    )
                 )
             except Exception as e:
                 logging.debug(
@@ -453,9 +561,11 @@ class QueryService:
 
             if not selected_system_prompt_keys:
                 try:
-                    selected_system_prompt_keys = self.context_builder.get_selected_system_prompt_keys(
-                        company,
-                        query_text=effective_question,
+                    selected_system_prompt_keys = self._normalize_selected_system_prompt_keys(
+                        self.context_builder.get_selected_system_prompt_keys(
+                            company,
+                            query_text=effective_question,
+                        )
                     )
                     self.session_context.save_selected_system_prompt_keys(
                         company_short_name,
@@ -474,8 +584,14 @@ class QueryService:
                 tool_router_metrics = dict(tool_router_metrics or {})
                 tool_router_metrics["selected_system_prompt_keys"] = selected_system_prompt_keys
 
-            # openai structured output instructions
-            output_schema = {}
+            execution_metadata = {"tool_router": tool_router_metrics}
+            if prompt_output_contract.get("schema"):
+                execution_metadata["structured_output"] = {
+                    "enabled": True,
+                    "schema_mode": prompt_output_contract.get("schema_mode", "best_effort"),
+                    "response_mode": prompt_output_contract.get("response_mode", "chat_compatible"),
+                    "provider": self._get_provider(effective_model),
+                }
 
             # Safely extract parameters for invoke using the handle
             # The handle is guaranteed to have request_params populated if no error returned
@@ -495,7 +611,8 @@ class QueryService:
                 tools=tools,
                 text=output_schema,
                 images=images,
-                execution_metadata={"tool_router": tool_router_metrics},
+                execution_metadata=execution_metadata,
+                response_contract=prompt_output_contract if prompt_output_contract.get("schema") else None,
             )
 
             if not response.get('valid_response'):

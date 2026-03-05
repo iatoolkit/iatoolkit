@@ -51,6 +51,12 @@ class LLMQueryApiView(MethodView):
             if 'error' in result:
                 return jsonify(result), 409
 
+            # keep API response compact: expose structured_output but hide schema diagnostics
+            result.pop('schema_valid', None)
+            result.pop('schema_errors', None)
+            result.pop('schema_mode', None)
+            result.pop('schema_applied', None)
+
             return jsonify(result), 200
 
         except Exception as e:

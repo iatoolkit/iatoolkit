@@ -174,7 +174,17 @@ class LLMQueryRepo:
             prompt.prompt_type = new_prompt.prompt_type
             prompt.filename = new_prompt.filename
             prompt.custom_fields = new_prompt.custom_fields
+            prompt.output_schema = new_prompt.output_schema
+            prompt.output_schema_yaml = new_prompt.output_schema_yaml
+            prompt.output_schema_mode = new_prompt.output_schema_mode or prompt.output_schema_mode or "best_effort"
+            prompt.output_response_mode = (
+                new_prompt.output_response_mode or prompt.output_response_mode or "chat_compatible"
+            )
         else:
+            if not new_prompt.output_schema_mode:
+                new_prompt.output_schema_mode = "best_effort"
+            if not new_prompt.output_response_mode:
+                new_prompt.output_response_mode = "chat_compatible"
             self.session.add(new_prompt)
             prompt = new_prompt
 

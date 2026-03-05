@@ -380,6 +380,10 @@ class Prompt(Base):
     order = Column(Integer, nullable=True, default=0)
     category_id = Column(Integer, ForeignKey('iat_prompt_categories.id', ondelete='SET NULL'), nullable=True)
     custom_fields = Column(JSON, nullable=False, default=[])
+    output_schema = Column(JSON, nullable=True, default=None)
+    output_schema_yaml = Column(Text, nullable=True, default=None)
+    output_schema_mode = Column(String, nullable=False, default="best_effort")
+    output_response_mode = Column(String, nullable=False, default="chat_compatible")
     created_at = Column(DateTime, default=datetime.now)
     def to_dict(self):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}

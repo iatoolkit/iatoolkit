@@ -225,6 +225,39 @@ class TestPromptService:
         saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
         assert saved_prompt.prompt_type == 'company'
 
+    def test_save_prompt_persists_structured_output_schema_yaml_and_json(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_category_by_name.return_value = None
+
+        self.prompt_service.save_prompt(
+            'test_co',
+            'structured_prompt',
+            {
+                'content': 'Prompt text',
+                'output_schema_yaml': """
+type: object
+required:
+  - customer_id
+properties:
+  customer_id:
+    type: string
+  score:
+    type: number
+""",
+                'output_schema_mode': 'strict',
+                'output_response_mode': 'structured_only',
+            },
+        )
+
+        saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
+        assert saved_prompt.output_schema is not None
+        assert saved_prompt.output_schema.get("type") == "object"
+        assert "customer_id" in (saved_prompt.output_schema.get("properties") or {})
+        assert isinstance(saved_prompt.output_schema_yaml, str)
+        assert "customer_id" in saved_prompt.output_schema_yaml
+        assert saved_prompt.output_schema_mode == "strict"
+        assert saved_prompt.output_response_mode == "structured_only"
+
     # --- Tests para sync_company_prompts ---
 
     @patch('iatoolkit.services.prompt_service.current_iatoolkit')

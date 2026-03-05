@@ -1,5 +1,6 @@
 import pytest
 from unittest.mock import MagicMock
+from types import SimpleNamespace
 from iatoolkit.services.context_builder_service import ContextBuilderService
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.repositories.profile_repo import ProfileRepo
@@ -162,3 +163,43 @@ class TestContextBuilderService:
         assert v1 == v2
         assert v1 != v3
         assert len(v1) == 64 # SHA256 length
+
+    def test_get_prompt_output_contract_uses_yaml_when_output_schema_is_null(self):
+        self.mock_prompt_service.get_prompt_definition.return_value = SimpleNamespace(
+            name="employee_prompt",
+            output_schema=None,
+            output_schema_yaml="""
+type: object
+properties:
+  employees:
+    type: array
+    items:
+      type: object
+required:
+  - employees
+""",
+            output_schema_mode="best_effort",
+            output_response_mode="chat_compatible",
+        )
+
+        contract = self.service.get_prompt_output_contract(self.mock_company, "employee_prompt")
+
+        assert isinstance(contract.get("schema"), dict)
+        assert contract["schema"]["type"] == "object"
+        assert "employees" in contract["schema"]["properties"]
+
+    def test_get_prompt_output_contract_accepts_json_string_schema(self):
+        self.mock_prompt_service.get_prompt_definition.return_value = SimpleNamespace(
+            name="employee_prompt",
+            output_schema='{"type":"object","properties":{"employees":{"type":"array"}}}',
+            output_schema_yaml=None,
+            output_schema_mode="strict",
+            output_response_mode="structured_only",
+        )
+
+        contract = self.service.get_prompt_output_contract(self.mock_company, "employee_prompt")
+
+        assert isinstance(contract.get("schema"), dict)
+        assert contract["schema"]["type"] == "object"
+        assert contract["schema_mode"] == "strict"
+        assert contract["response_mode"] == "structured_only"

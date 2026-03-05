@@ -9,6 +9,7 @@ from iatoolkit.common.secret_resolver import resolve_secret
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.common.util import Utility
+from iatoolkit.services.structured_output_service import StructuredOutputService
 from injector import inject
 import logging
 import os
@@ -392,6 +393,8 @@ class ConfigurationService:
 
         category_set = set(categories_config)
         allowed_prompt_types = {"company", "agent"}
+        allowed_output_schema_modes = {"best_effort", "strict"}
+        allowed_output_response_modes = {"chat_compatible", "structured_only"}
         for i, prompt in enumerate(prompt_list):
             prompt_name = prompt.get("name")
             if not prompt_name:
@@ -418,6 +421,30 @@ class ConfigurationService:
                     add_error(f"prompts[{i}]", "Missing required key: 'category'")
                 elif prompt_cat not in category_set:
                     add_error(f"prompts[{i}]", f"Category '{prompt_cat}' is not defined in 'prompt_categories'.")
+
+            schema_mode = str(prompt.get("output_schema_mode", "best_effort")).strip().lower()
+            if schema_mode not in allowed_output_schema_modes:
+                add_error(
+                    f"prompts[{i}]",
+                    f"Unsupported output_schema_mode '{schema_mode}'. Must be one of: {sorted(allowed_output_schema_modes)}."
+                )
+
+            response_mode = str(prompt.get("output_response_mode", "chat_compatible")).strip().lower()
+            if response_mode not in allowed_output_response_modes:
+                add_error(
+                    f"prompts[{i}]",
+                    f"Unsupported output_response_mode '{response_mode}'. Must be one of: {sorted(allowed_output_response_modes)}."
+                )
+
+            output_schema = prompt.get("output_schema")
+            if output_schema is not None:
+                if not isinstance(output_schema, dict):
+                    add_error(f"prompts[{i}]", "'output_schema' must be an object.")
+                else:
+                    try:
+                        StructuredOutputService.normalize_schema(output_schema)
+                    except Exception as schema_error:
+                        add_error(f"prompts[{i}]", f"Invalid output_schema: {schema_error}")
 
         # 7. User Feedback
         feedback_config = config.get("parameters", {}).get("user_feedback", {})

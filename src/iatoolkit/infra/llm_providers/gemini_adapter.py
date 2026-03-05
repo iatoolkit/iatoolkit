@@ -63,16 +63,40 @@ class GeminiAdapter:
                 images
             )
 
-            config = types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                safety_settings=self.safety_settings,
-                tools=self._prepare_gemini_tools(tools),
-                temperature=float(text.get("temperature", 0.7)) if text else 0.7,
-                max_output_tokens=int(text.get("max_tokens", 2048)) if text else 2048,
-                top_p=float(text.get("top_p", 0.95)) if text else 0.95,
-                candidate_count=1,
-                # response_modalities=['TEXT', 'IMAGE']
-            )
+            config_kwargs = {
+                "system_instruction": system_instruction,
+                "safety_settings": self.safety_settings,
+                "tools": self._prepare_gemini_tools(tools),
+                "temperature": float(text.get("temperature", 0.7)) if text else 0.7,
+                "max_output_tokens": int(text.get("max_tokens", 2048)) if text else 2048,
+                "top_p": float(text.get("top_p", 0.95)) if text else 0.95,
+                "candidate_count": 1,
+                # "response_modalities": ['TEXT', 'IMAGE']
+            }
+
+            if isinstance(text, dict):
+                response_schema = text.get("response_schema")
+                if response_schema is not None:
+                    config_kwargs["response_mime_type"] = str(
+                        text.get("response_mime_type") or "application/json"
+                    )
+                    config_kwargs["response_schema"] = self._prepare_response_schema(response_schema)
+
+            try:
+                config = types.GenerateContentConfig(**config_kwargs)
+            except TypeError as e:
+                # Backward compatibility with older google-genai SDK versions.
+                if "response_schema" in config_kwargs or "response_mime_type" in config_kwargs:
+                    logging.warning(
+                        "Gemini SDK doesn't support response_schema fields in GenerateContentConfig. "
+                        "Falling back to prompt-instruction-only mode: %s",
+                        e
+                    )
+                    config_kwargs.pop("response_schema", None)
+                    config_kwargs.pop("response_mime_type", None)
+                    config = types.GenerateContentConfig(**config_kwargs)
+                else:
+                    raise
 
             # call the new SDK
             response = self.client.models.generate_content(
@@ -213,6 +237,14 @@ class GeminiAdapter:
             return [types.Tool(function_declarations=function_declarations)]
 
         return None
+
+    def _prepare_response_schema(self, schema: Any) -> Any:
+        """Normalize OpenAI-style JSON schema into a Gemini-compatible schema subset."""
+        if isinstance(schema, dict):
+            return self._clean_openai_specific_fields(schema)
+        if isinstance(schema, list):
+            return [self._prepare_response_schema(item) for item in schema]
+        return schema
 
 
     def _clean_openai_specific_fields(self, parameters: Dict) -> Dict:

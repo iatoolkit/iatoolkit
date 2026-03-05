@@ -15,9 +15,15 @@ from iatoolkit.repositories.models import (Prompt, PromptCategory,
                                            Company, PromptType)
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.system_prompt_catalog import build_system_prompt_payload
+from iatoolkit.services.structured_output_service import StructuredOutputService
 import logging
 
 class PromptService:
+    OUTPUT_SCHEMA_MODE_BEST_EFFORT = "best_effort"
+    OUTPUT_SCHEMA_MODE_STRICT = "strict"
+    OUTPUT_RESPONSE_MODE_CHAT = "chat_compatible"
+    OUTPUT_RESPONSE_MODE_STRUCTURED = "structured_only"
+
     @inject
     def __init__(self,
                  asset_repo: AssetRepository,
@@ -46,6 +52,69 @@ class PromptService:
             PromptType.COMPANY.value,
         )
         return PromptType.COMPANY.value
+
+    def _normalize_output_schema_mode(self, output_schema_mode: str | None) -> str:
+        candidate = str(output_schema_mode or self.OUTPUT_SCHEMA_MODE_BEST_EFFORT).strip().lower()
+        allowed = {
+            self.OUTPUT_SCHEMA_MODE_BEST_EFFORT,
+            self.OUTPUT_SCHEMA_MODE_STRICT,
+        }
+        if candidate in allowed:
+            return candidate
+        return self.OUTPUT_SCHEMA_MODE_BEST_EFFORT
+
+    def _normalize_output_response_mode(self, output_response_mode: str | None) -> str:
+        candidate = str(output_response_mode or self.OUTPUT_RESPONSE_MODE_CHAT).strip().lower()
+        allowed = {
+            self.OUTPUT_RESPONSE_MODE_CHAT,
+            self.OUTPUT_RESPONSE_MODE_STRUCTURED,
+        }
+        if candidate in allowed:
+            return candidate
+        return self.OUTPUT_RESPONSE_MODE_CHAT
+
+    def _extract_output_schema_payload(self, data: dict) -> tuple[dict | None, str | None]:
+        yaml_value = data.get("output_schema_yaml")
+        object_value = data.get("output_schema")
+
+        parsed_from_yaml = None
+        if isinstance(yaml_value, str):
+            parsed_from_yaml = StructuredOutputService.parse_yaml_schema(yaml_value)
+        elif yaml_value is not None:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "output_schema_yaml must be a string.",
+            )
+
+        if parsed_from_yaml is not None:
+            try:
+                normalized = StructuredOutputService.normalize_schema(parsed_from_yaml)
+            except ValueError as e:
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    f"Invalid output_schema_yaml: {e}",
+                ) from e
+            normalized_yaml = StructuredOutputService.dump_yaml_schema(normalized)
+            return normalized, normalized_yaml
+
+        if object_value is None:
+            return None, None
+
+        if not isinstance(object_value, dict):
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "output_schema must be an object.",
+            )
+
+        try:
+            normalized = StructuredOutputService.normalize_schema(object_value)
+        except ValueError as e:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                f"Invalid output_schema: {e}",
+            ) from e
+        normalized_yaml = StructuredOutputService.dump_yaml_schema(normalized)
+        return normalized, normalized_yaml
 
     def get_prompts(self, company_short_name: str, include_all: bool = False) -> dict:
         try:
@@ -100,7 +169,9 @@ class PromptService:
                             'type': p.prompt_type,
                             'active': p.active,
                             'custom_fields': p.custom_fields,
-                            'order': p.order
+                            'order': p.order,
+                            'output_schema_mode': p.output_schema_mode,
+                            'output_response_mode': p.output_response_mode,
                         }
                         for p in prompts
                     ]
@@ -145,6 +216,13 @@ class PromptService:
             raise IAToolkitException(IAToolkitException.ErrorType.PROMPT_ERROR,
                                f'error loading prompt "{prompt_name}" content for company {company.short_name}: {str(e)}')
 
+    def get_prompt_definition(self, company: Company, prompt_name: str) -> Prompt | None:
+        try:
+            return self.llm_query_repo.get_prompt_by_name(company, prompt_name)
+        except Exception as e:
+            logging.exception("Error loading prompt definition for '%s': %s", prompt_name, e)
+            return None
+
     def save_prompt(self, company_short_name: str, prompt_name: str, data: dict):
         """
         Create or Update a prompt.
@@ -170,6 +248,8 @@ class PromptService:
             filename = filename.lower().replace(' ', '_')
             self.asset_repo.write_text(company_short_name, AssetType.PROMPT, filename, data['content'])
 
+        output_schema, output_schema_yaml = self._extract_output_schema_payload(data)
+
         # 2. update the prompt in the database
         new_prompt = Prompt(
             company_id=company.id,
@@ -180,7 +260,11 @@ class PromptService:
             active=data.get('active', True),
             prompt_type=self._normalize_prompt_type(data.get('prompt_type')),
             filename=f"{prompt_name.lower().replace(' ', '_')}.prompt",
-            custom_fields=data.get('custom_fields', [])
+            custom_fields=data.get('custom_fields', []),
+            output_schema=output_schema,
+            output_schema_yaml=output_schema_yaml,
+            output_schema_mode=self._normalize_output_schema_mode(data.get("output_schema_mode")),
+            output_response_mode=self._normalize_output_response_mode(data.get("output_response_mode")),
         )
         self.llm_query_repo.create_or_update_prompt(new_prompt)
 
@@ -316,6 +400,7 @@ class PromptService:
 
                 category_obj = category_map[category_name]
                 filename = f"{prompt_name}.prompt"
+                normalized_schema = StructuredOutputService.normalize_schema(prompt_data.get("output_schema"))
 
                 new_prompt = Prompt(
                     company_id=company.id,
@@ -326,7 +411,11 @@ class PromptService:
                     active=prompt_data.get('active', True),
                     prompt_type=self._normalize_prompt_type(prompt_data.get('prompt_type')),
                     filename=filename,
-                    custom_fields=prompt_data.get('custom_fields', [])
+                    custom_fields=prompt_data.get('custom_fields', []),
+                    output_schema=normalized_schema,
+                    output_schema_yaml=StructuredOutputService.dump_yaml_schema(normalized_schema),
+                    output_schema_mode=self._normalize_output_schema_mode(prompt_data.get("output_schema_mode")),
+                    output_response_mode=self._normalize_output_response_mode(prompt_data.get("output_response_mode")),
                 )
 
                 self.llm_query_repo.create_or_update_prompt(new_prompt)
@@ -340,6 +429,12 @@ class PromptService:
 
             self.llm_query_repo.commit()
 
+        except IAToolkitException:
+            self.llm_query_repo.rollback()
+            raise
+        except ValueError as e:
+            self.llm_query_repo.rollback()
+            raise IAToolkitException(IAToolkitException.ErrorType.INVALID_PARAMETER, str(e)) from e
         except Exception as e:
             self.llm_query_repo.rollback()
             raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR, str(e))
