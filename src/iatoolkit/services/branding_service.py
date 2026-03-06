@@ -66,7 +66,10 @@ class BrandingService:
             "prompt_assistant_item_hover_text": None,
 
             # Color para el botón de Enviar ---
-            "send_button_color": "#212529"          # Gris oscuro/casi negro por defecto
+            "send_button_color": "#212529",          # Gris oscuro/casi negro por defecto
+
+            # Loading spinner color in chat query flow (fallback to header background)
+            "loading_spinner_color": None
         }
 
     def get_company_branding(self, company_short_name: str) -> dict:
@@ -136,6 +139,7 @@ class BrandingService:
                 --brand-prompt-assistant-header-text: {final_branding_values['prompt_assistant_header_text']};
                 --brand-prompt-assistant-item-hover-bg: {final_branding_values['prompt_assistant_item_hover_bg'] or final_branding_values['brand_primary_color']};
                 --brand-prompt-assistant-item-hover-text: {final_branding_values['prompt_assistant_item_hover_text'] or final_branding_values['brand_text_on_primary']};
+                --brand-loading-spinner-color: {final_branding_values['loading_spinner_color'] or final_branding_values['header_background_color']};
 
             }}
         """

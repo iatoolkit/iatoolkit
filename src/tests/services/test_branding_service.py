@@ -105,3 +105,46 @@ class TestBrandingService:
         # Validar que una variable CSS de un valor por defecto que no estaba en el conjunto personalizado sigue presente.
         expected_default_var = f"--brand-secondary-color: {self.default_branding['brand_secondary_color']};"
         assert expected_default_var in branding['css_variables']
+
+    def test_loading_spinner_color_falls_back_to_header_background(self):
+        """
+        If loading_spinner_color is not provided, spinner color should follow header_background_color.
+        """
+        custom_styles = {
+            "header_background_color": "#A11F44",
+        }
+
+        def side_effect(company_short_name, content_key):
+            if content_key == 'branding':
+                return custom_styles
+            if content_key == 'name':
+                return "Spinner Fallback Corp"
+            return None
+
+        self.configuration_service.get_configuration.side_effect = side_effect
+
+        branding = self.branding_service.get_company_branding("spinner-fallback-corp")
+
+        assert "--brand-loading-spinner-color: #A11F44;" in branding['css_variables']
+
+    def test_loading_spinner_color_can_be_overridden(self):
+        """
+        If loading_spinner_color is provided, it should override header background for spinner color.
+        """
+        custom_styles = {
+            "header_background_color": "#A11F44",
+            "loading_spinner_color": "#0B2D4F",
+        }
+
+        def side_effect(company_short_name, content_key):
+            if content_key == 'branding':
+                return custom_styles
+            if content_key == 'name':
+                return "Spinner Override Corp"
+            return None
+
+        self.configuration_service.get_configuration.side_effect = side_effect
+
+        branding = self.branding_service.get_company_branding("spinner-override-corp")
+
+        assert "--brand-loading-spinner-color: #0B2D4F;" in branding['css_variables']

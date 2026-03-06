@@ -319,6 +319,64 @@ class TestCompanyContextService:
         assert "shipping_address" in props
         assert props["shipping_address"]["type"] == "string"
 
+    def test_get_enriched_schema_merge_flat_schema_format(self):
+        """
+        Supports flat schema files where metadata is defined at top level:
+        table/schema/description/columns...
+        """
+        self.mock_sql_service.get_database_structure.return_value = {
+            "clients": {
+                "columns": [{"name": "client_id"}, {"name": "advisor_name"}]
+            }
+        }
+        self.mock_asset_repo.list_files.return_value = ["wealth-clients.yaml"]
+
+        yaml_content = textwrap.dedent("""
+        table: clients
+        schema: wealth
+        description: "Master table of investment clients."
+        columns:
+          advisor_name:
+            type: text
+            description: "Advisor assigned to the client."
+        """)
+        self.mock_asset_repo.read_text.return_value = yaml_content
+
+        result = self.context_service.get_enriched_database_schema(self.COMPANY_NAME, 'wealth')
+
+        table = result["clients"]
+        assert table["description"] == "Master table of investment clients."
+        advisor_col = next(c for c in table["columns"] if c["name"] == "advisor_name")
+        assert advisor_col["description"] == "Advisor assigned to the client."
+
+    def test_get_enriched_schema_matches_unqualified_file_with_qualified_table_name(self):
+        """
+        If DB introspection returns qualified table names (schema.table),
+        file names using unqualified table names should still match.
+        """
+        self.mock_sql_service.get_database_structure.return_value = {
+            "wealth.clients": {
+                "columns": [{"name": "client_id"}, {"name": "full_name"}]
+            }
+        }
+        self.mock_asset_repo.list_files.return_value = ["wealth-clients.yaml"]
+
+        yaml_content = textwrap.dedent("""
+        clients:
+          description: "Clients table metadata."
+          columns:
+            full_name:
+              description: "Client full name."
+        """)
+        self.mock_asset_repo.read_text.return_value = yaml_content
+
+        result = self.context_service.get_enriched_database_schema(self.COMPANY_NAME, 'wealth')
+
+        table = result["wealth.clients"]
+        assert table["description"] == "Clients table metadata."
+        full_name_col = next(c for c in table["columns"] if c["name"] == "full_name")
+        assert full_name_col["description"] == "Client full name."
+
     def test_build_context_with_only_static_files(self):
         """
         GIVEN only static markdown files provide context in the repo
