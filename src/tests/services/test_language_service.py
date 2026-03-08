@@ -1,7 +1,7 @@
 # tests/services/test_language_service.py
 import pytest
 from flask import Flask, g
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 from iatoolkit.services.language_service import LanguageService
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.repositories.profile_repo import ProfileRepo
@@ -67,6 +67,22 @@ class TestLanguageService:
             self.mock_config_service.get_configuration.assert_called_once_with('acme-en', 'locale')
 
     @patch('iatoolkit.services.language_service.SessionManager')
+    def test_company_locale_overrides_lang_query_param(self, mock_session_manager):
+        """
+        GIVEN a company with locale 'en_US' and a conflicting query param '?lang=es'
+        WHEN the current language is requested
+        THEN the company locale wins and the resulting language is 'en'.
+        """
+        mock_session_manager.get.return_value = None
+        self.mock_config_service.get_configuration.return_value = 'en_US'
+
+        with self.app.test_request_context('/acme-en/login?lang=es'):
+            lang = self.language_service.get_current_language()
+
+            assert lang == 'en'
+            self.mock_config_service.get_configuration.assert_called_once_with('acme-en', 'locale')
+
+    @patch('iatoolkit.services.language_service.SessionManager')
     def test_returns_company_language_from_url_when_no_session(self, mock_session_manager):
         """
         GIVEN no user is logged in
@@ -86,6 +102,22 @@ class TestLanguageService:
             assert lang == 'es'
             self.mock_config_service.get_configuration.assert_called_once_with('acme-fr', 'locale')
             self.mock_profile_repo.get_user_by_email.assert_not_called()
+
+    @patch('iatoolkit.services.language_service.SessionManager')
+    def test_uses_query_lang_when_company_locale_is_missing(self, mock_session_manager):
+        """
+        GIVEN a company context exists but company.yaml has no locale
+        WHEN a query param '?lang=en' is provided
+        THEN the query language is used.
+        """
+        mock_session_manager.get.return_value = None
+        self.mock_config_service.get_configuration.return_value = None
+
+        with self.app.test_request_context('/acme-no-locale/login?lang=en'):
+            lang = self.language_service.get_current_language()
+
+            assert lang == 'en'
+            self.mock_config_service.get_configuration.assert_called_once_with('acme-no-locale', 'locale')
 
     # --- Priority 3 Tests: System Fallback ---
 

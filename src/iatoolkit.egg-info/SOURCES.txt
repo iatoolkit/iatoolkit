@@ -17,12 +17,19 @@ src/iatoolkit/common/__init__.py
 src/iatoolkit/common/exceptions.py
 src/iatoolkit/common/model_registry.py
 src/iatoolkit/common/routes.py
+src/iatoolkit/common/secret_resolver.py
 src/iatoolkit/common/session_manager.py
 src/iatoolkit/common/util.py
 src/iatoolkit/common/interfaces/__init__.py
 src/iatoolkit/common/interfaces/asset_storage.py
 src/iatoolkit/common/interfaces/database_provider.py
 src/iatoolkit/common/interfaces/secret_provider.py
+src/iatoolkit/common/interfaces/signup_policy_resolver.py
+src/iatoolkit/common/interfaces/web_search_provider.py
+src/iatoolkit/config/__init__.py
+src/iatoolkit/config/llm_capabilities.yaml
+src/iatoolkit/config/system_prompts_pack.yaml
+src/iatoolkit/config/system_tools_pack.yaml
 src/iatoolkit/infra/__init__.py
 src/iatoolkit/infra/brevo_mail_app.py
 src/iatoolkit/infra/call_service.py
@@ -41,6 +48,7 @@ src/iatoolkit/infra/connectors/google_drive_connector.py
 src/iatoolkit/infra/connectors/local_file_connector.py
 src/iatoolkit/infra/connectors/s3_connector.py
 src/iatoolkit/infra/llm_providers/__init__.py
+src/iatoolkit/infra/llm_providers/anthropic_adapter.py
 src/iatoolkit/infra/llm_providers/deepseek_adapter.py
 src/iatoolkit/infra/llm_providers/gemini_adapter.py
 src/iatoolkit/infra/llm_providers/openai_adapter.py
@@ -58,6 +66,7 @@ src/iatoolkit/repositories/profile_repo.py
 src/iatoolkit/repositories/vs_repo.py
 src/iatoolkit/services/__init__.py
 src/iatoolkit/services/api_key_service.py
+src/iatoolkit/services/attachment_policy_service.py
 src/iatoolkit/services/auth_service.py
 src/iatoolkit/services/benchmark_service.py
 src/iatoolkit/services/branding_service.py
@@ -69,6 +78,7 @@ src/iatoolkit/services/embedding_service.py
 src/iatoolkit/services/excel_service.py
 src/iatoolkit/services/file_processor_service.py
 src/iatoolkit/services/history_manager_service.py
+src/iatoolkit/services/http_tool_service.py
 src/iatoolkit/services/i18n_service.py
 src/iatoolkit/services/inference_service.py
 src/iatoolkit/services/jwt_service.py
@@ -80,8 +90,11 @@ src/iatoolkit/services/mail_service.py
 src/iatoolkit/services/profile_service.py
 src/iatoolkit/services/prompt_service.py
 src/iatoolkit/services/query_service.py
+src/iatoolkit/services/signup_policy_resolver.py
 src/iatoolkit/services/sql_service.py
 src/iatoolkit/services/storage_service.py
+src/iatoolkit/services/structured_output_service.py
+src/iatoolkit/services/system_prompt_catalog.py
 src/iatoolkit/services/system_tools.py
 src/iatoolkit/services/tool_service.py
 src/iatoolkit/services/user_feedback_service.py
@@ -89,6 +102,7 @@ src/iatoolkit/services/user_session_context_service.py
 src/iatoolkit/services/visual_kb_service.py
 src/iatoolkit/services/visual_tool_service.py
 src/iatoolkit/services/warmup_service.py
+src/iatoolkit/services/web_search_service.py
 src/iatoolkit/services/parsers/__init__.py
 src/iatoolkit/services/parsers/contracts.py
 src/iatoolkit/services/parsers/image_normalizer.py
@@ -99,6 +113,10 @@ src/iatoolkit/services/parsers/validator.py
 src/iatoolkit/services/parsers/providers/__init__.py
 src/iatoolkit/services/parsers/providers/docling_provider.py
 src/iatoolkit/services/parsers/providers/legacy_provider.py
+src/iatoolkit/services/web_search/__init__.py
+src/iatoolkit/services/web_search/provider_factory.py
+src/iatoolkit/services/web_search/providers/__init__.py
+src/iatoolkit/services/web_search/providers/brave_provider.py
 src/iatoolkit/static/images/fernando.jpeg
 src/iatoolkit/static/images/iatoolkit_core.png
 src/iatoolkit/static/images/iatoolkit_logo.png

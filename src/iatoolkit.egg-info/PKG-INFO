@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: iatoolkit
-Version: 1.59.0
+Version: 1.68.1
 Summary: IAToolkit
 Author: Fernando Libedinsky
 License-Expression: MIT
@@ -9,6 +9,7 @@ Description-Content-Type: text/markdown
 License-File: LICENSE
 License-File: LICENSE_COMMUNITY.md
 Requires-Dist: bcrypt==4.2.1
+Requires-Dist: anthropic>=0.83.0
 Requires-Dist: boto3==1.36.22
 Requires-Dist: botocore==1.36.22
 Requires-Dist: build==1.2.2.post1
