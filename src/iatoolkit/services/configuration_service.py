@@ -228,7 +228,7 @@ class ConfigurationService:
         sql_source_service = current_iatoolkit().get_injector().get(SqlSourceService)
 
         result = sql_source_service.refresh_runtime(company_short_name)
-        logging.info(
+        logging.debug(
             "🛢️ Runtime SQL sources refreshed for '%s': registered=%s skipped=%s",
             company_short_name,
             result.get("registered", 0),
@@ -243,7 +243,7 @@ class ConfigurationService:
         data_sources = config.get('data_sources', {}) if isinstance(config, dict) else {}
         sql_sources = data_sources.get('sql', []) if isinstance(data_sources, dict) else []
         sync_result = sql_source_service.sync_from_yaml(company_short_name, sql_sources)
-        logging.info(
+        logging.debug(
             "🧩 SQL source sync for '%s': upserted=%s deleted=%s skipped=%s",
             company_short_name,
             sync_result.get("upserted", 0),
