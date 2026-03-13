@@ -26,7 +26,7 @@ class TestUserFeedbackView:
         self.mock_auth = MagicMock(spec=AuthService)
 
         # Mock a successful authentication by default for most tests
-        self.mock_auth.verify.return_value = {"success": True,
+        self.mock_auth.verify_for_company.return_value = {"success": True,
                                               'user_identifier': 'an_user'}
 
         # Register the view with mocked dependencies
@@ -40,7 +40,7 @@ class TestUserFeedbackView:
 
     def test_post_when_auth_error(self):
         """Test that an auth error returns a 401 status."""
-        self.mock_auth.verify.return_value = {"success": False,
+        self.mock_auth.verify_for_company.return_value = {"success": False,
                                               'error_message': 'error in authentication',
                                               'status_code': 401}
         response = self.client.post(self.url, json={'message': 'any', 'rating': 1})

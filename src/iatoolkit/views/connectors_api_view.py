@@ -30,7 +30,7 @@ class ConnectorsApiView(MethodView):
 
     def get(self, company_short_name: str):
         try:
-            auth_result = self.auth_service.verify(anonymous=True)
+            auth_result = self.auth_service.verify_for_company(company_short_name, anonymous=True)
             if not auth_result.get("success"):
                 return jsonify(auth_result), auth_result.get("status_code", 401)
 

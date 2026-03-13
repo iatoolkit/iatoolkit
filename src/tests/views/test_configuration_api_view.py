@@ -66,7 +66,7 @@ class TestConfigurationApiView:
         )
 
         # Default: Successful authentication
-        self.mock_auth_service.verify.return_value = {
+        self.mock_auth_service.verify_for_company.return_value = {
             "success": True,
             "company_short_name": MOCK_COMPANY_SHORT_NAME,
             "user_identifier": "user@test.com",
@@ -76,7 +76,7 @@ class TestConfigurationApiView:
 
     def test_get_fails_if_auth_fails(self):
         """Should return auth status code (401) if authentication fails."""
-        self.mock_auth_service.verify.return_value = {
+        self.mock_auth_service.verify_for_company.return_value = {
             "success": False,
             "error_message": "Invalid API Key",
             "status_code": 401,
@@ -225,7 +225,7 @@ class TestConfigurationApiView:
 
     def test_patch_fails_auth(self):
         """PATCH should fail if authentication fails (requires valid user)."""
-        self.mock_auth_service.verify.return_value = {"success": False, "status_code": 401}
+        self.mock_auth_service.verify_for_company.return_value = {"success": False, "status_code": 401}
 
         resp = self.client.patch(self.config_url, json={})
 
@@ -298,7 +298,7 @@ class TestConfigurationApiView:
 
     def test_post_fails_auth(self):
         """POST should fail if authentication fails."""
-        self.mock_auth_service.verify.return_value = {"success": False, "status_code": 401}
+        self.mock_auth_service.verify_for_company.return_value = {"success": False, "status_code": 401}
 
         resp = self.client.post(self.config_url, json={})
 
@@ -348,7 +348,7 @@ class TestConfigurationApiView:
 
     def test_validate_fails_auth(self):
         """GET validate should fail if authentication fails."""
-        self.mock_auth_service.verify.return_value = {"success": False, "status_code": 401}
+        self.mock_auth_service.verify_for_company.return_value = {"success": False, "status_code": 401}
 
         resp = self.client.get(self.validate_url)
 

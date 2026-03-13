@@ -34,7 +34,7 @@ class ConfigurationApiView(MethodView):
             refresh_runtime = action == "load_configuration"
 
             # 1. Verify authentication
-            auth_result = self.auth_service.verify(anonymous=True)
+            auth_result = self.auth_service.verify_for_company(company_short_name, anonymous=True)
             if not auth_result.get("success"):
                 return jsonify(auth_result), auth_result.get("status_code", 401)
 
@@ -114,7 +114,7 @@ class ConfigurationApiView(MethodView):
         Body: { "key": "llm.model", "value": "gpt-4" }
         """
         try:
-            auth_result = self.auth_service.verify()
+            auth_result = self.auth_service.verify_for_company(company_short_name)
             if not auth_result.get("success"):
                 return jsonify(auth_result), 401
 
@@ -152,7 +152,7 @@ class ConfigurationApiView(MethodView):
         Body: { "parent_key": "llm", "key": "max_tokens", "value": 2048 }
         """
         try:
-            auth_result = self.auth_service.verify(anonymous=False)
+            auth_result = self.auth_service.verify_for_company(company_short_name, anonymous=False)
             if not auth_result.get("success"):
                 return jsonify(auth_result), 401
 
@@ -199,7 +199,7 @@ class ValidateConfigurationApiView(MethodView):
 
     def get(self, company_short_name: str):
         try:
-            auth_result = self.auth_service.verify(anonymous=False)
+            auth_result = self.auth_service.verify_for_company(company_short_name, anonymous=False)
             if not auth_result.get("success"):
                 return jsonify(auth_result), 401
 

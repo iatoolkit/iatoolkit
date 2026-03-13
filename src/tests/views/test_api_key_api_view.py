@@ -19,7 +19,7 @@ class TestApiKeyApiView:
         self.mock_auth = MagicMock(spec=AuthService)
         self.mock_api_key_service = MagicMock(spec=ApiKeyService)
 
-        self.mock_auth.verify.return_value = {
+        self.mock_auth.verify_for_company.return_value = {
             "success": True,
             "company_short_name": self.COMPANY,
             "user_role": "admin",
@@ -99,7 +99,7 @@ class TestApiKeyApiView:
         self.mock_api_key_service.delete_api_key_entry.assert_called_once_with(self.COMPANY, 7)
 
     def test_auth_failure(self):
-        self.mock_auth.verify.return_value = {"success": False, "status_code": 401}
+        self.mock_auth.verify_for_company.return_value = {"success": False, "status_code": 401}
 
         resp = self.client.get(f"/{self.COMPANY}/api/api-keys")
 
@@ -107,7 +107,7 @@ class TestApiKeyApiView:
         self.mock_api_key_service.list_api_keys.assert_not_called()
 
     def test_forbidden_when_role_is_not_admin(self):
-        self.mock_auth.verify.return_value = {
+        self.mock_auth.verify_for_company.return_value = {
             "success": True,
             "company_short_name": self.COMPANY,
             "user_role": "user",
@@ -119,10 +119,9 @@ class TestApiKeyApiView:
         self.mock_api_key_service.list_api_keys.assert_not_called()
 
     def test_forbidden_when_company_mismatch(self):
-        self.mock_auth.verify.return_value = {
-            "success": True,
-            "company_short_name": "other",
-            "user_role": "admin",
+        self.mock_auth.verify_for_company.return_value = {
+            "success": False,
+            "status_code": 403,
         }
 
         resp = self.client.get(f"/{self.COMPANY}/api/api-keys")

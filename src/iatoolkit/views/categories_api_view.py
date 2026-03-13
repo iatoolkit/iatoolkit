@@ -39,7 +39,7 @@ class CategoriesApiView(MethodView):
     def get(self, company_short_name):
         try:
             # 1. Verify Authentication
-            auth_result = self.auth_service.verify()
+            auth_result = self.auth_service.verify_for_company(company_short_name)
             if not auth_result.get("success"):
                 return jsonify(auth_result), 401
 
@@ -82,7 +82,7 @@ class CategoriesApiView(MethodView):
     def post(self, company_short_name):
         try:
             # 1. Verify Authentication
-            auth_result = self.auth_service.verify()
+            auth_result = self.auth_service.verify_for_company(company_short_name)
             if not auth_result.get("success"):
                 return jsonify(auth_result), 401
 

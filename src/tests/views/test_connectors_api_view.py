@@ -28,7 +28,7 @@ class TestConnectorsApiView:
         self.base_url = f"/{self.company_short_name}/api/connectors"
 
         # Default: auth OK + company exists
-        self.auth_service.verify.return_value = {"success": True}
+        self.auth_service.verify_for_company.return_value = {"success": True}
         self.profile_service.get_company_by_short_name.return_value = MagicMock()
 
         connectors_view = ConnectorsApiView.as_view(
@@ -45,7 +45,7 @@ class TestConnectorsApiView:
         )
 
     def test_get_connectors_auth_error(self):
-        self.auth_service.verify.return_value = {
+        self.auth_service.verify_for_company.return_value = {
             "success": False,
             "error_message": "Authentication token is invalid",
             "status_code": 401,
@@ -96,7 +96,7 @@ class TestConnectorsApiView:
 
         self.configuration_service.get_configuration.assert_called_once_with(self.company_short_name, "connectors")
         self.profile_service.get_company_by_short_name.assert_called_once_with(self.company_short_name)
-        self.auth_service.verify.assert_called_once()
+        self.auth_service.verify_for_company.assert_called_once_with(self.company_short_name, anonymous=True)
 
     def test_get_connectors_returns_500_on_unexpected_error(self):
         self.configuration_service.get_configuration.side_effect = Exception("Boom")

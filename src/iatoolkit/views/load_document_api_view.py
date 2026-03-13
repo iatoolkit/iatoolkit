@@ -25,11 +25,6 @@ class LoadDocumentApiView(MethodView):
 
     def post(self):
         try:
-            # 1. Authenticate the API request.
-            auth_result = self.auth_service.verify()
-            if not auth_result.get("success"):
-                return jsonify(auth_result), auth_result.get("status_code")
-
             req_data = request.get_json()
             required_fields = ['company', 'filename', 'content']
             for field in required_fields:
@@ -37,6 +32,12 @@ class LoadDocumentApiView(MethodView):
                     return jsonify({"error": f"El campo {field} es requerido"}), 400
 
             company_short_name = req_data.get('company', '')
+
+            # 1. Authenticate the API request for the target company.
+            auth_result = self.auth_service.verify_for_company(company_short_name)
+            if not auth_result.get("success"):
+                return jsonify(auth_result), auth_result.get("status_code")
+
             filename = req_data.get('filename', False)
             base64_content = req_data.get('content', '')
             metadata = req_data.get('metadata', {})

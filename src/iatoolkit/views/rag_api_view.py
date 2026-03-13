@@ -58,7 +58,7 @@ class RagApiView(MethodView):
         """
         try:
             # 1. Authenticate the user from the current session.
-            auth_result = self.auth_service.verify()
+            auth_result = self.auth_service.verify_for_company(company_short_name)
             if not auth_result.get("success"):
                 return jsonify(auth_result), auth_result.get("status_code")
 
@@ -122,7 +122,7 @@ class RagApiView(MethodView):
         """
         try:
             # 1. Authenticate
-            auth_result = self.auth_service.verify()
+            auth_result = self.auth_service.verify_for_company(company_short_name)
             if not auth_result.get("success"):
                 return jsonify(auth_result), auth_result.get("status_code")
 
@@ -158,7 +158,7 @@ class RagApiView(MethodView):
         """
         try:
             # 1. Authenticate
-            auth_result = self.auth_service.verify()
+            auth_result = self.auth_service.verify_for_company(company_short_name)
             if not auth_result.get("success"):
                 return jsonify(auth_result), auth_result.get("status_code")
 
@@ -185,7 +185,7 @@ class RagApiView(MethodView):
         """
         try:
             # 1. Authenticate
-            auth_result = self.auth_service.verify()
+            auth_result = self.auth_service.verify_for_company(company_short_name)
             if not auth_result.get("success"):
                 return jsonify(auth_result), auth_result.get("status_code")
 
@@ -225,7 +225,7 @@ class RagApiView(MethodView):
         Direct vector text search (no LLM orchestration).
         """
         try:
-            auth_result = self.auth_service.verify()
+            auth_result = self.auth_service.verify_for_company(company_short_name)
             if not auth_result.get("success"):
                 return jsonify(auth_result), auth_result.get("status_code")
 
@@ -266,7 +266,7 @@ class RagApiView(MethodView):
         Direct vector image search from text query (no LLM orchestration).
         """
         try:
-            auth_result = self.auth_service.verify()
+            auth_result = self.auth_service.verify_for_company(company_short_name)
             if not auth_result.get("success"):
                 return jsonify(auth_result), auth_result.get("status_code")
 
@@ -307,7 +307,7 @@ class RagApiView(MethodView):
         Direct visual search from one image (no LLM orchestration).
         """
         try:
-            auth_result = self.auth_service.verify()
+            auth_result = self.auth_service.verify_for_company(company_short_name)
             if not auth_result.get("success"):
                 return jsonify(auth_result), auth_result.get("status_code")
 

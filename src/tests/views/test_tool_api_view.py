@@ -26,7 +26,7 @@ class TestToolApiView:
         self.mock_dispatcher = MagicMock(spec=Dispatcher)
 
         # Default Auth Success
-        self.mock_auth.verify.return_value = {"success": True, "status_code": 200}
+        self.mock_auth.verify_for_company.return_value = {"success": True, "status_code": 200}
 
         # View setup
         view = ToolApiView.as_view(
@@ -90,7 +90,7 @@ class TestToolApiView:
 
     def test_list_tools_auth_fail(self):
         """Should return 401 if auth fails."""
-        self.mock_auth.verify.return_value = {"success": False, "status_code": 401}
+        self.mock_auth.verify_for_company.return_value = {"success": False, "status_code": 401}
 
         resp = self.client.get(f'/{self.MOCK_COMPANY}/api/tools')
         assert resp.status_code == 401
@@ -151,7 +151,7 @@ class TestToolApiView:
 
     def test_update_tool_system_still_blocked_for_admin_role(self):
         """PUT should keep allow_system_update=False even for admin/owner roles."""
-        self.mock_auth.verify.return_value = {"success": True, "status_code": 200, "user_role": "admin"}
+        self.mock_auth.verify_for_company.return_value = {"success": True, "status_code": 200, "user_role": "admin"}
         payload = {"description": "updated"}
         self.mock_tool_service.update_tool.return_value = {"id": 1, "description": "updated"}
 

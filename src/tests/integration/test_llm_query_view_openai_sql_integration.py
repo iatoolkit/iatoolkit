@@ -235,7 +235,7 @@ def test_llm_query_view_openai_sql_function_call_success():
     )
 
     auth_service = MagicMock()
-    auth_service.verify.return_value = {"success": True, "user_identifier": USER_IDENTIFIER}
+    auth_service.verify_for_company.return_value = {"success": True, "user_identifier": USER_IDENTIFIER}
 
     view = LLMQueryApiView.as_view(
         "llm_query_api_integration",

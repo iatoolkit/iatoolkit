@@ -38,7 +38,7 @@ class TestHistoryView:
         )
         self.app.add_url_rule('/<company_short_name>/api/history', view_func=view_func, methods=['POST'])
 
-        self.mock_auth.verify.return_value = {"success": True, 'user_identifier': MOCK_USER_IDENTIFIER}
+        self.mock_auth.verify_for_company.return_value = {"success": True, 'user_identifier': MOCK_USER_IDENTIFIER}
 
     def test_get_full_history_success(self):
         """
@@ -59,7 +59,7 @@ class TestHistoryView:
         assert response.json == mock_history_response
 
         # Verify that the session was checked and the history service was called with the correct user ID.
-        self.mock_auth.verify.assert_called_once()
+        self.mock_auth.verify_for_company.assert_called_once_with(MOCK_COMPANY_SHORT_NAME)
         self.mock_history_service.get_full_history.assert_called_once_with(
             company_short_name=MOCK_COMPANY_SHORT_NAME,
             user_identifier=MOCK_USER_IDENTIFIER
@@ -67,7 +67,7 @@ class TestHistoryView:
 
 
     def test_get_full_history_when_auth_error(self):
-        self.mock_auth.verify.return_value = {"success": False, "error_message": "Invalid API Key", "status_code": 401}
+        self.mock_auth.verify_for_company.return_value = {"success": False, "error_message": "Invalid API Key", "status_code": 401}
 
         response = self.client.post(self.url)
 

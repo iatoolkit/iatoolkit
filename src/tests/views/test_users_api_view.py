@@ -26,7 +26,7 @@ class TestUsersApiView:
 
     def test_get_users_success(self):
         # Arrange
-        self.mock_auth_service.verify.return_value = {"success": True}
+        self.mock_auth_service.verify_for_company.return_value = {"success": True}
 
         expected_users = [
             {"email": "a@a.com", "role": "admin"},
@@ -44,7 +44,7 @@ class TestUsersApiView:
 
     def test_get_users_auth_failure(self):
         # Arrange
-        self.mock_auth_service.verify.return_value = {"success": False, "status_code": 401}
+        self.mock_auth_service.verify_for_company.return_value = {"success": False, "status_code": 401}
 
         # Act
         resp = self.client.get(self.url)
@@ -55,7 +55,7 @@ class TestUsersApiView:
 
     def test_get_users_exception_handling(self):
         # Arrange
-        self.mock_auth_service.verify.return_value = {"success": True}
+        self.mock_auth_service.verify_for_company.return_value = {"success": True}
         self.mock_profile_service.get_company_users.side_effect = Exception("DB Error")
 
         # Act

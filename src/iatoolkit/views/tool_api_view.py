@@ -49,7 +49,7 @@ class ToolApiView(MethodView):
         GET /<company>/api/tools       -> List all tools
         GET /<company>/api/tools/<id>  -> Get specific tool details
         """
-        auth_result = self.auth_service.verify()
+        auth_result = self.auth_service.verify_for_company(company_short_name)
         if not auth_result.get("success"):
             return jsonify(auth_result), auth_result.get("status_code", 401)
 
@@ -72,7 +72,7 @@ class ToolApiView(MethodView):
         POST /<company>/api/tools -> Create a new tool
         Body: { "name": "...", "description": "...", "tool_type": "...", ... }
         """
-        auth_result = self.auth_service.verify()
+        auth_result = self.auth_service.verify_for_company(company_short_name)
         if not auth_result.get("success"):
             return jsonify(auth_result), auth_result.get("status_code", 401)
 
@@ -96,7 +96,7 @@ class ToolApiView(MethodView):
         """
         PUT /<company>/api/tools/<id> -> Update an existing tool
         """
-        auth_result = self.auth_service.verify()
+        auth_result = self.auth_service.verify_for_company(company_short_name)
         if not auth_result.get("success"):
             return jsonify(auth_result), auth_result.get("status_code", 401)
 
@@ -123,7 +123,7 @@ class ToolApiView(MethodView):
         """
         DELETE /<company>/api/tools/<id> -> Delete a tool
         """
-        auth_result = self.auth_service.verify()
+        auth_result = self.auth_service.verify_for_company(company_short_name)
         if not auth_result.get("success"):
             return jsonify(auth_result), auth_result.get("status_code", 401)
 
@@ -151,7 +151,7 @@ class ToolApiView(MethodView):
             "kwargs": {...}
         }
         """
-        auth_result = self.auth_service.verify()
+        auth_result = self.auth_service.verify_for_company(company_short_name)
         if not auth_result.get("success"):
             return jsonify(auth_result), auth_result.get("status_code", 401)
 

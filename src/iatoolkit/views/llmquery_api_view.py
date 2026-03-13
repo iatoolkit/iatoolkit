@@ -26,7 +26,7 @@ class LLMQueryApiView(MethodView):
     def post(self, company_short_name: str):
         try:
             # 1. Authenticate the API request.
-            auth_result = self.auth_service.verify()
+            auth_result = self.auth_service.verify_for_company(company_short_name)
             if not auth_result.get("success"):
                 return jsonify(auth_result), auth_result.get("status_code")
 

@@ -128,6 +128,47 @@ class TestAuthServiceVerify:
         # FIX: The service returns 401 for missing credentials, not 402.
         assert result['status_code'] == 401
 
+    def test_verify_for_company_returns_success_when_company_matches(self):
+        self.mock_profile_service.get_current_session_info.return_value = {}
+        self.mock_api_key_service.get_active_api_key_entry.return_value = self.mock_api_key_entry
+
+        with self.app.test_request_context(
+            headers={'Authorization': 'Bearer valid-api-key'},
+            json={'user_identifier': 'api-user-456'}
+        ):
+            result = self.service.verify_for_company("apico")
+
+        assert result['success'] is True
+        assert result['company_short_name'] == "apico"
+        assert result['user_identifier'] == "api-user-456"
+
+    def test_verify_for_company_returns_403_when_company_mismatches(self):
+        self.mock_profile_service.get_current_session_info.return_value = {}
+        self.mock_api_key_service.get_active_api_key_entry.return_value = self.mock_api_key_entry
+
+        with self.app.test_request_context(
+            headers={'Authorization': 'Bearer valid-api-key'},
+            json={'user_identifier': 'api-user-456'}
+        ):
+            result = self.service.verify_for_company("other-company")
+
+        assert result == {
+            "success": False,
+            "error_message": "Forbidden",
+            "status_code": 403,
+        }
+
+    def test_verify_for_company_propagates_verify_errors(self):
+        self.mock_profile_service.get_current_session_info.return_value = {}
+        self.mock_api_key_service.get_active_api_key_entry.return_value = None
+
+        with self.app.test_request_context(headers={'Authorization': 'Bearer invalid-key'}):
+            result = self.service.verify_for_company("apico")
+
+        assert result['success'] is False
+        assert result['error_message'] == 'translated:errors.auth.invalid_api_key'
+        assert result['status_code'] == 402
+
 
 class TestAuthServiceLoginFlows:
     """

@@ -35,7 +35,7 @@ class TestCategoriesView:
         self.llm_query_repo.session = self.mock_session
 
         self.company_short_name = 'test_co'
-        self.auth_service.verify.return_value = {'success': True}
+        self.auth_service.verify_for_company.return_value = {'success': True}
 
         self.mock_company = Company(id=1, short_name='test_co')
         self.profile_service.get_company_by_short_name.return_value = self.mock_company

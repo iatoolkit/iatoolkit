@@ -21,13 +21,9 @@ class ApiKeyApiView(MethodView):
         self.api_key_service = api_key_service
 
     def _require_admin_auth(self, company_short_name: str) -> dict | tuple:
-        auth_result = self.auth_service.verify()
+        auth_result = self.auth_service.verify_for_company(company_short_name)
         if not auth_result.get("success"):
             return jsonify(auth_result), auth_result.get("status_code", 401)
-
-        auth_company = auth_result.get("company_short_name")
-        if auth_company != company_short_name:
-            return jsonify({"error": "Forbidden"}), 403
 
         role = (auth_result.get("user_role") or "").lower()
         if role not in {"admin", "owner"}:

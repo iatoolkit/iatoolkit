@@ -159,6 +159,30 @@ class AuthService:
             "user_identifier": user_identifier
         }
 
+    def verify_for_company(self, company_short_name: str, anonymous: bool = False) -> dict:
+        """
+        Verifies the current request and enforces that the authenticated tenant
+        matches the tenant requested by the caller.
+        """
+        auth_result = self.verify(anonymous=anonymous)
+        if not auth_result.get("success"):
+            return auth_result
+
+        auth_company_short_name = auth_result.get("company_short_name")
+        if auth_company_short_name != company_short_name:
+            logging.warning(
+                "Forbidden access due to company mismatch. requested=%s authenticated=%s",
+                company_short_name,
+                auth_company_short_name,
+            )
+            return {
+                "success": False,
+                "error_message": "Forbidden",
+                "status_code": 403,
+            }
+
+        return auth_result
+
 
     def log_access(self,
                    company_short_name: str,

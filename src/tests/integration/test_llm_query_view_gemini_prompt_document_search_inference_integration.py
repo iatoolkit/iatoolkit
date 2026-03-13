@@ -320,7 +320,7 @@ def test_prompt_execution_with_gemini_document_search_and_inference_embeddings()
     )
 
     auth_service = MagicMock()
-    auth_service.verify.return_value = {"success": True, "user_identifier": USER_IDENTIFIER}
+    auth_service.verify_for_company.return_value = {"success": True, "user_identifier": USER_IDENTIFIER}
 
     view = LLMQueryApiView.as_view(
         "llm_query_api_gemini_integration",
