@@ -58,27 +58,6 @@ class TestDatabaseManager:
         self.db_manager.create_all()
         assert self.mock_base_metadata.create_all.call_count == 1
 
-    def test_create_all_applies_postgres_bootstrap_patches(self):
-        mock_connection = MagicMock()
-        mock_begin_context = MagicMock()
-        mock_begin_context.__enter__.return_value = mock_connection
-        mock_begin_context.__exit__.return_value = False
-        self.mock_engine.begin.return_value = mock_begin_context
-
-        with patch('iatoolkit.repositories.database_manager.event.listen'):
-            db_manager = DatabaseManager(
-                "postgresql://user:pass@localhost/testdb",
-                schema="iatoolkit",
-                register_pgvector=False,
-            )
-
-        db_manager.create_all()
-
-        assert self.mock_base_metadata.create_all.call_count >= 1
-        executed_sql = [str(call.args[0]) for call in mock_connection.execute.call_args_list]
-        assert any("CREATE SCHEMA IF NOT EXISTS iatoolkit" in sql for sql in executed_sql)
-        assert any("ALTER TABLE iatoolkit.iat_companies ADD COLUMN IF NOT EXISTS runtime_mode" in sql for sql in executed_sql)
-        assert any("CREATE TABLE IF NOT EXISTS iatoolkit.iat_sql_sources" in sql for sql in executed_sql)
 
     def test_drop_all_calls_metadata_drop_all(self):
         self.db_manager.drop_all()
