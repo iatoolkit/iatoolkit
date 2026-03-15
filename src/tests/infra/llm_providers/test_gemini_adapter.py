@@ -88,6 +88,9 @@ class TestGeminiAdapter:
         assert response.usage.output_tokens == 0
         assert response.usage.total_tokens == 0
 
+        config_kwargs = self.mock_types.GenerateContentConfig.call_args.kwargs
+        assert config_kwargs["max_output_tokens"] == 10000
+
     def test_extract_usage_metadata_sums_prompt_and_candidates_when_total_is_missing(self):
         usage = self.adapter._extract_usage_metadata(
             self._create_mock_gemini_response(
@@ -118,6 +121,22 @@ class TestGeminiAdapter:
         assert isinstance(response, LLMResponse)
         assert response.output_text == "Hola mundo"
         assert len(context_history) == 2
+
+    def test_create_response_uses_parsed_structured_output_when_text_parts_are_empty(self):
+        mock_response = self._create_mock_gemini_response()
+        mock_response.parsed = {
+            "evaluacion": {},
+            "sociedad": {},
+            "constitucion_y_modificaciones": {},
+            "apoderados": [],
+            "observaciones_generales": [],
+        }
+        self.mock_generative_model.generate_content.return_value = mock_response
+
+        response = self.adapter.create_response(model="gemini-2.5-flash", input=[])
+
+        assert json.loads(response.output_text) == mock_response.parsed
+        assert response.content_parts[0]["type"] == "text"
 
     def test_create_response_with_tool_call(self):
         """Prueba una llamada que devuelve una function_call."""
@@ -339,6 +358,23 @@ class TestGeminiAdapter:
         assert "response_schema" in config_kwargs
         assert "additionalProperties" not in config_kwargs["response_schema"]
         assert "additionalProperties" not in config_kwargs["response_schema"]["properties"]["sales_2025"]["items"]
+
+    def test_create_response_raises_explicit_error_when_structured_output_hits_max_tokens(self):
+        mock_response = self._create_mock_gemini_response(
+            text_content='{"sociedad": {',
+            finish_reason="FinishReason.MAX_TOKENS",
+        )
+        self.mock_generative_model.generate_content.return_value = mock_response
+
+        with pytest.raises(IAToolkitException, match="Gemini truncó la respuesta JSON por límite de salida"):
+            self.adapter.create_response(
+                model="gemini-2.5-flash",
+                input=[{"role": "user", "content": "test"}],
+                text={
+                    "response_mime_type": "application/json",
+                    "response_schema": {"type": "object", "properties": {"sociedad": {"type": "object"}}},
+                },
+            )
 
     def test_create_response_retries_without_response_schema_when_sdk_does_not_support_it(self):
         mock_response = self._create_mock_gemini_response(text_content='{"sales_2025":[]}')

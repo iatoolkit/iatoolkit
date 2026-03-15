@@ -71,7 +71,7 @@ class GeminiAdapter:
                 "safety_settings": self.safety_settings,
                 "tools": self._prepare_gemini_tools(tools),
                 "temperature": float(text.get("temperature", 0.7)) if text else 0.7,
-                "max_output_tokens": int(text.get("max_tokens", 2048)) if text else 2048,
+                "max_output_tokens": int(text.get("max_tokens", 10000)) if text else 10000,
                 "top_p": float(text.get("top_p", 0.95)) if text else 0.95,
                 "candidate_count": 1,
                 # "response_modalities": ['TEXT', 'IMAGE']
@@ -107,6 +107,8 @@ class GeminiAdapter:
                 contents=contents,
                 config=config
             )
+            self._log_structured_response_debug(response=response, used_response_schema="response_schema" in config_kwargs)
+            self._raise_for_truncated_structured_output(response=response, used_response_schema="response_schema" in config_kwargs)
             # map the answer to a common structure
             llm_response = self._map_gemini_response(response, model)
 
@@ -122,6 +124,9 @@ class GeminiAdapter:
             return llm_response
 
         except Exception as e:
+            if isinstance(e, IAToolkitException):
+                raise
+
             error_message = f"Error calling Gemini API: {str(e)}"
             logging.error(error_message)
 
@@ -453,6 +458,11 @@ class GeminiAdapter:
                         })
                         output_text += "\n[Imagen Generada]\n"
 
+        if not output_text:
+            output_text = self._extract_structured_output_text(response)
+            if output_text:
+                content_parts.append({"type": "text", "text": output_text})
+
         # Extraer usage
         usage = self._extract_usage_metadata(response)
 
@@ -465,6 +475,113 @@ class GeminiAdapter:
             usage=usage,
             content_parts=content_parts
         )
+
+    def _extract_structured_output_text(self, response: Any) -> str:
+        """Recover native structured output when Gemini does not emit it in text parts."""
+        parsed_response = self._get_native_response_attr(response, "parsed")
+        if parsed_response not in (None, ""):
+            return self._serialize_structured_value(parsed_response)
+
+        response_text = self._get_native_response_attr(response, "text")
+        if isinstance(response_text, str) and response_text.strip():
+            return response_text
+
+        if isinstance(response_text, (dict, list)):
+            serialized = self._serialize_structured_value(response_text)
+            if serialized:
+                return serialized
+
+        return ""
+
+    @staticmethod
+    def _serialize_structured_value(value: Any) -> str:
+        if isinstance(value, str):
+            return value
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except Exception:
+            return str(value)
+
+    @staticmethod
+    def _get_native_response_attr(response: Any, attr_name: str) -> Any:
+        try:
+            value = getattr(response, attr_name)
+        except Exception:
+            return None
+
+        if type(value).__module__.startswith("unittest.mock"):
+            return None
+
+        return value
+
+    def _log_structured_response_debug(self, response: Any, used_response_schema: bool) -> None:
+        if not used_response_schema:
+            return
+
+        try:
+            parsed_value = self._get_native_response_attr(response, "parsed")
+            response_text = self._get_native_response_attr(response, "text")
+            candidate = response.candidates[0] if getattr(response, "candidates", None) else None
+            parts = []
+            if candidate and getattr(candidate, "content", None) and getattr(candidate.content, "parts", None):
+                parts = candidate.content.parts
+
+            part_kinds = []
+            for part in parts:
+                kinds = []
+                if getattr(part, "text", None) not in (None, ""):
+                    kinds.append("text")
+                if getattr(part, "function_call", None) is not None:
+                    kinds.append("function_call")
+                if getattr(part, "inline_data", None) is not None:
+                    kinds.append("inline_data")
+                if getattr(part, "blob", None) is not None:
+                    kinds.append("blob")
+                if not kinds:
+                    kinds.append("other")
+                part_kinds.append("+".join(kinds))
+
+            parsed_keys = None
+            if isinstance(parsed_value, dict):
+                parsed_keys = list(parsed_value.keys())[:10]
+
+            logging.debug(
+                "Gemini structured output debug | text_present=%s text_preview=%r parsed_type=%s parsed_keys=%s part_kinds=%s finish_reason=%s",
+                bool(isinstance(response_text, str) and response_text.strip()),
+                (response_text[:300] if isinstance(response_text, str) else response_text),
+                type(parsed_value).__name__ if parsed_value is not None else None,
+                parsed_keys,
+                part_kinds,
+                getattr(candidate, "finish_reason", None),
+            )
+        except Exception as exc:
+            logging.warning("Gemini structured output debug logging failed: %s", exc)
+
+    def _raise_for_truncated_structured_output(self, response: Any, used_response_schema: bool) -> None:
+        if not used_response_schema:
+            return
+
+        candidate = response.candidates[0] if getattr(response, "candidates", None) else None
+        finish_reason = getattr(candidate, "finish_reason", None)
+        if not self._is_max_tokens_finish_reason(finish_reason):
+            return
+
+        raise IAToolkitException(
+            IAToolkitException.ErrorType.LLM_ERROR,
+            "Gemini truncó la respuesta JSON por límite de salida (MAX_TOKENS). "
+            "Aumenta max_output_tokens o divide la extracción en varias llamadas.",
+        )
+
+    @staticmethod
+    def _is_max_tokens_finish_reason(finish_reason: Any) -> bool:
+        if finish_reason is None:
+            return False
+
+        finish_reason_name = getattr(finish_reason, "name", None)
+        if isinstance(finish_reason_name, str) and finish_reason_name.upper() == "MAX_TOKENS":
+            return True
+
+        return "MAX_TOKENS" in str(finish_reason).upper()
 
     def _extract_function_call_args(self, function_call) -> Dict:
         """
