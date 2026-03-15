@@ -80,20 +80,31 @@
 }
 
 /* model de help */
-     .modal-body .accordion-button:not(.collapsed) {
-        background-color: var(--brand-primary-color);
-        color: var(--brand-text-on-primary);
-        font-weight: 600;
-        box-shadow: none;
-    }
+#helpModal .accordion {
+    --bs-accordion-active-bg: var(--brand-primary-color);
+    --bs-accordion-active-color: var(--brand-text-on-primary);
+    --bs-accordion-btn-focus-border-color: rgba(var(--brand-primary-color-rgb), 0.35);
+    --bs-accordion-btn-focus-box-shadow: 0 0 0 0.25rem rgba(var(--brand-primary-color-rgb), 0.25);
+}
+
+#helpModal .accordion-button:not(.collapsed) {
+    background-color: var(--brand-primary-color);
+    color: var(--brand-text-on-primary);
+    font-weight: 600;
+    box-shadow: none;
+}
+
+#helpModal .accordion-button:not(.collapsed)::after {
+    filter: brightness(0) invert(1);
+}
 
     /* Estilo para el anillo de foco, aplicado ÚNICAMENTE cuando el botón está CERRADO y tiene foco. */
-    .modal-body .accordion-button.collapsed:focus {
-        background-color: #fff; /* Asegura fondo blanco al hacer foco en un item cerrado */
-        border-color: transparent; /* Evita bordes no deseados */
-        /* La única regla que debe estar aquí es la que dibuja el anillo de foco. */
-        box-shadow: 0 0 0 0.25rem rgba(var(--brand-primary-color-rgb), 0.25);
-    }
+#helpModal .accordion-button.collapsed:focus {
+    background-color: #fff; /* Asegura fondo blanco al hacer foco en un item cerrado */
+    border-color: transparent; /* Evita bordes no deseados */
+    /* La única regla que debe estar aquí es la que dibuja el anillo de foco. */
+    box-shadow: 0 0 0 0.25rem rgba(var(--brand-primary-color-rgb), 0.25);
+}
 
 .icon-spaced {
     margin-right: 10px;

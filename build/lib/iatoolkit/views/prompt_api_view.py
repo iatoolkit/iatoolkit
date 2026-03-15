@@ -32,7 +32,7 @@ class PromptApiView(MethodView):
         """
         try:
             # get access credentials
-            auth_result = self.auth_service.verify(anonymous=True)
+            auth_result = self.auth_service.verify_for_company(company_short_name, anonymous=True)
             if not auth_result.get("success"):
                 return jsonify(auth_result), auth_result.get('status_code')
 
@@ -67,7 +67,7 @@ class PromptApiView(MethodView):
 
     def put(self, company_short_name, prompt_name):
         try:
-            auth_result = self.auth_service.verify()
+            auth_result = self.auth_service.verify_for_company(company_short_name)
             if not auth_result.get("success"):
                 return jsonify(auth_result), 401
 
@@ -84,7 +84,7 @@ class PromptApiView(MethodView):
     def post(self, company_short_name, prompt_name=None):
         """Creates a new prompt."""
         try:
-            auth_result = self.auth_service.verify()
+            auth_result = self.auth_service.verify_for_company(company_short_name)
             if not auth_result.get("success"):
                 return jsonify(auth_result), 401
 
@@ -106,7 +106,7 @@ class PromptApiView(MethodView):
     def delete(self, company_short_name, prompt_name):
         """Deletes a prompt."""
         try:
-            auth_result = self.auth_service.verify()
+            auth_result = self.auth_service.verify_for_company(company_short_name)
             if not auth_result.get("success"):
                 return jsonify(auth_result), 401
 

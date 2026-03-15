@@ -9,6 +9,10 @@ from flask import session
 
 class SessionManager:
     @staticmethod
+    def set_permanent(value: bool):
+        session.permanent = value
+
+    @staticmethod
     def set(key, value):
         session[key] = value
 

@@ -19,9 +19,10 @@ from iatoolkit.common.exceptions import IAToolkitException
 import threading
 import re
 import tiktoken
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Any
 from iatoolkit.services.dispatcher_service import Dispatcher
 from iatoolkit.services.storage_service import StorageService
+from iatoolkit.services.structured_output_service import StructuredOutputService
 
 CONTEXT_ERROR_MESSAGE = 'Tu consulta supera el límite de contexto, utiliza el boton de recarga de contexto.'
 
@@ -44,8 +45,8 @@ class llmClient:
         self.util = util
         self._dispatcher = None # Cache for the lazy-loaded dispatcher
 
-        # library for counting tokens
-        self.encoding = tiktoken.encoding_for_model("gpt-4o")
+        # Lazy init to avoid network/bootstrap failures during app startup.
+        self.encoding = None
 
         # max number of sql retries
         self.MAX_SQL_RETRIES = 1
@@ -73,10 +74,14 @@ class llmClient:
                model: str,
                context_history: Optional[List[Dict]] = None,
                images: list = None,
-               task_id: Optional[int] = None
+               attachments: list = None,
+               task_id: Optional[int] = None,
+               execution_metadata: Optional[Dict[str, Any]] = None,
+               response_contract: Optional[Dict[str, Any]] = None
                ) -> dict:
 
         images = images or []
+        attachments = attachments or []
         f_calls = []  # keep track of the function calls executed by the LLM
         f_call_time = 0
         response = None
@@ -90,7 +95,13 @@ class llmClient:
 
         try:
             start_time = time.time()
-            logging.info(f"calling llm model '{model}' with {self.count_tokens(context, context_history)} tokens...and {len(images)} images...")
+            logging.info(
+                "calling llm model '%s' with %s tokens...and %s images...and %s native attachments...",
+                model,
+                self.count_tokens(context, context_history),
+                len(images),
+                len(attachments),
+            )
 
             # this is the first call to the LLM on the iteration
             try:
@@ -109,6 +120,7 @@ class llmClient:
                     text=text_payload,
                     reasoning=reasoning,
                     images=images,
+                    attachments=attachments,
                 )
                 stats = self.get_stats(response)
 
@@ -144,10 +156,14 @@ class llmClient:
                     logging.debug(f"[Dispatcher] Parsed args = {args}")
 
                     try:
+                        call_kwargs = dict(args)
+                        if images:
+                            call_kwargs["request_images"] = images
+
                         result = self.dispatcher.dispatch(
                             company_short_name=company.short_name,
                             function_name=function_name,
-                            **args
+                            **call_kwargs
                         )
                         force_tool_name = None
                     except IAToolkitException as e:
@@ -164,10 +180,10 @@ class llmClient:
                             # force the next call to be this function
                             force_tool_name = function_name
                         else:
-                            error_message = f"Error en dispatch para '{function_name}' tras {sql_retry_count} reintentos: {str(e)}"
+                            error_message = f"**LLM_DISPATCHER** error en dispatch para tool: '{function_name}': {str(e)}"
                             raise IAToolkitException(IAToolkitException.ErrorType.CALL_ERROR, error_message)
                     except Exception as e:
-                        error_message = f"Dispatch error en {function_name} con args {args} -******- {str(e)}"
+                        error_message = f"Dispatch error en tool {function_name} con args {args} -******- {str(e)}"
                         raise IAToolkitException(IAToolkitException.ErrorType.CALL_ERROR, error_message)
 
                     # add the return value into the list of messages
@@ -175,7 +191,7 @@ class llmClient:
                         "type": "function_call_output",
                         "call_id": tool_call.call_id,
                         "status": "completed",
-                        "output": str(result)
+                        "output": self._serialize_tool_output(result)
                     })
                     function_calls = True
 
@@ -206,6 +222,7 @@ class llmClient:
                     tools=tools,
                     text=text_payload,
                     images=images,
+                    attachments=attachments,
                 )
                 stats_fcall = self.add_stats(stats_fcall, self.get_stats(response))
 
@@ -218,8 +235,16 @@ class llmClient:
             stats['sql_retry_count'] = sql_retry_count
             stats['model'] = model
 
+            combined_stats = self.add_stats(stats, stats_fcall)
+            if isinstance(execution_metadata, dict):
+                combined_stats = dict(combined_stats or {})
+                for key, value in execution_metadata.items():
+                    if value is not None:
+                        combined_stats[key] = value
+
             # decode the LLM response
             decoded_response = self.decode_response(response)
+            decoded_response = self._apply_response_contract(decoded_response, response_contract)
 
             # Extract reasoning from the final response object
             final_reasoning = getattr(response, 'reasoning_content', '')
@@ -233,7 +258,7 @@ class llmClient:
                              valid_response=decoded_response.get('status', False),
                              response=self.serialize_response(response, decoded_response),
                              function_calls=f_calls,
-                             stats=self.add_stats(stats, stats_fcall),
+                             stats=combined_stats,
                              answer_time=stats['response_time']
                              )
             self.llmquery_repo.add_query(query)
@@ -244,7 +269,7 @@ class llmClient:
             return {
                 'valid_response': decoded_response.get('status', False),
                 'answer': self.format_html(decoded_response.get('answer', '')),
-                'stats': stats,
+                'stats': combined_stats,
                 'answer_format': decoded_response.get('answer_format', ''),
                 'error_message': decoded_response.get('error_message', ''),
                 'aditional_data': decoded_response.get('aditional_data', {}),
@@ -252,7 +277,12 @@ class llmClient:
                 'query_id': query.id,
                 'model': model,
                 'reasoning_content': final_reasoning,
-                'content_parts': response.content_parts
+                'content_parts': response.content_parts,
+                'structured_output': decoded_response.get('structured_output'),
+                'schema_valid': decoded_response.get('schema_valid'),
+                'schema_errors': decoded_response.get('schema_errors', []),
+                'schema_mode': decoded_response.get('schema_mode'),
+                'schema_applied': decoded_response.get('schema_applied', False),
             }
         except SQLAlchemyError as db_error:
             # rollback
@@ -284,6 +314,16 @@ class llmClient:
                 error_message = 'La respuesta es muy extensa, trata de filtrar/restringuir tu consulta'
 
             raise IAToolkitException(IAToolkitException.ErrorType.LLM_ERROR, error_message)
+
+    @staticmethod
+    def _serialize_tool_output(result) -> str:
+        if isinstance(result, str):
+            return result
+
+        try:
+            return json.dumps(result, ensure_ascii=False, default=str)
+        except Exception:
+            return str(result)
 
     def set_company_context(self,
             company: Company,
@@ -362,7 +402,8 @@ class llmClient:
             "answer": "",
             "aditional_data": {},
             "answer_format": "",
-            "error_message": ""
+            "error_message": "",
+            "parsed_json": None,
         }
 
         if response.status != 'completed':
@@ -371,6 +412,7 @@ class llmClient:
             return decoded_response
 
         if isinstance(message, dict):
+            decoded_response["parsed_json"] = message
             if 'answer' not in message or 'aditional_data' not in message:
                 decoded_response['error_message'] = 'El llm respondio un diccionario invalido: missing "answer" key'
                 return decoded_response
@@ -422,6 +464,7 @@ class llmClient:
                 decoded_response['answer_format'] = "plaintext_fallback_full"
         else:
             # --- SOLO SE EJECUTA SI EL TRY FUE EXITOSO ---
+            decoded_response["parsed_json"] = response_dict
             if 'answer' not in response_dict or 'aditional_data' not in response_dict:
                 decoded_response['error_message'] = f'faltan las claves "answer" o "aditional_data" en el JSON'
 
@@ -438,6 +481,117 @@ class llmClient:
 
         return decoded_response
 
+    def _apply_response_contract(self, decoded_response: dict, response_contract: Optional[Dict[str, Any]]) -> dict:
+        if not isinstance(decoded_response, dict):
+            return decoded_response
+
+        decoded_response.setdefault("structured_output", None)
+        decoded_response.setdefault("schema_valid", None)
+        decoded_response.setdefault("schema_errors", [])
+        decoded_response.setdefault("schema_mode", None)
+        decoded_response.setdefault("schema_applied", False)
+
+        if not isinstance(response_contract, dict):
+            return self._apply_legacy_structured_fallback(decoded_response)
+
+        schema = response_contract.get("schema")
+        if not isinstance(schema, dict):
+            return self._apply_legacy_structured_fallback(decoded_response)
+
+        schema_mode = str(response_contract.get("schema_mode") or "best_effort").strip().lower()
+        response_mode = str(response_contract.get("response_mode") or "chat_compatible").strip().lower()
+        candidates: list[Any] = []
+        seen: set[str] = set()
+
+        def _add_candidate(value: Any):
+            if value is None:
+                return
+            try:
+                signature = json.dumps(value, sort_keys=True, ensure_ascii=False, default=str)
+            except Exception:
+                signature = str(value)
+            if signature in seen:
+                return
+            seen.add(signature)
+            candidates.append(value)
+
+        parsed_json = decoded_response.get("parsed_json")
+        _add_candidate(parsed_json)
+
+        if isinstance(parsed_json, dict):
+            _add_candidate(parsed_json.get("answer"))
+            _add_candidate(parsed_json.get("aditional_data"))
+
+        _add_candidate(decoded_response.get("aditional_data"))
+        _add_candidate(decoded_response.get("answer"))
+        _add_candidate(decoded_response.get("output_text"))
+
+        evaluations = [
+            StructuredOutputService.evaluate_output(raw_output=candidate, schema=schema)
+            for candidate in candidates
+        ]
+
+        evaluation = next(
+            (item for item in evaluations if item.get("schema_valid")),
+            evaluations[0] if evaluations else StructuredOutputService.evaluate_output(raw_output=decoded_response.get("output_text"), schema=schema)
+        )
+
+        decoded_response["schema_applied"] = bool(evaluation.get("schema_present"))
+        decoded_response["schema_valid"] = bool(evaluation.get("schema_valid"))
+        decoded_response["schema_errors"] = evaluation.get("errors") or []
+        decoded_response["schema_mode"] = schema_mode
+
+        if not decoded_response["schema_valid"]:
+            if schema_mode == "strict":
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.LLM_ERROR,
+                    f"The response does not match the configured output schema: {'; '.join(decoded_response['schema_errors'])}",
+                )
+            return decoded_response
+
+        structured_output = evaluation.get("structured_output")
+        decoded_response["structured_output"] = structured_output
+        decoded_response["status"] = True
+        decoded_response["error_message"] = ""
+
+        if response_mode == "structured_only":
+            decoded_response["answer"] = StructuredOutputService.render_structured_output_as_html(structured_output)
+            decoded_response["answer_format"] = "structured_only"
+            return decoded_response
+
+        if not decoded_response.get("answer"):
+            decoded_response["answer"] = StructuredOutputService.render_structured_output_as_html(structured_output)
+            decoded_response["answer_format"] = "structured_fallback_html"
+
+        return decoded_response
+
+    def _apply_legacy_structured_fallback(self, decoded_response: dict) -> dict:
+        """
+        Compatibility fallback:
+        if no schema contract was applied, expose aditional_data as structured_output when present.
+        """
+        if not isinstance(decoded_response, dict):
+            return decoded_response
+
+        decoded_response.setdefault("structured_output", None)
+        decoded_response.setdefault("schema_valid", None)
+        decoded_response.setdefault("schema_errors", [])
+        decoded_response.setdefault("schema_mode", None)
+        decoded_response.setdefault("schema_applied", False)
+
+        if decoded_response.get("structured_output") is not None:
+            return decoded_response
+
+        additional_data = decoded_response.get("aditional_data")
+        if isinstance(additional_data, (dict, list)):
+            if isinstance(additional_data, dict) and not additional_data:
+                return decoded_response
+            if isinstance(additional_data, list) and len(additional_data) == 0:
+                return decoded_response
+            decoded_response["structured_output"] = additional_data
+
+        return decoded_response
+
     def serialize_response(self, response, decoded_response):
         response_dict = {
             "format": decoded_response.get('answer_format', ''),
@@ -446,6 +600,11 @@ class llmClient:
             "id": response.id,
             "model": response.model,
             "status": response.status,
+            "structured_output": decoded_response.get("structured_output"),
+            "schema_valid": decoded_response.get("schema_valid"),
+            "schema_errors": decoded_response.get("schema_errors", []),
+            "schema_mode": decoded_response.get("schema_mode"),
+            "schema_applied": decoded_response.get("schema_applied", False),
         }
         return response_dict
 
@@ -460,9 +619,9 @@ class llmClient:
     def add_stats(self, stats1: dict, stats2: dict) -> dict:
         stats_dict = {
             "model": stats1.get('model', ''),
-            "input_tokens": stats1.get('input_tokens', 0) + stats2.get('input_tokens', 0),
-            "output_tokens": stats1.get('output_tokens', 0) + stats2.get('output_tokens', 0),
-            "total_tokens": stats1.get('total_tokens', 0) + stats2.get('total_tokens', 0),
+            "input_tokens": (stats1.get('input_tokens') or 0) + (stats2.get('input_tokens') or 0),
+            "output_tokens": (stats1.get('output_tokens') or 0) + (stats2.get('output_tokens') or 0),
+            "total_tokens": (stats1.get('total_tokens') or 0) + (stats2.get('total_tokens') or 0),
         }
         return stats_dict
 
@@ -488,10 +647,32 @@ class llmClient:
         """
 
     def format_html(self, answer: str):
+        if not answer:
+            return ""
+
+        # Heurística simple: si contiene tags, lo tratamos como HTML ya renderizable
+        if re.search(r"</?[a-zA-Z][\s\S]*>", answer):
+            return answer.replace("\n", "")
+
         html_answer = markdown2.markdown(answer).replace("\n", "")
         return html_answer
 
     def count_tokens(self, text, history = []):
-        # Codifica el texto y cuenta la cantidad de tokens
-        tokens = self.encoding.encode(text + json.dumps(history))
-        return len(tokens)
+        content = (text or "") + json.dumps(history)
+
+        try:
+            if self.encoding is None:
+                try:
+                    # Preferred encoder for GPT-4o family.
+                    self.encoding = tiktoken.encoding_for_model("gpt-4o")
+                except Exception as model_error:
+                    logging.warning(f"tiktoken encoding_for_model failed, fallback to cl100k_base: {model_error}")
+                    # Local fallback for startup/offline compatibility.
+                    self.encoding = tiktoken.get_encoding("cl100k_base")
+
+            tokens = self.encoding.encode(content)
+            return len(tokens)
+        except Exception as e:
+            # Safe approximation to keep request flow alive.
+            logging.warning(f"Token counting fallback in use: {e}")
+            return max(1, len(content) // 4)

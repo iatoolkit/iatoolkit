@@ -116,6 +116,26 @@ class CallServiceClient:
             raise IAToolkitException(IAToolkitException.ErrorType.REQUEST_ERROR, str(e))
         return self._deserialize_response(response)
 
+    def patch(
+        self,
+        endpoint: str,
+        json_dict: Optional[Dict[str, Any]] = None,
+        params: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        timeout: Union[int, float, Tuple[int, int]] = 10
+    ):
+        try:
+            response = requests.patch(
+                endpoint,
+                params=params,
+                json=json_dict,
+                headers=self._merge_headers(headers),
+                timeout=self._normalize_timeout(timeout)
+            )
+        except RequestException as e:
+            raise IAToolkitException(IAToolkitException.ErrorType.REQUEST_ERROR, str(e))
+        return self._deserialize_response(response)
+
     def post_files(
         self,
         endpoint: str,

@@ -4,15 +4,18 @@
 # IAToolkit is open source software.
 
 from iatoolkit.repositories.models import (User, Company, user_company,
-                                           ApiKey, UserFeedback, AccessLog)
+                                           UserFeedback, AccessLog)
 from injector import inject
 from iatoolkit.repositories.database_manager import DatabaseManager
 from sqlalchemy import select, func, and_
+from sqlalchemy.exc import OperationalError
+import logging
 
 
 class ProfileRepo:
     @inject
     def __init__(self, db_manager: DatabaseManager):
+        self.db_manager = db_manager
         self.session = db_manager.get_session()
 
     def get_user_by_id(self, user_id: int) -> User:
@@ -65,7 +68,25 @@ class ProfileRepo:
         return self.session.query(Company).filter_by(id=company_id).first()
 
     def get_company_by_short_name(self, short_name: str) -> Company:
-        return self.session.query(Company).filter(Company.short_name == short_name).first()
+        # Retry once for transient SSL/network disconnects from pooled connections.
+        for attempt in (1, 2):
+            try:
+                return self.session.query(Company).filter(Company.short_name == short_name).first()
+            except OperationalError as e:
+                try:
+                    self.session.rollback()
+                except Exception:
+                    pass
+                self.db_manager.remove_session()
+
+                if attempt == 1:
+                    logging.warning(
+                        "Transient DB error resolving company '%s'. Retrying once: %s",
+                        short_name,
+                        e,
+                    )
+                    continue
+                raise
 
     def get_companies(self) -> list[Company]:
         return self.session.query(Company).all()
@@ -142,29 +163,3 @@ class ProfileRepo:
         self.session.add(feedback)
         self.session.commit()
         return feedback
-
-    def create_api_key(self, new_api_key: ApiKey):
-        self.session.add(new_api_key)
-        self.session.commit()
-        return new_api_key
-
-
-    def get_active_api_key_entry(self, api_key_value: str) -> ApiKey | None:
-        """
-        search for an active API Key by its value.
-        returns the entry if found and is active, None otherwise.
-        """
-        api_key_entry = (self.session.query(ApiKey).filter
-                             (ApiKey.key == api_key_value, ApiKey.is_active == True).first())
-
-        return api_key_entry
-
-
-    def get_active_api_key_by_company(self, company: Company) -> ApiKey | None:
-        return self.session.query(ApiKey)\
-                .filter(ApiKey.company == company, ApiKey.is_active == True)\
-                .first()
-
-
-
-

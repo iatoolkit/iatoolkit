@@ -3,17 +3,14 @@
 #
 # IAToolkit is open source software.
 
-from flask import current_app, jsonify
 from iatoolkit.common.util import Utility
 import pandas as pd
 from uuid import uuid4
-from pathlib import Path
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.i18n_service import I18nService
+from iatoolkit.services.storage_service import StorageService
 from injector import inject
-import os
 import io
-import logging
 import json
 
 EXCEL_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -23,9 +20,11 @@ class ExcelService:
     @inject
     def __init__(self,
                  util: Utility,
-                 i18n_service: I18nService):
+                 i18n_service: I18nService,
+                 storage_service: StorageService):
         self.util = util
         self.i18n_service = i18n_service
+        self.storage_service = storage_service
 
     def read_excel(self, file_content: bytes) -> str:
         """
@@ -85,9 +84,9 @@ class ExcelService:
         Retorna:
              {
                 "filename": "reporte.xlsx",
-                "attachment_token": "8b7f8a66-...-c1c3.xlsx",
+                "attachment_token": "signed-token",
                 "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                "download_link": "/download/8b7f8a66-...-c1c3.xlsx"
+                "download_link": "/download/<signed-token>"
                 }
         """
         try:
@@ -105,52 +104,38 @@ class ExcelService:
             # 1. convert dictionary to dataframe
             df = pd.DataFrame(data)
 
-            # 3. create temporary name
-            token = f"{uuid4()}.xlsx"
+            # 3. create a unique physical filename for storage
+            storage_filename = f"{uuid4()}.xlsx"
 
-            # 4. check that download directory is configured
-            if 'IATOOLKIT_DOWNLOAD_DIR' not in current_app.config:
-                return self.i18n_service.t('errors.services.no_download_directory')
+            # 4. render the Excel file to bytes
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name=sheet_name)
+            excel_bytes = output.getvalue()
 
-            download_dir = current_app.config['IATOOLKIT_DOWNLOAD_DIR']
-            filepath = Path(download_dir) / token
-            filepath.parent.mkdir(parents=True, exist_ok=True)
+            # 5. upload to storage
+            storage_key = self.storage_service.upload_generated_download(
+                company_short_name=company_short_name,
+                file_content=excel_bytes,
+                filename=storage_filename,
+                mime_type=EXCEL_MIME
+            )
 
-            # 4. save excel file in temporary directory
-            df.to_excel(filepath, index=False, sheet_name=sheet_name)
+            # 6. build a signed token used by both download endpoint and mail attachments
+            attachment_token = self.storage_service.create_download_token(
+                company_short_name=company_short_name,
+                storage_key=storage_key,
+                filename=fname
+            )
 
-            # 5. return the  link to the LLM
+            # 7. return the link + token to the LLM
             return {
                 "filename": fname,
-                "attachment_token": token,
+                "attachment_token": attachment_token,
                 "content_type": EXCEL_MIME,
-                "download_link": f"/download/{token}"
+                "download_link": f"/download/{attachment_token}"
                 }
 
         except Exception as e:
             raise IAToolkitException(IAToolkitException.ErrorType.CALL_ERROR,
                                self.i18n_service.t('errors.services.cannot_create_excel')) from e
-
-    def validate_file_access(self, filename):
-        try:
-            if not filename:
-                return jsonify({"error": self.i18n_service.t('errors.services.invalid_filename')})
-            # Prevent path traversal attacks
-            if '..' in filename or filename.startswith('/') or '\\' in filename:
-                return jsonify({"error": self.i18n_service.t('errors.services.invalid_filename')})
-
-            temp_dir = os.path.join(current_app.root_path, 'static', 'temp')
-            file_path = os.path.join(temp_dir, filename)
-
-            if not os.path.exists(file_path):
-                return jsonify({"error": self.i18n_service.t('errors.services.file_not_exist')})
-
-            if not os.path.isfile(file_path):
-                return jsonify({"error": self.i18n_service.t('errors.services.path_is_not_a_file')})
-
-            return None
-
-        except Exception as e:
-            error_msg = f"File validation error {filename}: {str(e)}"
-            logging.error(error_msg)
-            return jsonify({"error": self.i18n_service.t('errors.services.file_validation_error')})

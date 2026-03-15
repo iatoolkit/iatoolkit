@@ -33,7 +33,7 @@ class InitContextApiView(MethodView):
         """
         try:
             # 1. Authenticate the request. This handles both session and API Key.
-            auth_result = self.auth_service.verify()
+            auth_result = self.auth_service.verify_for_company(company_short_name)
             if not auth_result.get("success"):
                 return jsonify(auth_result), auth_result.get("status_code")
 

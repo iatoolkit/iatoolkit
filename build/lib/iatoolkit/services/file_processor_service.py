@@ -66,7 +66,6 @@ class FileProcessor:
         for file_info in files:
             file_path = file_info['path']
             file_name = file_info['name']
-
             if not file_name:
                 continue
 
@@ -78,9 +77,11 @@ class FileProcessor:
 
                 # execute the callback function
                 filename = os.path.basename(file_name)
+                metadata = file_info.get('metadata', {})
                 self.config.callback(company=self.config.context.get('company'),
                                      filename=filename,
                                      content=content,
+                                     metadata=metadata,
                                      context=self.config.context)
                 self.processed_files += 1
 

@@ -214,7 +214,7 @@ li {
     display: inline-block;
 }
 #spinner .spinner-border {
-    color: var(--brand-primary-color);
+    color: var(--brand-loading-spinner-color, var(--brand-primary-color));
 }
 
 @keyframes spin {
@@ -295,8 +295,12 @@ li {
 }
 
 /* Anulación específica para el icono de la varita mágica */
+.chat-input-bar a[href="#prompt-assistant-collapse"] {
+    color: var(--brand-prompt-assistant-icon-color, var(--brand-primary-color, #0d6efd)) !important;
+}
+
 .chat-input-bar a[href="#prompt-assistant-collapse"] i {
-    color: var(--brand-prompt-assistant-icon-color, #6c757d);
+    color: inherit !important;
 }
 
 .chat-input-bar .d-flex a:hover i {

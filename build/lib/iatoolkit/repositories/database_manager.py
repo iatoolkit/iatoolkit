@@ -7,7 +7,7 @@
 from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.engine.url import make_url
-from iatoolkit.repositories.models import Base
+from iatoolkit.repositories.models import Base, ORM_SCHEMA
 from injector import inject
 from pgvector.psycopg2 import register_vector
 from iatoolkit.common.interfaces.database_provider import DatabaseProvider
@@ -15,6 +15,9 @@ import logging
 
 
 class DatabaseManager(DatabaseProvider):
+    _POSTGRES_BOOTSTRAP_PATCHES = (
+    )
+
     @inject
     def __init__(self,
                  database_url: str,
@@ -36,9 +39,9 @@ class DatabaseManager(DatabaseProvider):
         self.url = make_url(database_url)
 
         if database_url.startswith('sqlite'):
-            self._engine = create_engine(database_url, echo=False)
+            raw_engine = create_engine(database_url, echo=False)
         else:
-            self._engine = create_engine(
+            raw_engine = create_engine(
                 database_url,
                 echo=False,
                 pool_size=10,  # per worker
@@ -46,8 +49,20 @@ class DatabaseManager(DatabaseProvider):
                 pool_timeout=30,
                 pool_recycle=1800,
                 pool_pre_ping=True,
+                pool_use_lifo=True,
+                connect_args={
+                    "keepalives": 1,
+                    "keepalives_idle": 30,
+                    "keepalives_interval": 10,
+                    "keepalives_count": 5,
+                    "connect_timeout": 10,
+                },
                 future=True,
             )
+        translated_schema = None if self.url.get_backend_name() == 'sqlite' else self.schema
+        self._engine = raw_engine.execution_options(
+            schema_translate_map={ORM_SCHEMA: translated_schema}
+        )
         self.SessionFactory = sessionmaker(bind=self._engine,
                                            autoflush=False,
                                            autocommit=False,
@@ -58,11 +73,11 @@ class DatabaseManager(DatabaseProvider):
         backend = self.url.get_backend_name()
         if backend == 'postgresql' or backend == 'postgres':
             if register_pgvector:
-                event.listen(self._engine, 'connect', self.on_connect)
+                event.listen(raw_engine, 'connect', self.on_connect)
 
             # if there is a schema, configure the search_path for each connection
             if self.schema:
-                event.listen(self._engine, 'checkout', self.set_search_path)
+                event.listen(raw_engine, 'checkout', self.set_search_path)
 
     def set_search_path(self, dbapi_connection, connection_record, connection_proxy):
         # Configure the search_path for this connection
@@ -88,7 +103,9 @@ class DatabaseManager(DatabaseProvider):
         register_vector(dbapi_connection)
 
     def get_session(self):
-        return self.scoped_session()
+        # Return the scoped_session proxy itself so each operation resolves
+        # against the current request/thread-bound Session.
+        return self.scoped_session
 
     def get_connection(self):
         return self._engine.connect()
@@ -101,6 +118,28 @@ class DatabaseManager(DatabaseProvider):
                 conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {self.schema}"))
 
         Base.metadata.create_all(self._engine)
+        applied_patches = self._apply_bootstrap_patches()
+        if applied_patches:
+            logging.info(
+                "Ensured PostgreSQL bootstrap schema compatibility (%s statements).",
+                len(applied_patches),
+            )
+
+    def _apply_bootstrap_patches(self) -> list[str]:
+        backend = self.url.get_backend_name()
+        if backend not in ('postgresql', 'postgres'):
+            return []
+
+        applied = []
+        with self._engine.begin() as conn:
+            if self.schema:
+                conn.execute(text(f"SET search_path TO {self.schema}, public"))
+
+            for patch_name, statement in self._POSTGRES_BOOTSTRAP_PATCHES:
+                conn.execute(text(statement.format(schema=self.schema)))
+                applied.append(patch_name)
+
+        return applied
 
     def drop_all(self):
         Base.metadata.drop_all(self._engine)

@@ -98,9 +98,28 @@ class Utility:
             logging.exception(e)
             return None
 
-    def get_template_by_language(self, template_name: str, default_langueage: str = 'en') -> str:
+    def is_hosted_company_runtime(self, company_short_name: str) -> bool:
+        try:
+            from iatoolkit.company_registry import get_company_instance
+
+            company_instance = get_company_instance(company_short_name)
+            if not company_instance:
+                return False
+
+            runtime_mode = (
+                getattr(company_instance, "runtime_mode", None)
+                or getattr(company_instance, "__iat_runtime_mode__", None)
+            )
+            if isinstance(runtime_mode, str) and runtime_mode.strip().lower() == "hosted":
+                return True
+
+            return company_instance.__class__.__name__.strip().lower() == "hostedcompany"
+        except Exception:
+            return False
+
+    def get_template_by_language(self, template_name: str, default_lenguage: str = 'en') -> str:
         # english is default
-        lang = request.args.get("lang", default_langueage)
+        lang = request.args.get("lang", default_lenguage)
         return f'{template_name}_{lang}.html'
 
     def serialize(self, obj):
@@ -194,8 +213,7 @@ class Utility:
             yaml_content = yaml_content.replace('\t', '  ')
 
             loaded = yaml.safe_load(yaml_content)
-            # Asegurar que siempre retornamos un dict, incluso si el YAML es una lista o escalar
-            return loaded if isinstance(loaded, dict) else {}
+            return loaded
         except yaml.YAMLError as e:
             logging.error(f"Error parsing YAML string: {e}")
             return {}

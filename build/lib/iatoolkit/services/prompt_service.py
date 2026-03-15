@@ -9,32 +9,150 @@ from iatoolkit.common.interfaces.asset_storage import AssetRepository, AssetType
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.repositories.profile_repo import ProfileRepo
+from iatoolkit.services.sql_service import SqlService
+from iatoolkit.services.configuration_service import ConfigurationService
 from collections import defaultdict
 from iatoolkit.repositories.models import (Prompt, PromptCategory,
                                            Company, PromptType)
 from iatoolkit.common.exceptions import IAToolkitException
-import importlib.resources
+from iatoolkit.services.system_prompt_catalog import build_system_prompt_payload
+from iatoolkit.services.structured_output_service import StructuredOutputService
 import logging
-import os
-
-# iatoolkit system prompts definitions
-_SYSTEM_PROMPTS = [
-    {'name': 'query_main', 'description': 'iatoolkit main prompt', 'order': 1},
-    {'name': 'format_styles', 'description': 'output format styles', 'order': 2},
-    {'name': 'sql_rules', 'description': 'instructions  for SQL queries', 'order': 3},
-]
 
 class PromptService:
+    OUTPUT_SCHEMA_MODE_BEST_EFFORT = "best_effort"
+    OUTPUT_SCHEMA_MODE_STRICT = "strict"
+    OUTPUT_RESPONSE_MODE_CHAT = "chat_compatible"
+    OUTPUT_RESPONSE_MODE_STRUCTURED = "structured_only"
+    ATTACHMENT_MODE_EXTRACTED_ONLY = "extracted_only"
+    ATTACHMENT_MODE_NATIVE_ONLY = "native_only"
+    ATTACHMENT_MODE_NATIVE_PLUS_EXTRACTED = "native_plus_extracted"
+    ATTACHMENT_MODE_AUTO = "auto"
+    ATTACHMENT_FALLBACK_EXTRACT = "extract"
+    ATTACHMENT_FALLBACK_FAIL = "fail"
+
     @inject
     def __init__(self,
                  asset_repo: AssetRepository,
                  llm_query_repo: LLMQueryRepo,
                  profile_repo: ProfileRepo,
-                 i18n_service: I18nService):
+                 i18n_service: I18nService,
+                 sql_service: SqlService,
+                 configuration_service: ConfigurationService):
         self.asset_repo = asset_repo
         self.llm_query_repo = llm_query_repo
         self.profile_repo = profile_repo
         self.i18n_service = i18n_service
+        self.sql_service = sql_service
+        self.configuration_service = configuration_service
+
+    def _normalize_prompt_type(self, prompt_type: str | None) -> str:
+        candidate = str(prompt_type or PromptType.COMPANY.value).strip().lower()
+        allowed = {
+            PromptType.COMPANY.value,
+            PromptType.AGENT.value,
+        }
+        if candidate in allowed:
+            return candidate
+
+        logging.warning(
+            "Unsupported prompt_type '%s'. Falling back to '%s'.",
+            prompt_type,
+            PromptType.COMPANY.value,
+        )
+        return PromptType.COMPANY.value
+
+    def _normalize_output_schema_mode(self, output_schema_mode: str | None) -> str:
+        candidate = str(output_schema_mode or self.OUTPUT_SCHEMA_MODE_BEST_EFFORT).strip().lower()
+        allowed = {
+            self.OUTPUT_SCHEMA_MODE_BEST_EFFORT,
+            self.OUTPUT_SCHEMA_MODE_STRICT,
+        }
+        if candidate in allowed:
+            return candidate
+        return self.OUTPUT_SCHEMA_MODE_BEST_EFFORT
+
+    def _normalize_output_response_mode(self, output_response_mode: str | None) -> str:
+        candidate = str(output_response_mode or self.OUTPUT_RESPONSE_MODE_CHAT).strip().lower()
+        allowed = {
+            self.OUTPUT_RESPONSE_MODE_CHAT,
+            self.OUTPUT_RESPONSE_MODE_STRUCTURED,
+        }
+        if candidate in allowed:
+            return candidate
+        return self.OUTPUT_RESPONSE_MODE_CHAT
+
+    def _extract_output_schema_payload(self, data: dict) -> tuple[dict | None, str | None]:
+        yaml_value = data.get("output_schema_yaml")
+        object_value = data.get("output_schema")
+
+        parsed_from_yaml = None
+        if isinstance(yaml_value, str):
+            parsed_from_yaml = StructuredOutputService.parse_yaml_schema(yaml_value)
+        elif yaml_value is not None:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "output_schema_yaml must be a string.",
+            )
+
+        if parsed_from_yaml is not None:
+            try:
+                normalized = StructuredOutputService.normalize_schema(parsed_from_yaml)
+            except ValueError as e:
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    f"Invalid output_schema_yaml: {e}",
+                ) from e
+            normalized_yaml = StructuredOutputService.dump_yaml_schema(normalized)
+            return normalized, normalized_yaml
+
+        if object_value is None:
+            return None, None
+
+        if not isinstance(object_value, dict):
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "output_schema must be an object.",
+            )
+
+        try:
+            normalized = StructuredOutputService.normalize_schema(object_value)
+        except ValueError as e:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                f"Invalid output_schema: {e}",
+            ) from e
+        normalized_yaml = StructuredOutputService.dump_yaml_schema(normalized)
+        return normalized, normalized_yaml
+
+    def _normalize_attachment_mode(self, attachment_mode: str | None) -> str:
+        candidate = str(attachment_mode or self.ATTACHMENT_MODE_EXTRACTED_ONLY).strip().lower()
+        allowed = {
+            self.ATTACHMENT_MODE_EXTRACTED_ONLY,
+            self.ATTACHMENT_MODE_NATIVE_ONLY,
+            self.ATTACHMENT_MODE_NATIVE_PLUS_EXTRACTED,
+            self.ATTACHMENT_MODE_AUTO,
+        }
+        if candidate in allowed:
+            return candidate
+        return self.ATTACHMENT_MODE_EXTRACTED_ONLY
+
+    def _normalize_attachment_fallback(self, attachment_fallback: str | None) -> str:
+        candidate = str(attachment_fallback or self.ATTACHMENT_FALLBACK_EXTRACT).strip().lower()
+        allowed = {
+            self.ATTACHMENT_FALLBACK_EXTRACT,
+            self.ATTACHMENT_FALLBACK_FAIL,
+        }
+        if candidate in allowed:
+            return candidate
+        return self.ATTACHMENT_FALLBACK_EXTRACT
+
+    def _get_company_default_attachment_policy(self, company_short_name: str) -> dict:
+        llm_config = self.configuration_service.get_configuration(company_short_name, "llm") or {}
+        return {
+            "attachment_mode": self._normalize_attachment_mode(llm_config.get("default_attachment_mode")),
+            "attachment_fallback": self._normalize_attachment_fallback(llm_config.get("default_attachment_fallback")),
+        }
 
     def get_prompts(self, company_short_name: str, include_all: bool = False) -> dict:
         try:
@@ -89,7 +207,11 @@ class PromptService:
                             'type': p.prompt_type,
                             'active': p.active,
                             'custom_fields': p.custom_fields,
-                            'order': p.order
+                            'order': p.order,
+                            'output_schema_mode': p.output_schema_mode,
+                            'output_response_mode': p.output_response_mode,
+                            'attachment_mode': p.attachment_mode,
+                            'attachment_fallback': p.attachment_fallback,
                         }
                         for p in prompts
                     ]
@@ -134,6 +256,13 @@ class PromptService:
             raise IAToolkitException(IAToolkitException.ErrorType.PROMPT_ERROR,
                                f'error loading prompt "{prompt_name}" content for company {company.short_name}: {str(e)}')
 
+    def get_prompt_definition(self, company: Company, prompt_name: str) -> Prompt | None:
+        try:
+            return self.llm_query_repo.get_prompt_by_name(company, prompt_name)
+        except Exception as e:
+            logging.exception("Error loading prompt definition for '%s': %s", prompt_name, e)
+            return None
+
     def save_prompt(self, company_short_name: str, prompt_name: str, data: dict):
         """
         Create or Update a prompt.
@@ -159,6 +288,9 @@ class PromptService:
             filename = filename.lower().replace(' ', '_')
             self.asset_repo.write_text(company_short_name, AssetType.PROMPT, filename, data['content'])
 
+        output_schema, output_schema_yaml = self._extract_output_schema_payload(data)
+        company_default_policy = self._get_company_default_attachment_policy(company_short_name)
+
         # 2. update the prompt in the database
         new_prompt = Prompt(
             company_id=company.id,
@@ -167,9 +299,19 @@ class PromptService:
             order=data.get('order', 1),
             category_id=category_id,
             active=data.get('active', True),
-            prompt_type=data.get('prompt_type', 'company'),
+            prompt_type=self._normalize_prompt_type(data.get('prompt_type')),
             filename=f"{prompt_name.lower().replace(' ', '_')}.prompt",
-            custom_fields=data.get('custom_fields', [])
+            custom_fields=data.get('custom_fields', []),
+            output_schema=output_schema,
+            output_schema_yaml=output_schema_yaml,
+            output_schema_mode=self._normalize_output_schema_mode(data.get("output_schema_mode")),
+            output_response_mode=self._normalize_output_response_mode(data.get("output_response_mode")),
+            attachment_mode=self._normalize_attachment_mode(
+                data.get("attachment_mode", company_default_policy["attachment_mode"])
+            ),
+            attachment_fallback=self._normalize_attachment_fallback(
+                data.get("attachment_fallback", company_default_policy["attachment_fallback"])
+            ),
         )
         self.llm_query_repo.create_or_update_prompt(new_prompt)
 
@@ -190,25 +332,51 @@ class PromptService:
         # 1. Remove from DB
         self.llm_query_repo.delete_prompt(prompt_db)
 
-    def get_system_prompt(self):
+    def _resolve_system_prompt_capabilities(self, company_short_name: str) -> set[str]:
+        capabilities: set[str] = set()
+        if not company_short_name:
+            return capabilities
+
         try:
-            system_prompt_content = []
+            db_names = self.sql_service.get_db_names(company_short_name)
+            if isinstance(db_names, list) and db_names:
+                capabilities.add("has_sql_sources")
+        except Exception as e:
+            logging.debug(
+                "Could not resolve SQL capabilities for company '%s': %s",
+                company_short_name,
+                e,
+            )
 
-            # read all the system prompts from the database
-            system_prompts = self.llm_query_repo.get_system_prompts()
+        return capabilities
 
-            for prompt in system_prompts:
-                try:
-                    content = importlib.resources.read_text('iatoolkit.system_prompts', prompt.filename)
-                    system_prompt_content.append(content)
-                except FileNotFoundError:
-                    logging.warning(f"Prompt file does not exist in the package: {prompt.filename}")
-                except Exception as e:
-                    raise IAToolkitException(IAToolkitException.ErrorType.FILE_IO_ERROR,
-                                             f"error reading system prompt '{prompt.filename}': {e}")
+    def get_system_prompt_payload(
+        self,
+        company_id: int,
+        company_short_name: str | None = None,
+        query_text: str | None = None,
+    ) -> dict:
+        try:
+            resolved_short_name = (company_short_name or "").strip()
+            if not resolved_short_name:
+                company = self.profile_repo.get_company_by_id(company_id)
+                if not company:
+                    raise IAToolkitException(
+                        IAToolkitException.ErrorType.DOCUMENT_NOT_FOUND,
+                        f"company not found for id '{company_id}'",
+                    )
+                resolved_short_name = company.short_name
 
-            # join the system prompts into a single string
-            return "\n".join(system_prompt_content)
+            capabilities = self._resolve_system_prompt_capabilities(resolved_short_name)
+            payload = build_system_prompt_payload(capabilities, query_text=query_text)
+            selected_keys = payload.get("selected_keys")
+            if not isinstance(selected_keys, list):
+                selected_keys = []
+
+            return {
+                "content": payload.get("content", ""),
+                "selected_keys": selected_keys,
+            }
 
         except IAToolkitException:
             raise
@@ -217,6 +385,19 @@ class PromptService:
                 f"Error al obtener el contenido del prompt de sistema: {e}")
             raise IAToolkitException(IAToolkitException.ErrorType.PROMPT_ERROR,
                                f'error reading the system prompts": {str(e)}')
+
+    def get_system_prompt(
+        self,
+        company_id: int,
+        company_short_name: str | None = None,
+        query_text: str | None = None,
+    ):
+        payload = self.get_system_prompt_payload(
+            company_id=company_id,
+            company_short_name=company_short_name,
+            query_text=query_text,
+        )
+        return payload.get("content", "")
 
     def sync_company_prompts(self, company_short_name: str, prompt_list: list, categories_config: list):
         """
@@ -233,7 +414,7 @@ class PromptService:
             raise IAToolkitException(IAToolkitException.ErrorType.INVALID_NAME,
                                      f'Company {company_short_name} not found')
 
-        # community edition has its own prompt management
+        # enterprise edition has its own prompt management
         if not current_iatoolkit().is_community:
             return
 
@@ -253,6 +434,7 @@ class PromptService:
 
             # 2. Sync Prompts
             defined_prompt_names = set()
+            company_default_policy = self._get_company_default_attachment_policy(company_short_name)
 
             for prompt_data in prompt_list:
                 category_name = prompt_data.get('category')
@@ -266,6 +448,7 @@ class PromptService:
 
                 category_obj = category_map[category_name]
                 filename = f"{prompt_name}.prompt"
+                normalized_schema = StructuredOutputService.normalize_schema(prompt_data.get("output_schema"))
 
                 new_prompt = Prompt(
                     company_id=company.id,
@@ -274,15 +457,25 @@ class PromptService:
                     order=prompt_data.get('order'),
                     category_id=category_obj.id,
                     active=prompt_data.get('active', True),
-                    prompt_type=prompt_data.get('prompt_type', PromptType.COMPANY.value).lower(),
+                    prompt_type=self._normalize_prompt_type(prompt_data.get('prompt_type')),
                     filename=filename,
-                    custom_fields=prompt_data.get('custom_fields', [])
+                    custom_fields=prompt_data.get('custom_fields', []),
+                    output_schema=normalized_schema,
+                    output_schema_yaml=StructuredOutputService.dump_yaml_schema(normalized_schema),
+                    output_schema_mode=self._normalize_output_schema_mode(prompt_data.get("output_schema_mode")),
+                    output_response_mode=self._normalize_output_response_mode(prompt_data.get("output_response_mode")),
+                    attachment_mode=self._normalize_attachment_mode(
+                        prompt_data.get("attachment_mode", company_default_policy["attachment_mode"])
+                    ),
+                    attachment_fallback=self._normalize_attachment_fallback(
+                        prompt_data.get("attachment_fallback", company_default_policy["attachment_fallback"])
+                    ),
                 )
 
                 self.llm_query_repo.create_or_update_prompt(new_prompt)
 
             # 3. Cleanup: Delete prompts present in DB but not in Config
-            existing_prompts = self.llm_query_repo.get_prompts(company)
+            existing_prompts = self.llm_query_repo.get_prompts(company, include_all=True)
             for p in existing_prompts:
                 if p.name not in defined_prompt_names:
                     # Using hard delete to keep consistent with previous "refresh" behavior
@@ -290,50 +483,12 @@ class PromptService:
 
             self.llm_query_repo.commit()
 
-        except Exception as e:
+        except IAToolkitException:
             self.llm_query_repo.rollback()
-            raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR, str(e))
-
-    def register_system_prompts(self, company_short_name: str):
-        """
-        Instantiates the system prompts into the database.
-        """
-        company = self.profile_repo.get_company_by_short_name(company_short_name)
-        if not company:
-            raise IAToolkitException(IAToolkitException.ErrorType.INVALID_NAME,
-                                     f'Company {company_short_name} not found')
-
-        sys_category = PromptCategory(company_id=company.id, name="System", order=0)
-        sys_category = self.llm_query_repo.create_or_update_prompt_category(sys_category)
-
-        try:
-            defined_names = set()
-
-            for i, prompt_data in enumerate(_SYSTEM_PROMPTS):
-                prompt_name = prompt_data['name']
-                defined_names.add(prompt_name)
-                prompt_filename = f"{prompt_name}.prompt"
-
-                new_prompt = Prompt(
-                    company_id=company.id,
-                    name=prompt_name,
-                    description=prompt_data['description'],
-                    order=prompt_data['order'],
-                    category_id=sys_category.id,
-                    active=True,
-                    prompt_type=PromptType.SYSTEM.value,
-                    filename=prompt_filename,
-                    custom_fields=[]
-                )
-                self.llm_query_repo.create_or_update_prompt(new_prompt)
-
-                # add prompt to company assets
-                prompt_content = importlib.resources.read_text('iatoolkit.system_prompts', prompt_filename)
-                self.asset_repo.write_text(company.short_name, AssetType.PROMPT, prompt_filename, prompt_content)
-
-            self.llm_query_repo.commit()
-            return True
-
+            raise
+        except ValueError as e:
+            self.llm_query_repo.rollback()
+            raise IAToolkitException(IAToolkitException.ErrorType.INVALID_PARAMETER, str(e)) from e
         except Exception as e:
             self.llm_query_repo.rollback()
             raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR, str(e))

@@ -3,8 +3,8 @@
 #
 # IAToolkit is open source software.
 
-from iatoolkit.repositories.models import (Document,
-                        IngestionStatus, IngestionSource, CollectionType)
+from iatoolkit.repositories.models import Document, DocumentImage, Company, CollectionType
+
 from injector import inject
 from iatoolkit.repositories.database_manager import DatabaseManager
 from iatoolkit.common.exceptions import IAToolkitException
@@ -20,6 +20,11 @@ class DocumentRepo:
         self.session.add(new_document)
         self.session.commit()
         return new_document
+
+    def insert_document_image(self, document_image: DocumentImage) -> DocumentImage:
+        self.session.add(document_image)
+        self.session.commit()
+        return document_image
 
     def get(self, company_id, filename: str ) -> Document:
         if not company_id or not filename:
@@ -41,32 +46,30 @@ class DocumentRepo:
 
         return self.session.query(Document).filter_by(id=document_id).first()
 
-    def get_collection_type_by_name(self, company_id: int, name: str) -> Optional[CollectionType]:
-        return self.session.query(CollectionType).filter_by(company_id=company_id, name=name).first()
+    def get_collection_id_by_name(self, company_short_name: str, collection_name: str) -> Optional[int]:
+        if not collection_name:
+            return None
 
+        ct = self.session.query(CollectionType).join(Company).filter(
+            Company.short_name == company_short_name,
+            CollectionType.name == collection_name.lower()
+        ).first()
+        return ct.id if ct else None
 
-    # --- Ingestion Source Methods ---
+    def get_collection_by_name(self, company_short_name: str, collection_name: str) -> Optional[CollectionType]:
+        if not collection_name:
+            return None
 
-    def get_ingestion_source_by_name(self, company_id: int, name: str) -> Optional[IngestionSource]:
-        return self.session.query(IngestionSource).filter_by(company_id=company_id, name=name).first()
+        return self.session.query(CollectionType).join(Company).filter(
+            Company.short_name == company_short_name,
+            CollectionType.name == collection_name.lower()
+        ).first()
 
-    def create_or_update_ingestion_source(self, source: IngestionSource) -> IngestionSource:
-        """Adds or updates a source. If ID exists, it merges; otherwise adds."""
-        if source.id:
-            self.session.merge(source)
-        else:
-            self.session.add(source)
-        self.session.commit()
-        return source
+    def get_collection_by_id(self, collection_id) -> Optional[CollectionType]:
+        if not collection_id:
+            return None
 
-    def get_active_ingestion_sources(self, company_id: int, names: List[str]) -> List[IngestionSource]:
-        """Retrieves active sources matching the given names list."""
-        query = self.session.query(IngestionSource).filter(
-            IngestionSource.company_id == company_id,
-            IngestionSource.name.in_(names),
-            IngestionSource.status != IngestionStatus.PAUSED
-        )
-        return query.all()
+        return self.session.query(CollectionType).filter_by(id=collection_id).first()
 
     def commit(self):
         self.session.commit()

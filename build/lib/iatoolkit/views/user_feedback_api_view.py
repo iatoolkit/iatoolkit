@@ -22,7 +22,7 @@ class UserFeedbackApiView(MethodView):
     def post(self, company_short_name):
         try:
             # get access credentials
-            auth_result = self.auth_service.verify()
+            auth_result = self.auth_service.verify_for_company(company_short_name)
             if not auth_result.get("success"):
                 return jsonify(auth_result), auth_result.get("status_code")
 
@@ -57,4 +57,3 @@ class UserFeedbackApiView(MethodView):
             logging.exception(
                 f"unexpected error processing feedback for {company_short_name}: {e}")
             return jsonify({"error_message": str(e)}), 500
-

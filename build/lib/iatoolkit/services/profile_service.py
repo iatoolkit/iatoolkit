@@ -6,7 +6,7 @@
 from injector import inject
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.i18n_service import I18nService
-from iatoolkit.repositories.models import User, Company, ApiKey
+from iatoolkit.repositories.models import User, Company
 from flask_bcrypt import check_password_hash
 from iatoolkit.common.session_manager import SessionManager
 from iatoolkit.services.dispatcher_service import Dispatcher
@@ -17,10 +17,11 @@ from flask_bcrypt import Bcrypt
 from iatoolkit.services.mail_service import MailService
 import random
 import re
-import secrets
 import string
 import logging
 from typing import List, Dict
+from iatoolkit.common.interfaces.signup_policy_resolver import SignupPolicyResolver
+from iatoolkit.services.signup_policy_resolver import AllowAllSignupPolicyResolver
 
 
 class ProfileService:
@@ -32,7 +33,8 @@ class ProfileService:
                  config_service: ConfigurationService,
                  lang_service: LanguageService,
                  dispatcher: Dispatcher,
-                 mail_service: MailService):
+                 mail_service: MailService,
+                 signup_policy_resolver: SignupPolicyResolver = None):
         self.i18n_service = i18n_service
         self.profile_repo = profile_repo
         self.dispatcher = dispatcher
@@ -40,7 +42,17 @@ class ProfileService:
         self.config_service = config_service
         self.lang_service = lang_service
         self.mail_service = mail_service
+        self.signup_policy_resolver = signup_policy_resolver or AllowAllSignupPolicyResolver()
         self.bcrypt = Bcrypt()
+
+    def _safe_rollback(self):
+        """
+        Best-effort rollback to recover the scoped session after DB failures.
+        """
+        try:
+            self.profile_repo.session.rollback()
+        except Exception as rollback_error:
+            logging.warning(f"ProfileService rollback failed: {rollback_error}")
 
     def login(self, company_short_name: str, email: str, password: str) -> dict:
         try:
@@ -84,8 +96,10 @@ class ProfileService:
 
             # 3. create the web session
             self.set_session_for_user(company.short_name, user_identifier)
+
             return {'success': True, "user_identifier": user_identifier, "message": "Login ok"}
         except Exception as e:
+            self._safe_rollback()
             logging.error(f"Error in login: {e}")
             return {'success': False, "message": str(e)}
 
@@ -105,6 +119,7 @@ class ProfileService:
 
     def set_session_for_user(self, company_short_name: str, user_identifier:str ):
         # save a min Flask session cookie for this user
+        SessionManager.set_permanent(True)
         SessionManager.set('company_short_name', company_short_name)
         SessionManager.set('user_identifier', user_identifier)
 
@@ -144,6 +159,7 @@ class ProfileService:
             self.update_user(user_identifier, preferred_language=new_lang)
             return {'success': True, 'message': 'Language updated successfully.'}
         except Exception as e:
+            self._safe_rollback()
             # Log the error and return a generic failure message.
             logging.error(f"Failed to update language for {user_identifier}: {e}")
             return {'success': False, 'error_message': self.i18n_service.t('errors.general.unexpected_error', error=str(e))}
@@ -166,7 +182,8 @@ class ProfileService:
                last_name: str,
                password: str,
                confirm_password: str,
-               verification_url: str) -> dict:
+               verification_url: str,
+               invite_token: str = None) -> dict:
         try:
 
             # get company info
@@ -177,6 +194,18 @@ class ProfileService:
 
             # normalize  format's
             email = email.lower()
+
+            policy_decision = self.signup_policy_resolver.evaluate_signup(
+                company_short_name=company_short_name,
+                email=email,
+                invite_token=invite_token,
+            )
+            if not policy_decision.allowed:
+                if policy_decision.reason_message:
+                    return {"error": policy_decision.reason_message}
+                if policy_decision.reason_key:
+                    return {"error": self.i18n_service.t(policy_decision.reason_key)}
+                return {"error": self.i18n_service.t('errors.signup.signup_not_allowed')}
 
             # check if user exists
             existing_user = self.profile_repo.get_user_by_email(email)
@@ -235,6 +264,7 @@ class ProfileService:
 
             return {"message": message}
         except Exception as e:
+            self._safe_rollback()
             return {"error": self.i18n_service.t('errors.general.unexpected_error', error=str(e))}
 
     def update_user(self, email: str, **kwargs) -> User:
@@ -252,6 +282,7 @@ class ProfileService:
             return {"message": self.i18n_service.t('flash_messages.account_verified_success')}
 
         except Exception as e:
+            self._safe_rollback()
             return {"error": self.i18n_service.t('errors.general.unexpected_error')}
 
     def change_password(self,
@@ -275,6 +306,7 @@ class ProfileService:
 
             return {"message": self.i18n_service.t('flash_messages.password_changed_success')}
         except Exception as e:
+            self._safe_rollback()
             return {"error": self.i18n_service.t('errors.general.unexpected_error')}
 
     def forgot_password(self, company_short_name: str, email: str, reset_url: str):
@@ -293,6 +325,7 @@ class ProfileService:
 
             return {"message": self.i18n_service.t('flash_messages.forgot_password_success')}
         except Exception as e:
+            self._safe_rollback()
             return {"error": self.i18n_service.t('errors.general.unexpected_error')}
 
     def validate_password(self, password):
@@ -345,26 +378,6 @@ class ProfileService:
 
         return users_data
 
-    def get_active_api_key_entry(self, api_key_value: str) -> ApiKey | None:
-        return self.profile_repo.get_active_api_key_entry(api_key_value)
-
-    def new_api_key(self, company_short_name: str, key_name: str):
-        company = self.get_company_by_short_name(company_short_name)
-        if not company:
-            return {"error": self.i18n_service.t('errors.company_not_found', company_short_name=company_short_name)}
-
-        if not key_name:
-            return {"error": self.i18n_service.t('errors.auth.api_key_name_required')}
-
-        length = 40     # lenght of the api key
-        alphabet = string.ascii_letters + string.digits
-        key = ''.join(secrets.choice(alphabet) for i in range(length))
-
-        api_key = ApiKey(key=key, company_id=company.id, key_name=key_name)
-        self.profile_repo.create_api_key(api_key)
-        return {"api-key": key}
-
-
     def send_verification_email(self, new_user: User, company_short_name):
         # send verification account email
         subject = f"Verificación de Cuenta - {company_short_name}"
@@ -385,7 +398,7 @@ class ProfileService:
                                 <tr>
                                     <td style="text-align: left; font-size: 16px; color: #333;">
                                         <p>Hola <strong>{new_user.first_name}</strong>,</p>
-                                        <p>¡Bienvenido a <strong>{company_short_name}</strong>! Estamos encantados de tenerte con nosotros.</p>
+                                        <p>¡Bienvenido a <strong>IAToolkit</strong>! Estamos encantados de tenerte con nosotros.</p>
                                         <p>Para comenzar, verifica tu cuenta haciendo clic en el siguiente botón:</p>
                                         <p style="text-align: center; margin: 20px 0;">
                                             <a href="{new_user.verification_url}"

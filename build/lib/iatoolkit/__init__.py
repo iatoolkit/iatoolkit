@@ -3,7 +3,7 @@
 #
 # IAToolkit is open source software.
 
-__version__ = "1.22.0"
+__version__ = "1.73.1"
 
 # Expose main classes and functions at the top level of the package
 
@@ -11,17 +11,19 @@ __version__ = "1.22.0"
 from iatoolkit.core import IAToolkit, create_app, current_iatoolkit
 
 # for registering the client companies
-from .company_registry import register_company, set_company_registry
+from .company_registry import register_company, set_company_registry, get_company_instance
 from .base_company import BaseCompany
 
 # --- Services ---
 from iatoolkit.services.query_service import QueryService
-from iatoolkit.services.document_service import DocumentService
+from iatoolkit.services.parsers.parsing_service import ParsingService
 from iatoolkit.services.knowledge_base_service import KnowledgeBaseService
 from iatoolkit.services.sql_service import SqlService
-from iatoolkit.services.ingestor_service import IngestorService
 from iatoolkit.infra.call_service import CallServiceClient
 from iatoolkit.services.profile_service import ProfileService
+from iatoolkit.services.storage_service import StorageService
+from iatoolkit.services.embedding_service import EmbeddingService
+from iatoolkit.services.warmup_service import WarmupService
 from iatoolkit.services.mail_service import MailService
 from iatoolkit.repositories.models import Base as OrmModel
 from iatoolkit.base_company import BaseCompany
@@ -32,15 +34,18 @@ __all__ = [
     'current_iatoolkit',
     'register_company',
     'set_company_registry',
+    'get_company_instance',
     'BaseCompany',
     'QueryService',
     'SqlService',
-    'DocumentService',
+    'ParsingService',
     'KnowledgeBaseService',
-    'IngestorService',
     'CallServiceClient',
+    'WarmupService',
     'ProfileService',
     'MailService',
+    'EmbeddingService',
+    'StorageService',
     'OrmModel',
     'BaseCompany',
 ]

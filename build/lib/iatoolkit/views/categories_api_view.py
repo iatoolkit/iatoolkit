@@ -12,7 +12,7 @@ from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.knowledge_base_service import KnowledgeBaseService
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
-from iatoolkit.repositories.models import PromptType, PromptCategory
+from iatoolkit.repositories.models import PromptCategory, Tool
 import logging
 
 class CategoriesApiView(MethodView):
@@ -39,7 +39,7 @@ class CategoriesApiView(MethodView):
     def get(self, company_short_name):
         try:
             # 1. Verify Authentication
-            auth_result = self.auth_service.verify()
+            auth_result = self.auth_service.verify_for_company(company_short_name)
             if not auth_result.get("success"):
                 return jsonify(auth_result), 401
 
@@ -50,10 +50,15 @@ class CategoriesApiView(MethodView):
 
             # 3. Gather Categories
             response_data = {
-                "prompt_types": [t.value for t in PromptType],
+                "prompt_types": list(self.SUPPORTED_PROMPT_TYPES),
                 "prompt_categories": [],
                 "collection_types": [],
-                # Future categories can be added here (e.g., tool_types, user_roles)
+                "tool_types": [
+                    Tool.TYPE_NATIVE,
+                    Tool.TYPE_INFERENCE,
+                    Tool.TYPE_HTTP,
+                    Tool.TYPE_SYSTEM
+                ]
             }
 
             # A. Prompt Categories (from DB)
@@ -77,7 +82,7 @@ class CategoriesApiView(MethodView):
     def post(self, company_short_name):
         try:
             # 1. Verify Authentication
-            auth_result = self.auth_service.verify()
+            auth_result = self.auth_service.verify_for_company(company_short_name)
             if not auth_result.get("success"):
                 return jsonify(auth_result), 401
 
@@ -109,3 +114,7 @@ class CategoriesApiView(MethodView):
         except Exception as e:
             logging.exception(f"Error syncing categories for {company_short_name}: {e}")
             return jsonify({"status": "error", "message": str(e)}), 500
+    SUPPORTED_PROMPT_TYPES = [
+        "company",
+        "agent",
+    ]

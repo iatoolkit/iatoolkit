@@ -26,13 +26,15 @@ class ConfigurationApiView(MethodView):
         self.profile_service = profile_service
         self.auth_service = auth_service
 
-    def get(self, company_short_name: str = None):
+    def get(self, company_short_name: str = None, action: str = None):
         """
         Loads the current configuration for the company.
         """
         try:
+            refresh_runtime = action == "load_configuration"
+
             # 1. Verify authentication
-            auth_result = self.auth_service.verify(anonymous=True)
+            auth_result = self.auth_service.verify_for_company(company_short_name, anonymous=True)
             if not auth_result.get("success"):
                 return jsonify(auth_result), auth_result.get("status_code", 401)
 
@@ -40,21 +42,71 @@ class ConfigurationApiView(MethodView):
             if not company:
                 return jsonify({"error": "company not found."}), 404
 
+            if refresh_runtime:
+                self.configuration_service.invalidate_configuration_cache(company_short_name)
+
             config, errors = self.configuration_service.load_configuration(company_short_name)
 
-            # Register data sources to ensure services are up to date with loaded config
+            runtime_refresh = {}
+            if refresh_runtime:
+                runtime_refresh = self._refresh_runtime_clients(company_short_name)
+
+            # Register data sources to ensure services are up to date with loaded config.
+            # IMPORTANT: this must run AFTER runtime refresh to avoid clearing newly-registered SQL connections.
             if config:
-                self.configuration_service.register_data_sources(company_short_name)
+                self.configuration_service.register_data_sources(company_short_name, config=config)
 
             # Remove non-serializable objects
-            if 'company' in config:
-                config.pop('company')
+            serializable_config = dict(config or {})
+            serializable_config.pop("company", None)
+
+            response = {'config': serializable_config, 'errors': errors}
+            if refresh_runtime:
+                response["runtime_refresh"] = runtime_refresh
 
             status_code = 200 if not errors else 400
-            return jsonify({'config': config, 'errors': errors}), status_code
+            return jsonify(response), status_code
         except Exception as e:
             logging.exception(f"Unexpected error loading config: {e}")
             return jsonify({'status': 'error', 'message': str(e)}), 500
+
+    def _refresh_runtime_clients(self, company_short_name: str) -> dict:
+        refresh_status = {
+            "llm_proxy": False,
+            "embedding_clients": False,
+            "sql_connections": False,
+        }
+
+        from iatoolkit import current_iatoolkit
+        from iatoolkit.infra.llm_proxy import LLMProxy
+        from iatoolkit.services.embedding_service import EmbeddingService
+        from iatoolkit.services.sql_service import SqlService
+
+        injector = current_iatoolkit().get_injector()
+
+        try:
+            llm_proxy = injector.get(LLMProxy)
+            llm_proxy.clear_runtime_cache()
+            LLMProxy.clear_low_level_clients_cache()
+            refresh_status["llm_proxy"] = True
+        except Exception as e:
+            logging.warning(f"Error refreshing llm_proxy cache for '{company_short_name}': {e}")
+
+        try:
+            embedding_service = injector.get(EmbeddingService)
+            embedding_service.client_factory.clear_runtime_cache(company_short_name)
+            refresh_status["embedding_clients"] = True
+        except Exception as e:
+            logging.warning(f"Error refreshing embedding cache for '{company_short_name}': {e}")
+
+        try:
+            sql_service = injector.get(SqlService)
+            sql_service.clear_company_connections(company_short_name)
+            refresh_status["sql_connections"] = True
+        except Exception as e:
+            logging.warning(f"Error refreshing SQL cache for '{company_short_name}': {e}")
+
+        return refresh_status
 
     def patch(self, company_short_name: str):
         """
@@ -62,7 +114,7 @@ class ConfigurationApiView(MethodView):
         Body: { "key": "llm.model", "value": "gpt-4" }
         """
         try:
-            auth_result = self.auth_service.verify()
+            auth_result = self.auth_service.verify_for_company(company_short_name)
             if not auth_result.get("success"):
                 return jsonify(auth_result), 401
 
@@ -100,7 +152,7 @@ class ConfigurationApiView(MethodView):
         Body: { "parent_key": "llm", "key": "max_tokens", "value": 2048 }
         """
         try:
-            auth_result = self.auth_service.verify(anonymous=False)
+            auth_result = self.auth_service.verify_for_company(company_short_name, anonymous=False)
             if not auth_result.get("success"):
                 return jsonify(auth_result), 401
 
@@ -147,7 +199,7 @@ class ValidateConfigurationApiView(MethodView):
 
     def get(self, company_short_name: str):
         try:
-            auth_result = self.auth_service.verify(anonymous=False)
+            auth_result = self.auth_service.verify_for_company(company_short_name, anonymous=False)
             if not auth_result.get("success"):
                 return jsonify(auth_result), 401
 

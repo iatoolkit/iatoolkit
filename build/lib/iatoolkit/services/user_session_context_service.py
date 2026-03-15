@@ -32,6 +32,7 @@ class UserSessionContextService:
             RedisSessionManager.hdel(session_key, "context_version")
             RedisSessionManager.hdel(session_key, "context_history")
             RedisSessionManager.hdel(session_key, "last_response_id")
+            RedisSessionManager.hdel(session_key, "selected_system_prompt_keys")
 
     def clear_llm_history(self, company_short_name: str, user_identifier: str, model: str = None):
         """Clears only LLM history fields (last_response_id and context_history)."""
@@ -140,6 +141,53 @@ class UserSessionContextService:
             return json.loads(data_json)
         except json.JSONDecodeError:
             return {}
+
+    def save_selected_system_prompt_keys(self, company_short_name: str, user_identifier: str, keys: list[str]):
+        session_key = self._get_session_key(company_short_name, user_identifier)
+        if not session_key:
+            return
+
+        normalized: list[str] = []
+        for item in keys or []:
+            if not isinstance(item, str):
+                continue
+            key = item.strip()
+            if not key or key in normalized:
+                continue
+            normalized.append(key)
+
+        try:
+            keys_json = json.dumps(normalized)
+            RedisSessionManager.hset(session_key, "selected_system_prompt_keys", keys_json)
+        except (TypeError, ValueError) as e:
+            logging.error(f"Error serializing selected_system_prompt_keys for {session_key}: {e}")
+
+    def get_selected_system_prompt_keys(self, company_short_name: str, user_identifier: str) -> list[str]:
+        session_key = self._get_session_key(company_short_name, user_identifier)
+        if not session_key:
+            return []
+
+        raw = RedisSessionManager.hget(session_key, "selected_system_prompt_keys")
+        if not raw:
+            return []
+
+        try:
+            values = json.loads(raw) if isinstance(raw, str) else raw
+        except json.JSONDecodeError:
+            return []
+
+        if not isinstance(values, list):
+            return []
+
+        normalized: list[str] = []
+        for item in values:
+            if not isinstance(item, str):
+                continue
+            key = item.strip()
+            if not key or key in normalized:
+                continue
+            normalized.append(key)
+        return normalized
 
     def save_context_version(self,
             company_short_name: str,

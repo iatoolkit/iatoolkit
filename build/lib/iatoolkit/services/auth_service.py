@@ -6,6 +6,7 @@
 from flask import request
 from injector import inject
 from iatoolkit.services.profile_service import ProfileService
+from iatoolkit.services.api_key_service import ApiKeyService
 from iatoolkit.services.jwt_service import JWTService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.repositories.database_manager import DatabaseManager
@@ -23,11 +24,13 @@ class AuthService:
 
     @inject
     def __init__(self, profile_service: ProfileService,
+                 api_key_service: ApiKeyService,
                  jwt_service: JWTService,
                  db_manager: DatabaseManager,
                  i18n_service: I18nService
                  ):
         self.profile_service = profile_service
+        self.api_key_service = api_key_service
         self.jwt_service = jwt_service
         self.db_manager = db_manager
         self.i18n_service = i18n_service
@@ -114,6 +117,7 @@ class AuthService:
                 "success": True,
                 "company_short_name": session_info['company_short_name'],
                 "user_identifier": session_info['user_identifier'],
+                "user_role": (session_info.get('profile') or {}).get('user_role'),
             }
 
         # --- Priority 2: Check for a valid API Key in headers ---
@@ -130,7 +134,7 @@ class AuthService:
                     "status_code": 401}
 
         # check if the api-key is valid and active
-        api_key_entry = self.profile_service.get_active_api_key_entry(api_key)
+        api_key_entry = self.api_key_service.get_active_api_key_entry(api_key)
         if not api_key_entry:
             logging.error(f"Invalid or inactive IAToolkit API Key: {api_key}")
             return {"success": False,
@@ -154,6 +158,30 @@ class AuthService:
             "company_short_name": company.short_name,
             "user_identifier": user_identifier
         }
+
+    def verify_for_company(self, company_short_name: str, anonymous: bool = False) -> dict:
+        """
+        Verifies the current request and enforces that the authenticated tenant
+        matches the tenant requested by the caller.
+        """
+        auth_result = self.verify(anonymous=anonymous)
+        if not auth_result.get("success"):
+            return auth_result
+
+        auth_company_short_name = auth_result.get("company_short_name")
+        if auth_company_short_name != company_short_name:
+            logging.warning(
+                "Forbidden access due to company mismatch. requested=%s authenticated=%s",
+                company_short_name,
+                auth_company_short_name,
+            )
+            return {
+                "success": False,
+                "error_message": "Forbidden",
+                "status_code": 403,
+            }
+
+        return auth_result
 
 
     def log_access(self,

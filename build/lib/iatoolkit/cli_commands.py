@@ -5,9 +5,8 @@
 
 import click
 import logging
-from iatoolkit.core import IAToolkit
-from iatoolkit.services.profile_service import ProfileService
-from iatoolkit.services.prompt_service import PromptService
+from iatoolkit.core import IAToolkit, current_iatoolkit
+from iatoolkit.services.api_key_service import ApiKeyService
 
 
 def register_core_commands(app):
@@ -19,9 +18,9 @@ def register_core_commands(app):
     def api_key(company_short_name: str, key_name: str):
         """⚙️ Genera una nueva API key para una compañía ya registrada."""
         try:
-            profile_service = IAToolkit.get_instance().get_injector().get(ProfileService)
+            api_key_service = IAToolkit.get_instance().get_injector().get(ApiKeyService)
             click.echo(f"🔑 Generating API-KEY for company: '{company_short_name}'...")
-            result = profile_service.new_api_key(company_short_name, key_name)
+            result = api_key_service.new_api_key(company_short_name, key_name)
 
             if 'error' in result:
                 click.echo(f"❌ Error: {result['error']}")
@@ -36,17 +35,25 @@ def register_core_commands(app):
     @app.cli.command("init-company")
     @click.argument("company_short_name")
     def init_company(company_short_name: str):
-        """⚙️ Bootstrap a new company."""
+        """⚙️ Bootstrap or repair an installation for a company."""
         try:
-            prompt_service = IAToolkit.get_instance().get_injector().get(PromptService)
-            click.echo(f"🔑 Bootstrap company: '{company_short_name}'...")
-            result = prompt_service.register_system_prompts(company_short_name)
+            click.echo(f"⚙️ Bootstrapping installation for '{company_short_name}'...")
+            result = current_iatoolkit().bootstrap_defaults(company_short_name)
+            errors = result.get("errors", [])
+            if errors:
+                click.echo("⚠️ Configuration validation reported issues:")
+                for error in errors:
+                    click.echo(f" - {error}")
+                raise click.ClickException(
+                    f"bootstrap completed with configuration errors for '{company_short_name}'"
+                )
 
-            if result:
-                click.echo("✅ System prompts registered successfully!")
+            click.echo(f"✅ Company {company_short_name} initialized successfully!")
+        except click.ClickException:
+            raise
         except Exception as e:
             logging.exception(e)
-            click.echo(f"❌ unexpected error during the configuration: {e}")
+            click.echo(f"❌ unexpected error during bootstrap: {e}")
 
     @app.cli.command("encrypt-key")
     @click.argument("key")
@@ -60,6 +67,3 @@ def register_core_commands(app):
         except Exception as e:
             logging.exception(e)
             click.echo(f"Error: {str(e)}")
-
-
-

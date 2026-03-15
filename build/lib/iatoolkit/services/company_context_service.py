@@ -4,14 +4,13 @@
 # IAToolkit is open source software.
 
 from iatoolkit.common.util import Utility
-from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.common.interfaces.asset_storage import AssetRepository, AssetType
+from iatoolkit.services.sql_source_service import SqlSourceService
 from iatoolkit.services.sql_service import SqlService
 import logging
 import yaml
 from injector import inject
 from typing import List, Dict
-import os
 
 
 class CompanyContextService:
@@ -24,11 +23,11 @@ class CompanyContextService:
     def __init__(self,
                  sql_service: SqlService,
                  utility: Utility,
-                 config_service: ConfigurationService,
+                 sql_source_service: SqlSourceService,
                  asset_repo: AssetRepository):
         self.sql_service = sql_service
         self.utility = utility
-        self.config_service = config_service
+        self.sql_source_service = sql_source_service
         self.asset_repo = asset_repo
 
     def get_company_context(self, company_short_name: str) -> str:
@@ -74,14 +73,14 @@ class CompanyContextService:
         It iterates over configured databases, fetches their enriched structure,
         and formats it into a prompt-friendly string.
         """
-        data_sources_config = self.config_service.get_configuration(company_short_name, 'data_sources')
-        if not data_sources_config or not data_sources_config.get('sql'):
+        sql_sources = self.sql_source_service.list_sources(company_short_name, include_inactive=False)
+        if not sql_sources:
             return '', []
 
         context_output = []
         db_tables=[]
 
-        for source in data_sources_config.get('sql', []):
+        for source in sql_sources:
             db_name = source.get('database')
             if not db_name:
                 continue
@@ -296,6 +295,72 @@ class CompanyContextService:
 
         return static_context
 
+    @staticmethod
+    def _normalize_identifier(value: str) -> str:
+        if value is None:
+            return ""
+        return str(value).strip().strip('"').strip("'").lower()
+
+    @classmethod
+    def _table_name_candidates(cls, table_name: str) -> set[str]:
+        normalized = cls._normalize_identifier(table_name)
+        if not normalized:
+            return set()
+
+        candidates = {normalized}
+        if "." in normalized:
+            candidates.add(normalized.split(".")[-1])
+        return candidates
+
+    @classmethod
+    def _resolve_schema_filename_for_table(cls, files_map: dict, table_name: str) -> str | None:
+        for candidate in cls._table_name_candidates(table_name):
+            if candidate in files_map:
+                return files_map[candidate]
+        return None
+
+    @classmethod
+    def _resolve_yaml_root_data(cls, meta: dict, table_name: str) -> dict | None:
+        if not isinstance(meta, dict) or not meta:
+            return None
+
+        table_candidates = cls._table_name_candidates(table_name)
+
+        # 1) Standard: root key equals table name (possibly qualified/unqualified)
+        for candidate in table_candidates:
+            node = meta.get(candidate)
+            if isinstance(node, dict):
+                return node
+
+        lowered_meta_keys = {
+            cls._normalize_identifier(k): v
+            for k, v in meta.items()
+            if isinstance(v, dict)
+        }
+        for candidate in table_candidates:
+            node = lowered_meta_keys.get(candidate)
+            if isinstance(node, dict):
+                return node
+
+        # 2) Legacy fallback: single root object
+        if len(meta) == 1:
+            only_value = list(meta.values())[0]
+            if isinstance(only_value, dict):
+                return only_value
+
+        # 3) Flat format: top-level "table/schema/columns/..." definition
+        yaml_cols = meta.get("columns", meta.get("fields"))
+        if isinstance(yaml_cols, (dict, list)):
+            declared_table = cls._normalize_identifier(meta.get("table") or meta.get("name"))
+            if not declared_table:
+                return meta
+
+            declared_candidates = cls._table_name_candidates(declared_table)
+            if declared_candidates & table_candidates:
+                return meta
+
+        return None
+
     def get_enriched_database_schema(self, company_short_name: str, db_name: str) -> dict:
         """
         Retrieves the physical database structure and enriches it with metadata
@@ -308,24 +373,28 @@ class CompanyContextService:
             # 2. YAML files
             available_files = self.asset_repo.list_files(company_short_name, AssetType.SCHEMA)
             files_map = {}
+            normalized_db_name = self._normalize_identifier(db_name)
             for f in available_files:
-                clean = f.lower().replace('.yaml', '').replace('.yml', '')
+                clean = str(f).strip().lower()
+                if clean.endswith('.yaml'):
+                    clean = clean[:-5]
+                elif clean.endswith('.yml'):
+                    clean = clean[:-4]
                 if '-' not in clean:
                     continue            # skip non-table files
 
                 dbname, table = clean.split("-", 1)
                 # filter by the database
-                if dbname != db_name:
+                if dbname != normalized_db_name:
                     continue
-                files_map[table] = f
+                for table_candidate in self._table_name_candidates(table):
+                    files_map[table_candidate] = f
 
             logging.debug(f"🔍 [CompanyContextService] Enriching schema for {db_name}. Files found: {len(files_map)}")
 
             # 3. fusion between physical structure and YAML files
             for table_name, table_data in structure.items():
-                t_name = table_name.lower().strip()
-
-                real_filename = files_map.get(t_name)
+                real_filename = self._resolve_schema_filename_for_table(files_map, table_name)
                 if not real_filename:
                     continue
 
@@ -336,11 +405,8 @@ class CompanyContextService:
 
                     meta = yaml.safe_load(content) or {}
 
-                    # detect root, usually table name
-                    root_data = meta.get(table_name) or meta.get(t_name)
-                    if not root_data and len(meta) == 1:
-                        root_data = list(meta.values())[0]
-
+                    # detect root in standard nested or flat schema formats
+                    root_data = self._resolve_yaml_root_data(meta, table_name)
                     if not root_data:
                         continue
 
@@ -394,4 +460,3 @@ class CompanyContextService:
             logging.exception(f"Error generating enriched schema for {db_name}")
             # Depending on policy, re-raise or return empty structure
             raise e
-

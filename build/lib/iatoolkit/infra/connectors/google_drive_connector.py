@@ -97,3 +97,6 @@ class GoogleDriveConnector(FileConnector):
             # Si falla (ej: no existe), podríamos loguear o ignorar según diseño.
             # Aquí asumimos propagación de error o manejo silencioso si no crítico.
             pass
+
+    def generate_presigned_url(self, file_path: str, expiration: int = 3600) -> str:
+        raise NotImplementedError("not implemented yet")

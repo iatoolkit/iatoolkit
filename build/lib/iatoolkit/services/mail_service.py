@@ -5,17 +5,15 @@
 
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.i18n_service import I18nService
+from iatoolkit.services.storage_service import StorageService
+from iatoolkit.common.interfaces.secret_provider import SecretProvider
+from iatoolkit.common.secret_resolver import resolve_secret
 from iatoolkit.infra.brevo_mail_app import BrevoMailApp
 from injector import inject
-from pathlib import Path
 import base64
-import os
 import smtplib
 from email.message import EmailMessage
 from iatoolkit.common.exceptions import IAToolkitException
-
-
-TEMP_DIR = Path("static/temp")
 
 class MailService:
     @inject
@@ -23,11 +21,15 @@ class MailService:
                  config_service: ConfigurationService,
                  mail_app: BrevoMailApp,
                  i18n_service: I18nService,
-                 brevo_mail_app: BrevoMailApp):
+                 brevo_mail_app: BrevoMailApp,
+                 storage_service: StorageService,
+                 secret_provider: SecretProvider):
         self.mail_app = mail_app
         self.config_service = config_service
         self.i18n_service = i18n_service
         self.brevo_mail_app = brevo_mail_app
+        self.storage_service = storage_service
+        self.secret_provider = secret_provider
 
 
     def send_mail(self, company_short_name: str, **kwargs):
@@ -40,7 +42,7 @@ class MailService:
         norm_attachments = []
         for a in attachments or []:
             if a.get("attachment_token"):
-                raw = self._read_token_bytes(a["attachment_token"])
+                raw = self._read_token_bytes(company_short_name, a["attachment_token"])
                 norm_attachments.append({
                     "filename": a["filename"],
                     "content": base64.b64encode(raw).decode("utf-8"),
@@ -106,21 +108,28 @@ class MailService:
         # get parameters depending on provider
         if provider == "brevo_mail":
             brevo_cfg = mail_config.get("brevo_mail", {})
-            api_key_env = brevo_cfg.get("brevo_api", "BREVO_API_KEY")
+            api_key_ref = brevo_cfg.get("brevo_api_secret_ref") or brevo_cfg.get("brevo_api", "BREVO_API_KEY")
             return provider, {
-                "api_key": os.getenv(api_key_env),
+                "api_key": resolve_secret(self.secret_provider, company_short_name, api_key_ref),
                 "sender_name": sender_name,
                 "sender_email": sender_email,
             }
 
         if provider == "smtplib":
             smtp_cfg = mail_config.get("smtplib", {})
-            host = os.getenv(smtp_cfg.get("host_env", "SMTP_HOST"))
-            port = os.getenv(smtp_cfg.get("port_env", "SMTP_PORT"))
-            username = os.getenv(smtp_cfg.get("username_env", "SMTP_USERNAME"))
-            password = os.getenv(smtp_cfg.get("password_env", "SMTP_PASSWORD"))
-            use_tls = os.getenv(smtp_cfg.get("use_tls_env", "SMTP_USE_TLS"))
-            use_ssl = os.getenv(smtp_cfg.get("use_ssl_env", "SMTP_USE_SSL"))
+            host_ref = smtp_cfg.get("host_secret_ref") or smtp_cfg.get("host_env", "SMTP_HOST")
+            port_ref = smtp_cfg.get("port_secret_ref") or smtp_cfg.get("port_env", "SMTP_PORT")
+            username_ref = smtp_cfg.get("username_secret_ref") or smtp_cfg.get("username_env", "SMTP_USERNAME")
+            password_ref = smtp_cfg.get("password_secret_ref") or smtp_cfg.get("password_env", "SMTP_PASSWORD")
+            use_tls_ref = smtp_cfg.get("use_tls_secret_ref") or smtp_cfg.get("use_tls_env", "SMTP_USE_TLS")
+            use_ssl_ref = smtp_cfg.get("use_ssl_secret_ref") or smtp_cfg.get("use_ssl_env", "SMTP_USE_SSL")
+
+            host = resolve_secret(self.secret_provider, company_short_name, host_ref)
+            port = resolve_secret(self.secret_provider, company_short_name, port_ref)
+            username = resolve_secret(self.secret_provider, company_short_name, username_ref)
+            password = resolve_secret(self.secret_provider, company_short_name, password_ref)
+            use_tls = resolve_secret(self.secret_provider, company_short_name, use_tls_ref)
+            use_ssl = resolve_secret(self.secret_provider, company_short_name, use_ssl_ref)
 
             return provider, {
                 "host": host,
@@ -201,13 +210,18 @@ class MailService:
                 server.send_message(msg)
 
 
-    def _read_token_bytes(self, token: str) -> bytes:
-        # Defensa simple contra path traversal
-        if not token or "/" in token or "\\" in token or token.startswith("."):
-            raise IAToolkitException(IAToolkitException.ErrorType.MAIL_ERROR,
-                               "attachment_token invalid")
-        path = TEMP_DIR / token
-        if not path.is_file():
-            raise IAToolkitException(IAToolkitException.ErrorType.MAIL_ERROR,
-                               f"attach file not found: {token}")
-        return path.read_bytes()
+    def _read_token_bytes(self, company_short_name: str, token: str) -> bytes:
+        if not token:
+            raise IAToolkitException(IAToolkitException.ErrorType.MAIL_ERROR, "attachment_token invalid")
+
+        try:
+            payload = self.storage_service.resolve_download_token(token)
+            token_company = payload.get("company")
+            storage_key = payload.get("storage_key")
+            if token_company != company_short_name:
+                raise IAToolkitException(IAToolkitException.ErrorType.MAIL_ERROR, "attachment_token company mismatch")
+            return self.storage_service.get_document_content(company_short_name, storage_key)
+        except IAToolkitException as e:
+            if e.error_type == IAToolkitException.ErrorType.CALL_ERROR:
+                raise IAToolkitException(IAToolkitException.ErrorType.MAIL_ERROR, "attachment_token invalid")
+            raise

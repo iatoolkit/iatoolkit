@@ -1,11 +1,12 @@
 # iatoolkit/views/home_view.py
-from flask import render_template,  render_template_string, request
+from flask import render_template, render_template_string
 from flask.views import MethodView
 from injector import inject
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.branding_service import BrandingService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.common.util import Utility
+import logging
 
 class HomeView(MethodView):
     """
@@ -32,6 +33,8 @@ class HomeView(MethodView):
                 return render_template('error.html',
                                        message=self.i18n_service.t('errors.templates.company_not_found')), 404
 
+            self._trigger_warmup(company_short_name, "home_pre_login")
+
             branding_data = self.branding_service.get_company_branding(company_short_name)
 
             template_name = self.util.get_template_by_language("home")
@@ -39,6 +42,15 @@ class HomeView(MethodView):
 
             # 2. Verificamos si el archivo de plantilla personalizado no existe.
             if not home_template:
+                # Hosted tenants do not require filesystem home templates.
+                if self.util.is_hosted_company_runtime(company_short_name):
+                    return render_template(
+                        "home_hosted_default.html",
+                        company_short_name=company_short_name,
+                        company=company,
+                        branding=branding_data,
+                    )
+
                 message = self.i18n_service.t('errors.templates.home_template_not_found', company_name=company_short_name)
                 return render_template(
                     "error.html",
@@ -61,3 +73,13 @@ class HomeView(MethodView):
                 branding=branding_data,
                 message=message
             ), 500
+
+    def _trigger_warmup(self, company_short_name: str, trigger: str):
+        try:
+            from iatoolkit import current_iatoolkit
+            from iatoolkit.services.warmup_service import WarmupService
+
+            warmup_service = current_iatoolkit().get_injector().get(WarmupService)
+            warmup_service.warmup_company(company_short_name, trigger=trigger)
+        except Exception as e:
+            logging.debug("Warm-up trigger skipped for company='%s' trigger='%s': %s", company_short_name, trigger, e)

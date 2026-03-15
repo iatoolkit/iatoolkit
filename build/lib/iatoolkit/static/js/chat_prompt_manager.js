@@ -61,7 +61,8 @@ function selectPrompt(prompt) {
 function resetPromptSelection() {
     selectedPrompt = null;
 
-    $('#prompt-select-button').text('Prompts disponibles ....').removeClass('item-selected');
+    const promptsAvailableLabel = t_js('prompts_available');
+    $('#prompt-select-button').text(`${promptsAvailableLabel} ....`).removeClass('item-selected');
     $('#clear-selection-button').hide();
     $('#prompt-select-value').val('');
     $('#prompt-select-description').val('');

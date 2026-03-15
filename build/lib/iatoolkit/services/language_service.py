@@ -11,7 +11,7 @@ from iatoolkit.common.session_manager import SessionManager
 class LanguageService:
     """
     Determines the correct language for the current request
-    based on a defined priority order (session, URL, etc.)
+    based on a defined priority order (company config, URL, etc.)
     and caches it in the Flask 'g' object for the request's lifecycle.
     """
 
@@ -42,6 +42,16 @@ class LanguageService:
         self.config_service = config_service
         self.profile_repo = profile_repo
 
+    def _safe_rollback(self):
+        """
+        Best-effort rollback to recover the shared SQLAlchemy scoped session
+        after transient DB failures (e.g. SSL/network errors).
+        """
+        try:
+            self.profile_repo.session.rollback()
+        except Exception as rollback_error:
+            logging.warning(f"LanguageService rollback failed: {rollback_error}")
+
     def _get_company_short_name(self) -> str | None:
         """
         Gets the company_short_name from the current request context.
@@ -66,9 +76,8 @@ class LanguageService:
     def get_current_language(self) -> str:
         """
             Determines and caches the language for the current request using a priority order:
-            0. Query parameter '?lang=<code>' (highest priority; e.g., 'en', 'es').
-            1. User's preference (from their profile).
-            2. Company's default language.
+            1. Company's default language from company.yaml ('locale').
+            2. Query parameter '?lang=<code>' (e.g., 'en', 'es').
             3. System-wide fallback language ('es').
             """
         if 'locale_ctx' in g:
@@ -103,19 +112,7 @@ class LanguageService:
         return g.locale_ctx
 
     def _resolve_locale_string(self) -> str:
-        # Priority 0: Query param
-        lang_arg = request.args.get('lang')
-        if lang_arg:
-            return lang_arg
-
-        # Priority 1: User Profile
-        user_identifier = SessionManager.get('user_identifier')
-        if user_identifier:
-            user = self.profile_repo.get_user_by_email(user_identifier)
-            if user and user.preferred_language:
-                return user.preferred_language
-
-        # Priority 2: Company Config
+        # Priority 1: Company Config (source of truth)
         company_short_name = self._get_company_short_name()
         if company_short_name:
             # cnfig returns something like 'es_ES' o 'en_US'
@@ -124,7 +121,13 @@ class LanguageService:
                 if conf_locale:
                     return conf_locale
             except Exception as e:
+                self._safe_rollback()
                 logging.warning(f"Error fetching configuration for '{company_short_name}': {e}")
+
+        # Priority 2: Query param (only if company locale was not available)
+        lang_arg = request.args.get('lang')
+        if lang_arg:
+            return lang_arg
 
 
         logging.debug(f"Language determined by system fallback: {self.FALLBACK_LANGUAGE}")

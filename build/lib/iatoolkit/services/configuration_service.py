@@ -4,12 +4,15 @@
 
 from iatoolkit.repositories.models import Company
 from iatoolkit.common.interfaces.asset_storage import AssetRepository, AssetType
+from iatoolkit.common.interfaces.secret_provider import SecretProvider
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.common.util import Utility
+from iatoolkit.services.structured_output_service import StructuredOutputService
 from injector import inject
 import logging
 import os
+from urllib.parse import urlparse
 
 
 class ConfigurationService:
@@ -23,11 +26,13 @@ class ConfigurationService:
                  asset_repo: AssetRepository,
                  llm_query_repo: LLMQueryRepo,
                  profile_repo: ProfileRepo,
-                 utility: Utility):
+                 utility: Utility,
+                 secret_provider: SecretProvider):
         self.asset_repo = asset_repo
         self.llm_query_repo = llm_query_repo
         self.profile_repo = profile_repo
         self.utility = utility
+        self.secret_provider = secret_provider
         self._loaded_configs = {}   # cache for store loaded configurations
 
     def _ensure_config_loaded(self, company_short_name: str):
@@ -61,11 +66,21 @@ class ConfigurationService:
             # 5. Register Knowledge base information
             self._register_knowledge_base(company_short_name, config)
 
+            # 6. Sync SQL source catalog from YAML to DB.
+            # Runtime registration is resolved from DB entries.
+            self._sync_sql_sources(company_short_name, config)
+
+        # Keep runtime cache aligned with the latest loaded configuration.
+        self._loaded_configs[company_short_name] = config or {}
+
         # Final step: validate the configuration against platform
         errors = self._validate_configuration(company_short_name, config)
 
         logging.info(f"✅ Company '{company_short_name}' configured successfully.")
         return config, errors
+
+    def invalidate_configuration_cache(self, company_short_name: str):
+        self._loaded_configs.pop(company_short_name, None)
 
     def get_configuration(self, company_short_name: str, content_key: str):
         """
@@ -191,8 +206,8 @@ class ConfigurationService:
                               company_short_name: str,
                               config: dict = None):
         """
-        Reads the data_sources config and registers databases with SqlService.
-        Uses Lazy Loading to avoid circular dependency.
+        Resolves runtime SQL registrations from the SQL source catalog table.
+        YAML data_sources are synchronized into the catalog before refresh.
 
         Public method: Can be called externally after initialization (e.g. by Enterprise)
         to re-register sources once new factories (like 'bridge') are available.
@@ -206,54 +221,35 @@ class ConfigurationService:
         if not config:
             return
 
+        self._sync_sql_sources(company_short_name, config or {})
+
         from iatoolkit import current_iatoolkit
-        from iatoolkit.services.sql_service import SqlService
-        sql_service = current_iatoolkit().get_injector().get(SqlService)
+        from iatoolkit.services.sql_source_service import SqlSourceService
+        sql_source_service = current_iatoolkit().get_injector().get(SqlSourceService)
 
-        data_sources = config.get('data_sources', {})
-        sql_sources = data_sources.get('sql', [])
+        result = sql_source_service.refresh_runtime(company_short_name)
+        logging.debug(
+            "🛢️ Runtime SQL sources refreshed for '%s': registered=%s skipped=%s",
+            company_short_name,
+            result.get("registered", 0),
+            result.get("skipped", 0),
+        )
 
-        if not sql_sources:
-            return
+    def _sync_sql_sources(self, company_short_name: str, config: dict):
+        from iatoolkit import current_iatoolkit
+        from iatoolkit.services.sql_source_service import SqlSourceService
+        sql_source_service = current_iatoolkit().get_injector().get(SqlSourceService)
 
-        logging.info(f"🛢️ Registering databases  for '{company_short_name}'...")
-
-        for source in sql_sources:
-            db_name = source.get('database')
-            if not db_name:
-                continue
-
-            # Prepare the config dictionary for the factory
-            db_config = {
-                'database': db_name,
-                'schema': source.get('schema', 'public'),
-                'connection_type': source.get('connection_type', 'direct'),
-
-                # Pass through keys needed for Bridge or other plugins
-                'bridge_id': source.get('bridge_id'),
-                'timeout': source.get('timeout')
-            }
-
-            # Resolve URI if env var is present (Required for 'direct', optional for others)
-            db_env_var = source.get('connection_string_env')
-            if db_env_var:
-                db_uri = os.getenv(db_env_var)
-                if db_uri:
-                    db_config['db_uri'] = db_uri
-
-            # Validation: 'direct' connections MUST have a URI
-            if db_config['connection_type'] == 'direct' and not db_config.get('db_uri'):
-                logging.error(
-                    f"-> Skipping DB '{db_name}' for '{company_short_name}': missing URI in env '{db_env_var}'.")
-                continue
-
-            elif db_config['connection_type'] == 'bridge' and not db_config.get('bridge_id'):
-                logging.error(
-                    f"-> Skipping DB '{db_name}' for '{company_short_name}': missing bridge_id in configuration.")
-                continue
-
-            # Register with the SQL service
-            sql_service.register_database(company_short_name, db_name, db_config)
+        data_sources = config.get('data_sources', {}) if isinstance(config, dict) else {}
+        sql_sources = data_sources.get('sql', []) if isinstance(data_sources, dict) else []
+        sync_result = sql_source_service.sync_from_yaml(company_short_name, sql_sources)
+        logging.debug(
+            "🧩 SQL source sync for '%s': upserted=%s deleted=%s skipped=%s",
+            company_short_name,
+            sync_result.get("upserted", 0),
+            sync_result.get("deleted", 0),
+            sync_result.get("skipped", 0),
+        )
 
     def _register_tools(self, company_short_name: str, config: dict):
         """creates in the database each tool defined in the YAML."""
@@ -285,6 +281,10 @@ class ConfigurationService:
         # Lazy import to avoid circular dependency
         from iatoolkit import current_iatoolkit
         from iatoolkit.services.knowledge_base_service import KnowledgeBaseService
+
+        if not current_iatoolkit().is_community:
+            return
+
         knowledge_base = current_iatoolkit().get_injector().get(KnowledgeBaseService)
 
         kb_config = config.get('knowledge_base', {})
@@ -326,6 +326,20 @@ class ConfigurationService:
                 add_error("llm", "Missing required key: 'model'")
             if not config.get("llm", {}).get("provider_api_keys"):
                 add_error("llm", "Missing required key: 'provider_api_keys'")
+            llm_defaults_mode = str(config.get("llm", {}).get("default_attachment_mode", "extracted_only")).strip().lower()
+            llm_defaults_fallback = str(config.get("llm", {}).get("default_attachment_fallback", "extract")).strip().lower()
+            allowed_attachment_modes = {"extracted_only", "native_only", "native_plus_extracted", "auto"}
+            allowed_attachment_fallbacks = {"extract", "fail"}
+            if llm_defaults_mode not in allowed_attachment_modes:
+                add_error(
+                    "llm.default_attachment_mode",
+                    f"Unsupported value '{llm_defaults_mode}'. Must be one of: {sorted(allowed_attachment_modes)}."
+                )
+            if llm_defaults_fallback not in allowed_attachment_fallbacks:
+                add_error(
+                    "llm.default_attachment_fallback",
+                    f"Unsupported value '{llm_defaults_fallback}'. Must be one of: {sorted(allowed_attachment_fallbacks)}."
+                )
 
         # 3. Embedding Provider
         if isinstance(config.get("embedding_provider"), dict):
@@ -333,17 +347,16 @@ class ConfigurationService:
                 add_error("embedding_provider", "Missing required key: 'provider'")
             if not config.get("embedding_provider", {}).get("model"):
                 add_error("embedding_provider", "Missing required key: 'model'")
-            if not config.get("embedding_provider", {}).get("api_key_name"):
-                add_error("embedding_provider", "Missing required key: 'api_key_name'")
 
         # 3b. Visual Embedding Provider (Optional)
         if config.get("visual_embedding_provider"):
             if not isinstance(config.get("visual_embedding_provider"), dict):
                 add_error("visual_embedding_provider", "Section must be a dictionary.")
             else:
-                if not config.get("visual_embedding_provider", {}).get("provider"):
+                provider = config.get("visual_embedding_provider", {}).get("provider")
+                if not provider:
                     add_error("visual_embedding_provider", "Missing required key: 'provider'")
-                if not config.get("visual_embedding_provider", {}).get("model"):
+                if provider != 'custom_class' and not config.get("visual_embedding_provider", {}).get("model"):
                     add_error("visual_embedding_provider", "Missing required key: 'model'")
 
         # 4. Data Sources
@@ -352,8 +365,12 @@ class ConfigurationService:
                 add_error(f"data_sources.sql[{i}]", "Missing required key: 'database'")
 
             connection_type = source.get("connection_type")
-            if connection_type == 'direct' and not source.get("connection_string_env"):
-                add_error(f"data_sources.sql[{i}]", "Missing required key: 'connection_string_env'")
+            has_db_ref = bool(source.get("connection_string_secret_ref") or source.get("connection_string_env"))
+            if connection_type == 'direct' and not has_db_ref:
+                add_error(
+                    f"data_sources.sql[{i}]",
+                    "Missing required key: 'connection_string_secret_ref' (or legacy 'connection_string_env')"
+                )
             elif connection_type == 'bridge' and not source.get("bridge_id"):
                 add_error(f"data_sources.sql[{i}]", "Missing bridge_id'")
 
@@ -373,6 +390,11 @@ class ConfigurationService:
         prompt_list, categories_config = self._get_prompt_config(config)
 
         category_set = set(categories_config)
+        allowed_prompt_types = {"company", "agent"}
+        allowed_output_schema_modes = {"best_effort", "strict"}
+        allowed_output_response_modes = {"chat_compatible", "structured_only"}
+        allowed_attachment_modes = {"extracted_only", "native_only", "native_plus_extracted", "auto"}
+        allowed_attachment_fallbacks = {"extract", "fail"}
         for i, prompt in enumerate(prompt_list):
             prompt_name = prompt.get("name")
             if not prompt_name:
@@ -388,11 +410,55 @@ class ConfigurationService:
 
             prompt_cat = prompt.get("category")
             prompt_type = prompt.get("prompt_type", 'company').lower()
+            if prompt_type not in allowed_prompt_types:
+                add_error(
+                    f"prompts[{i}]",
+                    f"Unsupported prompt_type '{prompt_type}'. Must be one of: {sorted(allowed_prompt_types)}."
+                )
+                continue
             if prompt_type == 'company':
                 if not prompt_cat:
                     add_error(f"prompts[{i}]", "Missing required key: 'category'")
                 elif prompt_cat not in category_set:
                     add_error(f"prompts[{i}]", f"Category '{prompt_cat}' is not defined in 'prompt_categories'.")
+
+            schema_mode = str(prompt.get("output_schema_mode", "best_effort")).strip().lower()
+            if schema_mode not in allowed_output_schema_modes:
+                add_error(
+                    f"prompts[{i}]",
+                    f"Unsupported output_schema_mode '{schema_mode}'. Must be one of: {sorted(allowed_output_schema_modes)}."
+                )
+
+            response_mode = str(prompt.get("output_response_mode", "chat_compatible")).strip().lower()
+            if response_mode not in allowed_output_response_modes:
+                add_error(
+                    f"prompts[{i}]",
+                    f"Unsupported output_response_mode '{response_mode}'. Must be one of: {sorted(allowed_output_response_modes)}."
+                )
+
+            attachment_mode = str(prompt.get("attachment_mode", "extracted_only")).strip().lower()
+            if attachment_mode not in allowed_attachment_modes:
+                add_error(
+                    f"prompts[{i}]",
+                    f"Unsupported attachment_mode '{attachment_mode}'. Must be one of: {sorted(allowed_attachment_modes)}."
+                )
+
+            attachment_fallback = str(prompt.get("attachment_fallback", "extract")).strip().lower()
+            if attachment_fallback not in allowed_attachment_fallbacks:
+                add_error(
+                    f"prompts[{i}]",
+                    f"Unsupported attachment_fallback '{attachment_fallback}'. Must be one of: {sorted(allowed_attachment_fallbacks)}."
+                )
+
+            output_schema = prompt.get("output_schema")
+            if output_schema is not None:
+                if not isinstance(output_schema, dict):
+                    add_error(f"prompts[{i}]", "'output_schema' must be an object.")
+                else:
+                    try:
+                        StructuredOutputService.normalize_schema(output_schema)
+                    except Exception as schema_error:
+                        add_error(f"prompts[{i}]", f"Invalid output_schema: {schema_error}")
 
         # 7. User Feedback
         feedback_config = config.get("parameters", {}).get("user_feedback", {})
@@ -404,11 +470,83 @@ class ConfigurationService:
         if kb_config and not isinstance(kb_config, dict):
             add_error("knowledge_base", "Section must be a dictionary.")
         elif kb_config:
+            parsing_provider = kb_config.get("parsing_provider")
+            allowed_parsing_providers = {"auto", "docling", "legacy", "document_service"}
+            if parsing_provider is not None:
+                if not isinstance(parsing_provider, str):
+                    add_error("knowledge_base.parsing_provider", "Must be a string.")
+                elif parsing_provider.strip().lower() not in allowed_parsing_providers:
+                    add_error("knowledge_base.parsing_provider",
+                              f"Unsupported provider '{parsing_provider}'. Must be one of: {sorted(allowed_parsing_providers)}")
+
+            collections_config = kb_config.get("collections", [])
+            if collections_config is not None:
+                if not isinstance(collections_config, list):
+                    add_error("knowledge_base.collections", "Must be a list.")
+                else:
+                    for i, item in enumerate(collections_config):
+                        if isinstance(item, str):
+                            if not item.strip():
+                                add_error(f"knowledge_base.collections[{i}]", "Collection name cannot be empty.")
+                        elif isinstance(item, dict):
+                            name = item.get("name")
+                            if not isinstance(name, str) or not name.strip():
+                                add_error(f"knowledge_base.collections[{i}].name",
+                                          "Missing required key: 'name' (non-empty string).")
+                            parser_provider = item.get("parser_provider")
+                            if parser_provider is not None:
+                                if not isinstance(parser_provider, str):
+                                    add_error(f"knowledge_base.collections[{i}].parser_provider",
+                                              "Must be a string if provided.")
+                                elif parser_provider.strip().lower() not in allowed_parsing_providers:
+                                    add_error(f"knowledge_base.collections[{i}].parser_provider",
+                                              f"Unsupported provider '{parser_provider}'. Must be one of: {sorted(allowed_parsing_providers)}")
+                        else:
+                            add_error(f"knowledge_base.collections[{i}]",
+                                      "Each collection must be a string or an object with keys like {name, parser_provider}.")
+
+            docling_config = kb_config.get("docling")
+            if docling_config is not None:
+                if not isinstance(docling_config, dict):
+                    add_error("knowledge_base.docling", "Must be a dictionary.")
+                else:
+                    docling_do_ocr = docling_config.get("do_ocr")
+                    if docling_do_ocr is not None and not isinstance(docling_do_ocr, bool):
+                        add_error(
+                            "knowledge_base.docling.do_ocr",
+                            "Must be a boolean if provided.",
+                        )
+
             prod_connector = kb_config.get("connectors", {}).get("production", {})
             if prod_connector.get("type") == "s3":
-                for key in ["bucket", "prefix", "aws_access_key_id_env", "aws_secret_access_key_env", "aws_region_env"]:
+                for key in ["bucket", "prefix"]:
                     if not prod_connector.get(key):
                         add_error("knowledge_base.connectors.production", f"S3 connector is missing '{key}'.")
+
+                has_access_key = bool(
+                    prod_connector.get("aws_access_key_id_secret_ref") or prod_connector.get("aws_access_key_id_env")
+                )
+                has_secret_key = bool(
+                    prod_connector.get("aws_secret_access_key_secret_ref") or prod_connector.get("aws_secret_access_key_env")
+                )
+                has_region = bool(
+                    prod_connector.get("aws_region_secret_ref") or prod_connector.get("aws_region_env")
+                )
+                if not has_access_key:
+                    add_error(
+                        "knowledge_base.connectors.production",
+                        "S3 connector is missing 'aws_access_key_id_secret_ref' (or legacy 'aws_access_key_id_env')."
+                    )
+                if not has_secret_key:
+                    add_error(
+                        "knowledge_base.connectors.production",
+                        "S3 connector is missing 'aws_secret_access_key_secret_ref' (or legacy 'aws_secret_access_key_env')."
+                    )
+                if not has_region:
+                    add_error(
+                        "knowledge_base.connectors.production",
+                        "S3 connector is missing 'aws_region_secret_ref' (or legacy 'aws_region_env')."
+                    )
 
         # 9. Mail Provider
         mail_config = config.get("mail_provider", {})
@@ -438,10 +576,8 @@ class ConfigurationService:
             if provider == "s3":
                 s3_conf = storage_config.get("s3", {})
                 # Check for env var names, not values
-                if not s3_conf.get("access_key_env"):
-                    add_error("storage_provider.s3", "Missing 'access_key_env'")
-                if not s3_conf.get("secret_key_env"):
-                    add_error("storage_provider.s3", "Missing 'secret_key_env'")
+                if not s3_conf:
+                    add_error("storage_provider.s3", "Missing s3 configuration.")
 
             if provider == "google_cloud_storage":
                 gcs_conf = storage_config.get("google_cloud_storage", {})
@@ -456,6 +592,64 @@ class ConfigurationService:
                 continue
             if not self.asset_repo.exists(company_short_name, AssetType.CONFIG, filename):
                 add_error(f"help_files.{key}", f"Help file not found: {filename}")
+
+        # 12. Web Search
+        web_search = config.get("web_search")
+        if web_search is not None:
+            if not isinstance(web_search, dict):
+                add_error("web_search", "Section must be a dictionary.")
+            else:
+                enabled = web_search.get("enabled", True)
+                if not isinstance(enabled, bool):
+                    add_error("web_search.enabled", "Must be a boolean.")
+
+                provider = web_search.get("provider")
+                normalized_provider = None
+                if provider is not None:
+                    if not isinstance(provider, str) or not provider.strip():
+                        add_error("web_search.provider", "Must be a non-empty string.")
+                    else:
+                        normalized_provider = provider.strip().lower()
+                        if normalized_provider not in {"brave"}:
+                            add_error("web_search.provider", "Unsupported provider. Must be 'brave'.")
+                elif enabled:
+                    add_error("web_search.provider", "Missing required key: 'provider'.")
+
+                max_results = web_search.get("max_results")
+                if max_results is not None:
+                    if not isinstance(max_results, int) or max_results <= 0 or max_results > 20:
+                        add_error("web_search.max_results", "Must be an integer between 1 and 20.")
+
+                timeout_ms = web_search.get("timeout_ms")
+                if timeout_ms is not None:
+                    if not isinstance(timeout_ms, int) or timeout_ms <= 0 or timeout_ms > 120000:
+                        add_error("web_search.timeout_ms", "Must be an integer between 1 and 120000.")
+
+                providers_cfg = web_search.get("providers")
+                if providers_cfg is not None and not isinstance(providers_cfg, dict):
+                    add_error("web_search.providers", "Must be a dictionary.")
+
+                if normalized_provider:
+                    provider_cfg = (providers_cfg or {}).get(normalized_provider)
+                    if not isinstance(provider_cfg, dict):
+                        add_error(f"web_search.providers.{normalized_provider}",
+                                  "Provider configuration is required and must be a dictionary.")
+                    elif normalized_provider == "brave":
+                        secret_ref = provider_cfg.get("secret_ref")
+                        if not isinstance(secret_ref, str) or not secret_ref.strip():
+                            add_error("web_search.providers.brave.secret_ref",
+                                      "Missing required key: 'secret_ref'.")
+
+                        api_base_url = provider_cfg.get("api_base_url")
+                        if api_base_url is not None:
+                            if not isinstance(api_base_url, str) or not api_base_url.strip():
+                                add_error("web_search.providers.brave.api_base_url",
+                                          "Must be a non-empty string.")
+                            else:
+                                parsed = urlparse(api_base_url)
+                                if parsed.scheme.lower() != "https" or not parsed.netloc:
+                                    add_error("web_search.providers.brave.api_base_url",
+                                              "Must be an absolute HTTPS URL.")
 
 
         # If any errors were found, log all messages and raise an exception
@@ -545,8 +739,7 @@ class ConfigurationService:
 
         # verify existence of the main configuration file
         if not self.asset_repo.exists(company_short_name, AssetType.CONFIG, main_config_filename):
-            # raise FileNotFoundError(f"Main configuration file not found: {main_config_filename}")
-            logging.exception(f"Main configuration file not found: {main_config_filename}")
+            logging.warning(f"Main configuration file not found: {main_config_filename}")
 
             # return the minimal configuration needed for starting the IAToolkit
             # this is a for solving a chicken/egg problem when trying to migrate the configuration
@@ -555,7 +748,18 @@ class ConfigurationService:
             return {
                 'id': company_short_name,
                 'name': company_short_name,
-                'llm': {'model': 'gpt-5', 'provider_api_keys': {'openai':''} },
+                'llm': {'model': 'gpt-5', 'provider_api_keys': {'openai': ''}},
+                'data_sources': {'sql': []},
+                'tools': [],
+                'prompts': {'prompt_categories': [], 'prompt_list': []},
+                'branding': {},
+                'onboarding_cards': [],
+                'help_content': {
+                    'example_questions': [],
+                    'data_sources': [],
+                    'best_practices': [],
+                    'capabilities': {'can_do': [], 'cannot_do': []},
+                },
                 }
 
         # read text and parse
@@ -585,4 +789,3 @@ class ConfigurationService:
             categories_config = config.get('prompt_categories', [])
 
         return prompt_list, categories_config
-

@@ -11,11 +11,13 @@ from flask_cors import CORS
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.repositories.database_manager import DatabaseManager
 from iatoolkit.common.interfaces.asset_storage import AssetRepository
+from iatoolkit.common.interfaces.secret_provider import SecretProvider
 from iatoolkit.company_registry import get_registered_companies
 from werkzeug.middleware.proxy_fix import ProxyFix
 from injector import Binder, Injector, singleton
 from typing import Optional, Dict, Any
 from urllib.parse import urlparse
+from datetime import timedelta
 import redis
 import logging
 import os
@@ -101,7 +103,7 @@ class IAToolkit:
         self._setup_logging()
 
         # Step 7: load company configuration file
-        self._load_company_configuration()
+        self._hydrate_company_configuration()
 
         # Step 8: Finalize setup within the application context
         self._setup_redis_sessions()
@@ -111,11 +113,9 @@ class IAToolkit:
         self._setup_cli_commands()
         self._setup_request_globals()
         self._setup_context_processors()
+        self._sync_system_tools_on_boot()
 
-        # Step 9: define the download_dir
-        self._setup_download_dir()
-
-        # register data source
+        # register data sources
         if start:
             self.register_data_sources()
 
@@ -129,6 +129,24 @@ class IAToolkit:
         configuration_service = self._injector.get(ConfigurationService)
         for company in get_registered_companies():
             configuration_service.register_data_sources(company)
+
+    def _sync_system_tools_on_boot(self):
+        from iatoolkit.services.tool_service import ToolService
+
+        try:
+            tool_service = self._injector.get(ToolService)
+            result = tool_service.sync_system_tools_if_catalog_changed()
+            data = (result or {}).get("data", {})
+            logging.info(
+                "System tools boot sync: status=%s reason=%s source=%s upserted=%s deactivated=%s",
+                data.get("status", "unknown"),
+                data.get("reason", "-"),
+                data.get("catalog_source", "-"),
+                data.get("upserted_tools", 0),
+                data.get("deactivated_tools", 0),
+            )
+        except Exception as exc:
+            logging.warning("⚠️ Unable to sync system tools on boot: %s", exc)
 
     def _get_config_value(self, key: str, default=None):
         # get a value from the config dict or the environment variable
@@ -175,6 +193,7 @@ class IAToolkit:
     def _create_flask_instance(self):
         static_folder = self._get_config_value('STATIC_FOLDER') or self._get_default_static_folder()
         template_folder = self._get_config_value('TEMPLATE_FOLDER') or self._get_default_template_folder()
+        idle_timeout_minutes = int(self._get_config_value('BROWSER_SESSION_IDLE_TIMEOUT_MINUTES', 60))
 
         self.app = Flask(__name__,
                          static_folder=static_folder,
@@ -186,6 +205,8 @@ class IAToolkit:
             'SESSION_COOKIE_SAMESITE': "None",
             'SESSION_COOKIE_SECURE': True,
             'SESSION_PERMANENT': False,
+            'PERMANENT_SESSION_LIFETIME': timedelta(minutes=idle_timeout_minutes),
+            'SESSION_REFRESH_EACH_REQUEST': True,
             'SESSION_USE_SIGNER': True,
             'IATOOLKIT_SECRET_KEY': self._get_config_value('IATOOLKIT_SECRET_KEY', 'iatoolkit-jwt-secret'),
             'JWT_ALGORITHM': 'HS256',
@@ -217,7 +238,11 @@ class IAToolkit:
             It ensures the SQLAlchemy session is properly closed
             and the DB connection is returned to the pool.
             """
-            self.db_manager.scoped_session.remove()
+            try:
+                self.db_manager.scoped_session.remove()
+            except Exception as e:
+                # Avoid masking the original request error with teardown failures.
+                logging.warning(f"Error removing SQLAlchemy scoped session: {e}")
 
     def _setup_redis_sessions(self):
         redis_url = self._get_config_value('REDIS_URL')
@@ -300,31 +325,45 @@ class IAToolkit:
             )
 
     def _bind_repositories(self, binder: Binder):
+        from iatoolkit.repositories.api_key_repo import ApiKeyRepo
         from iatoolkit.repositories.document_repo import DocumentRepo
         from iatoolkit.repositories.profile_repo import ProfileRepo
         from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
+        from iatoolkit.repositories.sql_source_repo import SqlSourceRepo
         from iatoolkit.repositories.vs_repo import VSRepo
         from iatoolkit.repositories.filesystem_asset_repository import FileSystemAssetRepository
+        from iatoolkit.repositories.env_secret_provider import EnvSecretProvider
 
+        binder.bind(ApiKeyRepo, to=ApiKeyRepo)
         binder.bind(DocumentRepo, to=DocumentRepo)
         binder.bind(ProfileRepo, to=ProfileRepo)
         binder.bind(LLMQueryRepo, to=LLMQueryRepo)
+        binder.bind(SqlSourceRepo, to=SqlSourceRepo)
         binder.bind(VSRepo, to=VSRepo)
 
         # this class can be setup befor by iatoolkit enterprise
         if not is_bound(self._injector, AssetRepository):
             binder.bind(AssetRepository, to=FileSystemAssetRepository)
 
+        # this class can be setup before by iatoolkit enterprise
+        if not is_bound(self._injector, SecretProvider):
+            binder.bind(SecretProvider, to=EnvSecretProvider)
+
     def _bind_services(self, binder: Binder):
         from iatoolkit.services.query_service import QueryService
+        from iatoolkit.services.api_key_service import ApiKeyService
         from iatoolkit.services.benchmark_service import BenchmarkService
-        from iatoolkit.services.document_service import DocumentService
+        from iatoolkit.services.parsers.parsing_service import ParsingService
+        from iatoolkit.services.parsers.provider_factory import ParsingProviderFactory
+        from iatoolkit.services.parsers.provider_resolver import ParsingProviderResolver
+        from iatoolkit.services.parsers.providers.docling_provider import DoclingParsingProvider
+        from iatoolkit.services.parsers.providers.legacy_provider import LegacyParsingProvider
         from iatoolkit.services.prompt_service import PromptService
         from iatoolkit.services.excel_service import ExcelService
         from iatoolkit.services.mail_service import MailService
-        from iatoolkit.services.ingestor_service import IngestorService
         from iatoolkit.services.profile_service import ProfileService
         from iatoolkit.services.jwt_service import JWTService
+        from iatoolkit.services.sql_source_service import SqlSourceService
         from iatoolkit.services.dispatcher_service import Dispatcher
         from iatoolkit.services.branding_service import BrandingService
         from iatoolkit.services.i18n_service import I18nService
@@ -333,20 +372,34 @@ class IAToolkit:
         from iatoolkit.services.embedding_service import EmbeddingService
         from iatoolkit.services.history_manager_service import HistoryManagerService
         from iatoolkit.services.tool_service import ToolService
+        from iatoolkit.services.attachment_policy_service import AttachmentPolicyService
         from iatoolkit.services.llm_client_service import llmClient
         from iatoolkit.services.auth_service import AuthService
         from iatoolkit.services.sql_service import SqlService
         from iatoolkit.services.knowledge_base_service import KnowledgeBaseService
+        from iatoolkit.services.inference_service import InferenceService
+        from iatoolkit.services.http_tool_service import HttpToolService
+        from iatoolkit.services.web_search_service import WebSearchService
+        from iatoolkit.services.web_search.provider_factory import WebSearchProviderFactory
+        from iatoolkit.services.web_search.providers.brave_provider import BraveWebSearchProvider
+        from iatoolkit.services.warmup_service import WarmupService
+        from iatoolkit.common.interfaces.signup_policy_resolver import SignupPolicyResolver
+        from iatoolkit.services.signup_policy_resolver import AllowAllSignupPolicyResolver
 
         binder.bind(QueryService, to=QueryService)
+        binder.bind(ApiKeyService, to=ApiKeyService)
         binder.bind(BenchmarkService, to=BenchmarkService)
-        binder.bind(DocumentService, to=DocumentService)
+        binder.bind(ParsingService, to=ParsingService)
+        binder.bind(ParsingProviderFactory, to=ParsingProviderFactory)
+        binder.bind(ParsingProviderResolver, to=ParsingProviderResolver)
+        binder.bind(DoclingParsingProvider, to=DoclingParsingProvider)
+        binder.bind(LegacyParsingProvider, to=LegacyParsingProvider)
         binder.bind(PromptService, to=PromptService)
         binder.bind(ExcelService, to=ExcelService)
         binder.bind(MailService, to=MailService)
-        binder.bind(IngestorService, to=IngestorService)
         binder.bind(ProfileService, to=ProfileService)
         binder.bind(JWTService, to=JWTService)
+        binder.bind(SqlSourceService, to=SqlSourceService)
         binder.bind(Dispatcher, to=Dispatcher)
         binder.bind(BrandingService, to=BrandingService)
         binder.bind(I18nService, to=I18nService)
@@ -355,10 +408,20 @@ class IAToolkit:
         binder.bind(EmbeddingService, to=EmbeddingService)
         binder.bind(HistoryManagerService, to=HistoryManagerService)
         binder.bind(ToolService, to=ToolService)
+        binder.bind(AttachmentPolicyService, to=AttachmentPolicyService)
         binder.bind(llmClient, to=llmClient)
         binder.bind(AuthService, to=AuthService)
         binder.bind(SqlService, to=SqlService)
         binder.bind(KnowledgeBaseService, to=KnowledgeBaseService)
+        binder.bind(InferenceService, to=InferenceService)
+        binder.bind(HttpToolService, to=HttpToolService)
+        binder.bind(WebSearchService, to=WebSearchService)
+        binder.bind(WebSearchProviderFactory, to=WebSearchProviderFactory)
+        binder.bind(BraveWebSearchProvider, to=BraveWebSearchProvider)
+        binder.bind(WarmupService, to=WarmupService)
+
+        if not is_bound(self._injector, SignupPolicyResolver):
+            binder.bind(SignupPolicyResolver, to=AllowAllSignupPolicyResolver)
 
     def _bind_infrastructure(self, binder: Binder):
         from iatoolkit.infra.llm_proxy import LLMProxy
@@ -384,12 +447,20 @@ class IAToolkit:
         # instantiate all the registered companies
         get_company_registry().instantiate_companies(self._injector)
 
-    def _load_company_configuration(self):
-        from iatoolkit.services.dispatcher_service import Dispatcher
+    def _hydrate_company_configuration(self):
+        from iatoolkit.company_registry import get_company_registry
 
-        # use the dispatcher to load the company config.yaml file and prepare the execution
-        dispatcher = self._injector.get(Dispatcher)
-        dispatcher.load_company_configs()
+        config_service = self._injector.get(ConfigurationService)
+        all_company_instances = get_company_registry().get_all_company_instances()
+
+        for company_short_name, company_instance in all_company_instances.items():
+            try:
+                config, _errors = config_service.load_configuration(company_short_name)
+                company_instance.company_short_name = company_short_name
+                company_instance.company = config.get('company')
+            except Exception as e:
+                logging.error(f"❌ Failed to register configuration for '{company_short_name}': {e}")
+                raise e
 
     def _setup_cli_commands(self):
         from iatoolkit.cli_commands import register_core_commands
@@ -404,8 +475,7 @@ class IAToolkit:
             # Iterate through the registered company names
             all_company_instances = get_company_registry().get_all_company_instances()
             for company_name, company_instance in all_company_instances.items():
-                if hasattr(company_instance, "register_cli_commands"):
-                    company_instance.register_cli_commands(self.app)
+                company_instance.register_cli_commands(self.app)
 
         except Exception as e:
             logging.error(f"❌ error while registering company commands: {e}")
@@ -486,26 +556,36 @@ class IAToolkit:
             )
         return self.db_manager
 
-    def _setup_download_dir(self):
-        # 1. set the default download directory
-        default_download_dir = os.path.join(os.getcwd(), 'iatoolkit-downloads')
+    def bootstrap_defaults(self, company_short_name: str):
+        from iatoolkit.services.configuration_service import ConfigurationService
+        from iatoolkit.services.tool_service import ToolService
 
-        # 3. if user specified one, use it
-        download_dir = self._get_config_value('IATOOLKIT_DOWNLOAD_DIR', default_download_dir)
-
-        # 3. save it in the app config
-        self.app.config['IATOOLKIT_DOWNLOAD_DIR'] = download_dir
-
-        # 4. make sure the directory exists
-        try:
-            os.makedirs(download_dir, exist_ok=True)
-        except OSError as e:
+        company_short_name = (company_short_name or "").strip()
+        if not company_short_name:
             raise IAToolkitException(
-                IAToolkitException.ErrorType.CONFIG_ERROR,
-                "No se pudo crear el directorio de descarga. Verifique que el directorio existe y tenga permisos de escritura."
+                IAToolkitException.ErrorType.INVALID_NAME,
+                "company_short_name is required",
             )
-        logging.info(f"✅ download dir created in: {download_dir}")
 
+        # Re-run schema bootstrap explicitly so the CLI can repair legacy installs on demand.
+        self.get_database_manager().create_all()
+
+        configuration_service = self.get_injector().get(ConfigurationService)
+        tool_service = self.get_injector().get(ToolService)
+        config, errors = configuration_service.load_configuration(company_short_name)
+        tool_service.register_system_tools()
+        configuration_service.register_data_sources(company_short_name, config)
+
+        return {
+            "company_short_name": company_short_name,
+            "errors": errors or [],
+        }
+
+    def _setup_docling(self):
+        from iatoolkit.services.parsers.parsing_service import ParsingService
+
+        parsing_service = self.get_injector().get(ParsingService)
+        parsing_service.warmup()
 
 
 def current_iatoolkit() -> IAToolkit:

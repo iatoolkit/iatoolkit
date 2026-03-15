@@ -39,6 +39,9 @@ class IAToolkitException(Exception):
         VECTOR_STORE_ERROR = 27
         EMBEDDING_ERROR = 28
         MODEL = 29
+        DUPLICATE_ENTRY = 30
+        INVALID_OPERATION = 31
+        NOT_FOUND = 32
 
 
 
