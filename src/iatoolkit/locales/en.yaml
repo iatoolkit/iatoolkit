@@ -281,6 +281,7 @@ ui:
     task_message_completed: "Task completed."
     task_message_failed: "Task failed."
     rerun_run: "Rerun run"
+    run_already_active: "Run already in progress"
     retry_item: "Retry item"
     run_rerun_started: "Pipeline rerun started"
     error_rerunning_run: "Error rerunning pipeline run"

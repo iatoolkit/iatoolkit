@@ -282,6 +282,7 @@ ui:
     task_message_completed: "Task completada."
     task_message_failed: "La task falló."
     rerun_run: "Relanzar ejecución"
+    run_already_active: "La ejecución ya está en curso"
     retry_item: "Reintentar item"
     run_rerun_started: "Relanzamiento iniciado"
     error_rerunning_run: "Error al relanzar la ejecución"
