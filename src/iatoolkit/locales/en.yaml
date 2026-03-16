@@ -239,10 +239,16 @@ ui:
     error_loading_runs: "Error loading pipeline runs"
     error_loading_run_detail: "Error loading pipeline run details"
     view_run: "View run"
+    view_result: "View result"
     run_detail_title: "Pipeline Run"
     run_detail_subtitle: "Run details"
     run_items: "Files in this run"
     run_artifacts: "Artifacts"
+    result_title: "Pipeline Result"
+    result_subtitle: "Consolidated output"
+    result_summary: "Showing {preview_count} preview rows from {row_count} total rows."
+    no_result_available: "No result available for this run yet."
+    no_result_rows: "No rows available to preview."
     no_artifacts: "No consolidated artifacts yet."
     artifact_preview: "Preview"
     artifact_rows: "Rows"
@@ -294,6 +300,8 @@ ui:
     status_paused: "Paused"
     updated_at: "Updated at"
     last_updated: "Last updated"
+    current_file: "Current file"
+
 
   integration_packs:
     title: "Integration Packs"

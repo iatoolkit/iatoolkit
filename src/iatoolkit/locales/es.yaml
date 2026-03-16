@@ -240,10 +240,16 @@ ui:
     error_loading_runs: "Error al cargar ejecuciones"
     error_loading_run_detail: "Error al cargar el detalle de la ejecución"
     view_run: "Ver ejecución"
+    view_result: "Ver resultado"
     run_detail_title: "Ejecución del pipeline"
     run_detail_subtitle: "Detalle de la ejecución"
     run_items: "Archivos de esta ejecución"
     run_artifacts: "Artefactos"
+    result_title: "Resultado del Pipeline"
+    result_subtitle: "Salida consolidada"
+    result_summary: "Mostrando {preview_count} filas de vista previa sobre {row_count} filas totales."
+    no_result_available: "Todavía no hay un resultado disponible para esta ejecución."
+    no_result_rows: "No hay filas disponibles para previsualizar."
     no_artifacts: "Todavía no hay artefactos consolidados."
     artifact_preview: "Vista previa"
     artifact_rows: "Filas"
@@ -295,6 +301,7 @@ ui:
     status_paused: "Pausado"
     updated_at: "Actualizado a"
     last_updated: "última actualización"
+    current_file: "Archivo actual"
 
 
   integration_packs:
