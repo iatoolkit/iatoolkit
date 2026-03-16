@@ -234,6 +234,7 @@ ui:
     run_discovered: "Descubiertos"
     run_completed: "Completados"
     run_failed: "Fallidos"
+    run_progress: "Progreso"
     run_discovered_short: "D"
     run_completed_short: "C"
     run_failed_short: "F"

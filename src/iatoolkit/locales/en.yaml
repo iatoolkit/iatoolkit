@@ -232,6 +232,7 @@ ui:
     run_actions: "Actions"
     run_discovered: "Discovered"
     run_completed: "Completed"
+    run_progress: "Run Progress"
     run_failed: "Failed"
     run_discovered_short: "D"
     run_completed_short: "C"
