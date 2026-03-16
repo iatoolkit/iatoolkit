@@ -478,6 +478,7 @@ class TestConfigurationService:
     def test_validate_configuration_accepts_prompt_attachment_policy_values(self):
         valid_config = copy.deepcopy(MOCK_VALID_CONFIG)
         valid_config["prompts"]["prompt_list"][0]["attachment_mode"] = "native_plus_extracted"
+        valid_config["prompts"]["prompt_list"][0]["attachment_parser_provider"] = "legacy"
         valid_config["prompts"]["prompt_list"][0]["attachment_fallback"] = "extract"
 
         self.mock_asset_repo.exists.return_value = True
@@ -497,6 +498,17 @@ class TestConfigurationService:
 
         errors = self.service.validate_configuration(self.COMPANY_NAME)
         assert any("attachment_mode" in e for e in errors)
+
+    def test_validate_configuration_rejects_invalid_prompt_attachment_parser_provider(self):
+        invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        invalid_config["prompts"]["prompt_list"][0]["attachment_parser_provider"] = "ancient_magic"
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = invalid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert any("attachment_parser_provider" in e for e in errors)
 
     def test_validate_configuration_accepts_llm_default_attachment_policy(self):
         valid_config = copy.deepcopy(MOCK_VALID_CONFIG)

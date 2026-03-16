@@ -394,6 +394,7 @@ class ConfigurationService:
         allowed_output_schema_modes = {"best_effort", "strict"}
         allowed_output_response_modes = {"chat_compatible", "structured_only"}
         allowed_attachment_modes = {"extracted_only", "native_only", "native_plus_extracted", "auto"}
+        allowed_attachment_parser_providers = {"auto", "docling", "legacy", "document_service"}
         allowed_attachment_fallbacks = {"extract", "fail"}
         for i, prompt in enumerate(prompt_list):
             prompt_name = prompt.get("name")
@@ -448,6 +449,13 @@ class ConfigurationService:
                 add_error(
                     f"prompts[{i}]",
                     f"Unsupported attachment_fallback '{attachment_fallback}'. Must be one of: {sorted(allowed_attachment_fallbacks)}."
+                )
+
+            attachment_parser_provider = str(prompt.get("attachment_parser_provider", "auto")).strip().lower()
+            if attachment_parser_provider not in allowed_attachment_parser_providers:
+                add_error(
+                    f"prompts[{i}]",
+                    f"Unsupported attachment_parser_provider '{attachment_parser_provider}'. Must be one of: {sorted(allowed_attachment_parser_providers)}."
                 )
 
             output_schema = prompt.get("output_schema")

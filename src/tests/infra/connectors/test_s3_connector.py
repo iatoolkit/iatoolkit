@@ -89,6 +89,34 @@ class TestS3Connector(unittest.TestCase):
 
         self.assertEqual(result, [])
 
+    def test_list_files_ignores_folder_placeholders(self):
+        """Verifica que list_files excluye keys de S3 que representan carpetas."""
+        self.mock_s3_client.list_objects_v2.return_value = {
+            "Contents": [
+                {
+                    "Key": "test-prefix/test-folder/",
+                    "Size": 0,
+                    "LastModified": datetime(2023, 1, 1, 0, 0, 0)
+                },
+                {
+                    "Key": "test-prefix/test-folder/subfolder/",
+                    "Size": 0,
+                    "LastModified": datetime(2023, 1, 1, 0, 0, 0)
+                },
+                {
+                    "Key": "test-prefix/test-folder/subfolder/doc1.pdf",
+                    "Size": 1024,
+                    "LastModified": datetime(2023, 1, 2, 0, 0, 0)
+                }
+            ]
+        }
+
+        result = self.connector.list_files()
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["path"], "test-prefix/test-folder/subfolder/doc1.pdf")
+        self.assertEqual(result[0]["name"], "doc1.pdf")
+
     def test_get_file_content_success(self):
         """Verifica la descarga de contenido."""
         # Arrange

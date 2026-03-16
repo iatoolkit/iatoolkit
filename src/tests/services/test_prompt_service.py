@@ -251,6 +251,7 @@ properties:
                 'output_schema_mode': 'strict',
                 'output_response_mode': 'structured_only',
                 'attachment_mode': 'native_only',
+                'attachment_parser_provider': 'legacy',
                 'attachment_fallback': 'fail',
             },
         )
@@ -264,6 +265,7 @@ properties:
         assert saved_prompt.output_schema_mode == "strict"
         assert saved_prompt.output_response_mode == "structured_only"
         assert saved_prompt.attachment_mode == "native_only"
+        assert saved_prompt.attachment_parser_provider == "legacy"
         assert saved_prompt.attachment_fallback == "fail"
 
     def test_save_prompt_uses_company_default_attachment_policy_when_not_provided(self):
@@ -284,6 +286,7 @@ properties:
 
         saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
         assert saved_prompt.attachment_mode == "native_only"
+        assert saved_prompt.attachment_parser_provider == "auto"
         assert saved_prompt.attachment_fallback == "fail"
 
     # --- Tests para sync_company_prompts ---

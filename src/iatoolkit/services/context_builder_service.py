@@ -100,6 +100,7 @@ class ContextBuilderService:
             "schema_mode": prompt_obj.output_schema_mode or "best_effort",
             "response_mode": prompt_obj.output_response_mode or "chat_compatible",
             "attachment_mode": getattr(prompt_obj, "attachment_mode", None),
+            "attachment_parser_provider": getattr(prompt_obj, "attachment_parser_provider", None),
             "attachment_fallback": getattr(prompt_obj, "attachment_fallback", None),
         }
 

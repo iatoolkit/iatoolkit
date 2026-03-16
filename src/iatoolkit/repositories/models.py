@@ -395,6 +395,7 @@ class Prompt(Base):
     output_schema_mode = Column(String, nullable=False, default="best_effort")
     output_response_mode = Column(String, nullable=False, default="chat_compatible")
     attachment_mode = Column(String, nullable=False, default="extracted_only")
+    attachment_parser_provider = Column(String, nullable=False, default="auto")
     attachment_fallback = Column(String, nullable=False, default="extract")
     created_at = Column(DateTime, default=datetime.now)
     def to_dict(self):
