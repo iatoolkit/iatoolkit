@@ -225,6 +225,11 @@ class QueryService:
             contract["attachment_mode"] = (
                 str(raw_attachment_mode).strip().lower() if raw_attachment_mode is not None else None
             )
+            raw_attachment_parser_provider = contract.get("attachment_parser_provider")
+            contract["attachment_parser_provider"] = (
+                str(raw_attachment_parser_provider).strip().lower()
+                if raw_attachment_parser_provider is not None else None
+            )
             contract["attachment_fallback"] = (
                 str(raw_attachment_fallback).strip().lower() if raw_attachment_fallback is not None else None
             )

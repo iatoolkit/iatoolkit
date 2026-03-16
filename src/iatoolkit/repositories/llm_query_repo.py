@@ -181,6 +181,9 @@ class LLMQueryRepo:
                 new_prompt.output_response_mode or prompt.output_response_mode or "chat_compatible"
             )
             prompt.attachment_mode = new_prompt.attachment_mode or prompt.attachment_mode or "extracted_only"
+            prompt.attachment_parser_provider = (
+                new_prompt.attachment_parser_provider or prompt.attachment_parser_provider or "auto"
+            )
             prompt.attachment_fallback = new_prompt.attachment_fallback or prompt.attachment_fallback or "extract"
         else:
             if not new_prompt.output_schema_mode:
@@ -189,6 +192,8 @@ class LLMQueryRepo:
                 new_prompt.output_response_mode = "chat_compatible"
             if not new_prompt.attachment_mode:
                 new_prompt.attachment_mode = "extracted_only"
+            if not new_prompt.attachment_parser_provider:
+                new_prompt.attachment_parser_provider = "auto"
             if not new_prompt.attachment_fallback:
                 new_prompt.attachment_fallback = "extract"
             self.session.add(new_prompt)

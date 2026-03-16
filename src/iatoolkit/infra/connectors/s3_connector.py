@@ -16,7 +16,7 @@ class S3Connector(FileConnector):
         self.s3 = boto3.client('s3', **auth)
 
     def list_files(self) -> List[dict]:
-        # list all the files as dictionaries, with keys:  'path', 'name' y 'metadata'.
+        # List only real S3 objects representing files, excluding folder placeholders.
         # Construimos el prefijo evitando dobles barras si folder está vacío
         parts = [p.strip('/') for p in [self.prefix, self.folder] if p]
         prefix = "/".join(parts)
@@ -26,7 +26,10 @@ class S3Connector(FileConnector):
             prefix += "/"
 
         response = self.s3.list_objects_v2(Bucket=self.bucket, Prefix=prefix)
-        files = response.get('Contents', [])
+        files = [
+            obj for obj in response.get('Contents', [])
+            if self._is_file_key(obj.get('Key'))
+        ]
 
         return [
             {
@@ -40,6 +43,9 @@ class S3Connector(FileConnector):
             }
             for obj in files
         ]
+
+    def _is_file_key(self, key: str | None) -> bool:
+        return isinstance(key, str) and key != "" and not key.endswith("/")
 
     def get_file_content(self, file_path: str) -> bytes:
         response = self.s3.get_object(Bucket=self.bucket, Key=file_path)
@@ -94,4 +100,3 @@ class S3Connector(FileConnector):
 
     def _isoformat_or_none(self, value) -> str | None:
         return value.isoformat() if value is not None else None
-

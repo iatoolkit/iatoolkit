@@ -28,6 +28,9 @@ class PromptService:
     ATTACHMENT_MODE_NATIVE_ONLY = "native_only"
     ATTACHMENT_MODE_NATIVE_PLUS_EXTRACTED = "native_plus_extracted"
     ATTACHMENT_MODE_AUTO = "auto"
+    ATTACHMENT_PARSER_PROVIDER_AUTO = "auto"
+    ATTACHMENT_PARSER_PROVIDER_DOCLING = "docling"
+    ATTACHMENT_PARSER_PROVIDER_LEGACY = "legacy"
     ATTACHMENT_FALLBACK_EXTRACT = "extract"
     ATTACHMENT_FALLBACK_FAIL = "fail"
 
@@ -147,6 +150,20 @@ class PromptService:
             return candidate
         return self.ATTACHMENT_FALLBACK_EXTRACT
 
+    def _normalize_attachment_parser_provider(self, attachment_parser_provider: str | None) -> str:
+        candidate = str(attachment_parser_provider or self.ATTACHMENT_PARSER_PROVIDER_AUTO).strip().lower()
+        allowed = {
+            self.ATTACHMENT_PARSER_PROVIDER_AUTO,
+            self.ATTACHMENT_PARSER_PROVIDER_DOCLING,
+            self.ATTACHMENT_PARSER_PROVIDER_LEGACY,
+            "document_service",
+        }
+        if candidate == "document_service":
+            return self.ATTACHMENT_PARSER_PROVIDER_LEGACY
+        if candidate in allowed:
+            return candidate
+        return self.ATTACHMENT_PARSER_PROVIDER_AUTO
+
     def _get_company_default_attachment_policy(self, company_short_name: str) -> dict:
         llm_config = self.configuration_service.get_configuration(company_short_name, "llm") or {}
         return {
@@ -211,6 +228,7 @@ class PromptService:
                             'output_schema_mode': p.output_schema_mode,
                             'output_response_mode': p.output_response_mode,
                             'attachment_mode': p.attachment_mode,
+                            'attachment_parser_provider': getattr(p, 'attachment_parser_provider', None),
                             'attachment_fallback': p.attachment_fallback,
                         }
                         for p in prompts
@@ -308,6 +326,9 @@ class PromptService:
             output_response_mode=self._normalize_output_response_mode(data.get("output_response_mode")),
             attachment_mode=self._normalize_attachment_mode(
                 data.get("attachment_mode", company_default_policy["attachment_mode"])
+            ),
+            attachment_parser_provider=self._normalize_attachment_parser_provider(
+                data.get("attachment_parser_provider")
             ),
             attachment_fallback=self._normalize_attachment_fallback(
                 data.get("attachment_fallback", company_default_policy["attachment_fallback"])
@@ -466,6 +487,9 @@ class PromptService:
                     output_response_mode=self._normalize_output_response_mode(prompt_data.get("output_response_mode")),
                     attachment_mode=self._normalize_attachment_mode(
                         prompt_data.get("attachment_mode", company_default_policy["attachment_mode"])
+                    ),
+                    attachment_parser_provider=self._normalize_attachment_parser_provider(
+                        prompt_data.get("attachment_parser_provider")
                     ),
                     attachment_fallback=self._normalize_attachment_fallback(
                         prompt_data.get("attachment_fallback", company_default_policy["attachment_fallback"])
