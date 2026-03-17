@@ -1,4 +1,4 @@
-# ... existing code ...
+import json
 import os
 from typing import Dict
 from iatoolkit.common.interfaces.secret_provider import SecretProvider
@@ -10,6 +10,30 @@ from iatoolkit.infra.connectors.google_drive_connector import GoogleDriveConnect
 
 
 class FileConnectorFactory:
+    @staticmethod
+    def _resolve_json_secret(
+        secret_provider: SecretProvider | None,
+        company_short_name: str | None,
+        key_name: str | None,
+    ) -> dict | None:
+        raw_value = FileConnectorFactory._resolve_secret_value(
+            secret_provider,
+            company_short_name,
+            key_name,
+        )
+        if not raw_value:
+            return None
+
+        if isinstance(raw_value, dict):
+            return raw_value
+
+        try:
+            return json.loads(raw_value)
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise ValueError(
+                f"Secret '{key_name}' does not contain a valid JSON service account payload"
+            ) from exc
+
     @staticmethod
     def _resolve_secret_value(
         secret_provider: SecretProvider | None,
@@ -107,15 +131,27 @@ class FileConnectorFactory:
             )
 
         elif connector_type == 'gdrive':
+            service_account_info = FileConnectorFactory._resolve_json_secret(
+                secret_provider,
+                company_short_name,
+                config.get('service_account_secret_ref'),
+            )
             return GoogleDriveConnector(
                 folder_id=config['folder_id'],
-                service_account_path=config.get('service_account', 'service_account.json')
+                service_account_path=config.get('service_account', 'service_account.json'),
+                service_account_info=service_account_info,
             )
 
         elif connector_type in ['gcs', 'google_cloud_storage']:
+            service_account_info = FileConnectorFactory._resolve_json_secret(
+                secret_provider,
+                company_short_name,
+                config.get('service_account_secret_ref'),
+            )
             return GoogleCloudStorageConnector(
                 bucket_name=config['bucket'],
-                service_account_path=config.get('service_account_path', 'service_account.json')
+                service_account_path=config.get('service_account_path', 'service_account.json'),
+                service_account_info=service_account_info,
             )
 
         else:

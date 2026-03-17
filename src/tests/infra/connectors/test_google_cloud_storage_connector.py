@@ -17,6 +17,7 @@ class TestGoogleCloudStorageConnector(unittest.TestCase):
         # 2. Mock de la instancia del cliente
         self.mock_client_instance = MagicMock()
         self.mock_storage_client_class.from_service_account_json.return_value = self.mock_client_instance
+        self.mock_storage_client_class.from_service_account_info.return_value = self.mock_client_instance
 
         # 3. Mock del bucket
         self.mock_bucket = MagicMock()
@@ -36,6 +37,18 @@ class TestGoogleCloudStorageConnector(unittest.TestCase):
         """Verifica que se llama a la API de Google con las credenciales correctas."""
         self.mock_storage_client_class.from_service_account_json.assert_called_with(self.service_account)
         self.mock_client_instance.bucket.assert_called_with(self.bucket_name)
+
+    def test_init_authenticates_correctly_with_service_account_info(self):
+        connector = GoogleCloudStorageConnector(
+            self.bucket_name,
+            service_account_info={"client_email": "svc@example.com"},
+        )
+
+        self.mock_storage_client_class.from_service_account_info.assert_called_with(
+            {"client_email": "svc@example.com"}
+        )
+        self.mock_client_instance.bucket.assert_called_with(self.bucket_name)
+        self.assertEqual(connector.bucket, self.mock_bucket)
 
     def test_list_files_success(self):
         """Prueba el listado y mapeo de blobs."""

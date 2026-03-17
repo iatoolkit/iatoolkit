@@ -165,6 +165,12 @@ ui:
 
 
   pipelines:
+    source_root_label: "Raiz (prefijo)"
+    source_root_placeholder: "companies/<company_short_name>/..."
+    source_root_help: "Ruta o prefijo relativo dentro del conector. No incluyas s3:// ni el bucket."
+    gdrive_root_label: "Carpeta de Google Drive"
+    gdrive_root_placeholder: "Pega una URL de carpeta de Google Drive o el ID de la carpeta"
+    gdrive_root_help: "Pega una URL de carpeta de Google Drive o el ID de la carpeta. Las carpetas privadas deben compartirse con la service account configurada en el conector."
     sources: "Fuentes"
     profiles: "Perfiles de procesamiento"
     runs: "Ejecuciones"

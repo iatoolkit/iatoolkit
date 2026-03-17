@@ -164,6 +164,12 @@ ui:
     description: "Description"
 
   pipelines:
+    source_root_label: "Root (prefix)"
+    source_root_placeholder: "companies/<company_short_name>/..."
+    source_root_help: "Relative path or prefix inside the connector. Do not include s3:// or the bucket."
+    gdrive_root_label: "Google Drive folder"
+    gdrive_root_placeholder: "Paste a Google Drive folder URL or folder ID"
+    gdrive_root_help: "Paste a Google Drive folder URL or folder ID. Private folders must be shared with the connector service account."
     sources: "Sources"
     profiles: "Processing Profiles"
     runs: "Runs"

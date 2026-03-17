@@ -265,9 +265,11 @@ connectors:
 - `gdrive`:
   - required: `folder_id`
   - optional: `service_account` (default `service_account.json`)
+  - optional: `service_account_secret_ref` (secret/env key containing the full service account JSON)
 - `gcs` / `google_cloud_storage`:
   - required: `bucket`
   - optional: `service_account_path` (default `service_account.json`)
+  - optional: `service_account_secret_ref` (secret/env key containing the full service account JSON)
 
 ## 4.9 `tools[]`
 
