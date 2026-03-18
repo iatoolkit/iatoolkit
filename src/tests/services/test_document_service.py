@@ -6,14 +6,14 @@
 import pytest
 from unittest.mock import patch, MagicMock
 
-from iatoolkit.services.parsers.providers.legacy_provider import LegacyParsingProvider
+from iatoolkit.services.parsers.providers.basic_provider import BasicParsingProvider
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.excel_service import ExcelService
 from iatoolkit.services.parsers.contracts import ParseRequest
 
 
-class TestLegacyParsingProvider:
+class TestBasicParsingProvider:
 
     @pytest.fixture(autouse=True)
     def setup_method(self, monkeypatch):
@@ -23,7 +23,7 @@ class TestLegacyParsingProvider:
         self.mock_i18n_service = MagicMock(spec=I18nService)
         self.mock_i18n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
 
-        self.provider = LegacyParsingProvider(
+        self.provider = BasicParsingProvider(
             excel_service=self.mock_excel_service,
             i18n_service=self.mock_i18n_service,
         )
@@ -42,9 +42,9 @@ class TestLegacyParsingProvider:
         result = self.provider.file_to_txt("test.xlsx", "dummy_content")
         assert result == 'json_content'
 
-    @patch("iatoolkit.services.parsers.providers.legacy_provider.LegacyParsingProvider.is_scanned_pdf")
-    @patch("iatoolkit.services.parsers.providers.legacy_provider.LegacyParsingProvider.read_scanned_pdf", return_value="Scanned text")
-    @patch("iatoolkit.services.parsers.providers.legacy_provider.LegacyParsingProvider.read_pdf", return_value="PDF text")
+    @patch("iatoolkit.services.parsers.providers.basic_provider.BasicParsingProvider.is_scanned_pdf")
+    @patch("iatoolkit.services.parsers.providers.basic_provider.BasicParsingProvider.read_scanned_pdf", return_value="Scanned text")
+    @patch("iatoolkit.services.parsers.providers.basic_provider.BasicParsingProvider.read_pdf", return_value="PDF text")
     def test_extension_file_detection(self, mock_read_pdf, mock_read_scanned_pdf, mock_is_scanned_pdf):
         mock_is_scanned_pdf.return_value = True
         result = self.provider.file_to_txt("test.pdf", "dummy_content")
@@ -62,12 +62,12 @@ class TestLegacyParsingProvider:
                 content=b"abc",
             ))
 
-        assert result.provider == "legacy"
+        assert result.provider == "basic"
         assert len(result.texts) == 1
         assert result.texts[0].text == "hello world"
         assert len(result.images) == 0
 
-    @patch("iatoolkit.services.parsers.providers.legacy_provider.LegacyParsingProvider.pdf_to_images", return_value=[])
+    @patch("iatoolkit.services.parsers.providers.basic_provider.BasicParsingProvider.pdf_to_images", return_value=[])
     def test_parse_pdf_without_images(self, _):
         with patch.object(self.provider, "extract_text", return_value="pdf text"):
             result = self.provider.parse(ParseRequest(

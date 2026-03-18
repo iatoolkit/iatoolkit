@@ -356,8 +356,8 @@ class IAToolkit:
         from iatoolkit.services.parsers.parsing_service import ParsingService
         from iatoolkit.services.parsers.provider_factory import ParsingProviderFactory
         from iatoolkit.services.parsers.provider_resolver import ParsingProviderResolver
+        from iatoolkit.services.parsers.providers.basic_provider import BasicParsingProvider
         from iatoolkit.services.parsers.providers.docling_provider import DoclingParsingProvider
-        from iatoolkit.services.parsers.providers.legacy_provider import LegacyParsingProvider
         from iatoolkit.services.prompt_service import PromptService
         from iatoolkit.services.excel_service import ExcelService
         from iatoolkit.services.mail_service import MailService
@@ -393,7 +393,7 @@ class IAToolkit:
         binder.bind(ParsingProviderFactory, to=ParsingProviderFactory)
         binder.bind(ParsingProviderResolver, to=ParsingProviderResolver)
         binder.bind(DoclingParsingProvider, to=DoclingParsingProvider)
-        binder.bind(LegacyParsingProvider, to=LegacyParsingProvider)
+        binder.bind(BasicParsingProvider, to=BasicParsingProvider)
         binder.bind(PromptService, to=PromptService)
         binder.bind(ExcelService, to=ExcelService)
         binder.bind(MailService, to=MailService)

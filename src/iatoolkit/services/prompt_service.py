@@ -30,7 +30,7 @@ class PromptService:
     ATTACHMENT_MODE_AUTO = "auto"
     ATTACHMENT_PARSER_PROVIDER_AUTO = "auto"
     ATTACHMENT_PARSER_PROVIDER_DOCLING = "docling"
-    ATTACHMENT_PARSER_PROVIDER_LEGACY = "legacy"
+    ATTACHMENT_PARSER_PROVIDER_BASIC = "basic"
     ATTACHMENT_FALLBACK_EXTRACT = "extract"
     ATTACHMENT_FALLBACK_FAIL = "fail"
 
@@ -155,11 +155,10 @@ class PromptService:
         allowed = {
             self.ATTACHMENT_PARSER_PROVIDER_AUTO,
             self.ATTACHMENT_PARSER_PROVIDER_DOCLING,
-            self.ATTACHMENT_PARSER_PROVIDER_LEGACY,
-            "document_service",
+            self.ATTACHMENT_PARSER_PROVIDER_BASIC,
         }
-        if candidate == "document_service":
-            return self.ATTACHMENT_PARSER_PROVIDER_LEGACY
+        if candidate == "legacy":
+            return self.ATTACHMENT_PARSER_PROVIDER_BASIC
         if candidate in allowed:
             return candidate
         return self.ATTACHMENT_PARSER_PROVIDER_AUTO

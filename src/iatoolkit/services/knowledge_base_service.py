@@ -68,7 +68,7 @@ class KnowledgeBaseService:
         """
         Synchronously processes a document through the entire RAG pipeline:
         1. Saves initial metadata and raw content reference to the SQL Document table.
-        2. Parses content via configured parsing provider (docling/legacy/custom).
+        2. Parses content via configured parsing provider (docling/basic/custom).
         3. Splits the text into semantic chunks using LangChain.
         4. Vectorizes and saves chunks to the Vector Store (VSRepo).
         5. Updates the document status to ACTIVE or FAILED.
@@ -176,7 +176,7 @@ class KnowledgeBaseService:
             document.status = DocumentStatus.PROCESSING
             session.commit()
 
-            # B. Provider-based parsing (docling/legacy/custom)
+            # B. Provider-based parsing (docling/basic/custom)
             parse_result = self.parsing_service.parse_document(
                 company_short_name=company.short_name,
                 filename=document.filename,

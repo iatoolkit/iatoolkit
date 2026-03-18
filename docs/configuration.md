@@ -456,7 +456,7 @@ knowledge_base:
 
 Supported keys:
 
-- `parsing_provider` (optional): `auto`, `docling`, `legacy`, `document_service`.
+- `parsing_provider` (optional): `auto`, `docling`, `basic`.
 - `collections` (optional list):
   - string form (legacy), or
   - object form `{ name, parser_provider }`

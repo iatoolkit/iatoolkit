@@ -394,7 +394,7 @@ class ConfigurationService:
         allowed_output_schema_modes = {"best_effort", "strict"}
         allowed_output_response_modes = {"chat_compatible", "structured_only"}
         allowed_attachment_modes = {"extracted_only", "native_only", "native_plus_extracted", "auto"}
-        allowed_attachment_parser_providers = {"auto", "docling", "legacy", "document_service"}
+        allowed_attachment_parser_providers = {"auto", "docling", "basic"}
         allowed_attachment_fallbacks = {"extract", "fail"}
         for i, prompt in enumerate(prompt_list):
             prompt_name = prompt.get("name")
@@ -479,7 +479,7 @@ class ConfigurationService:
             add_error("knowledge_base", "Section must be a dictionary.")
         elif kb_config:
             parsing_provider = kb_config.get("parsing_provider")
-            allowed_parsing_providers = {"auto", "docling", "legacy", "document_service"}
+            allowed_parsing_providers = {"auto", "docling", "basic"}
             if parsing_provider is not None:
                 if not isinstance(parsing_provider, str):
                     add_error("knowledge_base.parsing_provider", "Must be a string.")

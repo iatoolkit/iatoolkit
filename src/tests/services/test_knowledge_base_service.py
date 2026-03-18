@@ -50,7 +50,7 @@ class TestKnowledgeBaseService:
 
         self.mock_i18n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
         self.mock_parsing_service.parse_document.return_value = ParseResult(
-            provider="legacy",
+            provider="basic",
             provider_version="1.0",
             texts=[ParsedText(text="New fresh content", meta={"source_type": "text"})],
             tables=[],

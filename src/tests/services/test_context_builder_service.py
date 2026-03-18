@@ -202,7 +202,7 @@ required:
             output_schema_mode="strict",
             output_response_mode="structured_only",
             attachment_mode="native_only",
-            attachment_parser_provider="legacy",
+            attachment_parser_provider="basic",
             attachment_fallback="fail",
         )
 
@@ -213,7 +213,7 @@ required:
         assert contract["schema_mode"] == "strict"
         assert contract["response_mode"] == "structured_only"
         assert contract["attachment_mode"] == "native_only"
-        assert contract["attachment_parser_provider"] == "legacy"
+        assert contract["attachment_parser_provider"] == "basic"
         assert contract["attachment_fallback"] == "fail"
 
     def test_get_prompt_output_contract_returns_attachment_policy_even_without_schema(self):

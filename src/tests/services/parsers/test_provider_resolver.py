@@ -18,7 +18,7 @@ class TestParsingProviderResolver:
 
     def test_resolve_uses_collection_provider_override(self):
         self.mock_config_service.get_configuration.return_value = {
-            "parsing_provider": "legacy",
+            "parsing_provider": "basic",
         }
         self.mock_document_repo.get_collection_by_name.return_value = MagicMock(parser_provider="docling")
 
@@ -38,12 +38,12 @@ class TestParsingProviderResolver:
 
     def test_resolve_uses_global_provider_when_collection_has_no_override(self):
         self.mock_config_service.get_configuration.return_value = {
-            "parsing_provider": "legacy",
+            "parsing_provider": "basic",
         }
         self.mock_document_repo.get_collection_by_name.return_value = MagicMock(parser_provider=None)
 
-        mock_legacy = MagicMock()
-        self.mock_factory.get_provider.return_value = mock_legacy
+        mock_basic = MagicMock()
+        self.mock_factory.get_provider.return_value = mock_basic
 
         request = ParseRequest(
             company_short_name="acme",
@@ -53,18 +53,18 @@ class TestParsingProviderResolver:
         )
         result = self.resolver.resolve(request)
 
-        self.mock_factory.get_provider.assert_called_with("legacy")
-        assert result == mock_legacy
+        self.mock_factory.get_provider.assert_called_with("basic")
+        assert result == mock_basic
 
-    def test_resolve_auto_falls_back_to_legacy_when_docling_disabled(self):
+    def test_resolve_auto_falls_back_to_basic_when_docling_disabled(self):
         self.mock_config_service.get_configuration.return_value = {
             "parsing_provider": "auto",
         }
         self.mock_document_repo.get_collection_by_name.return_value = None
 
         mock_docling = MagicMock(enabled=False)
-        mock_legacy = MagicMock()
-        self.mock_factory.get_provider.side_effect = [mock_docling, mock_legacy]
+        mock_basic = MagicMock()
+        self.mock_factory.get_provider.side_effect = [mock_docling, mock_basic]
 
         request = ParseRequest(
             company_short_name="acme",
@@ -73,16 +73,16 @@ class TestParsingProviderResolver:
         )
         result = self.resolver.resolve(request)
 
-        assert result == mock_legacy
+        assert result == mock_basic
 
-    def test_resolve_accepts_document_service_alias(self):
+    def test_resolve_accepts_legacy_alias(self):
         self.mock_config_service.get_configuration.return_value = {
-            "parsing_provider": "document_service",
+            "parsing_provider": "legacy",
         }
         self.mock_document_repo.get_collection_by_name.return_value = None
 
-        mock_legacy = MagicMock()
-        self.mock_factory.get_provider.return_value = mock_legacy
+        mock_basic = MagicMock()
+        self.mock_factory.get_provider.return_value = mock_basic
 
         request = ParseRequest(
             company_short_name="acme",
@@ -91,5 +91,5 @@ class TestParsingProviderResolver:
         )
         result = self.resolver.resolve(request)
 
-        self.mock_factory.get_provider.assert_called_with("legacy")
-        assert result == mock_legacy
+        self.mock_factory.get_provider.assert_called_with("basic")
+        assert result == mock_basic

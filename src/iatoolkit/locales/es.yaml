@@ -570,7 +570,7 @@ ui:
     attachment_parser_provider_label: "Parser de Adjuntos"
     attachment_parser_provider_auto: "Automático"
     attachment_parser_provider_docling: "Docling"
-    attachment_parser_provider_legacy: "Legacy"
+    attachment_parser_provider_basic: "Basic"
     attachment_parser_provider_help: "Define qué parser extrae texto de los adjuntos cuando el prompt usa texto extraído."
     attachment_fallback_label: "Fallback de Adjuntos"
     attachment_fallback_extract: "Extraer a texto"

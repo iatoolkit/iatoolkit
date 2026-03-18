@@ -31,7 +31,7 @@ class ParsingProviderResolver:
             docling_provider = self.provider_factory.get_provider("docling")
             if docling_provider.enabled and docling_provider.supports(request):
                 return docling_provider
-            return self.provider_factory.get_provider("legacy")
+            return self.provider_factory.get_provider("basic")
 
         return self.provider_factory.get_provider(self._normalize_provider_alias(configured_provider))
 
@@ -65,6 +65,6 @@ class ParsingProviderResolver:
     @staticmethod
     def _normalize_provider_alias(provider_name: str) -> str:
         aliases = {
-            "document_service": "legacy",
+            "legacy": "basic",
         }
         return aliases.get(provider_name, provider_name)

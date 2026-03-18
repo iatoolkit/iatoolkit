@@ -56,10 +56,10 @@ class ParsingService:
         try:
             result = provider.parse(request)
         except Exception as e:
-            if provider.name != "legacy":
-                logging.warning(f"Provider '{provider.name}' failed for {filename}, falling back to legacy: {e}")
-                legacy_provider = self.provider_factory.get_provider("legacy")
-                result = legacy_provider.parse(request)
+            if provider.name != "basic":
+                logging.warning(f"Provider '{provider.name}' failed for {filename}, falling back to basic: {e}")
+                basic_provider = self.provider_factory.get_provider("basic")
+                result = basic_provider.parse(request)
                 result.warnings.append(f"fallback_from:{provider.name}")
             else:
                 raise
@@ -72,7 +72,7 @@ class ParsingService:
                                  content: bytes,
                                  company_short_name: str = "default") -> str:
         """
-        Context-builder helper: keeps legacy behavior for ad-hoc attachment parsing.
+        Context-builder helper: keeps basic-parser behavior for ad-hoc attachment parsing.
         """
-        legacy_provider = self.provider_factory.get_provider("legacy")
-        return legacy_provider.extract_text(filename, content)
+        basic_provider = self.provider_factory.get_provider("basic")
+        return basic_provider.extract_text(filename, content)
