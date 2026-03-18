@@ -21,8 +21,6 @@ class AttachmentPolicyService:
     MODE_EXTRACTED_ONLY = "extracted_only"
     MODE_NATIVE_ONLY = "native_only"
     MODE_NATIVE_PLUS_EXTRACTED = "native_plus_extracted"
-    MODE_AUTO = "auto"
-
     FALLBACK_EXTRACT = "extract"
     FALLBACK_FAIL = "fail"
 
@@ -44,7 +42,6 @@ class AttachmentPolicyService:
             self.MODE_EXTRACTED_ONLY,
             self.MODE_NATIVE_ONLY,
             self.MODE_NATIVE_PLUS_EXTRACTED,
-            self.MODE_AUTO,
         }
         if candidate in allowed:
             return candidate
@@ -273,21 +270,12 @@ class AttachmentPolicyService:
             return True
         if mode == self.MODE_NATIVE_PLUS_EXTRACTED:
             return True
-        if mode == self.MODE_AUTO:
-            preferred = capabilities.get("preferred_native_mime_types")
-            if isinstance(preferred, list):
-                return self._mime_matches(str(file_meta.get("mime_type") or ""), preferred)
         return False
 
     def _wants_extract(self, mode: str, file_meta: dict, capabilities: dict) -> bool:
         if mode == self.MODE_EXTRACTED_ONLY:
             return True
         if mode == self.MODE_NATIVE_PLUS_EXTRACTED:
-            return True
-        if mode == self.MODE_AUTO:
-            preferred = capabilities.get("preferred_native_mime_types")
-            if isinstance(preferred, list):
-                return not self._mime_matches(str(file_meta.get("mime_type") or ""), preferred)
             return True
         return False
 

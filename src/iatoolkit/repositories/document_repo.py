@@ -71,5 +71,16 @@ class DocumentRepo:
 
         return self.session.query(CollectionType).filter_by(id=collection_id).first()
 
+    def list_documents_by_collection(self, company_id: int, collection_id: int) -> List[Document]:
+        if not company_id or not collection_id:
+            return []
+
+        return (
+            self.session.query(Document)
+            .filter_by(company_id=company_id, collection_type_id=collection_id)
+            .order_by(Document.created_at.asc(), Document.id.asc())
+            .all()
+        )
+
     def commit(self):
         self.session.commit()

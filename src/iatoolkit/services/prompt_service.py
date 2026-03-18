@@ -27,7 +27,6 @@ class PromptService:
     ATTACHMENT_MODE_EXTRACTED_ONLY = "extracted_only"
     ATTACHMENT_MODE_NATIVE_ONLY = "native_only"
     ATTACHMENT_MODE_NATIVE_PLUS_EXTRACTED = "native_plus_extracted"
-    ATTACHMENT_MODE_AUTO = "auto"
     ATTACHMENT_PARSER_PROVIDER_AUTO = "auto"
     ATTACHMENT_PARSER_PROVIDER_DOCLING = "docling"
     ATTACHMENT_PARSER_PROVIDER_BASIC = "basic"
@@ -134,7 +133,6 @@ class PromptService:
             self.ATTACHMENT_MODE_EXTRACTED_ONLY,
             self.ATTACHMENT_MODE_NATIVE_ONLY,
             self.ATTACHMENT_MODE_NATIVE_PLUS_EXTRACTED,
-            self.ATTACHMENT_MODE_AUTO,
         }
         if candidate in allowed:
             return candidate

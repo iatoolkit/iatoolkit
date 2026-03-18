@@ -328,7 +328,7 @@ class ConfigurationService:
                 add_error("llm", "Missing required key: 'provider_api_keys'")
             llm_defaults_mode = str(config.get("llm", {}).get("default_attachment_mode", "extracted_only")).strip().lower()
             llm_defaults_fallback = str(config.get("llm", {}).get("default_attachment_fallback", "extract")).strip().lower()
-            allowed_attachment_modes = {"extracted_only", "native_only", "native_plus_extracted", "auto"}
+            allowed_attachment_modes = {"extracted_only", "native_only", "native_plus_extracted"}
             allowed_attachment_fallbacks = {"extract", "fail"}
             if llm_defaults_mode not in allowed_attachment_modes:
                 add_error(
@@ -393,7 +393,7 @@ class ConfigurationService:
         allowed_prompt_types = {"company", "agent"}
         allowed_output_schema_modes = {"best_effort", "strict"}
         allowed_output_response_modes = {"chat_compatible", "structured_only"}
-        allowed_attachment_modes = {"extracted_only", "native_only", "native_plus_extracted", "auto"}
+        allowed_attachment_modes = {"extracted_only", "native_only", "native_plus_extracted"}
         allowed_attachment_parser_providers = {"auto", "docling", "basic"}
         allowed_attachment_fallbacks = {"extract", "fail"}
         for i, prompt in enumerate(prompt_list):

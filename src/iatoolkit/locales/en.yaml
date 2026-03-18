@@ -37,6 +37,12 @@ ui:
     tab_logs: "Access Logs"
     tab_tools: "Tools Router"
     search_placeholder: "Search user or text..."
+    tool_router_config_title: "Router configuration"
+    tool_router_enabled: "Enabled"
+    tool_router_top_k: "Top K"
+    tool_router_top_n: "Top N"
+    tool_router_min_confidence: "Min confidence"
+    tool_router_rebuild_profiles: "Rebuild Profiles"
 
     inspector:
       title: "Interaction Inspector"
@@ -167,6 +173,9 @@ ui:
     source_root_label: "Root (prefix)"
     source_root_placeholder: "companies/<company_short_name>/..."
     source_root_help: "Relative path or prefix inside the connector. Do not include s3:// or the bucket."
+    select_input_collection: "Select a collection"
+    source_input_collection_help: "Select the collection whose existing documents will be used as pipeline input."
+    no_collection: "No collection"
     gdrive_root_label: "Google Drive folder"
     gdrive_root_placeholder: "Paste a Google Drive folder URL or folder ID"
     gdrive_root_help: "Paste a Google Drive folder URL or folder ID. Private folders must be shared with the connector service account."
@@ -182,6 +191,7 @@ ui:
     add_source: "Add Source"
     source_name: "Source"
     source_profile: "Profile"
+    source_flow: "Flow"
     source_output: "Current Output"
     source_status: "Status"
     source_last_run: "Last Run"
@@ -356,6 +366,7 @@ ui:
 
   billing:
     title: "Billing"
+    loading: "Loading..."
     last_sync_empty: "No sync yet"
     refresh: "Refresh"
     export_csv: "Export CSV"
@@ -562,7 +573,6 @@ ui:
     attachment_mode_extracted_only: "Extracted text only"
     attachment_mode_native_only: "Native file only"
     attachment_mode_native_plus_extracted: "Native + extracted text"
-    attachment_mode_auto: "Automatic"
     attachment_mode_help: "Choose whether attachments are converted to text, sent natively to the model, or both."
     attachment_parser_provider_label: "Attachment Parser"
     attachment_parser_provider_auto: "Automatic"
@@ -709,6 +719,7 @@ ui:
     delete_error: "Error deleting secret."
 
   config:
+    editor_title: "Configuration"
     editor_description: "IAToolkit configuration file"
     title: "Configuration Editor"
     sections: "Sections"
@@ -718,6 +729,18 @@ ui:
     no_section_selected: "No section selected"
     view_yaml: "View YAML"
     files: "Configuration files"
+    bundle_title: "Configuration Bundle"
+    bundle_export: "Export"
+    bundle_import: "Import"
+    bundle_export_modal_title: "Export Configuration Bundle"
+    bundle_export_select_components: "Select components to include:"
+    bundle_component_prompts_with_categories: "Prompts (includes categories)"
+    bundle_component_collections: "Collections"
+    bundle_component_tools_native: "Native Tools"
+    bundle_component_ingestion_sources: "Pipeline Sources"
+    bundle_import_modal_title: "Import Configuration Bundle"
+    bundle_zip_label: "Bundle ZIP"
+    bundle_import_select_components: "Select components to import:"
 
   rag:
     ingestion: "Ingestion"

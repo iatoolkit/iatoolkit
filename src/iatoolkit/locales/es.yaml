@@ -38,6 +38,12 @@ ui:
     tab_logs: "Logs de Acceso"
     tab_tools: "Router de Herramientas"
     search_placeholder: "Buscar usuario o texto..."
+    tool_router_config_title: "Configuración del router"
+    tool_router_enabled: "Habilitado"
+    tool_router_top_k: "Top K"
+    tool_router_top_n: "Top N"
+    tool_router_min_confidence: "Confianza mínima"
+    tool_router_rebuild_profiles: "Reconstruir perfiles"
 
     inspector:
       title: "Inspector de Interacción"
@@ -168,6 +174,9 @@ ui:
     source_root_label: "Raiz (prefijo)"
     source_root_placeholder: "companies/<company_short_name>/..."
     source_root_help: "Ruta o prefijo relativo dentro del conector. No incluyas s3:// ni el bucket."
+    select_input_collection: "Selecciona una colección"
+    source_input_collection_help: "Selecciona la colección cuyos documentos existentes se usarán como entrada del pipeline."
+    no_collection: "Sin colección"
     gdrive_root_label: "Carpeta de Google Drive"
     gdrive_root_placeholder: "Pega una URL de carpeta de Google Drive o el ID de la carpeta"
     gdrive_root_help: "Pega una URL de carpeta de Google Drive o el ID de la carpeta. Las carpetas privadas deben compartirse con la service account configurada en el conector."
@@ -183,6 +192,7 @@ ui:
     add_source: "Agregar fuente"
     source_name: "Fuente"
     source_profile: "Perfil"
+    source_flow: "Flujo"
     source_output: "Salida actual"
     source_status: "Estado"
     source_last_run: "Última ejecución"
@@ -357,6 +367,7 @@ ui:
 
   billing:
     title: "Facturación"
+    loading: "Cargando..."
     last_sync_empty: "Sin sincronización"
     refresh: "Actualizar"
     export_csv: "Exportar CSV"
@@ -565,7 +576,6 @@ ui:
     attachment_mode_extracted_only: "Solo texto extraído"
     attachment_mode_native_only: "Solo archivo nativo"
     attachment_mode_native_plus_extracted: "Nativo + texto extraído"
-    attachment_mode_auto: "Automático"
     attachment_mode_help: "Define si los adjuntos se convierten a texto, se envían nativos al modelo o ambos."
     attachment_parser_provider_label: "Parser de Adjuntos"
     attachment_parser_provider_auto: "Automático"
@@ -713,6 +723,7 @@ ui:
     delete_error: "Error al eliminar el secret."
 
   config:
+    editor_title: "Configuración"
     editor_description: "Editor de configuración"
     title: "Editor de configuraciones"
     sections: "Secciones"
@@ -722,6 +733,18 @@ ui:
     no_section_selected: "No hay sección seleccionada."
     view_yaml: "Ver YAML"
     files: "Archivos de Configuración"
+    bundle_title: "Paquete de configuración"
+    bundle_export: "Exportar"
+    bundle_import: "Importar"
+    bundle_export_modal_title: "Exportar paquete de configuración"
+    bundle_export_select_components: "Selecciona los componentes a incluir:"
+    bundle_component_prompts_with_categories: "Prompts (incluye categorías)"
+    bundle_component_collections: "Colecciones"
+    bundle_component_tools_native: "Tools nativas"
+    bundle_component_ingestion_sources: "Fuentes de pipeline"
+    bundle_import_modal_title: "Importar paquete de configuración"
+    bundle_zip_label: "ZIP del paquete"
+    bundle_import_select_components: "Selecciona los componentes a importar:"
 
   rag:
     ingestion: "Ingesta"
