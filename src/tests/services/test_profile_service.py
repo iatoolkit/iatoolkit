@@ -3,6 +3,7 @@
 
 import pytest
 from unittest.mock import MagicMock, patch
+from flask import Flask
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.user_session_context_service import UserSessionContextService
 from iatoolkit.services.configuration_service import ConfigurationService
@@ -63,19 +64,28 @@ class TestProfileService:
         assert response['success'] is True
         self.mock_session_context.save_profile_data.assert_called_once()
         mock_session_manager.set_permanent.assert_called_once_with(True)
-        mock_session_manager.set.assert_any_call('user_identifier', str(self.mock_user.email))
-        mock_session_manager.set.assert_any_call('company_short_name', self.mock_company.short_name)
+        mock_session_manager.get.assert_called_once_with('company_sessions', {})
+        mock_session_manager.set.assert_any_call(
+            'company_sessions',
+            {self.mock_company.short_name: {'user_identifier': str(self.mock_user.email)}}
+        )
+        mock_session_manager.set.assert_any_call('active_company_short_name', self.mock_company.short_name)
 
 
     def test_get_current_session_info(self, mock_session_manager):
         """Tests get_current_session_info reads from Flask cookie and fetches from Redis."""
         # This context is needed because SessionManager.get touches the real Flask `session` object.
         with patch('iatoolkit.services.profile_service.SessionManager', mock_session_manager):
-            mock_session_manager.get.side_effect = lambda key: '1' if key == 'user_identifier' else 'testco'
+            mock_session_manager.get.side_effect = lambda key, default=None: {
+                'company_sessions': {'testco': {'user_identifier': '1'}},
+                'active_company_short_name': 'testco',
+            }.get(key, default)
             expected_profile = {"id": 1, "email": "test@email.com"}
             self.mock_session_context.get_profile_data.return_value = expected_profile
 
-            result = self.service.get_current_session_info()
+            app = Flask(__name__)
+            with app.test_request_context():
+                result = self.service.get_current_session_info()
 
         self.mock_session_context.get_profile_data.assert_called_once_with('testco', '1')
         assert result['profile'] == expected_profile
@@ -89,9 +99,30 @@ class TestProfileService:
         response = self.service.login(self.mock_company.short_name, 'test@email.com', 'password')
 
         mock_session_manager.set_permanent.assert_called_once_with(True)
-        mock_session_manager.set.assert_any_call('user_identifier', str(self.mock_user.email))
+        mock_session_manager.set.assert_any_call(
+            'company_sessions',
+            {self.mock_company.short_name: {'user_identifier': str(self.mock_user.email)}}
+        )
+        mock_session_manager.set.assert_any_call('active_company_short_name', self.mock_company.short_name)
         self.mock_session_context.save_profile_data.assert_called_once()
         assert response['success'] and response['user_identifier'] == self.mock_user.email
+
+    def test_clear_session_for_company_preserves_other_company_sessions(self, mock_session_manager):
+        mock_session_manager.get.side_effect = lambda key, default=None: {
+            'company_sessions': {
+                'company-a': {'user_identifier': 'user-a'},
+                'company-b': {'user_identifier': 'user-b'},
+            },
+            'active_company_short_name': 'company-a',
+        }.get(key, default)
+
+        self.service.clear_session_for_company('company-a')
+
+        mock_session_manager.set.assert_any_call(
+            'company_sessions',
+            {'company-b': {'user_identifier': 'user-b'}}
+        )
+        mock_session_manager.set.assert_any_call('active_company_short_name', 'company-b')
 
     def test_signup_when_user_exist_and_already_register(self, mock_session_manager):
         """This test now correctly receives the mock argument and passes."""
@@ -300,6 +331,7 @@ class TestProfileService:
         response = self.service.verify_account(email='test@email.com')
 
         assert 'translated:errors.general.unexpected_error' == response['error']
+        self.mock_i18n.t.assert_called_with('errors.general.unexpected_error', error='an error')
 
     def test_verify_account_when_ok(self,mock_session_manager):
         self.mock_repo.get_user_by_email.return_value = self.mock_user
@@ -348,6 +380,7 @@ class TestProfileService:
             confirm_password='pass1'
         )
         assert 'translated:errors.general.unexpected_error' == response['error']
+        self.mock_i18n.t.assert_called_with('errors.general.unexpected_error', error='db error')
 
     def test_forgot_password_when_user_not_exist(self,mock_session_manager):
         self.mock_repo.get_user_by_email.return_value = None
@@ -378,6 +411,7 @@ class TestProfileService:
         )
 
         assert 'translated:errors.general.unexpected_error' == response['error']
+        self.mock_i18n.t.assert_called_with('errors.general.unexpected_error', error='mail error')
 
     def test_update_user_language_success(self, mock_session_manager):
         """

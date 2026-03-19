@@ -97,7 +97,7 @@ class AuthService:
             )
             return {'success': False, 'error': self.i18n_service.t('errors.auth.session_creation_failed')}
 
-    def verify(self, anonymous: bool = False) -> dict:
+    def verify(self, anonymous: bool = False, company_short_name: str = None) -> dict:
         """
         Verifies the current request and identifies the user.
         If anonymous is True the non-presence of use_identifier is ignored
@@ -110,7 +110,7 @@ class AuthService:
         - status_code: int (on failure)
         """
         # --- Priority 1: Check for a valid Flask web session ---
-        session_info = self.profile_service.get_current_session_info()
+        session_info = self.profile_service.get_current_session_info(company_short_name=company_short_name)
         if session_info and session_info.get('user_identifier'):
             # User is authenticated via a web session cookie.
             return {
@@ -164,7 +164,7 @@ class AuthService:
         Verifies the current request and enforces that the authenticated tenant
         matches the tenant requested by the caller.
         """
-        auth_result = self.verify(anonymous=anonymous)
+        auth_result = self.verify(anonymous=anonymous, company_short_name=company_short_name)
         if not auth_result.get("success"):
             return auth_result
 

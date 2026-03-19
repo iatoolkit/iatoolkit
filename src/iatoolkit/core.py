@@ -488,7 +488,6 @@ class IAToolkit:
         # Configura context processors para templates
         @self.app.context_processor
         def inject_globals():
-            from iatoolkit.common.session_manager import SessionManager
             from iatoolkit.services.profile_service import ProfileService
             from iatoolkit.services.i18n_service import I18nService
 
@@ -506,16 +505,17 @@ class IAToolkit:
                     return None
                 return url_for(endpoint, **kwargs)
 
-            # Get user profile if a session exists
-            user_profile = profile_service.get_current_session_info().get('profile', {})
+            # Resolve the session using the current company in the route when available.
+            session_info = profile_service.get_current_session_info()
+            user_profile = session_info.get('profile', {})
 
             return {
                 'url_for': url_for,
                 'iatoolkit_version': f'{self.version}',
                 'license': self.license,
                 'app_name': 'IAToolkit',
-                'user_identifier': SessionManager.get('user_identifier'),
-                'company_short_name': SessionManager.get('company_short_name'),
+                'user_identifier': session_info.get('user_identifier'),
+                'company_short_name': session_info.get('company_short_name'),
                 'user_role': user_profile.get('user_role'),
                 'user_is_local': user_profile.get('user_is_local'),
                 'user_email': user_profile.get('user_email'),

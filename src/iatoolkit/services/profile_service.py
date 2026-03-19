@@ -8,6 +8,7 @@ from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.repositories.models import User, Company
 from flask_bcrypt import check_password_hash
+from flask import request, has_request_context
 from iatoolkit.common.session_manager import SessionManager
 from iatoolkit.services.dispatcher_service import Dispatcher
 from iatoolkit.services.language_service import LanguageService
@@ -117,31 +118,77 @@ class ProfileService:
         # save user_profile in Redis session
         self.session_context.save_profile_data(company.short_name, user_identifier, user_profile)
 
+    def _get_company_sessions(self) -> dict[str, dict]:
+        raw_sessions = SessionManager.get('company_sessions', {})
+        return raw_sessions if isinstance(raw_sessions, dict) else {}
+
+    def _resolve_session_company_short_name(self, company_short_name: str = None) -> str | None:
+        if company_short_name:
+            return company_short_name
+
+        if has_request_context() and request.view_args and request.view_args.get('company_short_name'):
+            return request.view_args.get('company_short_name')
+
+        active_company_short_name = SessionManager.get('active_company_short_name')
+        if active_company_short_name:
+            return active_company_short_name
+
+        company_sessions = self._get_company_sessions()
+        if len(company_sessions) == 1:
+            return next(iter(company_sessions.keys()))
+
+        return None
+
     def set_session_for_user(self, company_short_name: str, user_identifier:str ):
         # save a min Flask session cookie for this user
         SessionManager.set_permanent(True)
-        SessionManager.set('company_short_name', company_short_name)
-        SessionManager.set('user_identifier', user_identifier)
+        company_sessions = self._get_company_sessions()
+        company_sessions[company_short_name] = {
+            'user_identifier': user_identifier,
+        }
+        SessionManager.set('company_sessions', company_sessions)
+        SessionManager.set('active_company_short_name', company_short_name)
 
-    def get_current_session_info(self) -> dict:
+    def clear_session_for_company(self, company_short_name: str):
+        company_sessions = self._get_company_sessions()
+        if company_short_name in company_sessions:
+            company_sessions.pop(company_short_name, None)
+
+        if company_sessions:
+            SessionManager.set('company_sessions', company_sessions)
+        else:
+            SessionManager.remove('company_sessions')
+
+        active_company_short_name = SessionManager.get('active_company_short_name')
+        if active_company_short_name == company_short_name:
+            if company_sessions:
+                SessionManager.set('active_company_short_name', next(iter(company_sessions.keys())))
+            else:
+                SessionManager.remove('active_company_short_name')
+
+    def get_current_session_info(self, company_short_name: str = None) -> dict:
         """
          Gets the current web user's profile from the unified session.
          This is the standard way to access user data for web requests.
-         """
-        # 1. Get identifiers from the simple Flask session cookie.
-        user_identifier = SessionManager.get('user_identifier')
-        company_short_name = SessionManager.get('company_short_name')
+        """
+        resolved_company_short_name = self._resolve_session_company_short_name(company_short_name)
+        if not resolved_company_short_name:
+            return {}
 
-        if not user_identifier or not company_short_name:
+        company_sessions = self._get_company_sessions()
+        session_entry = company_sessions.get(resolved_company_short_name) or {}
+        user_identifier = session_entry.get('user_identifier')
+
+        if not user_identifier:
             # No authenticated web user.
             return {}
 
         # 2. Use the identifiers to fetch the full, authoritative profile from Redis.
-        profile = self.session_context.get_profile_data(company_short_name, user_identifier)
+        profile = self.session_context.get_profile_data(resolved_company_short_name, user_identifier)
 
         return {
             "user_identifier": user_identifier,
-            "company_short_name": company_short_name,
+            "company_short_name": resolved_company_short_name,
             "profile": profile
         }
 
@@ -283,7 +330,7 @@ class ProfileService:
 
         except Exception as e:
             self._safe_rollback()
-            return {"error": self.i18n_service.t('errors.general.unexpected_error')}
+            return {"error": self.i18n_service.t('errors.general.unexpected_error', error=str(e))}
 
     def change_password(self,
                          email: str,
@@ -307,7 +354,7 @@ class ProfileService:
             return {"message": self.i18n_service.t('flash_messages.password_changed_success')}
         except Exception as e:
             self._safe_rollback()
-            return {"error": self.i18n_service.t('errors.general.unexpected_error')}
+            return {"error": self.i18n_service.t('errors.general.unexpected_error', error=str(e))}
 
     def forgot_password(self, company_short_name: str, email: str, reset_url: str):
         try:
@@ -326,7 +373,7 @@ class ProfileService:
             return {"message": self.i18n_service.t('flash_messages.forgot_password_success')}
         except Exception as e:
             self._safe_rollback()
-            return {"error": self.i18n_service.t('errors.general.unexpected_error')}
+            return {"error": self.i18n_service.t('errors.general.unexpected_error', error=str(e))}
 
     def validate_password(self, password):
         """

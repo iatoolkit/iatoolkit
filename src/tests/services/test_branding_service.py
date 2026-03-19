@@ -49,6 +49,7 @@ class TestBrandingService:
         """
         # Arrange
         custom_styles = {
+            "brand_primary_color": "#654321",
             "header_background_color": "#123456",
         }
         def side_effect_for_partial_branding(company_short_name, content_key):
@@ -64,8 +65,9 @@ class TestBrandingService:
 
         # Assert
         assert branding['name'] == "Partial Brand Inc."
-        # Valida que el estilo personalizado se usó en la variable CSS.
-        assert "--brand-header-bg: #123456;" in branding['css_variables']
+        # Header and modal now follow the primary brand color, not header_background_color.
+        assert "--brand-header-bg: #654321;" in branding['css_variables']
+        assert "--brand-modal-header-bg: #654321;" in branding['css_variables']
         # Valida que una variable CSS de un estilo por defecto que no fue sobreescrito todavía existe.
         expected_default_var = f"--brand-header-text: {self.default_branding['brand_text_on_primary']};"
         assert expected_default_var in branding['css_variables']
@@ -76,6 +78,8 @@ class TestBrandingService:
         """
         # Arrange
         full_custom_styles = {
+            "brand_primary_color": "#222222",
+            "brand_text_on_primary": "#FAFAFA",
             "header_background_color": "#000000",
             "header_text_color": "#FFFFFF",
             "primary_font_weight": "300",
@@ -99,18 +103,23 @@ class TestBrandingService:
         expected_primary_style = "font-weight: 300; font-size: 1.2rem;"
         assert branding['primary_text_style'] == expected_primary_style
 
-        # Validar que la variable CSS personalizada se inyectó correctamente.
-        assert "--brand-header-bg: #000000;" in branding['css_variables']
+        # Validar que el header toma el brand_primary_color.
+        assert "--brand-header-bg: #222222;" in branding['css_variables']
+        assert "--brand-modal-header-bg: #222222;" in branding['css_variables']
+        assert "--brand-header-text: #FAFAFA;" in branding['css_variables']
+        assert "--brand-modal-header-text: #FAFAFA;" in branding['css_variables']
+        assert branding['header_text_color'] == "#FAFAFA"
 
         # Validar que una variable CSS de un valor por defecto que no estaba en el conjunto personalizado sigue presente.
         expected_default_var = f"--brand-secondary-color: {self.default_branding['brand_secondary_color']};"
         assert expected_default_var in branding['css_variables']
 
-    def test_loading_spinner_color_falls_back_to_header_background(self):
+    def test_loading_spinner_color_falls_back_to_brand_primary_color(self):
         """
-        If loading_spinner_color is not provided, spinner color should follow header_background_color.
+        If loading_spinner_color is not provided, spinner color should follow brand_primary_color.
         """
         custom_styles = {
+            "brand_primary_color": "#2B6CB0",
             "header_background_color": "#A11F44",
         }
 
@@ -125,7 +134,7 @@ class TestBrandingService:
 
         branding = self.branding_service.get_company_branding("spinner-fallback-corp")
 
-        assert "--brand-loading-spinner-color: #A11F44;" in branding['css_variables']
+        assert "--brand-loading-spinner-color: #2B6CB0;" in branding['css_variables']
 
     def test_loading_spinner_color_can_be_overridden(self):
         """

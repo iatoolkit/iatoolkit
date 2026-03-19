@@ -118,7 +118,7 @@ class FinalizeContextView(MethodView):
             # get the languaje from the query string if it exists
             current_lang = request.args.get('lang') or 'en'
 
-            session_info = self.profile_service.get_current_session_info()
+            session_info = self.profile_service.get_current_session_info(company_short_name=company_short_name)
             if session_info:
                 # session exists, internal user
                 user_identifier = session_info.get('user_identifier')

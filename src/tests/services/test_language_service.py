@@ -50,8 +50,7 @@ class TestLanguageService:
         """
         # Arrange
         def session_get_side_effect(key):
-            if key == 'user_identifier': return 'user-no-lang@acme.com'
-            if key == 'company_short_name': return 'acme-en'
+            if key == 'active_company_short_name': return 'acme-en'
             return None
         mock_session_manager.get.side_effect = session_get_side_effect
         self.mock_profile_repo.get_user_by_email.return_value = self.user_without_lang

@@ -2,7 +2,7 @@
 
 import logging
 from injector import inject, singleton
-from flask import g, request
+from flask import g, request, has_request_context
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.common.session_manager import SessionManager
@@ -58,18 +58,17 @@ class LanguageService:
         This handles different scenarios like web sessions, public URLs, and API calls.
 
         Priority Order:
-        1. Flask Session (for logged-in web users).
-        2. URL rule variable (for public pages and API endpoints).
+        1. URL rule variable (for company-scoped pages and API endpoints).
+        2. Active company in Flask session.
         """
-        # 1. Check session for logged-in users
-        company_short_name = SessionManager.get('company_short_name')
+        # 1. Check URL arguments (e.g., /<company_short_name>/login)
+        if has_request_context() and request.view_args and 'company_short_name' in request.view_args:
+            return request.view_args['company_short_name']
+
+        # 2. Check the active company in session for non-company-scoped endpoints.
+        company_short_name = SessionManager.get('active_company_short_name')
         if company_short_name:
             return company_short_name
-
-        # 2. Check URL arguments (e.g., /<company_short_name>/login)
-        # This covers public pages and most API calls.
-        if request.view_args and 'company_short_name' in request.view_args:
-            return request.view_args['company_short_name']
 
         return None
 

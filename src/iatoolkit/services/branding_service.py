@@ -68,7 +68,7 @@ class BrandingService:
             # Color para el botón de Enviar ---
             "send_button_color": "#212529",          # Gris oscuro/casi negro por defecto
 
-            # Loading spinner color in chat query flow (fallback to header background)
+            # Loading spinner color in chat query flow (fallback to primary brand color)
             "loading_spinner_color": None
         }
 
@@ -84,10 +84,6 @@ class BrandingService:
 
         if not final_branding_values.get('header_background_color'):
             final_branding_values['header_background_color'] = final_branding_values['brand_primary_color']
-        if not final_branding_values.get('header_text_color'):
-            final_branding_values['header_text_color'] = final_branding_values['brand_text_on_primary']
-
-
         # Función para convertir HEX a RGB
         def hex_to_rgb(hex_color):
             hex_color = hex_color.lstrip('#')
@@ -116,16 +112,16 @@ class BrandingService:
             :root {{
                 --brand-primary-color: {final_branding_values['brand_primary_color']};
                 --brand-secondary-color: {final_branding_values['brand_secondary_color']};
-                --brand-header-bg: {final_branding_values['header_background_color']};
-                --brand-header-text: {final_branding_values['header_text_color']};
+                --brand-header-bg: {final_branding_values['brand_primary_color']};
+                --brand-header-text: {final_branding_values['brand_text_on_primary']};
                 --brand-text-heading-color: {final_branding_values['brand_text_heading_color']};
 
                 --brand-primary-color-rgb: {', '.join(map(str, primary_rgb))};
                 --brand-secondary-color-rgb: {', '.join(map(str, secondary_rgb))};
                 --brand-text-on-primary: {final_branding_values['brand_text_on_primary']};
                 --brand-text-on-secondary: {final_branding_values['brand_text_on_secondary']};
-                --brand-modal-header-bg: {final_branding_values['header_background_color']};
-                --brand-modal-header-text: {final_branding_values['header_text_color']};
+                --brand-modal-header-bg: {final_branding_values['brand_primary_color']};
+                --brand-modal-header-text: {final_branding_values['brand_text_on_primary']};
                 --brand-danger-color: {final_branding_values['brand_danger_color']};
                 --brand-danger-bg: {final_branding_values['brand_danger_bg']};
                 --brand-danger-text: {final_branding_values['brand_danger_text']};
@@ -144,7 +140,7 @@ class BrandingService:
                 --brand-prompt-assistant-header-text: {final_branding_values['prompt_assistant_header_text']};
                 --brand-prompt-assistant-item-hover-bg: {final_branding_values['prompt_assistant_item_hover_bg'] or final_branding_values['brand_primary_color']};
                 --brand-prompt-assistant-item-hover-text: {final_branding_values['prompt_assistant_item_hover_text'] or final_branding_values['brand_text_on_primary']};
-                --brand-loading-spinner-color: {final_branding_values['loading_spinner_color'] or final_branding_values['header_background_color']};
+                --brand-loading-spinner-color: {final_branding_values['loading_spinner_color'] or final_branding_values['brand_primary_color']};
 
             }}
         """
@@ -158,7 +154,7 @@ class BrandingService:
             "primary_text_style": primary_text_style,
             "secondary_text_style": secondary_text_style,
             "tertiary_text_style": tertiary_text_style,
-            "header_text_color": final_branding_values['header_text_color'],
+            "header_text_color": final_branding_values['brand_text_on_primary'],
             "css_variables": css_variables,
             "send_button_color": final_branding_values['brand_primary_color']
         }

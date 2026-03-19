@@ -142,6 +142,21 @@ class TestAuthServiceVerify:
         assert result['company_short_name'] == "apico"
         assert result['user_identifier'] == "api-user-456"
 
+    def test_verify_for_company_reads_session_for_requested_company(self):
+        session_info = {
+            "user_identifier": "user_session_123",
+            "company_short_name": "apico",
+            "profile": {"user_role": "admin"}
+        }
+        self.mock_profile_service.get_current_session_info.return_value = session_info
+
+        with self.app.test_request_context():
+            result = self.service.verify_for_company("apico")
+
+        assert result['success'] is True
+        assert result['company_short_name'] == "apico"
+        self.mock_profile_service.get_current_session_info.assert_called_with(company_short_name="apico")
+
     def test_verify_for_company_returns_403_when_company_mismatches(self):
         self.mock_profile_service.get_current_session_info.return_value = {}
         self.mock_api_key_service.get_active_api_key_entry.return_value = self.mock_api_key_entry

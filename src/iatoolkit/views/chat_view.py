@@ -34,7 +34,7 @@ class ChatView(MethodView):
                                    message=self.i18n_service.t('errors.templates.company_not_found')), 404
 
         # 2. Check Session
-        session_info = self.profile_service.get_current_session_info()
+        session_info = self.profile_service.get_current_session_info(company_short_name=company_short_name)
         user_identifier = session_info.get('user_identifier')
         session_company = session_info.get('company_short_name')
 
