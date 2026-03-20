@@ -1,0 +1,20 @@
+
+- icon: "fas fa-book"
+  title: "Welcome to The Bookstore"
+  text: |
+    I am your AI assistant for the bookstore. I can help you analyze sales, 
+    check inventory, and understand customer trends.
+
+- icon: "fas fa-database"
+  title: "Query Data"
+  text: "I have access to our database of books, authors, customers, and orders."
+  example: "Which authors had the most sales last month?"
+
+- icon: "fas fa-file-alt"
+  title: "Store Policies"
+  text: "I can search through our store policies and FAQs."
+  example: "What is our return policy for damaged books?"
+
+- icon: "fas fa-wand-magic-sparkles"
+  title: "Use Templates"
+  text: "Try the magic wand ✨ to run pre-built reports like 'Sales Report' or 'Author Analysis'."

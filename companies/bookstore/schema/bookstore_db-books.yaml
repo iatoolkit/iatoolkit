@@ -1,0 +1,22 @@
+
+books:
+  description: "Catalog of books available in the store."
+  columns:
+    book_id:
+      type: INTEGER
+      pk: true
+    title:
+      type: VARCHAR(255)
+      description: "Title of the book."
+    author_id:
+      type: INTEGER
+      description: "Foreign key to the authors table."
+    genre:
+      type: VARCHAR(100)
+    price:
+      type: DECIMAL(10, 2)
+    stock:
+      type: INTEGER
+      description: "Current inventory count."
+    published_date:
+      type: DATE

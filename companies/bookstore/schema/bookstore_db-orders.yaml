@@ -1,0 +1,17 @@
+
+orders:
+  description: "Sales orders placed by customers."
+  columns:
+    order_id:
+      type: INTEGER
+      pk: true
+    customer_id:
+      type: INTEGER
+      description: "Foreign key to the customers table."
+    order_date:
+      type: DATETIME
+    total_amount:
+      type: DECIMAL(10, 2)
+    status:
+      type: VARCHAR(50)
+      description: "Order status (Pending, Shipped, Delivered)."
