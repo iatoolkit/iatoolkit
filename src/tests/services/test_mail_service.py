@@ -271,7 +271,23 @@ class TestMailService:
             )
 
         assert exc.value.error_type == IAToolkitException.ErrorType.MAIL_ERROR
-        assert "missing mail provider" in str(exc.value)
+        assert "Unknown mail provider" in str(exc.value)
+
+    def test_send_mail_missing_mail_provider_config_raises(self):
+        """Si falta mail_provider, debe lanzar un MAIL_ERROR descriptivo."""
+        self.mock_config_service.get_configuration.return_value = None
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.mail_service.send_mail(
+                company_short_name=self.company_short_name,
+                recipient=self.recipient,
+                subject=self.subject,
+                body=self.body,
+                attachments=[],
+            )
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.MAIL_ERROR
+        assert "missing mail_provider configuration" in str(exc.value)
 
     def test_send_mail_partial_args_defaults(self):
         """Si faltan subject/body se pasan como None pero igual se envía y retorna mensaje."""

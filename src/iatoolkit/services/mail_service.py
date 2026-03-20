@@ -99,6 +99,12 @@ class MailService:
         """
         # get company mail configuration and provider
         mail_config = self.config_service.get_configuration(company_short_name, "mail_provider")
+        if not isinstance(mail_config, dict) or not mail_config:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.MAIL_ERROR,
+                f"missing mail_provider configuration for company '{company_short_name}'"
+            )
+
         provider = mail_config.get("provider", "brevo_mail")
 
         # get mail common parameteres
@@ -144,7 +150,7 @@ class MailService:
 
         # Fallback simple si el provider no es reconocido
         raise IAToolkitException(IAToolkitException.ErrorType.MAIL_ERROR,
-                                 f"missing mail provider in mail configuration for company '{company_short_name}'")
+                                 f"Unknown mail provider '{provider}'")
 
     def _send_with_smtplib(self,
                            provider_config: dict,
