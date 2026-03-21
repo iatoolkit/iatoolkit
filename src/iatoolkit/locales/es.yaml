@@ -399,7 +399,21 @@ ui:
     profile_io_contract: "Contrato de entrada / salida"
     profile_io_contract_help: "Define que espera este pipeline como entrada y que tipo de salidas puede publicar antes de configurar los pasos internos."
     source_sql_output_help: "Selecciona la base de datos y la tabla destino para las salidas sql_table definidas en el perfil de procesamiento. Puedes escribir una tabla nueva cuando auto-create este habilitado en la salida del perfil."
-
+    select_pipeline_family: "Selecciona familia de pipeline"
+    run_phase_pending: "En cola para orquestación"
+    run_phase_discovering: "Descubriendo items"
+    run_phase_dispatching: "Despachando tasks"
+    run_phase_dispatching_taskless: "Preparando procesamiento inline"
+    run_phase_running: "Tasks en ejecución"
+    run_phase_running_taskless: "Procesando inline"
+    run_phase_consolidating: "Consolidando salidas"
+    run_phase_completed: "Completado"
+    run_phase_partial: "Completado con incidencias"
+    run_phase_failed: "Fallido"
+    run_phase_review: "Requiere revisión"
+    publication_failed_title: "Falló la publicación de salida"
+    status_pending: "Pendiente"
+    status_needs_review: "Requiere revisión"
 
   integration_packs:
     title: "Paquetes de Integración"
