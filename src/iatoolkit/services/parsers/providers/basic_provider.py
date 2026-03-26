@@ -55,9 +55,10 @@ class BasicParsingProvider:
             ))
 
         if request.filename.lower().endswith('.pdf'):
-            images = self.pdf_to_images(request.content)
-            for index, pix in enumerate(images or [], start=1):
+            figures = self.pdf_to_figure_entries(request.content)
+            for index, figure in enumerate(figures or [], start=1):
                 try:
+                    pix = figure["pixmap"]
                     content, filename, mime_type, color_mode, width, height = normalize_image(
                         pix,
                         filename_hint=f"{request.filename}_img_{index}",
@@ -72,6 +73,7 @@ class BasicParsingProvider:
                         height=height,
                         meta={
                             "source_type": "image",
+                            "page": figure.get("page"),
                             "image_index": index,
                             "caption_text": None,
                             "caption_source": "none",
@@ -174,23 +176,32 @@ class BasicParsingProvider:
         return document_text
 
     def pdf_to_images(self, file_content):
-        images = []
+        figures = self.pdf_to_figure_entries(file_content)
+        return [figure["pixmap"] for figure in figures or []]
+
+    def pdf_to_figure_entries(self, file_content):
+        figures = []
 
         pdf_document = fitz.open(stream=io.BytesIO(file_content), filetype='pdf')
         if pdf_document.page_count > self.max_doc_pages:
+            pdf_document.close()
             return None
 
-        for page_number in range(len(pdf_document)):
-            page = pdf_document[page_number]
+        try:
+            for page_number in range(len(pdf_document)):
+                page = pdf_document[page_number]
 
-            images_on_page = page.get_images(full=True)
-            for img in images_on_page:
-                xref = img[0]
-                pix = fitz.Pixmap(pdf_document, xref)
-                images.append(pix)
-
-        pdf_document.close()
-        return images
+                images_on_page = page.get_images(full=True)
+                for img in images_on_page:
+                    xref = img[0]
+                    pix = fitz.Pixmap(pdf_document, xref)
+                    figures.append({
+                        "page": page_number + 1,
+                        "pixmap": pix,
+                    })
+        finally:
+            pdf_document.close()
+        return figures
 
     def image_to_text(self, image):
         if image.n == 1:

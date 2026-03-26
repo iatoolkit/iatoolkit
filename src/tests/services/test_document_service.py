@@ -67,7 +67,7 @@ class TestBasicParsingProvider:
         assert result.texts[0].text == "hello world"
         assert len(result.images) == 0
 
-    @patch("iatoolkit.services.parsers.providers.basic_provider.BasicParsingProvider.pdf_to_images", return_value=[])
+    @patch("iatoolkit.services.parsers.providers.basic_provider.BasicParsingProvider.pdf_to_figure_entries", return_value=[])
     def test_parse_pdf_without_images(self, _):
         with patch.object(self.provider, "extract_text", return_value="pdf text"):
             result = self.provider.parse(ParseRequest(
@@ -78,3 +78,29 @@ class TestBasicParsingProvider:
 
         assert len(result.texts) == 1
         assert len(result.images) == 0
+
+    @patch("iatoolkit.services.parsers.providers.basic_provider.normalize_image")
+    @patch("iatoolkit.services.parsers.providers.basic_provider.BasicParsingProvider.pdf_to_figure_entries")
+    def test_parse_pdf_returns_figure_metadata(self, mock_pdf_to_figure_entries, mock_normalize_image):
+        mock_pdf_to_figure_entries.return_value = [
+            {"page": 2, "pixmap": MagicMock()},
+        ]
+        mock_normalize_image.return_value = (
+            b"pngbytes",
+            "a_pdf_img_1.png",
+            "image/png",
+            "rgb",
+            120,
+            80,
+        )
+
+        with patch.object(self.provider, "extract_text", return_value="pdf text"):
+            result = self.provider.parse(ParseRequest(
+                company_short_name="acme",
+                filename="a.pdf",
+                content=b"pdf",
+            ))
+
+        assert len(result.images) == 1
+        assert result.images[0].meta["page"] == 2
+        assert result.images[0].meta["image_index"] == 1
