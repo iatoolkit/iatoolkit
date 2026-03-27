@@ -10,7 +10,7 @@ import os
 import tempfile
 from typing import Any, Optional
 
-from injector import inject
+from injector import inject, singleton
 
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.i18n_service import I18nService
@@ -18,7 +18,7 @@ from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.parsers.contracts import ParseRequest, ParseResult, ParsedImage, ParsedTable, ParsedText
 from iatoolkit.services.parsers.image_normalizer import normalize_image
 
-
+@singleton
 class DoclingParsingProvider:
     name = "docling"
     version = "1.0"

@@ -9,14 +9,14 @@ import logging
 import mimetypes
 from time import perf_counter
 
-from injector import inject
+from injector import inject, singleton
 
 from iatoolkit.services.parsers.contracts import ParseRequest, ParseResult
 from iatoolkit.services.parsers.provider_factory import ParsingProviderFactory
 from iatoolkit.services.parsers.provider_resolver import ParsingProviderResolver
 from iatoolkit.services.parsers.validator import validate_parse_result
 
-
+@singleton
 class ParsingService:
     @inject
     def __init__(self,

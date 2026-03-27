@@ -5,14 +5,14 @@
 
 from __future__ import annotations
 
-from injector import inject
+from injector import inject, singleton
 
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.repositories.document_repo import DocumentRepo
 from iatoolkit.services.parsers.contracts import ParseRequest
 from iatoolkit.services.parsers.provider_factory import ParsingProviderFactory
 
-
+@singleton
 class ParsingProviderResolver:
     @inject
     def __init__(self,

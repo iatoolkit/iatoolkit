@@ -12,7 +12,7 @@ import os
 import fitz
 import pytesseract
 from docx import Document
-from injector import inject
+from injector import inject, singleton
 from PIL import Image
 
 from iatoolkit.common.exceptions import IAToolkitException
@@ -21,7 +21,7 @@ from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.services.parsers.contracts import ParseRequest, ParseResult, ParsedImage, ParsedText
 from iatoolkit.services.parsers.image_normalizer import normalize_image
 
-
+@singleton
 class BasicParsingProvider:
     name = "basic"
     version = "1.0"

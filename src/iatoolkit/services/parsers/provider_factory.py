@@ -5,12 +5,12 @@
 
 from __future__ import annotations
 
-from injector import inject
+from injector import inject, singleton
 
 from iatoolkit.services.parsers.providers.basic_provider import BasicParsingProvider
 from iatoolkit.services.parsers.providers.docling_provider import DoclingParsingProvider
 
-
+@singleton
 class ParsingProviderFactory:
     @inject
     def __init__(self,
