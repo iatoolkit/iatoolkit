@@ -150,17 +150,16 @@ class BasicParsingProvider:
             raise ValueError(f"Error reading .pdf file: {e}")
 
     def is_scanned_pdf(self, file_content):
-        doc = fitz.open(stream=io.BytesIO(file_content), filetype='pdf')
+        with fitz.open(stream=io.BytesIO(file_content), filetype='pdf') as doc:
+            for page_num in range(len(doc)):
+                page = doc[page_num]
+                text = page.get_text()
+                if text.strip():
+                    return False
 
-        for page_num in range(len(doc)):
-            page = doc[page_num]
-            text = page.get_text()
-            if text.strip():
-                return False
-
-            images = page.get_images(full=True)
-            if images:
-                continue
+                images = page.get_images(full=True)
+                if images:
+                    continue
 
         return True
 
