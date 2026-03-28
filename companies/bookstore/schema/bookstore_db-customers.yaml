@@ -1,0 +1,18 @@
+
+customers:
+  description: "Registered customers of the bookstore."
+  columns:
+    customer_id:
+      type: INTEGER
+      pk: true
+    name:
+      type: VARCHAR(255)
+    email:
+      type: VARCHAR(255)
+      unique: true
+    city:
+      type: VARCHAR(100)
+    country:
+      type: VARCHAR(100)
+    joined_date:
+      type: DATE
