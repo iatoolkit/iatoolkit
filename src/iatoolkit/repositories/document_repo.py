@@ -52,9 +52,32 @@ class DocumentRepo:
 
         ct = self.session.query(CollectionType).join(Company).filter(
             Company.short_name == company_short_name,
-            CollectionType.name == collection_name.lower()
+            CollectionType.name == collection_name.strip().lower()
         ).first()
         return ct.id if ct else None
+
+    def get_collection_ids_by_name(self, company_short_name: str, collection_names: List[str]) -> List[int]:
+        if not collection_names:
+            return []
+
+        normalized_names = []
+        for name in collection_names:
+            if not isinstance(name, str):
+                continue
+            normalized = name.strip().lower()
+            if normalized and normalized not in normalized_names:
+                normalized_names.append(normalized)
+
+        if not normalized_names:
+            return []
+
+        collections = self.session.query(CollectionType).join(Company).filter(
+            Company.short_name == company_short_name,
+            CollectionType.name.in_(normalized_names)
+        ).all()
+
+        collection_ids_by_name = {collection.name: collection.id for collection in collections}
+        return [collection_ids_by_name[name] for name in normalized_names if name in collection_ids_by_name]
 
     def get_collection_by_name(self, company_short_name: str, collection_name: str) -> Optional[CollectionType]:
         if not collection_name:
@@ -62,7 +85,7 @@ class DocumentRepo:
 
         return self.session.query(CollectionType).join(Company).filter(
             Company.short_name == company_short_name,
-            CollectionType.name == collection_name.lower()
+            CollectionType.name == collection_name.strip().lower()
         ).first()
 
     def get_collection_by_id(self, collection_id) -> Optional[CollectionType]:

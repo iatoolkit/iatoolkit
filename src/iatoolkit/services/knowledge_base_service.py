@@ -463,7 +463,7 @@ class KnowledgeBaseService:
                company_short_name: str,
                query: str,
                n_results: int = 5,
-               collection: str = None,
+               collection: str | list[str] | None = None,
                metadata_filter: dict = None
                ):
         """
@@ -475,7 +475,7 @@ class KnowledgeBaseService:
             query: The user's question or search term.
             n_results: Max number of chunks to retrieve.
             metadata_filter: Optional filter for document metadata.
-            collection: Optional collection name.
+            collection: Optional collection name or list of collection names.
 
         Returns:
             List of Document objects found.
@@ -486,8 +486,20 @@ class KnowledgeBaseService:
             logging.warning(f"Company {company_short_name} not found during raw search.")
             return []
 
-        # If collection name provided, resolve to ID or handle in VSRepo
-        collection_id = self.document_repo.get_collection_id_by_name(company.short_name, collection)
+        normalized_collection = self._normalize_search_collection(collection)
+        collection_ids = None
+        if isinstance(normalized_collection, str):
+            collection_id = self.document_repo.get_collection_id_by_name(company.short_name, normalized_collection)
+            if collection_id is None:
+                return []
+            collection_ids = [collection_id]
+        elif isinstance(normalized_collection, list):
+            collection_ids = self.document_repo.get_collection_ids_by_name(
+                company.short_name,
+                normalized_collection,
+            )
+            if not collection_ids:
+                return []
 
         # Queries VSRepo directly
         chunk_list = self.vs_repo.query(
@@ -495,10 +507,31 @@ class KnowledgeBaseService:
             query_text=query,
             n_results=n_results,
             metadata_filter=metadata_filter,
-            collection_id=collection_id,
+            collection_ids=collection_ids,
         )
 
         return chunk_list
+
+    @staticmethod
+    def _normalize_search_collection(collection: str | list[str] | None) -> str | list[str] | None:
+        if collection is None:
+            return None
+
+        if isinstance(collection, str):
+            normalized = collection.strip()
+            return normalized or None
+
+        if isinstance(collection, list):
+            normalized_items = []
+            for item in collection:
+                if not isinstance(item, str):
+                    continue
+                normalized = item.strip()
+                if normalized:
+                    normalized_items.append(normalized)
+            return normalized_items or None
+
+        return None
 
     def list_documents(self,
                        company_short_name: str,

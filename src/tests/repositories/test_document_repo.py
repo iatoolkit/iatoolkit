@@ -5,7 +5,7 @@
 
 import pytest
 from unittest.mock import MagicMock
-from iatoolkit.repositories.models import Document, Company
+from iatoolkit.repositories.models import Document, Company, CollectionType
 from iatoolkit.repositories.document_repo import DocumentRepo
 from iatoolkit.common.exceptions import IAToolkitException
 import base64
@@ -72,3 +72,24 @@ class TestDocumentRepo:
 
         assert result == self.mock_document
         self.session.query.assert_called()
+
+    def test_get_collection_ids_by_name_normalizes_and_deduplicates(self):
+        legal = CollectionType(id=10, name="legal")
+        contracts = CollectionType(id=20, name="contracts")
+        self.session.query.return_value.join.return_value.filter.return_value.all.return_value = [
+            contracts,
+            legal,
+        ]
+
+        result = self.repo.get_collection_ids_by_name(
+            "acme",
+            [" Legal ", "contracts", "LEGAL", "", "contracts"],
+        )
+
+        assert result == [10, 20]
+
+    def test_get_collection_ids_by_name_returns_empty_for_empty_input(self):
+        result = self.repo.get_collection_ids_by_name("acme", [])
+
+        assert result == []
+        self.session.query.assert_not_called()

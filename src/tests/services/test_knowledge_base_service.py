@@ -262,5 +262,60 @@ class TestKnowledgeBaseService:
             query_text="find invoice",
             n_results=5,
             metadata_filter={"source_type": "table", "doc.category": "finance"},
-            collection_id=7,
+            collection_ids=[7],
         )
+
+    def test_search_resolves_multiple_collection_ids(self):
+        self.mock_profile_service.get_company_by_short_name.return_value = self.company
+        self.mock_doc_repo.get_collection_ids_by_name.return_value = [7, 8]
+        self.mock_vs_repo.query.return_value = []
+
+        self.service.search(
+            company_short_name="acme",
+            query="find contract",
+            collection=["Legal", "Contracts"],
+        )
+
+        self.mock_doc_repo.get_collection_ids_by_name.assert_called_once_with(
+            "acme",
+            ["Legal", "Contracts"],
+        )
+        self.mock_vs_repo.query.assert_called_with(
+            company_short_name="acme",
+            query_text="find contract",
+            n_results=5,
+            metadata_filter=None,
+            collection_ids=[7, 8],
+        )
+
+    def test_search_with_empty_collection_list_does_not_filter(self):
+        self.mock_profile_service.get_company_by_short_name.return_value = self.company
+        self.mock_vs_repo.query.return_value = []
+
+        self.service.search(
+            company_short_name="acme",
+            query="find policy",
+            collection=[],
+        )
+
+        self.mock_doc_repo.get_collection_ids_by_name.assert_not_called()
+        self.mock_vs_repo.query.assert_called_with(
+            company_short_name="acme",
+            query_text="find policy",
+            n_results=5,
+            metadata_filter=None,
+            collection_ids=None,
+        )
+
+    def test_search_with_unknown_collection_list_returns_no_results(self):
+        self.mock_profile_service.get_company_by_short_name.return_value = self.company
+        self.mock_doc_repo.get_collection_ids_by_name.return_value = []
+
+        result = self.service.search(
+            company_short_name="acme",
+            query="find policy",
+            collection=["MissingA", "MissingB"],
+        )
+
+        assert result == []
+        self.mock_vs_repo.query.assert_not_called()

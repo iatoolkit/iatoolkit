@@ -697,6 +697,60 @@ class TestToolService:
         assert "Total amount is 1200" in result["serialized_context"]
         assert "table_json=" in result["serialized_context"]
 
+    def test_system_document_search_passes_none_collection_without_filter(self):
+        self.knowledge_base_service.search.return_value = []
+
+        handler = self.service.get_system_handler("iat_document_search")
+        handler(
+            company_short_name=self.company_short_name,
+            query="policy",
+            collection=None,
+        )
+
+        self.knowledge_base_service.search.assert_called_with(
+            company_short_name=self.company_short_name,
+            query="policy",
+            n_results=5,
+            collection=None,
+            metadata_filter=None,
+        )
+
+    def test_system_document_search_passes_empty_collection_list_without_filter(self):
+        self.knowledge_base_service.search.return_value = []
+
+        handler = self.service.get_system_handler("iat_document_search")
+        handler(
+            company_short_name=self.company_short_name,
+            query="policy",
+            collection=[],
+        )
+
+        self.knowledge_base_service.search.assert_called_with(
+            company_short_name=self.company_short_name,
+            query="policy",
+            n_results=5,
+            collection=[],
+            metadata_filter=None,
+        )
+
+    def test_system_document_search_passes_collection_list_to_service(self):
+        self.knowledge_base_service.search.return_value = []
+
+        handler = self.service.get_system_handler("iat_document_search")
+        handler(
+            company_short_name=self.company_short_name,
+            query="contract",
+            collection=["Legal", "Contracts"],
+        )
+
+        self.knowledge_base_service.search.assert_called_with(
+            company_short_name=self.company_short_name,
+            query="contract",
+            n_results=5,
+            collection=["Legal", "Contracts"],
+            metadata_filter=None,
+        )
+
     def test_system_image_search_returns_structured_payload(self):
         self.mock_visual_tool_service.image_search.return_value = {"status": "success", "count": 1, "results": [{}]}
 

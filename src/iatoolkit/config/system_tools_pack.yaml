@@ -168,8 +168,13 @@ tools:
           type: string
           description: Texto o pregunta a buscar en los documentos.
         collection:
-          type: string
-          description: "Opcional. Nombre de la colección donde buscar (ej: 'Planos', 'Marketing')."
+          anyOf:
+            - type: string
+            - type: "null"
+            - type: array
+              items:
+                type: string
+          description: "Opcional. Colección o lista de colecciones donde buscar. Usa null, \"\" o [] para buscar en todas."
         metadata_filter:
           type: array
           description: "Opcional. Filtros de metadata como lista de pares key/value. Ejemplo: [{'key':'doc.type','value':'invoice'},{'key':'chunk.source_type','value':'table'}]."

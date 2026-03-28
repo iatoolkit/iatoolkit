@@ -86,7 +86,7 @@ class ToolService:
     def _handle_document_search_tool(self,
                                      company_short_name: str,
                                      query: str,
-                                     collection: str = None,
+                                     collection: str | list[str] | None = None,
                                      metadata_filter=None,
                                      n_results: int = 5,
                                      **kwargs):

@@ -147,6 +147,41 @@ class TestVSRepo:
         assert params["mf_text_2_key_0"] == "page_start"
         assert params["mf_text_2_value"] == "2"
 
+    def test_query_applies_single_collection_id_with_equality(self):
+        mock_company = Company(id=self.MOCK_COMPANY_ID, short_name=self.MOCK_COMPANY_SHORT_NAME)
+        self.mock_session.query.return_value.filter.return_value.one_or_none.return_value = mock_company
+        self.mock_session.execute.return_value.fetchall.return_value = []
+
+        self.vs_repo.query(
+            company_short_name=self.MOCK_COMPANY_SHORT_NAME,
+            query_text="test query",
+            collection_ids=[99],
+        )
+
+        sql = str(self.mock_session.execute.call_args[0][0])
+        params = self.mock_session.execute.call_args[0][1]
+
+        assert "iat_documents.collection_type_id = :collection_id" in sql
+        assert params["collection_id"] == 99
+
+    def test_query_applies_multiple_collection_ids_with_in_clause(self):
+        mock_company = Company(id=self.MOCK_COMPANY_ID, short_name=self.MOCK_COMPANY_SHORT_NAME)
+        self.mock_session.query.return_value.filter.return_value.one_or_none.return_value = mock_company
+        self.mock_session.execute.return_value.fetchall.return_value = []
+
+        self.vs_repo.query(
+            company_short_name=self.MOCK_COMPANY_SHORT_NAME,
+            query_text="test query",
+            collection_ids=[99, 100],
+        )
+
+        sql = str(self.mock_session.execute.call_args[0][0])
+        params = self.mock_session.execute.call_args[0][1]
+
+        assert "iat_documents.collection_type_id IN (:collection_id_0, :collection_id_1)" in sql
+        assert params["collection_id_0"] == 99
+        assert params["collection_id_1"] == 100
+
     def test_query_rejects_invalid_metadata_filter_key(self):
         """Invalid filter keys should fail fast."""
         mock_company = Company(id=self.MOCK_COMPANY_ID, short_name=self.MOCK_COMPANY_SHORT_NAME)
