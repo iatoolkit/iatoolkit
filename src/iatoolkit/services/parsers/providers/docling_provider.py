@@ -50,7 +50,7 @@ class DoclingParsingProvider:
 
             from docling.datamodel.accelerator_options import AcceleratorOptions
             from docling.datamodel.base_models import InputFormat
-            from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode
+            from docling.datamodel.pipeline_options import PdfPipelineOptions, RapidOcrOptions, TableFormerMode
             from docling.document_converter import DocumentConverter, PdfFormatOption
 
             pipeline_options = PdfPipelineOptions()
@@ -59,6 +59,8 @@ class DoclingParsingProvider:
             pipeline_options.generate_picture_images = True
             pipeline_options.do_table_structure = detect_tables
             pipeline_options.generate_table_images = detect_tables
+            if use_ocr:
+                pipeline_options.ocr_options = RapidOcrOptions(backend="onnxruntime")
 
             pipeline_options.table_structure_options.mode = TableFormerMode.FAST
             pipeline_options.layout_batch_size = self._get_int_env("DOCLING_LAYOUT_BATCH_SIZE", 1)

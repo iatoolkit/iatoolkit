@@ -140,3 +140,15 @@ class TestDoclingParsingProvider:
         request = MagicMock(filename="scan.pdf", content=b"fake-content")
         with patch.object(provider, "_pdf_needs_ocr", return_value=True):
             assert provider._should_enable_ocr(request) is True
+
+    @patch("docling.document_converter.DocumentConverter")
+    def test_init_uses_rapidocr_with_onnxruntime_when_ocr_is_enabled(self, mock_converter_cls, provider):
+        provider.init(use_ocr=True, detect_tables=False)
+
+        format_options = mock_converter_cls.call_args.kwargs["format_options"]
+        pdf_option = next(iter(format_options.values()))
+        pipeline_options = pdf_option.pipeline_options
+
+        assert pipeline_options.do_ocr is True
+        assert pipeline_options.ocr_options.kind == "rapidocr"
+        assert pipeline_options.ocr_options.backend == "onnxruntime"
