@@ -246,7 +246,8 @@ class ParsingService:
 
         decision = analyze_pdf_ocr_need(request.content)
         logging.info(
-            "PDF OCR decision for auto parsing: needs_ocr=%s reason=%s pages=%s image_pages=%s meaningful_pages=%s sparse_image_pages=%s total_text_chars=%s",
+            "PDF OCR decision for auto parsing: filename=%s needs_ocr=%s reason=%s pages=%s image_pages=%s meaningful_pages=%s sparse_image_pages=%s total_text_chars=%s",
+            request.filename,
             decision.needs_ocr,
             decision.reason,
             decision.page_count,
