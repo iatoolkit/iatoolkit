@@ -8,6 +8,7 @@ from __future__ import annotations
 import io
 import logging
 import re
+from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from uuid import uuid4
@@ -15,11 +16,12 @@ from uuid import uuid4
 import fitz
 import markdown2
 from injector import inject
-from jinja2 import Template
+from jinja2 import Environment, FileSystemLoader
 from markupsafe import escape
 
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.common.util import Utility
+from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.services.storage_service import StorageService
 
@@ -30,101 +32,16 @@ DEFAULT_PAGE_SIZE = "A4"
 DEFAULT_ORIENTATION = "portrait"
 MAX_CONTENT_CHARS = 200_000
 
-BASE_HTML_TEMPLATE = Template("""
-<!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <style>
-      @page { size: auto; margin: 0; }
-      body {
-        font-family: Helvetica, Arial, sans-serif;
-        font-size: 11pt;
-        line-height: 1.45;
-        color: #222;
-      }
-      h1, h2, h3, h4, h5, h6 {
-        color: #111;
-        margin: 0.6em 0 0.35em;
-      }
-      p, ul, ol {
-        margin: 0.35em 0 0.7em;
-      }
-      code, pre {
-        font-family: Courier, monospace;
-        font-size: 10pt;
-      }
-      pre {
-        white-space: pre-wrap;
-        border: 1px solid #ddd;
-        padding: 10px;
-        background: #f7f7f7;
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        margin: 0.5em 0 1em;
-      }
-      th, td {
-        border: 1px solid #cfcfcf;
-        padding: 6px 8px;
-        vertical-align: top;
-      }
-      th {
-        background: #f1f1f1;
-        text-align: left;
-      }
-      blockquote {
-        border-left: 3px solid #d0d0d0;
-        padding-left: 12px;
-        color: #555;
-      }
-      .document-title {
-        margin-bottom: 18px;
-      }
-      .document-title h1 {
-        margin: 0;
-        font-size: {% if template == 'letter' %}18pt{% elif template == 'report' %}20pt{% else %}19pt{% endif %};
-      }
-      .document-title p {
-        margin: 6px 0 0;
-        color: #666;
-      }
-      {% if template == 'letter' %}
-      .content {
-        font-size: 11.5pt;
-      }
-      {% elif template == 'report' %}
-      .content h2 {
-        border-bottom: 1px solid #ddd;
-        padding-bottom: 4px;
-      }
-      {% endif %}
-      {{ extra_css }}
-    </style>
-  </head>
-  <body>
-    {% if title %}
-    <div class="document-title">
-      <h1>{{ title }}</h1>
-      {% if subtitle %}<p>{{ subtitle }}</p>{% endif %}
-    </div>
-    {% endif %}
-    <div class="content {{ content_class }}">
-      {{ body_html }}
-    </div>
-  </body>
-</html>
-""")
-
 
 class PdfService:
     @inject
     def __init__(self,
                  util: Utility,
+                 config_service: ConfigurationService,
                  i18n_service: I18nService,
                  storage_service: StorageService):
         self.util = util
+        self.config_service = config_service
         self.i18n_service = i18n_service
         self.storage_service = storage_service
 
@@ -154,12 +71,18 @@ class PdfService:
             orientation = self._normalize_orientation(kwargs.get("orientation"))
             title = self._clean_text(kwargs.get("title"))
             subtitle = self._clean_text(kwargs.get("subtitle"))
+            company_name = self._resolve_company_name(company_short_name)
+            footer_text = self.i18n_service.t("services.generated_by_iatoolkit")
+            generated_date = datetime.now().strftime("%d-%m-%Y")
 
             body_html = self._content_to_html(content=content, input_format=input_format)
             document_html = self._wrap_html(
                 body_html=body_html,
                 input_format=input_format,
                 template_name=template_name,
+                company_name=company_name,
+                footer_text=footer_text,
+                generated_date=generated_date,
                 title=title,
                 subtitle=subtitle,
             )
@@ -257,6 +180,9 @@ class PdfService:
                    body_html: str,
                    input_format: str,
                    template_name: str,
+                   company_name: str,
+                   footer_text: str,
+                   generated_date: str,
                    title: str | None,
                    subtitle: str | None) -> str:
         safe_body_html = self._sanitize_html(body_html)
@@ -266,11 +192,14 @@ class PdfService:
             extra_css = self._load_chat_llm_output_css()
             content_class = "llm-output"
 
-        return BASE_HTML_TEMPLATE.render(
+        template = self._get_template_environment().get_template(f"pdf/{template_name}.html")
+        return template.render(
             body_html=safe_body_html,
             extra_css=extra_css,
             content_class=content_class,
-            template=template_name,
+            company_name=escape(company_name),
+            footer_text=escape(footer_text),
+            generated_date=escape(generated_date),
             title=escape(title) if title else None,
             subtitle=escape(subtitle) if subtitle else None,
         )
@@ -323,3 +252,20 @@ class PdfService:
         except Exception:
             logging.warning("Could not load chat LLM output CSS for PDF rendering: %s", css_path)
             return ""
+
+    def _resolve_company_name(self, company_short_name: str) -> str:
+        company_name = self.config_service.get_configuration(company_short_name, "name")
+        if isinstance(company_name, str) and company_name.strip():
+            return company_name.strip()
+        return company_short_name
+
+    @staticmethod
+    @lru_cache(maxsize=1)
+    def _get_template_environment() -> Environment:
+        template_root = Path(__file__).resolve().parent.parent / "templates"
+        return Environment(
+            loader=FileSystemLoader(str(template_root)),
+            autoescape=False,
+            trim_blocks=True,
+            lstrip_blocks=True,
+        )

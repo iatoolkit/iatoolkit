@@ -9,6 +9,7 @@ import pytest
 
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.common.util import Utility
+from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.services.pdf_service import PDF_MIME, PdfService
 from iatoolkit.services.storage_service import StorageService
@@ -18,12 +19,15 @@ class TestPdfService:
     @pytest.fixture(autouse=True)
     def setup(self):
         self.util = MagicMock(spec=Utility)
+        self.mock_config_service = MagicMock(spec=ConfigurationService)
         self.mock_i18n_service = MagicMock(spec=I18nService)
         self.mock_storage_service = MagicMock(spec=StorageService)
+        self.mock_config_service.get_configuration.return_value = "ACME Corp"
         self.mock_i18n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
 
         self.pdf_service = PdfService(
             util=self.util,
+            config_service=self.mock_config_service,
             i18n_service=self.mock_i18n_service,
             storage_service=self.mock_storage_service,
         )
@@ -99,6 +103,9 @@ class TestPdfService:
         assert ".llm-output" in html_payload
         assert ".llm-output p" in html_payload
         assert 'class="content llm-output"' in html_payload
+        assert "ACME Corp" in html_payload
+        assert "translated:services.generated_by_iatoolkit" in html_payload
+        assert "generated-date" in html_payload
 
     def test_pdf_generator_returns_error_when_content_is_missing(self):
         result = self.pdf_service.pdf_generator(

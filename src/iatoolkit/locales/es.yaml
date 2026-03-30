@@ -1144,6 +1144,7 @@ errors:
     cannot_create_pdf: "no se pudo crear el archivo pdf"
     unsupported_pdf_input_format: "el formato del contenido debe ser markdown o html"
     pdf_content_too_large: "el contenido para generar el pdf es demasiado grande"
+    generated_by_iatoolkit: "Documento generado por IAToolkit"
     invalid_filename: "Nombre de archivo inválido"
     file_not_exist : "Archivo no encontrado"
     path_is_not_a_file : "La ruta no corresponde a un archivo"
