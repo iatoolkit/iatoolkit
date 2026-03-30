@@ -16,6 +16,7 @@ from iatoolkit.repositories.models import Company, Tool
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.sql_service import SqlService
 from iatoolkit.services.excel_service import ExcelService
+from iatoolkit.services.pdf_service import PdfService
 from iatoolkit.services.mail_service import MailService
 from iatoolkit.services.visual_tool_service import VisualToolService
 from iatoolkit.services.system_tools import (
@@ -45,12 +46,14 @@ class ToolService:
                  profile_repo: ProfileRepo,
                  sql_service: SqlService,
                  excel_service: ExcelService,
+                 pdf_service: PdfService,
                  mail_service: MailService,
                  web_search_service=None):
         self.llm_query_repo = llm_query_repo
         self.profile_repo = profile_repo
         self.sql_service = sql_service
         self.excel_service = excel_service
+        self.pdf_service = pdf_service
         self.mail_service = mail_service
         self.knowledge_base_service = knowledge_base_service
         self.visual_kb_service = visual_kb_service
@@ -60,6 +63,7 @@ class ToolService:
         # execution mapper for system tools
         self.system_handlers = {
             "iat_generate_excel": self.excel_service.excel_generator,
+            "iat_generate_pdf": self.pdf_service.pdf_generator,
             "iat_send_email": self.mail_service.send_mail,
             "iat_sql_query": self.sql_service.exec_sql,
             "iat_image_search": self._handle_image_search_tool,

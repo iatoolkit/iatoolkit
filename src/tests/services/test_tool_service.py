@@ -9,6 +9,7 @@ from iatoolkit.repositories.models import Company, Tool
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.sql_service import SqlService
 from iatoolkit.services.excel_service import ExcelService
+from iatoolkit.services.pdf_service import PdfService
 from iatoolkit.services.mail_service import MailService
 from iatoolkit.services.knowledge_base_service import KnowledgeBaseService
 from iatoolkit.services.visual_kb_service import VisualKnowledgeBaseService
@@ -21,6 +22,7 @@ class TestToolService:
         self.mock_llm_query_repo = MagicMock(spec=LLMQueryRepo)
         self.mock_sql_service = MagicMock(spec=SqlService)
         self.mock_excel_service = MagicMock(spec=ExcelService)
+        self.mock_pdf_service = MagicMock(spec=PdfService)
         self.mock_mail_service = MagicMock(spec=MailService)
         self.mock_profile_repo = MagicMock(spec=ProfileRepo)
         self.knowledge_base_service = MagicMock(spec=KnowledgeBaseService)
@@ -35,6 +37,7 @@ class TestToolService:
             profile_repo=self.mock_profile_repo,
             sql_service=self.mock_sql_service,
             excel_service=self.mock_excel_service,
+            pdf_service=self.mock_pdf_service,
             mail_service=self.mock_mail_service,
             knowledge_base_service=self.knowledge_base_service,
             visual_kb_service=self.mock_visual_kb_service,
@@ -49,6 +52,9 @@ class TestToolService:
         # Mock de la instancia de negocio (Company Instance) que tiene .company
         self.company_short_name = 'my_company'
         self.mock_profile_repo.get_company_by_short_name.return_value = self.mock_company
+
+    def test_system_handlers_include_pdf_generator(self):
+        assert self.service.system_handlers["iat_generate_pdf"] == self.mock_pdf_service.pdf_generator
 
 
     def test_register_system_tools_success(self):

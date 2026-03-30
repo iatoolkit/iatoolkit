@@ -245,6 +245,7 @@ def test_prompt_execution_with_gemini_document_search_and_inference_embeddings()
         profile_repo=profile_repo,
         sql_service=MagicMock(),
         excel_service=MagicMock(),
+        pdf_service=MagicMock(),
         mail_service=MagicMock(),
     )
 

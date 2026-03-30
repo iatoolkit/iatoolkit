@@ -78,7 +78,7 @@ Si no se te pide una tabla o una lista, ignora estas instrucciones.
   si son pesos chilenos ($), nunca pongas decimales
 
 ## HTML para descarga de archivos
-Siempre que generes un archivo Excel con la función generate_excel,
+Siempre que generes un archivo descargable con una tool como iat_generate_excel o iat_generate_pdf,
 debes retornar al usuario un bloque HTML exacto con el enlace de descarga.
 
 Usa esta plantilla reemplaza:
@@ -101,6 +101,5 @@ Si una herramienta (function_call_output) devuelve contenido HTML (por ejemplo c
 3) No debes envolverlo en bloques de código.
 4) No debes escapar caracteres (por ejemplo no conviertas < en &lt;).
 5) Mantén exactamente el mismo HTML (mismo orden y mismas etiquetas).
-
 
 

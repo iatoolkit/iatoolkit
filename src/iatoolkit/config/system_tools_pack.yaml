@@ -52,6 +52,68 @@ tools:
         - filename
         - sheet_name
         - data
+  - function_name: iat_generate_pdf
+    description: Generador de PDF. Convierte contenido HTML o Markdown en un archivo PDF descargable. El archivo se guarda en storage y retorna filename, attachment_token, content_type y download_link.
+    routing_profile:
+      tags:
+        - pdf
+        - document
+        - export
+        - report
+        - markdown
+      intents:
+        - Generate a PDF file from markdown or HTML content.
+        - Export a textual report to a downloadable PDF document.
+      examples:
+        - iat_generate_pdf(filename="informe.pdf", content="# Resumen\\n\\nTodo OK", input_format="markdown", template="report", page_size="A4", orientation="portrait")
+        - iat_generate_pdf(filename="carta.pdf", content="<h1>Carta</h1><p>Contenido</p>", input_format="html", template="letter", page_size="LETTER", orientation="portrait")
+      cost:
+        penalty: 0.18
+        latency_class: medium
+        expensive: false
+    parameters:
+      type: object
+      properties:
+        filename:
+          type: string
+          description: "Nombre del archivo de salida (ejemplo: 'informe.pdf')"
+          pattern: ^.+\.pdf$
+        content:
+          type: string
+          description: Contenido fuente del documento en formato Markdown o HTML.
+          minLength: 1
+        input_format:
+          type: string
+          description: Formato del contenido de entrada.
+          enum:
+            - markdown
+            - html
+        template:
+          type: string
+          description: Plantilla visual base del PDF.
+          enum:
+            - simple
+            - report
+            - letter
+        page_size:
+          type: string
+          description: Tamaño de página del PDF.
+          enum:
+            - A4
+            - LETTER
+        orientation:
+          type: string
+          description: Orientación de la página.
+          enum:
+            - portrait
+            - landscape
+      required:
+        - filename
+        - content
+        - input_format
+        - template
+        - page_size
+        - orientation
   - function_name: iat_send_email
     description: iatoolkit mail system. envia mails cuando un usuario lo solicita.
     routing_profile:

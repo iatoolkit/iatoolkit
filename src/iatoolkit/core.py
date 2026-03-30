@@ -372,6 +372,7 @@ class IAToolkit:
         from iatoolkit.services.parsers.providers.docling_provider import DoclingParsingProvider
         from iatoolkit.services.prompt_service import PromptService
         from iatoolkit.services.excel_service import ExcelService
+        from iatoolkit.services.pdf_service import PdfService
         from iatoolkit.services.mail_service import MailService
         from iatoolkit.services.profile_service import ProfileService
         from iatoolkit.services.jwt_service import JWTService
@@ -409,6 +410,7 @@ class IAToolkit:
         binder.bind(BasicParsingProvider, to=BasicParsingProvider)
         binder.bind(PromptService, to=PromptService)
         binder.bind(ExcelService, to=ExcelService)
+        binder.bind(PdfService, to=PdfService)
         binder.bind(MailService, to=MailService)
         binder.bind(ProfileService, to=ProfileService)
         binder.bind(JWTService, to=JWTService)
