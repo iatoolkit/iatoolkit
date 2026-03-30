@@ -291,6 +291,12 @@ const callToolkit = async function(apiPath, data, method, timeoutMs = 500000) {
 
         // answer is NOT OK (status != 200)
         if (!response.ok) {
+            if (response.status === 401) {
+                const homeUrl = `${base}/${company}/home?session_expired=1`;
+                window.location.assign(homeUrl);
+                return null;
+            }
+
             try {
                 // Intentamos leer el error como JSON, que es el formato esperado de nuestra API.
                 const errorData = await response.json();
@@ -451,4 +457,3 @@ function toBase64(file) {
         reader.readAsDataURL(file);
     });
 }
-

@@ -73,6 +73,7 @@ ui:
     google_button: "Continuar con Google"
     continue_with_google_button: "Continuar con Google"
     or_continue_with: "o continúa con"
+    session_expired_message: "Tu sesión expiró. Por favor, vuelve a iniciar sesión."
     forgot_password_link: "¿Olvidaste tu contraseña?"
     no_account_prompt: "¿No tienes una cuenta?"
     signup_link: "Regístrate"

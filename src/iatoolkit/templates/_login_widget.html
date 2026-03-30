@@ -7,6 +7,11 @@
     </div>
 
     {% set current_lang = request.args.get('lang', 'en') %}
+    {% if request.args.get('session_expired') == '1' %}
+    <div class="alert alert-warning small py-2" role="alert">
+        {{ t('ui.login_widget.session_expired_message') }}
+    </div>
+    {% endif %}
 
     {% if google_login_enabled|default(false) %}
     <a href="{{ url_for('login_google_start', company_short_name=company_short_name, lang=current_lang) }}"

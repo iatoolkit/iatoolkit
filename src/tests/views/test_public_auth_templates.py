@@ -29,6 +29,7 @@ class TestPublicAuthTemplates:
                 'ui.login_widget.welcome_message': 'Welcome message',
                 'ui.login_widget.google_button': 'Continue with Google',
                 'ui.login_widget.or_continue_with': 'or continue with',
+                'ui.login_widget.session_expired_message': 'Your session expired. Please sign in again.',
                 'ui.signup.email_label': 'Email Address',
                 'ui.signup.password_label': 'Password',
                 'ui.login_widget.login_button': 'Login',
@@ -113,6 +114,13 @@ class TestPublicAuthTemplates:
         html = response.get_data(as_text=True)
         assert 'Continue with Google' not in html
         assert 'or continue with' not in html
+
+    def test_login_widget_shows_session_expired_message(self):
+        response = self.client.get('/acme/home?lang=en&session_expired=1')
+
+        assert response.status_code == 200
+        html = response.get_data(as_text=True)
+        assert 'Your session expired. Please sign in again.' in html
 
     def test_signup_template_shows_google_button_when_enabled(self):
         response = self.client.get('/acme/signup?lang=en&google=1')
