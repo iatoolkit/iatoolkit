@@ -168,6 +168,41 @@ class PromptService:
             "attachment_fallback": self._normalize_attachment_fallback(llm_config.get("default_attachment_fallback")),
         }
 
+    def _normalize_llm_model(self, company_short_name: str, llm_model: str | None) -> str | None:
+        candidate = str(llm_model or "").strip()
+        if not candidate:
+            return None
+
+        default_llm_model, available_llm_models = self.configuration_service.get_llm_configuration(company_short_name)
+        allowed_models = set()
+
+        if isinstance(default_llm_model, str) and default_llm_model.strip():
+            allowed_models.add(default_llm_model.strip())
+
+        for item in available_llm_models or []:
+            if isinstance(item, dict):
+                model_id = str(item.get("id") or "").strip()
+                if model_id:
+                    allowed_models.add(model_id)
+            elif isinstance(item, str):
+                model_id = item.strip()
+                if model_id:
+                    allowed_models.add(model_id)
+
+        if candidate in allowed_models:
+            return candidate
+
+        if not allowed_models:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "Cannot assign llm_model because the company has no configured models.",
+            )
+
+        raise IAToolkitException(
+            IAToolkitException.ErrorType.INVALID_PARAMETER,
+            f"Unsupported llm_model '{candidate}'. Allowed values: {sorted(allowed_models)}",
+        )
+
     def get_prompts(self, company_short_name: str, include_all: bool = False) -> dict:
         try:
             # validate company
@@ -227,6 +262,7 @@ class PromptService:
                             'attachment_mode': p.attachment_mode,
                             'attachment_parser_provider': getattr(p, 'attachment_parser_provider', None),
                             'attachment_fallback': p.attachment_fallback,
+                            'llm_model': getattr(p, 'llm_model', None),
                         }
                         for p in prompts
                     ]
@@ -330,6 +366,7 @@ class PromptService:
             attachment_fallback=self._normalize_attachment_fallback(
                 data.get("attachment_fallback", company_default_policy["attachment_fallback"])
             ),
+            llm_model=self._normalize_llm_model(company_short_name, data.get("llm_model")),
         )
         self.llm_query_repo.create_or_update_prompt(new_prompt)
 
@@ -491,6 +528,7 @@ class PromptService:
                     attachment_fallback=self._normalize_attachment_fallback(
                         prompt_data.get("attachment_fallback", company_default_policy["attachment_fallback"])
                     ),
+                    llm_model=self._normalize_llm_model(company_short_name, prompt_data.get("llm_model")),
                 )
 
                 self.llm_query_repo.create_or_update_prompt(new_prompt)

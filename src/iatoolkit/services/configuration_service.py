@@ -396,6 +396,17 @@ class ConfigurationService:
         allowed_attachment_modes = {"extracted_only", "native_only", "native_plus_extracted"}
         allowed_attachment_parser_providers = {"auto", "docling", "basic"}
         allowed_attachment_fallbacks = {"extract", "fail"}
+        default_llm_model = str(config.get("llm", {}).get("model") or "").strip()
+        allowed_llm_models = set()
+        if default_llm_model:
+            allowed_llm_models.add(default_llm_model)
+        for llm_model in config.get("llm", {}).get("available_models", []) or []:
+            if isinstance(llm_model, dict):
+                model_id = str(llm_model.get("id") or "").strip()
+            else:
+                model_id = str(llm_model or "").strip()
+            if model_id:
+                allowed_llm_models.add(model_id)
         for i, prompt in enumerate(prompt_list):
             prompt_name = prompt.get("name")
             if not prompt_name:
@@ -457,6 +468,19 @@ class ConfigurationService:
                     f"prompts[{i}]",
                     f"Unsupported attachment_parser_provider '{attachment_parser_provider}'. Must be one of: {sorted(allowed_attachment_parser_providers)}."
                 )
+
+            prompt_llm_model = str(prompt.get("llm_model") or "").strip()
+            if prompt_llm_model:
+                if not allowed_llm_models:
+                    add_error(
+                        f"prompts[{i}]",
+                        "llm_model is set but no company LLM models are configured.",
+                    )
+                elif prompt_llm_model not in allowed_llm_models:
+                    add_error(
+                        f"prompts[{i}]",
+                        f"Unsupported llm_model '{prompt_llm_model}'. Must be one of: {sorted(allowed_llm_models)}."
+                    )
 
             output_schema = prompt.get("output_schema")
             if output_schema is not None:

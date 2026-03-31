@@ -171,9 +171,16 @@ class QueryService:
 
         return _finalize(selected_tools, reason=None, mode="router_selected", hook_metadata=hook_metadata)
 
-    def _resolve_model(self, company_short_name: str, model: Optional[str]) -> str:
-        # Priority: 1. Explicit model -> 2. Company config
+    def _resolve_model(self,
+                       company_short_name: str,
+                       model: Optional[str],
+                       prompt_output_contract: dict | None = None) -> str:
+        # Priority: 1. Explicit model -> 2. Prompt default -> 3. Company config
         effective_model = model
+        if not effective_model and isinstance(prompt_output_contract, dict):
+            prompt_model = str(prompt_output_contract.get("llm_model") or "").strip()
+            if prompt_model:
+                effective_model = prompt_model
         if not effective_model:
             llm_config = self.configuration_service.get_configuration(company_short_name, 'llm')
             if llm_config and llm_config.get('model'):
@@ -541,11 +548,9 @@ class QueryService:
                 return {"error": True,
                         "error_message": self.i18n_service.t('services.start_query')}
 
-            # --- Model Resolution ---
-            effective_model = self._resolve_model(company_short_name, model)
-
             # output contract
             prompt_output_contract = self._resolve_prompt_output_contract(company, prompt_name)
+            effective_model = self._resolve_model(company_short_name, model, prompt_output_contract)
             output_schema = self._build_output_text_schema_payload(effective_model, prompt_output_contract)
 
             # attachment policy

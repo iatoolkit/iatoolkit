@@ -25,6 +25,13 @@ class TestPromptService:
         self.mock_sql_service = MagicMock(spec=SqlService)
         self.mock_configuration_service = MagicMock(spec=ConfigurationService)
         self.mock_configuration_service.get_configuration.return_value = {}
+        self.mock_configuration_service.get_llm_configuration.return_value = (
+            "gpt-4o-mini",
+            [
+                {"id": "gpt-4o-mini", "label": "GPT-4o mini"},
+                {"id": "gpt-4.1-mini", "label": "GPT-4.1 mini"},
+            ],
+        )
 
         self.mock_i18n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
 
@@ -267,6 +274,39 @@ properties:
         assert saved_prompt.attachment_mode == "native_only"
         assert saved_prompt.attachment_parser_provider == "basic"
         assert saved_prompt.attachment_fallback == "fail"
+
+    def test_save_prompt_persists_llm_model(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_category_by_name.return_value = None
+
+        self.prompt_service.save_prompt(
+            'test_co',
+            'model_prompt',
+            {
+                'content': 'Prompt text',
+                'llm_model': 'gpt-4.1-mini',
+            },
+        )
+
+        saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
+        assert saved_prompt.llm_model == 'gpt-4.1-mini'
+
+    def test_save_prompt_rejects_unknown_llm_model(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_category_by_name.return_value = None
+
+        with pytest.raises(IAToolkitException) as exc_info:
+            self.prompt_service.save_prompt(
+                'test_co',
+                'bad_model_prompt',
+                {
+                    'content': 'Prompt text',
+                    'llm_model': 'unknown-model',
+                },
+            )
+
+        assert exc_info.value.error_type == IAToolkitException.ErrorType.INVALID_PARAMETER
+        assert "Unsupported llm_model" in str(exc_info.value)
 
     def test_save_prompt_uses_company_default_attachment_policy_when_not_provided(self):
         self.profile_repo.get_company_by_short_name.return_value = self.mock_company

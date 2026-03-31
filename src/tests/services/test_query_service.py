@@ -114,6 +114,7 @@ class TestQueryService:
         self.mock_context_builder.get_selected_system_prompt_keys.return_value = ["query_main", "format_styles"]
         self.mock_session_context.get_selected_system_prompt_keys.return_value = ["query_main", "format_styles"]
         self.mock_context_builder.compute_context_version.return_value = "v_hash_123"
+        self.mock_configuration_service.get_configuration.return_value = {"model": "company-default-model"}
 
     # --- Tests para prepare_context ---
 
@@ -618,6 +619,61 @@ class TestQueryService:
         assert invoke_kwargs["text"]["format"]["strict"] is True
         assert invoke_kwargs["response_contract"]["schema_mode"] == "strict"
         assert invoke_kwargs["response_contract"]["response_mode"] == "structured_only"
+
+    def test_llm_query_uses_prompt_llm_model_when_request_model_is_missing(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = []
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt content", "question", [])
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "sales_prompt",
+            "schema": None,
+            "schema_mode": "best_effort",
+            "response_mode": "chat_compatible",
+            "llm_model": "gpt-4.1-mini",
+        }
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="sales_prompt",
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["model"] == "gpt-4.1-mini"
+
+    def test_llm_query_request_model_takes_precedence_over_prompt_llm_model(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = []
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt content", "question", [])
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "sales_prompt",
+            "schema": None,
+            "schema_mode": "best_effort",
+            "response_mode": "chat_compatible",
+            "llm_model": "gpt-4.1-mini",
+        }
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="sales_prompt",
+            model="gpt-5",
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["model"] == "gpt-5"
 
     def test_llm_query_passes_gemini_response_schema_payload_when_prompt_contract_is_configured(self):
         self.model_registry.get_provider.return_value = "gemini"

@@ -208,6 +208,7 @@ required:
             attachment_mode=None,
             attachment_parser_provider=None,
             attachment_fallback=None,
+            llm_model=None,
         )
 
         contract = self.service.get_prompt_output_contract(self.mock_company, "employee_prompt")
@@ -218,6 +219,7 @@ required:
         assert contract["attachment_mode"] is None
         assert contract["attachment_parser_provider"] is None
         assert contract["attachment_fallback"] is None
+        assert contract["llm_model"] is None
 
     def test_get_prompt_output_contract_accepts_json_string_schema(self):
         self.mock_prompt_service.get_prompt_definition.return_value = SimpleNamespace(
@@ -229,6 +231,7 @@ required:
             attachment_mode="native_only",
             attachment_parser_provider="basic",
             attachment_fallback="fail",
+            llm_model="gpt-4.1-mini",
         )
 
         contract = self.service.get_prompt_output_contract(self.mock_company, "employee_prompt")
@@ -240,6 +243,7 @@ required:
         assert contract["attachment_mode"] == "native_only"
         assert contract["attachment_parser_provider"] == "basic"
         assert contract["attachment_fallback"] == "fail"
+        assert contract["llm_model"] == "gpt-4.1-mini"
 
     def test_get_prompt_output_contract_returns_attachment_policy_even_without_schema(self):
         self.mock_prompt_service.get_prompt_definition.return_value = SimpleNamespace(
@@ -251,6 +255,7 @@ required:
             attachment_mode="native_only",
             attachment_parser_provider="docling",
             attachment_fallback="fail",
+            llm_model="gpt-4o-mini",
         )
 
         contract = self.service.get_prompt_output_contract(self.mock_company, "employee_prompt")
@@ -260,3 +265,4 @@ required:
         assert contract["attachment_mode"] == "native_only"
         assert contract["attachment_parser_provider"] == "docling"
         assert contract["attachment_fallback"] == "fail"
+        assert contract["llm_model"] == "gpt-4o-mini"
