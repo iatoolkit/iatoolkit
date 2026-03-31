@@ -200,7 +200,7 @@ class BasicParsingProvider:
             return precomputed
 
         decision = analyze_pdf_ocr_need(file_content)
-        logging.info(
+        logging.debug(
             "PDF OCR decision for basic provider: needs_ocr=%s reason=%s pages=%s image_pages=%s meaningful_pages=%s sparse_image_pages=%s total_text_chars=%s",
             decision.needs_ocr,
             decision.reason,

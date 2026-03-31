@@ -74,17 +74,19 @@ class ParsingService:
         result.metrics["elapsed_ms"] = elapsed_ms
 
         logging.info(
-            "Parsed document company=%s filename=%s requested_provider=%s provider=%s provider_version=%s elapsed_ms=%s texts=%s tables=%s images=%s warnings=%s",
+            "Parsed document company=%s filename=%s requested_provider=%s provider=%s used_ocr=%s ocr_engine=%s elapsed_ms=%s texts=%s tables=%s images=%s warnings=%s ",
             company_short_name,
             filename,
             requested_provider,
             getattr(result, "provider", "unknown"),
-            getattr(result, "provider_version", None),
+            result.metrics.get("used_ocr"),
+            result.metrics.get("ocr_engine"),
             elapsed_ms,
             len(getattr(result, "texts", []) or []),
             len(getattr(result, "tables", []) or []),
             len(getattr(result, "images", []) or []),
             len(getattr(result, "warnings", []) or []),
+
         )
         return result
 

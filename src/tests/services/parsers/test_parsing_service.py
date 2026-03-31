@@ -15,7 +15,7 @@ def test_parse_document_logs_effective_provider(caplog):
         texts=[ParsedText(text="hello")],
         tables=[ParsedTable(text="| a |")],
         warnings=["fallback_from:something"],
-        metrics={},
+        metrics={"used_ocr": True, "ocr_engine": "tesseract"},
     )
     provider_resolver.resolve_provider_name.return_value = "docling"
     provider_factory.get_provider.return_value = provider
@@ -31,6 +31,8 @@ def test_parse_document_logs_effective_provider(caplog):
     assert result.provider == "docling"
     assert "requested_provider=docling provider=docling" in caplog.text
     assert "texts=1 tables=1 images=0 warnings=1" in caplog.text
+    assert "used_ocr=True ocr_engine=tesseract" in caplog.text
+
 
 
 def test_parse_document_auto_keeps_basic_when_text_is_sufficient():
