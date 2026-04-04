@@ -4,6 +4,8 @@ import pytest
 from unittest.mock import Mock, MagicMock, patch, call
 import numpy as np
 import base64
+import io
+from PIL import Image
 from iatoolkit.repositories.models import Company
 
 # Import the classes to be tested, including the new wrappers
@@ -360,6 +362,30 @@ class TestEmbeddingService:
                 "test_tool",
                 {"mode": "image", "base64": expected_b64}
             )
+
+        def test_huggingface_wrapper_get_image_embedding_normalizes_grayscale_bytes_to_rgb(self):
+            """Tests grayscale images are converted to RGB before sending to inference."""
+            self.mock_inference_service.predict.return_value = {"embedding": [0.5, 0.5]}
+            wrapper = HuggingFaceClientWrapper(
+                client=None, model="clip",
+                inference_service=self.mock_inference_service,
+                company_short_name="test_co", tool_name="test_tool"
+            )
+
+            buffer = io.BytesIO()
+            Image.new("L", (2, 2), color=128).save(buffer, format="PNG")
+
+            result = wrapper.get_image_embedding("https://example.com/should-not-be-used.png", buffer.getvalue())
+
+            assert result == [0.5, 0.5]
+            self.mock_inference_service.predict.assert_called_once()
+            _, _, payload = self.mock_inference_service.predict.call_args[0]
+            assert payload["mode"] == "image"
+            assert "url" not in payload
+
+            normalized_bytes = base64.b64decode(payload["base64"])
+            with Image.open(io.BytesIO(normalized_bytes)) as normalized_image:
+                assert normalized_image.mode == "RGB"
 
         def test_huggingface_wrapper_get_image_embedding_raises_if_no_data(self):
             """Tests validation when no image data is provided."""

@@ -3,6 +3,7 @@
 # Product: IAToolkit
 
 import base64
+import io
 import numpy as np
 from openai import OpenAI
 from injector import inject
@@ -17,6 +18,7 @@ import logging
 import importlib
 import inspect
 from typing import Union, Optional
+from PIL import Image
 
 
 # Wrapper classes to create a common interface for embedding clients
@@ -74,12 +76,13 @@ class HuggingFaceClientWrapper(EmbeddingClientWrapper):
                             ) -> list[float]:
         input_data = {"mode": "image"}
 
-        if presigned_url:
-            input_data["url"] = presigned_url
-        elif image_bytes:
+        if image_bytes:
             # InferenceService/Handler expects raw base64 string
-            b64_data = base64.b64encode(image_bytes).decode("utf-8")
+            normalized_image_bytes = self._normalize_image_bytes(image_bytes)
+            b64_data = base64.b64encode(normalized_image_bytes).decode("utf-8")
             input_data["base64"] = b64_data
+        elif presigned_url:
+            input_data["url"] = presigned_url
         else:
             raise ValueError("Missing image data (presigned_url or image_bytes).")
 
@@ -89,6 +92,25 @@ class HuggingFaceClientWrapper(EmbeddingClientWrapper):
             input_data
         )
         return result["embedding"]
+
+    def _normalize_image_bytes(self, image_bytes: bytes) -> bytes:
+        """
+        Convert non-RGB images to RGB before sending them to remote CLIP-like endpoints.
+        Falls back to the original bytes if decoding is not possible.
+        """
+        try:
+            with Image.open(io.BytesIO(image_bytes)) as image:
+                if image.mode == "RGB":
+                    return image_bytes
+
+                converted = image.convert("RGB")
+                buffer = io.BytesIO()
+                save_format = image.format or "PNG"
+                converted.save(buffer, format=save_format)
+                return buffer.getvalue()
+        except Exception:
+            logging.debug("Could not normalize image bytes before embedding request.", exc_info=True)
+            return image_bytes
 
 class OpenAIClientWrapper(EmbeddingClientWrapper):
     def get_embedding(self, text: str, suppress_error_logging: bool = False) -> list[float]:

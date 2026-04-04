@@ -181,6 +181,9 @@ class EndpointHandler:
             else:
                 raise ValueError("Image URL or base64 needed")
 
+            if image.mode != "RGB":
+                image = image.convert("RGB")
+
             inputs_pt = self.processor_instance(images=image, return_tensors="pt").to(self.device)
             with torch.no_grad():
                 emb = self.model_instance.get_image_features(**inputs_pt)
