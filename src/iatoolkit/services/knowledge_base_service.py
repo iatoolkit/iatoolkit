@@ -58,6 +58,19 @@ class KnowledgeBaseService:
         self.min_chunk_chars = int(os.getenv("RAG_MIN_CHUNK_CHARS", "250"))
         self.merge_target_chars = int(os.getenv("RAG_MERGE_TARGET_CHARS", "800"))
 
+    @staticmethod
+    def _strip_nul_chars(value: Any) -> Any:
+        """Recursively removes NUL bytes from text/metadata before persisting to Postgres."""
+        if isinstance(value, str):
+            return value.replace("\x00", "")
+        if isinstance(value, dict):
+            return {k: KnowledgeBaseService._strip_nul_chars(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [KnowledgeBaseService._strip_nul_chars(item) for item in value]
+        if isinstance(value, tuple):
+            return tuple(KnowledgeBaseService._strip_nul_chars(item) for item in value)
+        return value
+
     def ingest_document_sync(self,
                              company: Company,
                              filename: str,
@@ -84,6 +97,8 @@ class KnowledgeBaseService:
         """
         if not metadata:
             metadata = {}
+
+        metadata = self._strip_nul_chars(metadata)
 
         # --- Logic for Collection ---
         # priority: 1. method parameter 2. metadata
@@ -194,7 +209,7 @@ class KnowledgeBaseService:
                 doc_meta["parser_version"] = parse_result.provider_version
             if parse_result.warnings:
                 doc_meta["parser_warnings"] = parse_result.warnings
-            document.meta = doc_meta
+            document.meta = self._strip_nul_chars(doc_meta)
 
             # C. Splitting & chunking
             vs_docs = []
@@ -248,6 +263,7 @@ class KnowledgeBaseService:
                 continue
             chunks = self.text_splitter.split_text(unit["text"])
             for chunk_index, chunk_text in enumerate(chunks):
+                chunk_text = self._strip_nul_chars(chunk_text)
                 meta = {
                     "source_type": "text",
                     "block_index": block_index,
@@ -258,6 +274,8 @@ class KnowledgeBaseService:
 
                 if unit["meta"]:
                     meta.update(unit["meta"])
+
+                meta = self._strip_nul_chars(meta)
                 vs_docs.append(VSDoc(
                     company_id=document.company_id,
                     document_id=document.id,
@@ -280,16 +298,19 @@ class KnowledgeBaseService:
         def flush_current():
             nonlocal current_text, current_meta
             if current_text.strip():
-                compacted.append({"text": current_text.strip(), "meta": dict(current_meta)})
+                compacted.append({
+                    "text": self._strip_nul_chars(current_text.strip()),
+                    "meta": self._strip_nul_chars(dict(current_meta))
+                })
             current_text = ""
             current_meta = {}
 
         for item in parsed_texts or []:
-            text = (item.text or "").strip()
+            text = self._strip_nul_chars((item.text or "").strip())
             if not text:
                 continue
 
-            item_meta = dict(item.meta or {})
+            item_meta = self._strip_nul_chars(dict(item.meta or {}))
             source_label = (item_meta.get("source_label") or "").lower()
 
             # Titles should enrich the next text instead of creating tiny standalone chunks.
@@ -386,14 +407,15 @@ class KnowledgeBaseService:
 
             # 1. Sanitize the JSON to remove heavy visual metadata (bbox, coords)
             clean_json = self._sanitize_table_data(table.table_json)
+            clean_json = self._strip_nul_chars(clean_json)
 
             # 2. Use provider text, fallback to clean JSON string
-            table_text = table.text or json.dumps(clean_json, ensure_ascii=False)
+            table_text = self._strip_nul_chars(table.text or json.dumps(clean_json, ensure_ascii=False))
             if not table_text:
                 continue
 
             # 3. Serialize clean JSON for metadata
-            table_json_str = json.dumps(clean_json, ensure_ascii=False) if clean_json else None
+            table_json_str = self._strip_nul_chars(json.dumps(clean_json, ensure_ascii=False)) if clean_json else None
 
             # Every table in its own chunk
             meta = {
@@ -408,6 +430,7 @@ class KnowledgeBaseService:
             if table.meta:
                 meta.update(table.meta)
 
+            meta = self._strip_nul_chars(meta)
             vs_docs.append(VSDoc(
                 company_id=document.company_id,
                 document_id=document.id,

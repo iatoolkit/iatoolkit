@@ -330,3 +330,33 @@ class TestKnowledgeBaseService:
 
         assert result == []
         self.mock_vs_repo.query.assert_not_called()
+
+    def test_ingest_document_sync_strips_nul_chars_from_chunks_and_metadata(self):
+        self.mock_doc_repo.get_by_hash.return_value = None
+        self.mock_storage.upload_document.return_value = "key"
+        self.mock_parsing_service.parse_document.return_value = ParseResult(
+            provider="basic",
+            provider_version="1.0",
+            warnings=["warn\x00ing"],
+            texts=[ParsedText(text="Hello\x00 world", meta={"section_title": "Intro\x00", "source_type": "text"})],
+            tables=[],
+            images=[],
+        )
+
+        self.service.ingest_document_sync(
+            self.company,
+            self.filename,
+            self.content,
+            metadata={"type": "contr\x00act"},
+        )
+
+        inserted_doc = self.mock_doc_repo.insert.call_args[0][0]
+        assert inserted_doc.meta["type"] == "contract"
+        assert inserted_doc.meta["parser_warnings"] == ["warning"]
+
+        vs_docs = self.mock_vs_repo.add_document.call_args[0][1]
+        assert len(vs_docs) == 1
+        assert "\x00" not in vs_docs[0].text
+        assert vs_docs[0].text == "Hello world"
+        assert vs_docs[0].meta["type"] == "contract"
+        assert vs_docs[0].meta["section_title"] == "Intro"
