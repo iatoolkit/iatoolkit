@@ -251,19 +251,40 @@ class QueryService:
             )
             return {}
 
-    def _resolve_company_attachment_defaults(self, company_short_name: str) -> dict:
-        if self.attachment_policy_service:
-            return self.attachment_policy_service.get_company_default_policy(company_short_name)
-
+    def _resolve_company_attachment_defaults(self, company_short_name: str, prompt_name: str | None = None) -> dict:
         llm_config = self.configuration_service.get_configuration(company_short_name, "llm") or {}
+
+        # Chat without prompt_name uses a more native-first fallback when the company
+        # does not explicitly declare attachment defaults in company.yaml.
+        if prompt_name:
+            fallback_mode = "extracted_only"
+            fallback_fallback = "extract"
+        else:
+            fallback_mode = "native_only"
+            fallback_fallback = "fail"
+
+        raw_mode = llm_config.get("default_attachment_mode", fallback_mode)
+        raw_fallback = llm_config.get("default_attachment_fallback", fallback_fallback)
+
+        if self.attachment_policy_service:
+            return {
+                "attachment_mode": self.attachment_policy_service.normalize_mode(raw_mode),
+                "attachment_fallback": self.attachment_policy_service.normalize_fallback(raw_fallback),
+            }
+
         return {
-            "attachment_mode": str(llm_config.get("default_attachment_mode") or "extracted_only").strip().lower(),
-            "attachment_fallback": str(llm_config.get("default_attachment_fallback") or "extract").strip().lower(),
+            "attachment_mode": str(raw_mode or fallback_mode).strip().lower() or fallback_mode,
+            "attachment_fallback": str(raw_fallback or fallback_fallback).strip().lower() or fallback_fallback,
         }
 
-    def _resolve_effective_attachment_policy(self, company_short_name: str, prompt_output_contract: dict | None) -> dict:
+    def _resolve_effective_attachment_policy(
+            self,
+            company_short_name: str,
+            prompt_output_contract: dict | None,
+            prompt_name: str | None = None
+    ) -> dict:
         prompt_policy = prompt_output_contract or {}
-        company_defaults = self._resolve_company_attachment_defaults(company_short_name)
+        company_defaults = self._resolve_company_attachment_defaults(company_short_name, prompt_name=prompt_name)
         candidate_mode = prompt_policy.get("attachment_mode") or company_defaults.get("attachment_mode")
         candidate_fallback = prompt_policy.get("attachment_fallback") or company_defaults.get("attachment_fallback")
 
@@ -558,6 +579,7 @@ class QueryService:
             effective_attachment_policy = self._resolve_effective_attachment_policy(
                 company_short_name=company_short_name,
                 prompt_output_contract=prompt_output_contract,
+                prompt_name=prompt_name,
             )
 
             attachment_plan = {
@@ -687,7 +709,7 @@ class QueryService:
                 "policy": attachment_plan.get("policy", {}),
                 "stats": attachment_plan.get("stats", {}),
                 "provider": provider,
-                "company_defaults": self._resolve_company_attachment_defaults(company_short_name),
+                "company_defaults": self._resolve_company_attachment_defaults(company_short_name, prompt_name=prompt_name),
             }
 
             # Safely extract parameters for invoke using the handle
