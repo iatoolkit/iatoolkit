@@ -173,6 +173,30 @@ class TestDispatcher:
         self.mock_sample_company_instance.handle_request.assert_not_called()
         assert result == {"file": "test.xlsx"}
 
+    def test_dispatch_user_scoped_system_function_passes_user_identifier_explicitly(self):
+        mock_tool_def = MagicMock(spec=Tool)
+        mock_tool_def.tool_type = Tool.TYPE_SYSTEM
+        self.mock_tool_service.get_tool_definition.return_value = mock_tool_def
+
+        mock_handler = MagicMock(return_value={"status": "success", "results": []})
+        self.mock_tool_service.get_system_handler.return_value = mock_handler
+
+        result = self.dispatcher.dispatch(
+            "sample",
+            "iat_memory_search",
+            user_identifier="user-123",
+            query="mis notas",
+            limit=5,
+        )
+
+        mock_handler.assert_called_once_with(
+            "sample",
+            user_identifier="user-123",
+            query="mis notas",
+            limit=5,
+        )
+        assert result == {"status": "success", "results": []}
+
     def test_dispatch_system_function_visual_search_success(self):
         """Tests visual search dispatching."""
         # Arrange

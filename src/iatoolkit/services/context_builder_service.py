@@ -147,11 +147,12 @@ class ContextBuilderService:
         # 3. Get company specific context (DB Schemas, Docs, etc.)
         company_specific_context = self.company_context_service.get_company_context(company_short_name)
         collection_context = self._build_collection_context(company_short_name)
+        memory_context = self._build_memory_context()
 
         # 4. Merge contexts
         final_system_context = "\n".join(
             section
-            for section in (company_specific_context, collection_context, rendered_system_prompt)
+            for section in (company_specific_context, collection_context, memory_context, rendered_system_prompt)
             if section
         )
 
@@ -190,6 +191,15 @@ class ContextBuilderService:
 
         lines.append("If one collection clearly matches the question, prefer that collection. If unclear, search without specifying a collection first.")
         return "\n".join(lines)
+
+    def _build_memory_context(self) -> str:
+        return "\n".join([
+            "### Personal Memory",
+            "The user may have personal memory pages built from saved notes, links, files, and chat messages.",
+            "Use `iat_memory_search` when the user is explicitly asking about saved notes, remembered items, or personal continuity across sessions.",
+            "Use `iat_memory_get_page` to read a specific page before answering when needed.",
+            "Prefer memory pages as compiled context; do not assume all saved content is globally relevant.",
+        ])
 
     def build_user_turn_prompt(self,
                                company: Company,

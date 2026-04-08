@@ -54,8 +54,9 @@ class OpenAIAdapter:
                 params['text'] = text
             if reasoning:
                 params['reasoning'] = reasoning
-            if tool_choice != "auto":
-                params['tool_choice'] = tool_choice
+            tool_choice_payload = self._map_tool_choice(tool_choice, tools or [])
+            if tool_choice_payload is not None:
+                params['tool_choice'] = tool_choice_payload
 
             # Llamar a la API de OpenAI
             openai_response = self.client.responses.create(**params)
@@ -68,6 +69,24 @@ class OpenAIAdapter:
             logging.error(error_message)
 
             raise IAToolkitException(IAToolkitException.ErrorType.LLM_ERROR, error_message)
+
+    @staticmethod
+    def _map_tool_choice(tool_choice: str, tools_payload: List[Dict]) -> Optional[Dict | str]:
+        if tool_choice in ("", None, "auto"):
+            return None
+
+        if tool_choice in {"none", "required"}:
+            return tool_choice
+
+        tool_names = {
+            tool.get("name")
+            for tool in (tools_payload or [])
+            if isinstance(tool, dict) and tool.get("type") == "function" and tool.get("name")
+        }
+        if tool_choice in tool_names:
+            return {"type": "function", "name": tool_choice}
+
+        return tool_choice
 
     def _prepare_multimodal_input(
         self,

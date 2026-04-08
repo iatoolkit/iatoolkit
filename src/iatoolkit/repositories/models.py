@@ -35,6 +35,27 @@ class PromptType(str, enum.Enum):
     AGENT = "agent"
 
 
+class MemoryItemType(str, enum.Enum):
+    CHAT_USER_MESSAGE = "chat_user_message"
+    CHAT_ASSISTANT_MESSAGE = "chat_assistant_message"
+    NOTE = "note"
+    LINK = "link"
+    FILE = "file"
+    IMAGE = "image"
+
+
+class MemoryItemStatus(str, enum.Enum):
+    PENDING = "pending"
+    COMPILED = "compiled"
+    FAILED = "failed"
+
+
+class MemoryCaptureStatus(str, enum.Enum):
+    PENDING = "pending"
+    COMPILED = "compiled"
+    FAILED = "failed"
+
+
 # Cross-database JSON type:
 # - PostgreSQL: JSONB (for jsonb operators/functions/indexing)
 # - SQLite/others (tests): JSON
@@ -123,6 +144,21 @@ class Company(Base):
     )
     sql_datasets = relationship(
         "SqlDataset",
+        back_populates="company",
+        cascade="all, delete-orphan",
+    )
+    memory_items = relationship(
+        "MemoryItem",
+        back_populates="company",
+        cascade="all, delete-orphan",
+    )
+    memory_captures = relationship(
+        "MemoryCapture",
+        back_populates="company",
+        cascade="all, delete-orphan",
+    )
+    memory_pages = relationship(
+        "MemoryPage",
         back_populates="company",
         cascade="all, delete-orphan",
     )
@@ -287,6 +323,118 @@ class DocumentImage(Base):
 
     def to_dict(self):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
+
+
+class MemoryItem(Base):
+    """Represents a raw user capture stored in Memoria."""
+    __tablename__ = "iat_memory_items"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_companies.id", ondelete="CASCADE"), nullable=False)
+    capture_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_memory_captures.id", ondelete="CASCADE"), nullable=True, index=True)
+    user_identifier = Column(String, nullable=False, index=True)
+    item_type = Column(Enum(MemoryItemType), nullable=False, default=MemoryItemType.NOTE)
+    status = Column(Enum(MemoryItemStatus), nullable=False, default=MemoryItemStatus.PENDING)
+    title = Column(String, nullable=True)
+    content_text = Column(Text, nullable=True)
+    source_url = Column(Text, nullable=True)
+    filename = Column(String, nullable=True)
+    mime_type = Column(String, nullable=True)
+    storage_key = Column(String, nullable=True, index=True)
+    source_meta = Column(JSON_NATIVE, nullable=True)
+    compile_error = Column(Text, nullable=True)
+    last_compiled_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+    company = relationship("Company", back_populates="memory_items")
+    capture = relationship("MemoryCapture", back_populates="items")
+    page_links = relationship(
+        "MemoryPageSource",
+        back_populates="memory_item",
+        cascade="all, delete-orphan",
+    )
+
+    def to_dict(self):
+        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
+
+
+class MemoryPage(Base):
+    """Represents a compiled wiki page for a user's Memoria."""
+    __tablename__ = "iat_memory_pages"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_companies.id", ondelete="CASCADE"), nullable=False)
+    user_identifier = Column(String, nullable=False, index=True)
+    title = Column(String, nullable=False)
+    slug = Column(String, nullable=False)
+    summary = Column(Text, nullable=True)
+    wiki_path = Column(String, nullable=False)
+    last_compiled_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("company_id", "user_identifier", "slug", name="uix_memory_page_company_user_slug"),
+    )
+
+    company = relationship("Company", back_populates="memory_pages")
+    sources = relationship(
+        "MemoryPageSource",
+        back_populates="memory_page",
+        cascade="all, delete-orphan",
+    )
+
+    def to_dict(self):
+        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
+
+
+class MemoryCapture(Base):
+    """Represents one explicit user save action in Memoria."""
+    __tablename__ = "iat_memory_captures"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_companies.id", ondelete="CASCADE"), nullable=False)
+    user_identifier = Column(String, nullable=False, index=True)
+    title = Column(String, nullable=True)
+    status = Column(Enum(MemoryCaptureStatus), nullable=False, default=MemoryCaptureStatus.PENDING)
+    meta = Column(JSON_NATIVE, nullable=True)
+    compile_error = Column(Text, nullable=True)
+    last_compiled_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+    company = relationship("Company", back_populates="memory_captures")
+    items = relationship(
+        "MemoryItem",
+        back_populates="capture",
+        cascade="all, delete-orphan",
+        order_by="MemoryItem.created_at.asc()",
+    )
+
+    def to_dict(self):
+        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
+
+
+class MemoryPageSource(Base):
+    """Links raw memory items to compiled pages."""
+    __tablename__ = "iat_memory_page_sources"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    memory_page_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_memory_pages.id", ondelete="CASCADE"), nullable=False)
+    memory_item_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_memory_items.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("memory_page_id", "memory_item_id", name="uix_memory_page_source_unique"),
+    )
+
+    memory_page = relationship("MemoryPage", back_populates="sources")
+    memory_item = relationship("MemoryItem", back_populates="page_links")
+
+    def to_dict(self):
+        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
+
 
 class LLMQuery(Base):
     """Logs a query made to the LLM, including input, output, and metadata."""

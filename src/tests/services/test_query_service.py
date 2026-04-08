@@ -801,3 +801,151 @@ class TestQueryService:
         assert invoke_kwargs["text"]["response_schema"]["required"] == ["sales_2025"]
         assert invoke_kwargs["response_contract"]["schema_mode"] == "strict"
         assert invoke_kwargs["response_contract"]["response_mode"] == "structured_only"
+
+    def test_llm_query_forces_memory_search_for_explicit_memory_intent(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = [
+            {"type": "function", "name": "iat_memory_search", "description": "memory", "parameters": {}, "strict": True},
+            {"type": "function", "name": "tool_two", "description": "other", "parameters": {}, "strict": True},
+        ]
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "usa mi memoria sobre onboarding", [])
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            question="usa mi memoria sobre onboarding",
+            model='gpt-test'
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["tool_choice_override"] == "iat_memory_search"
+        assert "call `iat_memory_search` before answering" in invoke_kwargs["context"]
+        assert invoke_kwargs["execution_metadata"]["tool_policy"]["reason"] == "fallback_memory_keywords"
+        assert invoke_kwargs["execution_metadata"]["tool_policy"]["confidence"] == 0.45
+        assert invoke_kwargs["execution_metadata"]["tool_policy"]["should_suggest_memory_search"] is True
+
+    def test_llm_query_does_not_force_memory_search_without_explicit_memory_intent(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = [
+            {"type": "function", "name": "iat_memory_search", "description": "memory", "parameters": {}, "strict": True},
+        ]
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "qué opinas del onboarding", [])
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            question="qué opinas del onboarding",
+            model='gpt-test'
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["tool_choice_override"] is None
+        assert "tool_policy" not in invoke_kwargs["execution_metadata"]
+
+    def test_llm_query_suggests_memory_search_from_router_memory_ranking_without_forcing_it(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = [
+            {"type": "function", "name": "iat_memory_search", "description": "memory", "parameters": {}, "strict": True},
+            {"type": "function", "name": "tool_two", "description": "other", "parameters": {}, "strict": True},
+        ]
+        self.mock_context_builder.build_user_turn_prompt.return_value = (
+            "prompt",
+            "que tengo pensado para implementar esta semana en iatoolkit",
+            [],
+        )
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        def selector_hook(**kwargs):
+            _ = kwargs
+            return {
+                "tools": kwargs["tools"],
+                "metadata": {
+                    "top_k": 8,
+                    "selected_tool_names": ["iat_memory_search", "tool_two"],
+                    "ranked_tools_preview": [
+                        {"name": "iat_memory_search", "score": 0.81},
+                        {"name": "tool_two", "score": 0.44},
+                    ],
+                },
+            }
+
+        QueryService.register_tool_selector_hook(selector_hook)
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            question="que tengo pensado para implementar esta semana en iatoolkit",
+            model='gpt-test'
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["tool_choice_override"] is None
+        assert "call `iat_memory_search` before answering" in invoke_kwargs["context"]
+        assert invoke_kwargs["execution_metadata"]["tool_policy"]["reason"] == "router_ranked_memory_tool"
+        assert invoke_kwargs["execution_metadata"]["tool_policy"]["confidence"] == 0.81
+        assert invoke_kwargs["execution_metadata"]["tool_policy"]["should_suggest_memory_search"] is True
+        assert invoke_kwargs["execution_metadata"]["tool_policy"]["metadata"] == {
+            "memory_tool_rank": 1,
+            "top_k": 8,
+        }
+
+    def test_llm_query_does_not_suggest_memory_when_document_search_competes(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = [
+            {"type": "function", "name": "iat_memory_search", "description": "memory", "parameters": {}, "strict": True},
+            {"type": "function", "name": "iat_document_search", "description": "docs", "parameters": {}, "strict": True},
+        ]
+        self.mock_context_builder.build_user_turn_prompt.return_value = (
+            "prompt",
+            "que dice la documentacion interna sobre onboarding",
+            [],
+        )
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        def selector_hook(**kwargs):
+            _ = kwargs
+            return {
+                "tools": kwargs["tools"],
+                "metadata": {
+                    "top_k": 8,
+                    "selected_tool_names": ["iat_memory_search", "iat_document_search"],
+                    "ranked_tools_preview": [
+                        {"name": "iat_memory_search", "score": 0.88},
+                        {"name": "iat_document_search", "score": 0.84},
+                    ],
+                },
+            }
+
+        QueryService.register_tool_selector_hook(selector_hook)
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            question="que dice la documentacion interna sobre onboarding",
+            model='gpt-test'
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["tool_choice_override"] is None
+        assert "call `iat_memory_search` before answering" not in invoke_kwargs["context"]
+        assert "tool_policy" not in invoke_kwargs["execution_metadata"]

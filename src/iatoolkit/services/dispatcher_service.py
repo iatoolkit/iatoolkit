@@ -12,6 +12,8 @@ import logging
 
 
 class Dispatcher:
+    USER_SCOPED_SYSTEM_TOOLS = {"iat_memory_search", "iat_memory_get_page"}
+
     @inject
     def __init__(self,
                  llmquery_repo: LLMQueryRepo,
@@ -72,7 +74,7 @@ class Dispatcher:
         return self._company_instances
 
 
-    def dispatch(self, company_short_name: str, function_name: str, **kwargs) -> dict:
+    def dispatch(self, company_short_name: str, function_name: str, user_identifier: str | None = None, **kwargs) -> dict:
         # 1. Consult the Database (Source of Truth) for the tool definition
         tool_def = self.tool_service.get_tool_definition(company_short_name, function_name)
         if not tool_def:
@@ -90,7 +92,10 @@ class Dispatcher:
                                          f"Handler for system tool '{function_name}' not found.")
 
             logging.debug(f"Dispatching SYSTEM tool: {function_name}")
-            return handler(company_short_name, **kwargs)
+            handler_kwargs = dict(kwargs)
+            if user_identifier and function_name in self.USER_SCOPED_SYSTEM_TOOLS:
+                handler_kwargs["user_identifier"] = user_identifier
+            return handler(company_short_name, **handler_kwargs)
 
         elif tool_def.tool_type == 'INFERENCE':
             # Delegate to Inference Service with DB config

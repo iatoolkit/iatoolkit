@@ -44,6 +44,7 @@ def register_views(app):
     from iatoolkit.views.connectors_api_view import ConnectorsApiView
     from iatoolkit.views.tool_api_view import ToolApiView
     from iatoolkit.views.api_key_api_view import ApiKeyApiView
+    from iatoolkit.views.memory_api_view import MemoryApiView
 
     # assign root '/' to our new redirect logic
     app.add_url_rule('/home', view_func=RootRedirectView.as_view('root_redirect'))
@@ -124,6 +125,9 @@ def register_views(app):
     app.add_url_rule('/<company_short_name>/api/feedback', view_func=UserFeedbackApiView.as_view('feedback'))
     app.add_url_rule('/<company_short_name>/api/history', view_func=HistoryApiView.as_view('history'))
     app.add_url_rule('/<company_short_name>/api/help-content', view_func=HelpContentApiView.as_view('help-content'))
+    memory_view = MemoryApiView.as_view('memory_api')
+    app.add_url_rule('/<company_short_name>/api/memory', view_func=memory_view, methods=['GET', 'POST'])
+    app.add_url_rule('/<company_short_name>/api/memory/pages/<int:page_id>', view_func=memory_view, methods=['GET'])
 
     # --- Tool Management API ---
     tool_view = ToolApiView.as_view('tool_api')

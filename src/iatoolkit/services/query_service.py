@@ -13,6 +13,7 @@ from iatoolkit.services.user_session_context_service import UserSessionContextSe
 from iatoolkit.services.history_manager_service import HistoryManagerService
 from iatoolkit.services.context_builder_service import ContextBuilderService
 from iatoolkit.services.attachment_policy_service import AttachmentPolicyService
+from iatoolkit.services.memory_lookup_policy_service import MemoryLookupPolicyService
 from iatoolkit.common.model_registry import ModelRegistry
 from injector import inject
 import logging
@@ -49,6 +50,7 @@ class QueryService:
                  model_registry: ModelRegistry,
                  context_builder: ContextBuilderService,
                  attachment_policy_service: AttachmentPolicyService | None = None,
+                 memory_lookup_policy_service: MemoryLookupPolicyService | None = None,
                  ):
         self.profile_repo = profile_repo
         self.tool_service = tool_service
@@ -61,6 +63,7 @@ class QueryService:
         self.model_registry = model_registry
         self.context_builder = context_builder
         self.attachment_policy_service = attachment_policy_service
+        self.memory_lookup_policy_service = memory_lookup_policy_service or MemoryLookupPolicyService()
 
     @classmethod
     def register_tool_selector_hook(cls, hook: Callable | None):
@@ -250,6 +253,15 @@ class QueryService:
                 e,
             )
             return {}
+
+    @staticmethod
+    def _append_memory_search_instruction(prompt: str, should_suggest_memory_search: bool) -> str:
+        if not should_suggest_memory_search:
+            return prompt
+        return (
+            f"{prompt}\n\n"
+            "If helpful for continuity or saved user context, call `iat_memory_search` before answering."
+        ).strip()
 
     def _resolve_company_attachment_defaults(self, company_short_name: str, prompt_name: str | None = None) -> dict:
         llm_config = self.configuration_service.get_configuration(company_short_name, "llm") or {}
@@ -657,6 +669,16 @@ class QueryService:
                 question=effective_question,
                 tools=tools,
             )
+            memory_lookup_decision = self.memory_lookup_policy_service.resolve(
+                question=effective_question,
+                tools=tools,
+                tool_router_metrics=tool_router_metrics,
+            )
+            tool_choice_override = memory_lookup_decision.tool_choice_override
+            user_turn_prompt = self._append_memory_search_instruction(
+                user_turn_prompt,
+                memory_lookup_decision.should_suggest_memory_search,
+            )
             selected_system_prompt_keys = []
             try:
                 selected_system_prompt_keys = self._normalize_selected_system_prompt_keys(
@@ -698,6 +720,16 @@ class QueryService:
                 tool_router_metrics["selected_system_prompt_keys"] = selected_system_prompt_keys
 
             execution_metadata = {"tool_router": tool_router_metrics}
+            if memory_lookup_decision.reason:
+                execution_metadata["tool_policy"] = {
+                    "tool_choice_override": tool_choice_override,
+                    "should_suggest_memory_search": memory_lookup_decision.should_suggest_memory_search,
+                    "reason": memory_lookup_decision.reason,
+                }
+                if memory_lookup_decision.confidence is not None:
+                    execution_metadata["tool_policy"]["confidence"] = memory_lookup_decision.confidence
+                if memory_lookup_decision.metadata:
+                    execution_metadata["tool_policy"]["metadata"] = memory_lookup_decision.metadata
             if prompt_output_contract.get("schema"):
                 execution_metadata["structured_output"] = {
                     "enabled": True,
@@ -728,6 +760,7 @@ class QueryService:
                 question=effective_question,
                 context=user_turn_prompt,
                 tools=tools,
+                tool_choice_override=tool_choice_override,
                 text=output_schema,
                 images=images,
                 attachments=attachment_plan.get("native_attachments", []),

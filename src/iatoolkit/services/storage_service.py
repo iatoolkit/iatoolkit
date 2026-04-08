@@ -130,6 +130,28 @@ class StorageService:
             logging.error(error_msg)
             raise IAToolkitException(IAToolkitException.ErrorType.FILE_IO_ERROR, error_msg)
 
+    def upload_bytes(self,
+                     company_short_name: str,
+                     storage_key: str,
+                     file_content: bytes,
+                     mime_type: str = "application/octet-stream") -> str:
+        """
+        Uploads arbitrary bytes to a specific storage key.
+        Useful for generated artifacts such as memory wiki pages.
+        """
+        try:
+            connector = self._get_connector(company_short_name)
+            connector.upload_file(
+                file_path=storage_key,
+                content=file_content,
+                content_type=mime_type
+            )
+            return storage_key
+        except Exception as e:
+            error_msg = f"Error uploading bytes to storage: {str(e)}"
+            logging.error(error_msg)
+            raise IAToolkitException(IAToolkitException.ErrorType.FILE_IO_ERROR, error_msg)
+
     def upload_generated_download(self,
                                   company_short_name: str,
                                   file_content: bytes,

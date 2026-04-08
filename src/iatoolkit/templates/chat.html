@@ -77,6 +77,13 @@
                     <i class="bi bi-clock-history"></i>
                 </a>
                 <a href="javascript:void(0);"
+                   id="memory-button"
+                   class="ms-3 action-icon-style"
+                   title="{{ t('ui.tooltips.memory') }}"
+                   style="color: {{ branding.header_text_color }};">
+                    <i class="bi bi-bookmark-star"></i>
+                </a>
+                <a href="javascript:void(0);"
                    id="force-reload-button"
                    class="ms-3 action-icon-style"
                    title="{{ t('ui.tooltips.reload_context') }}"
@@ -250,6 +257,8 @@
 
 </div>
 
+{% include 'chat_memory_modal.html' %}
+
 <!-- Incluir los modales desde un archivo externo -->
 {% include 'chat_modals.html' %}
 
@@ -291,6 +300,7 @@
     <script src="{{ url_for('static', filename='js/chat_prompt_manager.js', _external=True) }}"></script>
     <script src="{{ url_for('static', filename='js/chat_filepond.js', _external=True) }}"></script>
     <script src="{{ url_for('static', filename='js/chat_model_selector.js', _external=True) }}"></script>
+    <script src="{{ url_for('static', filename='js/chat_memory_button.js', _external=True) }}"></script>
     <script src="{{ url_for('static', filename='js/chat_main.js', _external=True) }}"></script>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>

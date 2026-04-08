@@ -68,6 +68,7 @@ class TestContextBuilderService:
         # Assert
         assert "DB Schema Context" in context
         assert "Available Document Collections" in context
+        assert "### Personal Memory" in context
         assert "- legal: Contracts and annexes" in context
         assert "- support: Policies and operational manuals" in context
         assert "Rendered System Prompt" in context

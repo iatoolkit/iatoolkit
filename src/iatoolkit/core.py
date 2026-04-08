@@ -339,16 +339,23 @@ class IAToolkit:
         from iatoolkit.repositories.document_repo import DocumentRepo
         from iatoolkit.repositories.profile_repo import ProfileRepo
         from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
+        from iatoolkit.repositories.memory_repo import MemoryRepo
         from iatoolkit.repositories.sql_dataset_repo import SqlDatasetRepo
         from iatoolkit.repositories.sql_source_repo import SqlSourceRepo
         from iatoolkit.repositories.vs_repo import VSRepo
         from iatoolkit.repositories.filesystem_asset_repository import FileSystemAssetRepository
         from iatoolkit.repositories.env_secret_provider import EnvSecretProvider
+        from iatoolkit.common.interfaces.memory_compilation_trigger import MemoryCompilationTrigger
+        from iatoolkit.common.interfaces.memory_lint_trigger import MemoryLintTrigger
+        from iatoolkit.services.noop_memory_compilation_trigger import NoopMemoryCompilationTrigger
+        from iatoolkit.services.noop_memory_lint_trigger import NoopMemoryLintTrigger
+        from iatoolkit.services.memory_lookup_policy_service import MemoryLookupPolicyService
 
         binder.bind(ApiKeyRepo, to=ApiKeyRepo)
         binder.bind(DocumentRepo, to=DocumentRepo)
         binder.bind(ProfileRepo, to=ProfileRepo)
         binder.bind(LLMQueryRepo, to=LLMQueryRepo)
+        binder.bind(MemoryRepo, to=MemoryRepo)
         binder.bind(SqlDatasetRepo, to=SqlDatasetRepo)
         binder.bind(SqlSourceRepo, to=SqlSourceRepo)
         binder.bind(VSRepo, to=VSRepo)
@@ -360,6 +367,11 @@ class IAToolkit:
         # this class can be setup before by iatoolkit enterprise
         if not is_bound(self._injector, SecretProvider):
             binder.bind(SecretProvider, to=EnvSecretProvider)
+        if not is_bound(self._injector, MemoryCompilationTrigger):
+            binder.bind(MemoryCompilationTrigger, to=NoopMemoryCompilationTrigger)
+        if not is_bound(self._injector, MemoryLintTrigger):
+            binder.bind(MemoryLintTrigger, to=NoopMemoryLintTrigger)
+        binder.bind(MemoryLookupPolicyService, to=MemoryLookupPolicyService)
 
     def _bind_services(self, binder: Binder):
         from iatoolkit.services.query_service import QueryService
@@ -374,6 +386,9 @@ class IAToolkit:
         from iatoolkit.services.excel_service import ExcelService
         from iatoolkit.services.pdf_service import PdfService
         from iatoolkit.services.mail_service import MailService
+        from iatoolkit.services.memory_compiler_service import MemoryCompilerService
+        from iatoolkit.services.memory_service import MemoryService
+        from iatoolkit.services.memory_wiki_service import MemoryWikiService
         from iatoolkit.services.profile_service import ProfileService
         from iatoolkit.services.jwt_service import JWTService
         from iatoolkit.services.sql_dataset_service import SqlDatasetService
@@ -412,6 +427,9 @@ class IAToolkit:
         binder.bind(ExcelService, to=ExcelService)
         binder.bind(PdfService, to=PdfService)
         binder.bind(MailService, to=MailService)
+        binder.bind(MemoryWikiService, to=MemoryWikiService)
+        binder.bind(MemoryCompilerService, to=MemoryCompilerService)
+        binder.bind(MemoryService, to=MemoryService)
         binder.bind(ProfileService, to=ProfileService)
         binder.bind(JWTService, to=JWTService)
         binder.bind(SqlDatasetService, to=SqlDatasetService)

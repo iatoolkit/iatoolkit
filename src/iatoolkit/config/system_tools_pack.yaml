@@ -261,6 +261,81 @@ tools:
         - query
         - collection
         - metadata_filter
+  - function_name: iat_memory_search
+    description: Busca páginas relevantes dentro de la Memoria personal del usuario y retorna contexto compilado. Debe usarse antes de responder preguntas sobre cosas guardadas, notas previas, memoria del usuario, continuidad entre sesiones o "lo que hablamos/guardé antes".
+    routing:
+      force_include_capability: has_user_memory
+    routing_profile:
+      tags:
+        - memory
+        - personal_context
+        - notes
+        - saved_notes
+        - saved_content
+        - plans
+        - ideas
+        - work_in_progress
+        - continuity
+        - weekly_focus
+        - wiki
+      intents:
+        - Search the user's personal memory pages for relevant context.
+        - Retrieve compiled personal notes, saved chat context, and remembered plans or ideas.
+        - Retrieve what the user was planning, working on, or wanted to implement.
+        - Search saved personal context about ideas, tasks, plans, priorities, and previous chat notes.
+        - Use this before answering questions about what the user saved, discussed, planned, or was working on earlier.
+      examples:
+        - iat_memory_search(query="ideas sobre onboarding", limit=5)
+        - iat_memory_search(query="lo que guardé del cliente acme", limit=3)
+        - iat_memory_search(query="qué tengo pensado para implementar esta semana en iatoolkit", limit=5)
+        - iat_memory_search(query="en qué estoy trabajando ahora", limit=5)
+        - iat_memory_search(query="qué ideas guardé sobre agentes y memorias", limit=5)
+        - iat_memory_search(query="what was I planning to implement this week", limit=5)
+      cost:
+        penalty: 0.08
+        latency_class: medium
+        expensive: false
+    parameters:
+      type: object
+      properties:
+        query:
+          type: string
+          description: Texto que describe lo que deseas recuperar desde Memoria.
+        limit:
+          type: integer
+          description: Cantidad máxima de páginas a recuperar.
+          minimum: 1
+          maximum: 10
+      required:
+        - query
+        - limit
+  - function_name: iat_memory_get_page
+    description: Recupera una página completa de la Memoria personal del usuario, incluyendo resumen, decisiones, próximos pasos y fuentes.
+    routing:
+      force_include_capability: has_user_memory
+    routing_profile:
+      tags:
+        - memory
+        - page
+        - compiled_context
+        - wiki
+      intents:
+        - Open a compiled memory page by id.
+        - Read the full content of a personal memory page before answering.
+      examples:
+        - iat_memory_get_page(page_id=12)
+      cost:
+        penalty: 0.05
+        latency_class: medium
+        expensive: false
+    parameters:
+      type: object
+      properties:
+        page_id:
+          type: integer
+          description: Identificador de la página de Memoria a recuperar.
+      required:
+        - page_id
   - function_name: iat_image_search
     description: Busca imágenes en la base de conocimiento visual de la empresa usando una descripción de texto. Útil cuando el usuario pide 'ver' algo, 'muéstrame una foto de...', o busca gráficos y diagramas.
     routing:

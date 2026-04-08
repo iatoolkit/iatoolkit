@@ -48,6 +48,7 @@ class ToolService:
                  excel_service: ExcelService,
                  pdf_service: PdfService,
                  mail_service: MailService,
+                 memory_service=None,
                  web_search_service=None):
         self.llm_query_repo = llm_query_repo
         self.profile_repo = profile_repo
@@ -55,6 +56,7 @@ class ToolService:
         self.excel_service = excel_service
         self.pdf_service = pdf_service
         self.mail_service = mail_service
+        self._memory_service = memory_service
         self.knowledge_base_service = knowledge_base_service
         self.visual_kb_service = visual_kb_service
         self.visual_tool_service = visual_tool_service
@@ -69,6 +71,8 @@ class ToolService:
             "iat_image_search": self._handle_image_search_tool,
             "iat_visual_search": self._handle_visual_search_tool,
             "iat_document_search": self._handle_document_search_tool,
+            "iat_memory_search": self._handle_memory_search_tool,
+            "iat_memory_get_page": self._handle_memory_get_page_tool,
             "iat_web_search": self._handle_web_search_tool,
         }
 
@@ -78,6 +82,13 @@ class ToolService:
             from iatoolkit.services.web_search_service import WebSearchService
             self._web_search_service = current_iatoolkit().get_injector().get(WebSearchService)
         return self._web_search_service
+
+    @property
+    def memory_service(self):
+        if self._memory_service is None:
+            from iatoolkit.services.memory_service import MemoryService
+            self._memory_service = current_iatoolkit().get_injector().get(MemoryService)
+        return self._memory_service
 
     @classmethod
     def register_tool_lifecycle_hook(cls, hook):
@@ -165,6 +176,92 @@ class ToolService:
             exclude_domains=exclude_domains,
             **kwargs,
         )
+
+    def _handle_memory_search_tool(self,
+                                   company_short_name: str,
+                                   query: str,
+                                   limit: int = 5,
+                                   user_identifier: str | None = None,
+                                   **kwargs):
+        if not user_identifier:
+            logging.warning(
+                "Memory search tool invoked without user_identifier for company '%s'.",
+                company_short_name,
+            )
+            return {"status": "error", "results": [], "error_message": "memory not available"}
+        try:
+            response = self.memory_service.search_pages(
+                company_short_name=company_short_name,
+                user_identifier=user_identifier,
+                query=query,
+                limit=limit,
+            )
+        except Exception:
+            logging.exception(
+                "Memory search tool failed for company='%s' user='%s' query='%s'.",
+                company_short_name,
+                user_identifier,
+                query,
+            )
+            raise
+
+        if response.get("status") != "success":
+            logging.warning(
+                "Memory search returned status='%s' for company='%s' user='%s' query='%s': %s",
+                response.get("status"),
+                company_short_name,
+                user_identifier,
+                query,
+                response.get("error_message", ""),
+            )
+        else:
+            logging.info(
+                "Memory search succeeded for company='%s' user='%s' query='%s' results=%s.",
+                company_short_name,
+                user_identifier,
+                query,
+                len(response.get("results") or []),
+            )
+
+        return response
+
+    def _handle_memory_get_page_tool(self,
+                                     company_short_name: str,
+                                     page_id: int,
+                                     user_identifier: str | None = None,
+                                     **kwargs):
+        if not user_identifier:
+            logging.warning(
+                "Memory get page tool invoked without user_identifier for company '%s'.",
+                company_short_name,
+            )
+            return {"status": "error", "error_message": "memory not available"}
+        try:
+            response = self.memory_service.get_page(
+                company_short_name=company_short_name,
+                user_identifier=user_identifier,
+                page_id=page_id,
+            )
+        except Exception:
+            logging.exception(
+                "Memory get page tool failed for company='%s' user='%s' page_id='%s'.",
+                company_short_name,
+                user_identifier,
+                page_id,
+            )
+            raise
+
+        if response.get("status") != "success":
+            logging.warning(
+                "Memory get page returned status='%s' for company='%s' user='%s' page_id='%s': %s",
+                response.get("status"),
+                company_short_name,
+                user_identifier,
+                page_id,
+                response.get("error_message", ""),
+            )
+
+        return response
 
     @staticmethod
     def _serialize_document_chunks(chunks: list[dict]) -> str:

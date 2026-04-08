@@ -78,6 +78,25 @@ class TestLLMClient:
 
         self.llmquery_repo.add_query.assert_called_once()
 
+    def test_invoke_passes_tool_choice_override_to_initial_llm_call(self):
+        self.mock_proxy.create_response.return_value = self.mock_llm_response
+
+        self.client.invoke(
+            company=self.company,
+            user_identifier='user1',
+            previous_response_id='prev1',
+            model='gpt-5',
+            question='q',
+            context='c',
+            tools=[{"name": "iat_memory_search"}],
+            tool_choice_override='iat_memory_search',
+            text={},
+            images=[],
+        )
+
+        call_kwargs = self.mock_proxy.create_response.call_args.kwargs
+        assert call_kwargs['tool_choice'] == 'iat_memory_search'
+
     def test_invoke_processes_generated_images(self):
         """Test que verifica que las imágenes generadas se suben al storage y se actualiza la respuesta."""
         # 1. Configurar respuesta del LLM con una imagen en Base64
@@ -188,6 +207,7 @@ class TestLLMClient:
         dispatcher_mock.dispatch.assert_called_once_with(
             company_short_name='test_company',
             function_name='test_func',
+            user_identifier='user1',
             request_images=fake_images,
             a=1
         )

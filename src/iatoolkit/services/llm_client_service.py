@@ -72,6 +72,7 @@ class llmClient:
                tools: list[dict],
                text: dict,
                model: str,
+               tool_choice_override: Optional[str] = None,
                context_history: Optional[List[Dict]] = None,
                images: list = None,
                attachments: list = None,
@@ -117,6 +118,7 @@ class llmClient:
                     previous_response_id=previous_response_id,
                     context_history=context_history,
                     tools=tools,
+                    tool_choice=tool_choice_override or "auto",
                     text=text_payload,
                     reasoning=reasoning,
                     images=images,
@@ -163,6 +165,7 @@ class llmClient:
                         result = self.dispatcher.dispatch(
                             company_short_name=company.short_name,
                             function_name=function_name,
+                            user_identifier=user_identifier,
                             **call_kwargs
                         )
                         force_tool_name = None

@@ -196,10 +196,72 @@ function processBotResponse(responseData) {
         });
     }
 
+    const saveButton = $('<button>')
+        .attr('type', 'button')
+        .addClass('btn btn-sm memory-save-inline-button memory-save-answer-button')
+        .html('<i class="bi bi-bookmark-plus"></i>')
+        .attr('title', 'Guardar respuesta en Memoria')
+        .on('click', async function () {
+            if (typeof window.saveItemToMemory !== 'function') {
+                toastr.error('Memoria no está disponible.');
+                return;
+            }
+            const plainText = $('<div>').html(responseData.answer || '').text().trim();
+            await window.saveItemToMemory({
+                item_type: 'chat_assistant_message',
+                content_text: plainText,
+                title: plainText.slice(0, 120) || 'Respuesta del chat',
+                source_meta: { origin: 'chat_answer' }
+            });
+        });
+
+    appendInlineAnswerSaveButton(answerSection, saveButton);
     botMessageContainer.append(answerSection);
 
     // 3. Mostrar el contenedor completo
     displayBotMessage(botMessageContainer);
+}
+
+function appendInlineAnswerSaveButton(answerSection, saveButton) {
+    const textTargets = answerSection
+        .find('p, li, h1, h2, h3, h4, h5, h6, blockquote')
+        .filter(function () {
+            return $(this).text().trim().length > 0;
+        });
+
+    const inlineAnchor = $('<span>')
+        .addClass('memory-save-answer-anchor')
+        .append(saveButton);
+
+    if (textTargets.length > 0) {
+        textTargets.last().append(inlineAnchor);
+        return;
+    }
+
+    const lastTextChild = answerSection
+        .contents()
+        .filter(function () {
+            if (this.nodeType === Node.TEXT_NODE) {
+                return this.textContent.trim().length > 0;
+            }
+            if (this.nodeType === Node.ELEMENT_NODE) {
+                return !$(this).hasClass('image-part') && $(this).text().trim().length > 0;
+            }
+            return false;
+        })
+        .last();
+
+    if (lastTextChild.length > 0 && lastTextChild[0].nodeType === Node.TEXT_NODE) {
+        answerSection.append(inlineAnchor);
+        return;
+    }
+
+    if (lastTextChild.length > 0) {
+        $(lastTextChild[0]).append(inlineAnchor);
+        return;
+    }
+
+    answerSection.append(inlineAnchor);
 }
 
 
@@ -347,6 +409,7 @@ const displayUserMessage = function(message, isEditable, originalQuestion, files
     const chatContainer = $('#chat-container');
     const userMessage = $('<div>').addClass('message shadow-sm');
     const messageText = $('<span>').text(message);
+    const actionsBar = $('<div>').addClass('message-actions');
 
     userMessage.append(messageText);
 
@@ -392,8 +455,29 @@ const displayUserMessage = function(message, isEditable, originalQuestion, files
             if (window.innerWidth > 768)
                 $('#question').focus();
         });
-        userMessage.append(editIcon);
+        actionsBar.append(editIcon);
     }
+
+    const saveButton = $('<button>')
+        .attr('type', 'button')
+        .addClass('btn btn-sm memory-save-inline-button')
+        .html('<i class="bi bi-bookmark-plus"></i>')
+        .attr('title', 'Guardar en Memoria')
+        .on('click', async function () {
+            if (typeof window.saveItemToMemory !== 'function') {
+                toastr.error('Memoria no está disponible.');
+                return;
+            }
+            await window.saveItemToMemory({
+                item_type: 'chat_user_message',
+                content_text: originalQuestion || message,
+                title: (message || '').slice(0, 120),
+                source_meta: { origin: 'chat' }
+            });
+        });
+
+    actionsBar.append(saveButton);
+    userMessage.append(actionsBar);
     chatContainer.append(userMessage);
     chatContainer.scrollTop(chatContainer[0].scrollHeight);
 };

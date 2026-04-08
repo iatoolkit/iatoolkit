@@ -206,6 +206,32 @@ class TestOpenAIAdapter:
         assert call_kwargs['text'] == {'some': 'text'}
         assert call_kwargs['reasoning'] == {'some': 'reasoning'}
 
+    def test_create_response_maps_specific_function_tool_choice(self):
+        mock_response = MagicMock()
+        mock_response.id = 'id'
+        mock_response.model = 'model'
+        mock_response.status = 'status'
+        mock_response.output = []
+        mock_response.output_text = ""
+        mock_response.usage = None
+
+        self.mock_openai_client.responses.create.return_value = mock_response
+
+        input_data = [{'role': 'user', 'content': 'test'}]
+        tools = [
+            {'type': 'function', 'name': 'iat_memory_search', 'description': 'memory', 'parameters': {}}
+        ]
+
+        self.adapter.create_response(
+            model='gpt-4.1',
+            input=input_data,
+            tools=tools,
+            tool_choice='iat_memory_search',
+        )
+
+        call_kwargs = self.mock_openai_client.responses.create.call_args.kwargs
+        assert call_kwargs['tool_choice'] == {'type': 'function', 'name': 'iat_memory_search'}
+
     def test_create_response_with_generated_image(self):
         """Prueba que procesa una imagen generada en la respuesta (Responses API)."""
         # Arrange
