@@ -46,27 +46,29 @@
 
             <!-- Fila 3 (Móvil) / Parte 2 de la Columna Derecha (Desktop): Iconos de Acción -->
             <div class="d-flex align-items-center">
-                <!-- Selector de modelo LLM -->
-                <button type="button"
-                        id="llm-model-button"
-                        class="btn btn-sm py-1 px-3"
-                        style="border-radius: 0.4rem; border: 1px solid rgba(255,255,255,0.7); background: rgba(0,0,0,0.08); color: {{ branding.header_text_color }};">
-                    <i class="bi bi-cpu me-1"></i>
-                    <span id="llm-model-button-label">
-                        {{ (llm_available_models[0].label if llm_available_models and llm_available_models[0].label else llm_default_model) or 'Modelo IA' }}
-                    </span>
-                </button>
-                <!-- Popup simple para selección de modelo -->
-                <div id="llm-model-popup"
-                     class="card shadow-sm llm-model-popup"
-                     style="position: absolute; z-index: 9999; display: none; min-width: 260px;">
-                    <div class="card-body py-2">
-                        <div class="small mb-1 fw-bold">Modelo de IA</div>
-                        <div class="small mb-2 llm-model-subtitle">
-                            Este modelo se usará en las próximas consultas.
-                        </div>
-                        <div id="llm-model-list" class="list-group list-group-flush">
-                            {# El contenido se inyecta vía JavaScript con window.availableLlmModels #}
+                <div class="d-none d-md-block position-relative">
+                    <!-- Selector de modelo LLM -->
+                    <button type="button"
+                            id="llm-model-button"
+                            class="btn btn-sm py-1 px-3"
+                            style="border-radius: 0.4rem; border: 1px solid rgba(255,255,255,0.7); background: rgba(0,0,0,0.08); color: {{ branding.header_text_color }};">
+                        <i class="bi bi-cpu me-1"></i>
+                        <span id="llm-model-button-label">
+                            {{ (llm_available_models[0].label if llm_available_models and llm_available_models[0].label else llm_default_model) or 'Modelo IA' }}
+                        </span>
+                    </button>
+                    <!-- Popup simple para selección de modelo -->
+                    <div id="llm-model-popup"
+                         class="card shadow-sm llm-model-popup"
+                         style="position: absolute; z-index: 9999; display: none; min-width: 260px;">
+                        <div class="card-body py-2">
+                            <div class="small mb-1 fw-bold">Modelo de IA</div>
+                            <div class="small mb-2 llm-model-subtitle">
+                                Este modelo se usará en las próximas consultas.
+                            </div>
+                            <div id="llm-model-list" class="list-group list-group-flush">
+                                {# El contenido se inyecta vía JavaScript con window.availableLlmModels #}
+                            </div>
                         </div>
                     </div>
                 </div>
