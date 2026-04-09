@@ -279,6 +279,105 @@ class TestMemoryService:
         assert result["results"][0]["source_urls"] == ["https://ronforbes.com/build-your-personal-ai-assistant"]
         assert result["results"][0]["score"] > 0
 
+    def test_search_pages_marks_results_with_native_files(self):
+        page = MagicMock()
+        page.id = 44
+        page.title = "DJ anual"
+        page.summary = "Declaracion jurada"
+        page.slug = "dj-anual"
+        page.wiki_path = "companies/acme/users/x/memory/wiki/dj-anual.md"
+        page.updated_at = None
+
+        source_item = SimpleNamespace(
+            id=77,
+            item_type=MemoryItemType.FILE,
+            status="compiled",
+            title="dj-2026.pdf",
+            content_text=None,
+            source_url=None,
+            filename="dj-2026.pdf",
+            mime_type="application/pdf",
+            storage_key="companies/acme/users/x/memory/raw/dj-2026.pdf",
+            created_at=None,
+        )
+
+        self.memory_repo.list_pages.return_value = [page]
+        self.memory_wiki_service.read_page.return_value = {
+            "summary": "Declaracion jurada anual",
+            "key_points": [],
+            "decisions": [],
+            "open_questions": [],
+            "next_steps": [],
+            "sources": ["dj-2026.pdf"],
+            "related_pages": [],
+            "source_item_ids": [77],
+        }
+        self.memory_repo.list_items_by_ids.return_value = [source_item]
+
+        result = self.service.search_pages(
+            "acme",
+            "user@example.com",
+            query="declaracion jurada",
+            limit=5,
+        )
+
+        assert result["status"] == "success"
+        assert result["results"][0]["has_native_files"] is True
+        assert result["results"][0]["native_filenames"] == ["dj-2026.pdf"]
+
+    def test_search_pages_can_attach_native_files_from_results(self):
+        page = MagicMock()
+        page.id = 44
+        page.title = "DJ anual"
+        page.summary = "Declaracion jurada FOGAPE"
+        page.slug = "dj-anual"
+        page.wiki_path = "companies/acme/users/x/memory/wiki/dj-anual.md"
+        page.updated_at = None
+
+        source_item = SimpleNamespace(
+            id=77,
+            item_type=MemoryItemType.FILE,
+            status="compiled",
+            title="Declaracion Jurada FOGAPE.pdf",
+            content_text=None,
+            source_url=None,
+            filename="Declaracion Jurada FOGAPE.pdf",
+            mime_type="application/pdf",
+            storage_key="companies/acme/users/x/memory/raw/fogape.pdf",
+            created_at=None,
+        )
+
+        self.memory_repo.list_pages.return_value = [page]
+        self.memory_wiki_service.read_page.return_value = {
+            "summary": "Declaracion jurada FOGAPE",
+            "key_points": [],
+            "decisions": [],
+            "open_questions": [],
+            "next_steps": [],
+            "sources": ["Declaracion Jurada FOGAPE.pdf"],
+            "related_pages": [],
+            "source_item_ids": [77],
+        }
+        self.memory_repo.list_items_by_ids.return_value = [source_item]
+        self.storage_service.get_document_content.return_value = b"%PDF-1.4 fogape"
+
+        result = self.service.search_pages(
+            "acme",
+            "user@example.com",
+            query="abre declaracion jurada fogape y extrae el monto",
+            limit=5,
+            include_native_attachments=True,
+        )
+
+        assert result["status"] == "success"
+        assert len(result[MemoryService.TOOL_NATIVE_ATTACHMENTS_KEY]) == 1
+        attachment = result[MemoryService.TOOL_NATIVE_ATTACHMENTS_KEY][0]
+        assert attachment["name"] == "Declaracion Jurada FOGAPE.pdf"
+        assert attachment["mime_type"] == "application/pdf"
+        assert attachment["base64"] == "JVBERi0xLjQgZm9nYXBl"
+        assert result["native_attachment_delivery"]["status"] == "native_attached"
+        assert result["native_attachment_delivery"]["count"] == 1
+
     def test_search_pages_returns_raw_item_matches_when_page_match_is_missing(self):
         source_item = SimpleNamespace(
             id=88,
@@ -308,6 +407,39 @@ class TestMemoryService:
         assert len(result["raw_items"]) == 1
         assert result["raw_items"][0]["source_url"] == "https://ronforbes.com/build-your-personal-ai-assistant"
         assert result["raw_items"][0]["score"] > 0
+
+    def test_search_pages_can_attach_native_files_from_raw_item_matches(self):
+        source_item = SimpleNamespace(
+            id=88,
+            item_type=MemoryItemType.FILE,
+            status="compiled",
+            title="Declaracion Jurada FOGAPE.pdf",
+            content_text=None,
+            source_url=None,
+            filename="Declaracion Jurada FOGAPE.pdf",
+            mime_type="application/pdf",
+            storage_key="companies/acme/users/x/memory/raw/fogape.pdf",
+            created_at=None,
+        )
+
+        self.memory_repo.list_pages.return_value = []
+        self.memory_repo.list_recent_items.return_value = [source_item]
+        self.memory_repo.list_items_by_ids.return_value = [source_item]
+        self.storage_service.get_document_content.return_value = b"%PDF-1.4 fogape"
+
+        result = self.service.search_pages(
+            "acme",
+            "user@example.com",
+            query="abre el pdf fogape y dime el monto",
+            limit=5,
+            include_native_attachments=True,
+        )
+
+        assert result["status"] == "success"
+        assert result["results"] == []
+        assert len(result["raw_items"]) == 1
+        assert len(result[MemoryService.TOOL_NATIVE_ATTACHMENTS_KEY]) == 1
+        assert result[MemoryService.TOOL_NATIVE_ATTACHMENTS_KEY][0]["name"] == "Declaracion Jurada FOGAPE.pdf"
 
     def test_delete_item_removes_file_and_repairs_pages(self):
         item = SimpleNamespace(id=7, storage_key="companies/acme/users/u/memory/raw/file.txt")

@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from iatoolkit.services.memory_compiler_service import MemoryCompilerService
+from iatoolkit.repositories.models import MemoryItemType
 
 
 class TestMemoryCompilerService:
@@ -11,6 +12,7 @@ class TestMemoryCompilerService:
         self.memory_wiki_service = MagicMock()
         self.llm_client = MagicMock()
         self.configuration_service = MagicMock()
+        self.storage_service = MagicMock()
 
         self.service = MemoryCompilerService(
             profile_repo=self.profile_repo,
@@ -18,6 +20,7 @@ class TestMemoryCompilerService:
             memory_wiki_service=self.memory_wiki_service,
             llm_client=self.llm_client,
             configuration_service=self.configuration_service,
+            storage_service=self.storage_service,
         )
 
     def test_compile_single_capture_prefers_existing_page_linked_in_capture_meta(self):
@@ -77,3 +80,82 @@ class TestMemoryCompilerService:
         self.memory_repo.create_or_update_page.assert_called_once()
         assert self.memory_repo.create_or_update_page.call_args.kwargs["page_id"] == 41
         assert capture.meta["page_id"] == 41
+
+    def test_compile_with_llm_attaches_pdf_files_from_capture(self):
+        company = SimpleNamespace(short_name="acme")
+        capture = SimpleNamespace(id=10, title="Quarterly report", user_identifier="user@example.com")
+        pdf_item = SimpleNamespace(
+            id=101,
+            item_type=MemoryItemType.FILE,
+            title="Quarterly report",
+            content_text=None,
+            source_url=None,
+            filename="report.pdf",
+            mime_type="application/pdf",
+            source_meta={},
+            storage_key="companies/acme/users/user/memory/raw/abc/report.pdf",
+        )
+        self.configuration_service.get_llm_configuration.return_value = ("gpt-5-mini", {})
+        self.memory_wiki_service.read_schema.return_value = "# schema"
+        self.memory_wiki_service.read_index.return_value = {"entries": []}
+        self.storage_service.get_document_content.return_value = b"%PDF-1.4 sample"
+        self.llm_client.invoke.return_value = {
+            "structured_output": {
+                "action": "create",
+                "target_page_id": None,
+                "title": "Quarterly report",
+                "summary": "Important PDF",
+                "key_points": [],
+                "decisions": [],
+                "open_questions": [],
+                "next_steps": [],
+                "related_pages": [],
+                "sources": [],
+            }
+        }
+
+        result = self.service._compile_with_llm(company, capture, [pdf_item], [])
+
+        assert result["title"] == "Quarterly report"
+        invoke_kwargs = self.llm_client.invoke.call_args.kwargs
+        assert len(invoke_kwargs["attachments"]) == 1
+        assert invoke_kwargs["attachments"][0]["name"] == "report.pdf"
+        assert invoke_kwargs["attachments"][0]["mime_type"] == "application/pdf"
+        assert invoke_kwargs["attachments"][0]["base64"]
+
+    def test_compile_with_llm_skips_non_pdf_attachments(self):
+        company = SimpleNamespace(short_name="acme")
+        capture = SimpleNamespace(id=10, title="Text notes", user_identifier="user@example.com")
+        file_item = SimpleNamespace(
+            id=101,
+            item_type=MemoryItemType.FILE,
+            title="notes.txt",
+            content_text=None,
+            source_url=None,
+            filename="notes.txt",
+            mime_type="text/plain",
+            source_meta={},
+            storage_key="companies/acme/users/user/memory/raw/abc/notes.txt",
+        )
+        self.configuration_service.get_llm_configuration.return_value = ("gpt-5-mini", {})
+        self.memory_wiki_service.read_schema.return_value = "# schema"
+        self.memory_wiki_service.read_index.return_value = {"entries": []}
+        self.llm_client.invoke.return_value = {
+            "structured_output": {
+                "action": "create",
+                "target_page_id": None,
+                "title": "Text notes",
+                "summary": "Plain file",
+                "key_points": [],
+                "decisions": [],
+                "open_questions": [],
+                "next_steps": [],
+                "related_pages": [],
+                "sources": [],
+            }
+        }
+
+        self.service._compile_with_llm(company, capture, [file_item], [])
+
+        invoke_kwargs = self.llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["attachments"] == []

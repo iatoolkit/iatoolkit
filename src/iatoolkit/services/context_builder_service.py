@@ -197,6 +197,7 @@ class ContextBuilderService:
             "### Personal Memory",
             "The user may have personal memory pages built from saved notes, links, files, and chat messages.",
             "Use `iat_memory_search` when the user is explicitly asking about saved notes, remembered items, or personal continuity across sessions.",
+            "If `iat_memory_search` returns a result with `has_native_files=true`, call `iat_memory_get_page` before answering whenever the attached file contents may matter.",
             "Use `iat_memory_get_page` to read a specific page before answering when needed.",
             "Prefer memory pages as compiled context; do not assume all saved content is globally relevant.",
         ])

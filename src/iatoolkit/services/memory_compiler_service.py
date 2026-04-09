@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import json
 import logging
+import base64
+import mimetypes
 import re
 from datetime import datetime
 from html import unescape
@@ -20,9 +22,12 @@ from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.llm_client_service import llmClient
 from iatoolkit.services.memory_wiki_service import MemoryWikiService
+from iatoolkit.services.storage_service import StorageService
 
 
 class MemoryCompilerService:
+    MAX_NATIVE_PDF_ATTACHMENTS_PER_CAPTURE = 3
+    MAX_NATIVE_PDF_ATTACHMENT_BYTES = 20 * 1024 * 1024
     PAGE_SCHEMA = {
         "type": "object",
         "properties": {
@@ -63,12 +68,14 @@ class MemoryCompilerService:
                  memory_repo: MemoryRepo,
                  memory_wiki_service: MemoryWikiService,
                  llm_client: llmClient,
-                 configuration_service: ConfigurationService):
+                 configuration_service: ConfigurationService,
+                 storage_service: StorageService):
         self.profile_repo = profile_repo
         self.memory_repo = memory_repo
         self.memory_wiki_service = memory_wiki_service
         self.llm_client = llm_client
         self.configuration_service = configuration_service
+        self.storage_service = storage_service
 
     def compile_pending_for_user(self,
                                  company_short_name: str,
@@ -267,6 +274,7 @@ class MemoryCompilerService:
             })
 
         prompt = self._build_compiler_prompt(capture, items, candidate_payloads, wiki_schema=wiki_schema, wiki_index=wiki_index)
+        native_pdf_attachments = self._build_capture_native_pdf_attachments(company.short_name, items)
         try:
             response = self.llm_client.invoke(
                 company=company,
@@ -278,7 +286,7 @@ class MemoryCompilerService:
                 text={},
                 model=model,
                 images=[],
-                attachments=[],
+                attachments=native_pdf_attachments,
                 response_contract={
                     "schema": self.PAGE_SCHEMA,
                     "schema_mode": "best_effort",
@@ -291,6 +299,66 @@ class MemoryCompilerService:
 
         structured = response.get("structured_output")
         return structured if isinstance(structured, dict) else None
+
+    def _build_capture_native_pdf_attachments(self, company_short_name: str, items: list[MemoryItem]) -> list[dict]:
+        attachments = []
+        seen_storage_keys = set()
+
+        for item in items or []:
+            if len(attachments) >= self.MAX_NATIVE_PDF_ATTACHMENTS_PER_CAPTURE:
+                break
+            if not self._is_pdf_item(item):
+                continue
+
+            storage_key = str(getattr(item, "storage_key", "") or "").strip()
+            if not storage_key or storage_key in seen_storage_keys:
+                continue
+
+            try:
+                file_bytes = self.storage_service.get_document_content(company_short_name, storage_key)
+            except Exception as exc:
+                logging.warning("Could not load memory PDF attachment '%s' for compilation: %s", storage_key, exc)
+                continue
+
+            if not isinstance(file_bytes, (bytes, bytearray)) or not file_bytes:
+                continue
+            if len(file_bytes) > self.MAX_NATIVE_PDF_ATTACHMENT_BYTES:
+                logging.info(
+                    "Skipping memory PDF attachment '%s' during compilation because it exceeds %s bytes.",
+                    storage_key,
+                    self.MAX_NATIVE_PDF_ATTACHMENT_BYTES,
+                )
+                continue
+
+            filename = str(getattr(item, "filename", None) or "attachment.pdf").strip()
+            mime_type = str(
+                getattr(item, "mime_type", None)
+                or mimetypes.guess_type(filename)[0]
+                or "application/pdf"
+            ).strip().lower()
+
+            seen_storage_keys.add(storage_key)
+            attachments.append({
+                "name": filename,
+                "mime_type": mime_type,
+                "base64": base64.b64encode(file_bytes).decode("ascii"),
+                "size_bytes": len(file_bytes),
+            })
+
+        return attachments
+
+    @staticmethod
+    def _is_pdf_item(item: MemoryItem) -> bool:
+        mime_type = str(getattr(item, "mime_type", None) or "").strip().lower()
+        filename = str(getattr(item, "filename", None) or "").strip().lower()
+        item_type = getattr(item, "item_type", None)
+        return (
+            item_type == MemoryItemType.FILE
+            and (
+                mime_type == "application/pdf"
+                or filename.endswith(".pdf")
+            )
+        )
 
     def _compile_with_fallback(self, capture: MemoryCapture, items: list[MemoryItem], candidates: list) -> dict:
         target_page = candidates[0] if candidates else None

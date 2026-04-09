@@ -262,7 +262,7 @@ tools:
         - collection
         - metadata_filter
   - function_name: iat_memory_search
-    description: Busca páginas relevantes dentro de la Memoria personal del usuario y retorna contexto compilado. Debe usarse antes de responder preguntas sobre cosas guardadas, notas previas, memoria del usuario, continuidad entre sesiones o "lo que hablamos/guardé antes".
+    description: Busca páginas relevantes dentro de la Memoria personal del usuario y retorna contexto compilado. Incluye la señal `has_native_files` cuando una memoria tiene archivos fuente que pueden adjuntarse nativamente al modelo. Debe usarse antes de responder preguntas sobre cosas guardadas, notas previas, memoria del usuario, continuidad entre sesiones o "lo que hablamos/guardé antes".
     routing:
       force_include_capability: has_user_memory
     routing_profile:
@@ -310,7 +310,7 @@ tools:
         - query
         - limit
   - function_name: iat_memory_get_page
-    description: Recupera una página completa de la Memoria personal del usuario, incluyendo resumen, decisiones, próximos pasos y fuentes. Si la página proviene de capturas con archivos adjuntos compatibles, esos archivos pueden quedar adjuntos nativamente al turno actual del modelo para inspección directa; en ese caso no hace falta pedir permiso para abrir un access_url temporal.
+    description: Recupera una página completa de la Memoria personal del usuario, incluyendo resumen, decisiones, próximos pasos y fuentes. Si la página proviene de capturas con archivos adjuntos compatibles, esos archivos pueden quedar adjuntos nativamente al turno actual del modelo para inspección directa; en ese caso no hace falta pedir permiso para abrir un access_url temporal. Si `iat_memory_search` devuelve `has_native_files=true` y la respuesta depende del contenido del archivo, debes llamar esta tool antes de responder.
     routing:
       force_include_capability: has_user_memory
     routing_profile:

@@ -74,6 +74,44 @@ class TestToolService:
         )
         assert result["status"] == "success"
 
+    def test_handle_memory_search_tool_requests_native_attachments_for_document_queries(self):
+        self.service._memory_service = MagicMock()
+        self.service._memory_service.search_pages.return_value = {"status": "success", "results": []}
+
+        result = self.service._handle_memory_search_tool(
+            company_short_name="my_company",
+            user_identifier="user-123",
+            query="abre el PDF y extrae el monto del credito",
+            limit=5,
+        )
+
+        self.service._memory_service.search_pages.assert_called_once_with(
+            company_short_name="my_company",
+            user_identifier="user-123",
+            query="abre el PDF y extrae el monto del credito",
+            limit=5,
+            include_native_attachments=True,
+        )
+        assert result["status"] == "success"
+
+    def test_handle_memory_search_tool_keeps_general_queries_lightweight(self):
+        self.service._memory_service = MagicMock()
+        self.service._memory_service.search_pages.return_value = {"status": "success", "results": []}
+
+        self.service._handle_memory_search_tool(
+            company_short_name="my_company",
+            user_identifier="user-123",
+            query="que proyectos futuros tengo en memoria",
+            limit=5,
+        )
+
+        self.service._memory_service.search_pages.assert_called_once_with(
+            company_short_name="my_company",
+            user_identifier="user-123",
+            query="que proyectos futuros tengo en memoria",
+            limit=5,
+            include_native_attachments=False,
+        )
 
     def test_register_system_tools_success(self):
         """

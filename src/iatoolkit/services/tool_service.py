@@ -7,6 +7,8 @@ from injector import inject
 import os
 import json
 import logging
+import re
+import unicodedata
 from urllib.parse import urlparse
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.repositories.profile_repo import ProfileRepo
@@ -35,6 +37,32 @@ class ToolService:
     TOOL_EVENT_CREATED = "created"
     TOOL_EVENT_UPDATED = "updated"
     TOOL_EVENT_DELETED = "deleted"
+    MEMORY_NATIVE_ATTACHMENT_QUERY_HINTS = (
+        "abre",
+        "abreme",
+        "abrir",
+        "lee",
+        "leeme",
+        "leer",
+        "extrae",
+        "extraer",
+        "extraeme",
+        "documento",
+        "archivo",
+        "pdf",
+        "monto",
+        "credito",
+        "declaracion",
+        "jurada",
+        "fogape",
+        "open",
+        "read",
+        "extract",
+        "document",
+        "file",
+        "amount",
+        "credit",
+    )
     _tool_lifecycle_hook = None
 
     @inject
@@ -195,6 +223,7 @@ class ToolService:
                 user_identifier=user_identifier,
                 query=query,
                 limit=limit,
+                include_native_attachments=self._memory_search_should_attach_native_files(query),
             )
         except Exception:
             logging.exception(
@@ -215,7 +244,7 @@ class ToolService:
                 response.get("error_message", ""),
             )
         else:
-            logging.info(
+            logging.debug(
                 "Memory search succeeded for company='%s' user='%s' query='%s' results=%s.",
                 company_short_name,
                 user_identifier,
@@ -224,6 +253,13 @@ class ToolService:
             )
 
         return response
+
+    @classmethod
+    def _memory_search_should_attach_native_files(cls, query: str | None) -> bool:
+        normalized_query = unicodedata.normalize("NFKD", str(query or "").lower())
+        normalized_query = "".join(char for char in normalized_query if not unicodedata.combining(char))
+        tokens = set(re.findall(r"[a-z0-9]+", normalized_query))
+        return any(hint in tokens for hint in cls.MEMORY_NATIVE_ATTACHMENT_QUERY_HINTS)
 
     def _handle_memory_get_page_tool(self,
                                      company_short_name: str,

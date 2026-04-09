@@ -237,7 +237,12 @@ class MemoryService:
             for page in self.memory_repo.list_pages(company.id, user_identifier)
         ]
 
-    def search_pages(self, company_short_name: str, user_identifier: str, query: str, limit: int = 5) -> dict:
+    def search_pages(self,
+                     company_short_name: str,
+                     user_identifier: str,
+                     query: str,
+                     limit: int = 5,
+                     include_native_attachments: bool = False) -> dict:
         self._compile_on_demand(company_short_name, user_identifier)
         company = self.profile_repo.get_company_by_short_name(company_short_name)
         if not company:
@@ -266,6 +271,7 @@ class MemoryService:
             reverse=True,
         )
         serialized = []
+        source_items_by_page_id = {}
 
         for page in pages:
             page_payload = self._safe_read_page(company_short_name, page.wiki_path)
@@ -278,6 +284,7 @@ class MemoryService:
             score = self._score_page_match(normalized_query, query_tokens, page, page_payload, source_items)
             if normalized_query and score <= 0:
                 continue
+            source_items_by_page_id[page.id] = source_items
 
             result = self.serialize_page(page)
             if page_payload.get("summary"):
@@ -286,6 +293,15 @@ class MemoryService:
             result["source_urls"] = [
                 item.source_url for item in source_items
                 if getattr(item, "source_url", None)
+            ][:5]
+            result["has_native_files"] = any(
+                self._is_native_attachment_candidate(item)
+                for item in source_items
+            )
+            result["native_filenames"] = [
+                str(getattr(item, "filename", "") or "").strip()
+                for item in source_items
+                if self._is_native_attachment_candidate(item) and str(getattr(item, "filename", "") or "").strip()
             ][:5]
             result["score"] = round(score if score > 0 else 1.0, 4)
             serialized.append(result)
@@ -321,11 +337,37 @@ class MemoryService:
                 metadata={"limit": limit},
             )
 
-        return {
+        limited_results = serialized[:limit]
+        response = {
             "status": "success",
-            "results": serialized[:limit],
+            "results": limited_results,
             "raw_items": raw_matches,
         }
+        if include_native_attachments:
+            raw_native_items = self._load_raw_native_items_for_matches(
+                company_id=company.id,
+                user_identifier=user_identifier,
+                raw_matches=raw_matches,
+            )
+            native_attachments = self._build_search_native_attachments(
+                company_short_name=company_short_name,
+                results=limited_results,
+                source_items_by_page_id=source_items_by_page_id,
+                raw_source_items=raw_native_items,
+            )
+            response[self.TOOL_NATIVE_ATTACHMENTS_KEY] = native_attachments
+            response["native_attachment_delivery"] = {
+                "status": "native_attached" if native_attachments else "none",
+                "count": len(native_attachments),
+                "filenames": [str(item.get("name") or "").strip() for item in native_attachments if item.get("name")],
+                "note": (
+                    "Attached files from the top memory search results are already available to the model as native files for direct inspection in this turn. "
+                    "Use them to answer questions that require reading or extracting file contents."
+                    if native_attachments else
+                    "No native files were attached for these memory search results."
+                ),
+            }
+        return response
 
     def get_page(self,
                  company_short_name: str,
@@ -637,6 +679,67 @@ class MemoryService:
             })
 
         return attachments
+
+    def _build_search_native_attachments(self,
+                                         company_short_name: str,
+                                         results: list[dict],
+                                         source_items_by_page_id: dict[int, list[MemoryItem]],
+                                         raw_source_items: list[MemoryItem] | None = None) -> list[dict]:
+        native_source_items = []
+        seen_storage_keys = set()
+
+        def add_native_item(item):
+            if len(native_source_items) >= self.MAX_NATIVE_ATTACHMENTS_PER_PAGE:
+                return
+            if not self._is_native_attachment_candidate(item):
+                return
+            storage_key = str(getattr(item, "storage_key", "") or "").strip()
+            if storage_key in seen_storage_keys:
+                return
+            seen_storage_keys.add(storage_key)
+            native_source_items.append(item)
+
+        for result in results or []:
+            if not result.get("has_native_files"):
+                continue
+            page_id = result.get("page_id")
+            for item in source_items_by_page_id.get(page_id, []):
+                add_native_item(item)
+                if len(native_source_items) >= self.MAX_NATIVE_ATTACHMENTS_PER_PAGE:
+                    break
+            if len(native_source_items) >= self.MAX_NATIVE_ATTACHMENTS_PER_PAGE:
+                break
+
+        for item in raw_source_items or []:
+            add_native_item(item)
+            if len(native_source_items) >= self.MAX_NATIVE_ATTACHMENTS_PER_PAGE:
+                break
+
+        return self._build_page_native_attachments(company_short_name, native_source_items)
+
+    def _load_raw_native_items_for_matches(self,
+                                           company_id: int,
+                                           user_identifier: str,
+                                           raw_matches: list[dict]) -> list[MemoryItem]:
+        raw_item_ids = []
+        for item in raw_matches or []:
+            if item.get("item_type") != MemoryItemType.FILE.value:
+                continue
+            try:
+                raw_item_ids.append(int(item.get("id")))
+            except (TypeError, ValueError):
+                continue
+
+        if not raw_item_ids:
+            return []
+        return self.memory_repo.list_items_by_ids(company_id, user_identifier, raw_item_ids)
+
+    @staticmethod
+    def _is_native_attachment_candidate(item: MemoryItem) -> bool:
+        return (
+            getattr(item, "item_type", None) == MemoryItemType.FILE
+            and bool(str(getattr(item, "storage_key", "") or "").strip())
+        )
 
     def _score_page_match(self,
                           normalized_query: str,
