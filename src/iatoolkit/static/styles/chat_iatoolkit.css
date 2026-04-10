@@ -669,13 +669,16 @@ li {
 .memory-save-inline-button {
     border: 1px solid rgba(0, 0, 0, 0.08);
     background: rgba(255, 255, 255, 0.8);
-    color: var(--brand-primary-color, #4C6A8D);
+    color: #6c757d;
+    opacity: 0.6;
     border-radius: 999px;
+    transition: all 0.25s ease-in-out;
 }
 
 .memory-save-inline-button:hover {
     background: rgba(255, 255, 255, 1);
-    color: var(--brand-primary-color, #4C6A8D);
+    color: #6c757d;
+    opacity: 1;
 }
 
 .memory-save-answer-button {
