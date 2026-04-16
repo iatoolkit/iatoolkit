@@ -1,0 +1,17 @@
+
+order_items:
+  description: "Individual items within an order."
+  columns:
+    item_id:
+      type: INTEGER
+      pk: true
+    order_id:
+      type: INTEGER
+      description: "Foreign key to the orders table."
+    book_id:
+      type: INTEGER
+      description: "Foreign key to the books table."
+    quantity:
+      type: INTEGER
+    unit_price:
+      type: DECIMAL(10, 2)
