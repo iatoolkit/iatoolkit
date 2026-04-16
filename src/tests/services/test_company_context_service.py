@@ -4,35 +4,30 @@
 import pytest
 from unittest.mock import MagicMock, call
 from iatoolkit.services.company_context_service import CompanyContextService
-from iatoolkit.services.configuration_service import ConfigurationService
+from iatoolkit.services.sql_source_service import SqlSourceService
 from iatoolkit.common.interfaces.asset_storage import AssetRepository, AssetType
 from iatoolkit.services.sql_service import SqlService
-from iatoolkit.repositories.database_manager import DatabaseManager
 from iatoolkit.common.util import Utility
 from iatoolkit.common.exceptions import IAToolkitException
 import textwrap
 
 # --- Mock Data for different test scenarios ---
 
-# Simulates include_all_tables: true
-MOCK_CONFIG_INCLUDE_ALL = {
-    'sql': [{
+# Simulates a configured SQL source list entry
+MOCK_SQL_SOURCES = [{
         'database': 'main_db',
         'include_all_tables': True,
         'description': 'Main database'  # Added description to match test expectations
     }]
-}
 
 # Simulates an explicit list of tables
-MOCK_CONFIG_EXPLICIT_LIST = {
-    'sql': [{
+MOCK_SQL_SOURCES_EXPLICIT = [{
         'database': 'main_db',
         'tables': {
             'products': {},
             'customers': {}
         }
     }]
-}
 
 
 
@@ -47,7 +42,7 @@ class TestCompanyContextService:
         """Set up mocks for all dependencies and instantiate the service."""
         self.mock_sql_service = MagicMock(spec=SqlService)
         self.mock_utility = MagicMock(spec=Utility)
-        self.mock_config_service = MagicMock(spec=ConfigurationService)
+        self.mock_sql_source_service = MagicMock(spec=SqlSourceService)
         self.mock_asset_repo = MagicMock(spec=AssetRepository)  # <--- Mock Repo
 
         # NOTE: DatabaseProvider mock is no longer needed for these tests as we mock sql_service.get_database_structure directly
@@ -55,7 +50,7 @@ class TestCompanyContextService:
         self.context_service = CompanyContextService(
             sql_service=self.mock_sql_service,
             utility=self.mock_utility,
-            config_service=self.mock_config_service,
+            sql_source_service=self.mock_sql_source_service,
             asset_repo=self.mock_asset_repo
         )
         self.COMPANY_NAME = 'acme'
@@ -69,7 +64,7 @@ class TestCompanyContextService:
         THEN it should return the formatted string with descriptions and enriched columns.
         """
         # Arrange
-        self.mock_config_service.get_configuration.return_value = MOCK_CONFIG_INCLUDE_ALL
+        self.mock_sql_source_service.list_sources.return_value = MOCK_SQL_SOURCES
 
         # Mock DB structure (enriched internally by calling get_enriched_database_schema)
         mock_enriched_structure = {
@@ -112,7 +107,7 @@ class TestCompanyContextService:
         WHEN _get_sql_enriched_context is called
         THEN it should return empty string.
         """
-        self.mock_config_service.get_configuration.return_value = {}
+        self.mock_sql_source_service.list_sources.return_value = []
         # FIX: Unpack the tuple result
         result, tables = self.context_service._get_sql_enriched_context(self.COMPANY_NAME)
         assert result == ""
@@ -124,7 +119,7 @@ class TestCompanyContextService:
         WHEN _get_sql_enriched_context is called
         THEN it should skip that DB and continue/return what's possible.
         """
-        self.mock_config_service.get_configuration.return_value = MOCK_CONFIG_INCLUDE_ALL
+        self.mock_sql_source_service.list_sources.return_value = MOCK_SQL_SOURCES
 
         # Force exception in the helper method
         self.context_service.get_enriched_database_schema = MagicMock(side_effect=Exception("DB Down"))
@@ -139,7 +134,7 @@ class TestCompanyContextService:
         Integration test: get_company_context calls all parts including the new SQL logic.
         """
         # Arrange
-        self.mock_config_service.get_configuration.return_value = MOCK_CONFIG_INCLUDE_ALL
+        self.mock_sql_source_service.list_sources.return_value = MOCK_SQL_SOURCES
 
         # Mock Markdown
         # FIX: Update lambda signature to accept 'extension' kwarg
@@ -319,6 +314,64 @@ class TestCompanyContextService:
         assert "shipping_address" in props
         assert props["shipping_address"]["type"] == "string"
 
+    def test_get_enriched_schema_merge_flat_schema_format(self):
+        """
+        Supports flat schema files where metadata is defined at top level:
+        table/schema/description/columns...
+        """
+        self.mock_sql_service.get_database_structure.return_value = {
+            "clients": {
+                "columns": [{"name": "client_id"}, {"name": "advisor_name"}]
+            }
+        }
+        self.mock_asset_repo.list_files.return_value = ["wealth-clients.yaml"]
+
+        yaml_content = textwrap.dedent("""
+        table: clients
+        schema: wealth
+        description: "Master table of investment clients."
+        columns:
+          advisor_name:
+            type: text
+            description: "Advisor assigned to the client."
+        """)
+        self.mock_asset_repo.read_text.return_value = yaml_content
+
+        result = self.context_service.get_enriched_database_schema(self.COMPANY_NAME, 'wealth')
+
+        table = result["clients"]
+        assert table["description"] == "Master table of investment clients."
+        advisor_col = next(c for c in table["columns"] if c["name"] == "advisor_name")
+        assert advisor_col["description"] == "Advisor assigned to the client."
+
+    def test_get_enriched_schema_matches_unqualified_file_with_qualified_table_name(self):
+        """
+        If DB introspection returns qualified table names (schema.table),
+        file names using unqualified table names should still match.
+        """
+        self.mock_sql_service.get_database_structure.return_value = {
+            "wealth.clients": {
+                "columns": [{"name": "client_id"}, {"name": "full_name"}]
+            }
+        }
+        self.mock_asset_repo.list_files.return_value = ["wealth-clients.yaml"]
+
+        yaml_content = textwrap.dedent("""
+        clients:
+          description: "Clients table metadata."
+          columns:
+            full_name:
+              description: "Client full name."
+        """)
+        self.mock_asset_repo.read_text.return_value = yaml_content
+
+        result = self.context_service.get_enriched_database_schema(self.COMPANY_NAME, 'wealth')
+
+        table = result["wealth.clients"]
+        assert table["description"] == "Clients table metadata."
+        full_name_col = next(c for c in table["columns"] if c["name"] == "full_name")
+        assert full_name_col["description"] == "Client full name."
+
     def test_build_context_with_only_static_files(self):
         """
         GIVEN only static markdown files provide context in the repo
@@ -332,8 +385,8 @@ class TestCompanyContextService:
 
         self.mock_asset_repo.read_text.return_value = "STATIC_INFO"
 
-        # 2. No SQL config
-        self.mock_config_service.get_configuration.return_value = None
+        # 2. No SQL sources
+        self.mock_sql_source_service.list_sources.return_value = []
 
         # Act
         full_context = self.context_service.get_company_context(self.COMPANY_NAME)
@@ -374,8 +427,8 @@ class TestCompanyContextService:
         # NOTA: Ya no mockeamos mock_utility.generate_schema_table porque el método
         # ahora vive dentro de context_service y queremos probar su integración real.
 
-        # 3. No SQL config
-        self.mock_config_service.get_configuration.return_value = None
+        # 3. No SQL sources
+        self.mock_sql_source_service.list_sources.return_value = []
 
         # Act
         full_context = self.context_service.get_company_context(self.COMPANY_NAME)
@@ -397,7 +450,7 @@ class TestCompanyContextService:
         """
         # Arrange
         self.mock_asset_repo.list_files.side_effect = Exception("Repo Down")
-        self.mock_config_service.get_configuration.return_value = None
+        self.mock_sql_source_service.list_sources.return_value = []
 
         # Act
         full_context = self.context_service.get_company_context(self.COMPANY_NAME)
@@ -413,7 +466,7 @@ class TestCompanyContextService:
         """
         # Arrange
         self.mock_utility.get_files_by_extension.return_value = []  # No static context
-        self.mock_config_service.get_configuration.return_value = {'sql': [{'database': 'down_db'}]}
+        self.mock_sql_source_service.list_sources.return_value = [{'database': 'down_db'}]
 
         # Configure the exception on get_database_structure
         self.mock_sql_service.get_database_structure.side_effect = IAToolkitException(

@@ -11,6 +11,7 @@ import pytest
 class TestDatabaseManager:
     def setup_method(self):
         self.mock_engine = MagicMock()
+        self.mock_engine.execution_options.return_value = self.mock_engine
         self.mock_sessionmaker = MagicMock()
         self.mock_scoped_session = MagicMock()
         self.mock_base_metadata = MagicMock()
@@ -51,11 +52,12 @@ class TestDatabaseManager:
 
     def test_get_session_returns_scoped_session(self):
         session = self.db_manager.get_session()
-        assert session == self.mock_scoped_session()
+        assert session == self.mock_scoped_session
 
     def test_create_all_calls_metadata_create_all(self):
         self.db_manager.create_all()
         assert self.mock_base_metadata.create_all.call_count == 1
+
 
     def test_drop_all_calls_metadata_drop_all(self):
         self.db_manager.drop_all()
@@ -73,7 +75,7 @@ class TestDatabaseManager:
         THEN it should return a list of dictionaries.
         """
         # Arrange
-        mock_session = self.mock_scoped_session.return_value
+        mock_session = self.mock_scoped_session
         mock_result = mock_session.execute.return_value
         mock_result.returns_rows = True
         mock_result.keys.return_value = ['id', 'val']
@@ -93,7 +95,7 @@ class TestDatabaseManager:
         THEN it should return {'rowcount': N}.
         """
         # Arrange
-        mock_session = self.mock_scoped_session.return_value
+        mock_session = self.mock_scoped_session
         mock_result = mock_session.execute.return_value
         mock_result.returns_rows = False
         mock_result.rowcount = 5
@@ -110,7 +112,7 @@ class TestDatabaseManager:
         WHEN execute_query is called
         THEN it should call session.commit().
         """
-        mock_session = self.mock_scoped_session.return_value
+        mock_session = self.mock_scoped_session
         mock_result = mock_session.execute.return_value
         mock_result.returns_rows = False
 
@@ -120,7 +122,7 @@ class TestDatabaseManager:
 
     def test_commit_and_rollback(self):
         """Test wrapper methods"""
-        mock_session = self.mock_scoped_session.return_value
+        mock_session = self.mock_scoped_session
 
         self.db_manager.commit()
         mock_session.commit.assert_called()

@@ -153,4 +153,4 @@ class TestForgotPasswordView:
 
         # 1. Verificar la redirección
         assert response.status_code == 302
-
+        self.i8n_service.t.assert_called_with('errors.general.unexpected_error', error='an error')

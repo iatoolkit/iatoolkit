@@ -1,0 +1,13 @@
+version: 1
+prompts:
+  - key: query_main
+    filename: query_main.prompt
+    include: always
+  - key: format_styles
+    filename: format_styles.prompt
+    include: always
+  - key: sql_rules
+    filename: sql_rules.prompt
+    include:
+      all_capabilities:
+        - has_sql_sources

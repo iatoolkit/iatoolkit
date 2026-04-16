@@ -12,7 +12,7 @@ from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.knowledge_base_service import KnowledgeBaseService
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
-from iatoolkit.repositories.models import PromptType, PromptCategory
+from iatoolkit.repositories.models import PromptCategory, Tool
 import logging
 
 class CategoriesApiView(MethodView):
@@ -39,7 +39,7 @@ class CategoriesApiView(MethodView):
     def get(self, company_short_name):
         try:
             # 1. Verify Authentication
-            auth_result = self.auth_service.verify()
+            auth_result = self.auth_service.verify_for_company(company_short_name)
             if not auth_result.get("success"):
                 return jsonify(auth_result), 401
 
@@ -50,10 +50,16 @@ class CategoriesApiView(MethodView):
 
             # 3. Gather Categories
             response_data = {
-                "prompt_types": [t.value for t in PromptType],
+                "prompt_types": list(self.SUPPORTED_PROMPT_TYPES),
                 "prompt_categories": [],
                 "collection_types": [],
-                # Future categories can be added here (e.g., tool_types, user_roles)
+                "collection_type_details": [],
+                "tool_types": [
+                    Tool.TYPE_NATIVE,
+                    Tool.TYPE_INFERENCE,
+                    Tool.TYPE_HTTP,
+                    Tool.TYPE_SYSTEM
+                ]
             }
 
             # A. Prompt Categories (from DB)
@@ -61,7 +67,12 @@ class CategoriesApiView(MethodView):
             response_data["prompt_categories"] = [c.name for c in prompt_cats]
 
             # B. Collection Types (from KnowledgeBaseService)
-            response_data["collection_types"] = self.knowledge_base_service.get_collection_names(company_short_name)
+            response_data["collection_type_details"] = self.knowledge_base_service.get_collection_descriptors(company_short_name)
+            response_data["collection_types"] = [
+                item["name"]
+                for item in response_data["collection_type_details"]
+                if isinstance(item, dict) and item.get("name")
+            ]
 
             # C. LLM Models (from ConfigurationService)
             _, llm_models = self.configuration_service.get_llm_configuration(company_short_name)
@@ -77,7 +88,7 @@ class CategoriesApiView(MethodView):
     def post(self, company_short_name):
         try:
             # 1. Verify Authentication
-            auth_result = self.auth_service.verify()
+            auth_result = self.auth_service.verify_for_company(company_short_name)
             if not auth_result.get("success"):
                 return jsonify(auth_result), 401
 
@@ -91,7 +102,12 @@ class CategoriesApiView(MethodView):
 
             # 4. Sync Collection Types
             # The service expects a list of names strings
-            if 'collection_types' in data:
+            if 'collection_type_details' in data:
+                self.knowledge_base_service.sync_collection_types(
+                    company_short_name,
+                    data.get('collection_type_details', [])
+                )
+            elif 'collection_types' in data:
                 self.knowledge_base_service.sync_collection_types(
                     company_short_name,
                     data.get('collection_types', [])
@@ -109,3 +125,7 @@ class CategoriesApiView(MethodView):
         except Exception as e:
             logging.exception(f"Error syncing categories for {company_short_name}: {e}")
             return jsonify({"status": "error", "message": str(e)}), 500
+    SUPPORTED_PROMPT_TYPES = [
+        "company",
+        "agent",
+    ]

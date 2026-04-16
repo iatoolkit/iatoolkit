@@ -10,47 +10,87 @@ import os
 import tempfile
 from typing import Any, Optional
 
-from injector import inject
+from injector import inject, singleton
 
 from iatoolkit.common.exceptions import IAToolkitException
+from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.services.parsers.contracts import ParseRequest, ParseResult, ParsedImage, ParsedTable, ParsedText
 from iatoolkit.services.parsers.image_normalizer import normalize_image
+from iatoolkit.services.parsers.pdf_ocr_detection import analyze_pdf_ocr_need
 
 
+@singleton
 class DoclingParsingProvider:
     name = "docling"
     version = "1.0"
 
     @inject
     def __init__(self,
-                 i18n_service: I18nService):
+                 i18n_service: I18nService,
+                 config_service: ConfigurationService):
         self.i18n_service = i18n_service
-        self.enabled = os.getenv("DOCLING_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
+        self.config_service = config_service
+        self.enabled = True
         self.converter = None
+        self._converter_cache: dict[tuple[bool, bool], Any] = {}
 
-    def init(self):
+    def init(self, *, use_ocr: bool = False, detect_tables: bool = False):
         if not self.enabled:
-            logging.info("DoclingParsingProvider is disabled via environment variables.")
+            logging.info("DoclingParsingProvider is unavailable because a previous initialization failed.")
+            return
+
+        cache_key = (use_ocr, detect_tables)
+        if cache_key in self._converter_cache:
+            self.converter = self._converter_cache[cache_key]
             return
 
         try:
-            logging.info("Initializing Docling models...")
+            logging.info("Initializing Docling models (use_ocr=%s detect_tables=%s)...", use_ocr, detect_tables)
 
-            from docling.document_converter import DocumentConverter, PdfFormatOption
+            from docling.datamodel.accelerator_options import AcceleratorOptions
             from docling.datamodel.base_models import InputFormat
-            from docling.datamodel.pipeline_options import PdfPipelineOptions
+            from docling.datamodel.pipeline_options import PdfPipelineOptions, RapidOcrOptions, TableFormerMode
+            from docling.document_converter import DocumentConverter, PdfFormatOption
 
             pipeline_options = PdfPipelineOptions()
+            pipeline_options.do_ocr = use_ocr
+            pipeline_options.force_backend_text = not use_ocr
             pipeline_options.generate_picture_images = True
-            pipeline_options.do_table_structure = True
-            pipeline_options.generate_table_images = True
+            pipeline_options.do_table_structure = detect_tables
+            pipeline_options.generate_table_images = detect_tables
+            if use_ocr:
+                pipeline_options.ocr_options = RapidOcrOptions(backend="onnxruntime")
+
+            pipeline_options.table_structure_options.mode = TableFormerMode.FAST
+            pipeline_options.layout_batch_size = self._get_int_env("DOCLING_LAYOUT_BATCH_SIZE", 1)
+            pipeline_options.table_batch_size = self._get_int_env("DOCLING_TABLE_BATCH_SIZE", 1)
+            pipeline_options.ocr_batch_size = self._get_int_env("DOCLING_OCR_BATCH_SIZE", 1)
+            pipeline_options.queue_max_size = self._get_int_env("DOCLING_QUEUE_MAX_SIZE", 6)
+            pipeline_options.accelerator_options = AcceleratorOptions(
+                num_threads=self._get_int_env("DOCLING_NUM_THREADS", 1),
+                device=os.getenv("DOCLING_DEVICE", "cpu"),
+            )
+
+            logging.info(
+                "Docling profile: use_ocr=%s detect_tables=%s table_mode=%s layout_batch=%s table_batch=%s ocr_batch=%s queue_max=%s threads=%s device=%s",
+                pipeline_options.do_ocr,
+                detect_tables,
+                pipeline_options.table_structure_options.mode,
+                pipeline_options.layout_batch_size,
+                pipeline_options.table_batch_size,
+                pipeline_options.ocr_batch_size,
+                pipeline_options.queue_max_size,
+                pipeline_options.accelerator_options.num_threads,
+                pipeline_options.accelerator_options.device,
+            )
 
             self.converter = DocumentConverter(
                 format_options={
                     InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
                 }
             )
+            self._converter_cache[cache_key] = self.converter
             logging.info("Docling models successfully loaded.")
         except Exception as e:
             logging.error(f"Failed to initialize DoclingParsingProvider: {e}")
@@ -71,9 +111,16 @@ class DoclingParsingProvider:
                 if self.i18n_service else "Docling is disabled"
             )
 
-        if self.converter is None:
-            self.init()
-            if self.converter is None:
+        detect_tables = self._resolve_detect_tables(request)
+        use_ocr = self._should_enable_ocr(request)
+        cache_key = (use_ocr, detect_tables)
+
+        converter = self._converter_cache.get(cache_key)
+        if converter is None:
+            self.init(use_ocr=use_ocr, detect_tables=detect_tables)
+            converter = self._converter_cache.get(cache_key)
+
+            if converter is None:
                 raise IAToolkitException(
                     IAToolkitException.ErrorType.CONFIG_ERROR,
                     "Docling converter failed to initialize."
@@ -84,7 +131,8 @@ class DoclingParsingProvider:
             tmp_path = tmp.name
 
         try:
-            conversion_result = self.converter.convert(tmp_path)
+            self.converter = converter
+            conversion_result = converter.convert(tmp_path)
             doc = conversion_result.document
 
             markdown = ""
@@ -100,7 +148,7 @@ class DoclingParsingProvider:
                 doc_dict = {}
 
             texts = self._extract_texts(doc_dict, markdown)
-            tables = self._extract_tables(doc, doc_dict)
+            tables = self._extract_tables(doc, doc_dict) if detect_tables else []
             images = self._extract_images(doc, request.filename, doc_dict)
 
             return ParseResult(
@@ -109,6 +157,11 @@ class DoclingParsingProvider:
                 texts=texts,
                 tables=tables,
                 images=images,
+                metrics={
+                    "used_ocr": use_ocr,
+                    "detect_tables": detect_tables,
+                    "ocr_engine": "docling" if use_ocr else None,
+                },
             )
         finally:
             try:
@@ -135,7 +188,6 @@ class DoclingParsingProvider:
             if label in ("title", "section_header", "page_header", "header"):
                 current_section_title = text
 
-            # by design we do not emit list_item or section_header as embeddable units
             if label not in ("text", "paragraph", "body_text", "title"):
                 continue
 
@@ -285,12 +337,10 @@ class DoclingParsingProvider:
                                page_no: Optional[int],
                                table_index: int,
                                caption_finder) -> tuple[Optional[str], str]:
-        # 1) Direct caption from docling object
         caption = self._extract_caption_from_obj(table_obj, doc=doc, candidate_fields=("caption_text", "caption", "captions"))
         if caption:
             return caption, "extracted"
 
-        # 2) Caption from exported table dict
         caption = self._extract_caption_from_mapping(
             table_dict,
             candidate_fields=("caption_text", "caption", "title", "name", "captions")
@@ -298,7 +348,6 @@ class DoclingParsingProvider:
         if caption:
             return caption, "extracted"
 
-        # 3) Fallback from global doc_dict caption blocks (same page / table-like labels)
         caption = caption_finder(kind="table", page_no=page_no, item_index=table_index)
         if caption:
             return caption, "inferred"
@@ -311,12 +360,10 @@ class DoclingParsingProvider:
                                page_no: Optional[int],
                                image_index: int,
                                caption_finder) -> tuple[Optional[str], str]:
-        # 1) Direct caption from docling object
         caption = self._extract_caption_from_obj(picture_obj, doc=doc, candidate_fields=("caption_text", "caption", "captions"))
         if caption:
             return caption, "extracted"
 
-        # 2) Fallback from global doc_dict caption blocks (same page / image-like labels)
         caption = caption_finder(kind="image", page_no=page_no, item_index=image_index)
         if caption:
             return caption, "inferred"
@@ -337,7 +384,6 @@ class DoclingParsingProvider:
             if not text_candidate:
                 continue
 
-            # keep only likely caption nodes to avoid random body text
             if "caption" not in label:
                 continue
 
@@ -360,7 +406,6 @@ class DoclingParsingProvider:
             if not caption_entries:
                 return None
 
-            # Preferred: same kind + same page
             for entry in caption_entries:
                 if entry["used"]:
                     continue
@@ -371,7 +416,6 @@ class DoclingParsingProvider:
                 entry["used"] = True
                 return entry["text"]
 
-            # Fallback: same kind regardless of page
             for entry in caption_entries:
                 if entry["used"]:
                     continue
@@ -448,7 +492,6 @@ class DoclingParsingProvider:
             return " ".join(parts).strip() if parts else None
 
         if isinstance(value, dict):
-            # Common patterns in nested structures
             for key in ("text", "caption_text", "caption", "content", "title", "name"):
                 if key in value:
                     normalized = self._normalize_caption_value(value.get(key))
@@ -475,3 +518,58 @@ class DoclingParsingProvider:
         elif isinstance(node, list):
             for value in node:
                 yield from self._walk_items(value)
+
+    def _should_enable_ocr(self, request: ParseRequest) -> bool:
+        if not str(getattr(request, "filename", "") or "").strip().lower().endswith(".pdf"):
+            return False
+        provider_config = getattr(request, "provider_config", None) or {}
+        if "pdf_needs_ocr" in provider_config:
+            return self._parse_bool_value(provider_config.get("pdf_needs_ocr"), default=False)
+        return self._pdf_needs_ocr(getattr(request, "content", b"") or b"")
+
+    def _resolve_detect_tables(self, request: ParseRequest) -> bool:
+        value = (getattr(request, "provider_config", None) or {}).get("detect_tables")
+        return self._parse_bool_value(value, default=False)
+
+    def _pdf_needs_ocr(self, content: bytes) -> bool:
+        decision = analyze_pdf_ocr_need(content)
+        logging.info(
+            "PDF OCR decision for docling provider: needs_ocr=%s reason=%s pages=%s image_pages=%s meaningful_pages=%s sparse_image_pages=%s total_text_chars=%s",
+            decision.needs_ocr,
+            decision.reason,
+            decision.page_count,
+            decision.image_page_count,
+            decision.meaningful_text_page_count,
+            decision.sparse_text_image_page_count,
+            decision.total_text_char_count,
+        )
+        return decision.needs_ocr
+
+    @staticmethod
+    def _parse_bool_value(value, *, default: bool = False) -> bool:
+        if isinstance(value, bool):
+            return value
+
+        if isinstance(value, (int, float)):
+            return value != 0
+
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "yes", "on"}:
+                return True
+            if normalized in {"0", "false", "no", "off"}:
+                return False
+
+        return default
+
+    @staticmethod
+    def _get_int_env(name: str, default: int) -> int:
+        value = os.getenv(name)
+        if value is None:
+            return default
+        try:
+            parsed = int(value)
+            return parsed if parsed > 0 else default
+        except Exception:
+            logging.warning("Invalid value for %s=%r. Using default=%s", name, value, default)
+            return default

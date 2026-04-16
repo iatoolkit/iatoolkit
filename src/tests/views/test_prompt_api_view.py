@@ -35,7 +35,7 @@ class TestPromptView:
         self.base_url = f'/{self.company_short_name}/api/prompts'
 
         # Default to successful authentication
-        self.auth_service.verify.return_value = {'success': True,
+        self.auth_service.verify_for_company.return_value = {'success': True,
                                                  'user_identifier': 'test_user_id',}
 
         # Register the view with mocked dependencies
@@ -60,7 +60,7 @@ class TestPromptView:
 
     def test_get_list_when_auth_error(self):
         """Test list response when authentication fails."""
-        self.auth_service.verify.return_value = {
+        self.auth_service.verify_for_company.return_value = {
             'success': False,
             'error_message': 'Authentication token is invalid',
             "status_code": 401,
@@ -158,7 +158,7 @@ class TestPromptView:
 
     def test_put_auth_error(self):
         """Test that PUT is protected by authentication."""
-        self.auth_service.verify.return_value = {"success": False, "status_code": 401}
+        self.auth_service.verify_for_company.return_value = {"success": False, "status_code": 401}
 
         response = self.client.put(f"{self.base_url}/any_prompt", json={})
 

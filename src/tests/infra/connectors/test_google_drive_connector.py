@@ -21,6 +21,8 @@ class TestGoogleDriveConnector(unittest.TestCase):
         # Parchar las credenciales de Google
         self.credentials_patch = patch('iatoolkit.infra.connectors.google_drive_connector.Credentials.from_service_account_file')
         self.mock_credentials = self.credentials_patch.start()
+        self.credentials_info_patch = patch('iatoolkit.infra.connectors.google_drive_connector.Credentials.from_service_account_info')
+        self.mock_credentials_info = self.credentials_info_patch.start()
 
         # Datos de configuración
         self.folder_id = "mock-folder-id"
@@ -35,6 +37,7 @@ class TestGoogleDriveConnector(unittest.TestCase):
     def tearDown(self):
         self.build_patch.stop()
         self.credentials_patch.stop()
+        self.credentials_info_patch.stop()
 
     def test_authenticate_when_success(self):
         self.mock_credentials.assert_called_once_with(
@@ -43,6 +46,19 @@ class TestGoogleDriveConnector(unittest.TestCase):
         )
         self.mock_build.assert_called_once_with('drive', 'v3', credentials=self.mock_credentials.return_value)
         self.assertEqual(self.connector.drive_service, self.mock_build.return_value)
+
+    def test_authenticate_when_service_account_info_is_provided(self):
+        connector = GoogleDriveConnector(
+            folder_id=self.folder_id,
+            service_account_info={"client_email": "svc@example.com"},
+        )
+
+        self.mock_credentials_info.assert_called_with(
+            {"client_email": "svc@example.com"},
+            scopes=["https://www.googleapis.com/auth/drive"]
+        )
+        self.mock_build.assert_called_with('drive', 'v3', credentials=self.mock_credentials_info.return_value)
+        self.assertEqual(connector.drive_service, self.mock_build.return_value)
 
     def test_list_files_empty(self):
         self.mock_drive_service.files().list().execute.return_value = {'files': []}

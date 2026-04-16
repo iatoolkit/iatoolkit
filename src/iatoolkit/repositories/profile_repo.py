@@ -4,15 +4,18 @@
 # IAToolkit is open source software.
 
 from iatoolkit.repositories.models import (User, Company, user_company,
-                                           ApiKey, UserFeedback, AccessLog)
+                                           UserFeedback, AccessLog)
 from injector import inject
 from iatoolkit.repositories.database_manager import DatabaseManager
 from sqlalchemy import select, func, and_
+from sqlalchemy.exc import OperationalError
+import logging
 
 
 class ProfileRepo:
     @inject
     def __init__(self, db_manager: DatabaseManager):
+        self.db_manager = db_manager
         self.session = db_manager.get_session()
 
     def get_user_by_id(self, user_id: int) -> User:
@@ -21,6 +24,10 @@ class ProfileRepo:
 
     def get_user_by_email(self, email: str) -> User:
         user = self.session.query(User).filter_by(email=email).first()
+        return user
+
+    def get_user_by_google_sub(self, google_sub: str) -> User:
+        user = self.session.query(User).filter_by(google_sub=google_sub).first()
         return user
 
     def create_user(self, new_user: User):
@@ -65,10 +72,43 @@ class ProfileRepo:
         return self.session.query(Company).filter_by(id=company_id).first()
 
     def get_company_by_short_name(self, short_name: str) -> Company:
-        return self.session.query(Company).filter(Company.short_name == short_name).first()
+        # Retry once for transient SSL/network disconnects from pooled connections.
+        for attempt in (1, 2):
+            try:
+                return self.session.query(Company).filter(Company.short_name == short_name).first()
+            except OperationalError as e:
+                try:
+                    self.session.rollback()
+                except Exception:
+                    pass
+                self.db_manager.remove_session()
+
+                if attempt == 1:
+                    logging.warning(
+                        "Transient DB error resolving company '%s'. Retrying once: %s",
+                        short_name,
+                        e,
+                    )
+                    continue
+                raise
 
     def get_companies(self) -> list[Company]:
         return self.session.query(Company).all()
+
+    def update_company_name(self, short_name: str, name: str) -> Company | None:
+        company = self.get_company_by_short_name(short_name)
+        if not company:
+            return None
+
+        normalized_name = str(name or "").strip()
+        if not normalized_name:
+            return company
+
+        if company.name != normalized_name:
+            company.name = normalized_name
+            self.session.commit()
+
+        return company
 
     def get_user_role_in_company(self, company_id, user_id, ):
         stmt = (
@@ -128,7 +168,9 @@ class ProfileRepo:
     def create_company(self, new_company: Company):
         company = self.session.query(Company).filter_by(short_name=new_company.short_name).first()
         if company:
-            if company.parameters != new_company.parameters:
+            if new_company.name is not None and company.name != new_company.name:
+                company.name = new_company.name
+            if new_company.parameters is not None and company.parameters != new_company.parameters:
                 company.parameters = new_company.parameters
         else:
             # Si la compañía no existe, la añade a la sesión.
@@ -142,29 +184,3 @@ class ProfileRepo:
         self.session.add(feedback)
         self.session.commit()
         return feedback
-
-    def create_api_key(self, new_api_key: ApiKey):
-        self.session.add(new_api_key)
-        self.session.commit()
-        return new_api_key
-
-
-    def get_active_api_key_entry(self, api_key_value: str) -> ApiKey | None:
-        """
-        search for an active API Key by its value.
-        returns the entry if found and is active, None otherwise.
-        """
-        api_key_entry = (self.session.query(ApiKey).filter
-                             (ApiKey.key == api_key_value, ApiKey.is_active == True).first())
-
-        return api_key_entry
-
-
-    def get_active_api_key_by_company(self, company: Company) -> ApiKey | None:
-        return self.session.query(ApiKey)\
-                .filter(ApiKey.company == company, ApiKey.is_active == True)\
-                .first()
-
-
-
-

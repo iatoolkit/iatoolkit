@@ -12,11 +12,15 @@ from iatoolkit.services.dispatcher_service import Dispatcher
 from iatoolkit.services.user_session_context_service import UserSessionContextService
 from iatoolkit.services.history_manager_service import HistoryManagerService
 from iatoolkit.services.context_builder_service import ContextBuilderService
+from iatoolkit.services.attachment_policy_service import AttachmentPolicyService
+from iatoolkit.services.memory_lookup_policy_service import MemoryLookupPolicyService
 from iatoolkit.common.model_registry import ModelRegistry
 from injector import inject
 import logging
-from typing import Optional
+from typing import Optional, Callable
 import time
+import json
+import re
 from dataclasses import dataclass
 
 
@@ -31,6 +35,8 @@ class HistoryHandle:
 
 
 class QueryService:
+    _tool_selector_hook: Callable | None = None
+
     @inject
     def __init__(self,
                  dispatcher: Dispatcher,
@@ -42,7 +48,9 @@ class QueryService:
                  configuration_service: ConfigurationService,
                  history_manager: HistoryManagerService,
                  model_registry: ModelRegistry,
-                 context_builder: ContextBuilderService
+                 context_builder: ContextBuilderService,
+                 attachment_policy_service: AttachmentPolicyService | None = None,
+                 memory_lookup_policy_service: MemoryLookupPolicyService | None = None,
                  ):
         self.profile_repo = profile_repo
         self.tool_service = tool_service
@@ -54,10 +62,128 @@ class QueryService:
         self.history_manager = history_manager
         self.model_registry = model_registry
         self.context_builder = context_builder
+        self.attachment_policy_service = attachment_policy_service
+        self.memory_lookup_policy_service = memory_lookup_policy_service or MemoryLookupPolicyService()
 
-    def _resolve_model(self, company_short_name: str, model: Optional[str]) -> str:
-        # Priority: 1. Explicit model -> 2. Company config
+    @classmethod
+    def register_tool_selector_hook(cls, hook: Callable | None):
+        """Registers an optional hook that can reduce the tools list before LLM invocation."""
+        cls._tool_selector_hook = hook
+
+    @classmethod
+    def clear_tool_selector_hook(cls):
+        cls._tool_selector_hook = None
+
+    def _select_tools_for_llm(self,
+                              company_short_name: str,
+                              company,
+                              user_identifier: str,
+                              question: str,
+                              tools: list[dict]) -> list[dict]:
+        """
+        Optional enterprise hook to reduce candidate tools (top-k routing).
+        Fallback behavior is always the full tool list for compatibility.
+        """
+        hook = type(self)._tool_selector_hook
+        if not callable(hook):
+            return tools
+
+        try:
+            selected_tools = hook(
+                company_short_name=company_short_name,
+                company=company,
+                user_identifier=user_identifier,
+                question=question,
+                tools=tools,
+            )
+        except Exception:
+            logging.exception(
+                "Tool selector hook failed for company '%s'. Falling back to full tool list.",
+                company_short_name,
+            )
+            return tools
+
+        if not isinstance(selected_tools, list) or not selected_tools:
+            return tools
+        if any(not isinstance(item, dict) or not item.get("name") for item in selected_tools):
+            return tools
+
+        return selected_tools
+
+    def _select_tools_for_llm_with_metrics(self,
+                                           company_short_name: str,
+                                           company,
+                                           user_identifier: str,
+                                           question: str,
+                                           tools: list[dict]) -> tuple[list[dict], dict]:
+        started_at = time.time()
+        candidate_count = len(tools) if isinstance(tools, list) else 0
+        metrics = {
+            "candidate_count": candidate_count,
+            "selected_count": candidate_count,
+            "selection_mode": "all_tools",
+            "fallback_reason": "hook_not_registered",
+            "selector_latency_ms": 0,
+        }
+
+        def _finalize(selected_tools: list[dict], *, reason: str | None, mode: str = "all_tools", hook_metadata: dict | None = None):
+            metrics["selected_count"] = len(selected_tools) if isinstance(selected_tools, list) else candidate_count
+            metrics["selection_mode"] = mode
+            metrics["fallback_reason"] = reason
+            metrics["selector_latency_ms"] = max(0, int((time.time() - started_at) * 1000))
+            if hook_metadata:
+                metrics["hook_metadata"] = hook_metadata
+            return selected_tools, metrics
+
+        if not isinstance(tools, list) or not tools:
+            return _finalize(tools or [], reason="no_tools")
+
+        hook = type(self)._tool_selector_hook
+        if not callable(hook):
+            return _finalize(tools, reason="hook_not_registered")
+
+        try:
+            hook_response = hook(
+                company_short_name=company_short_name,
+                company=company,
+                user_identifier=user_identifier,
+                question=question,
+                tools=tools,
+            )
+        except Exception:
+            logging.exception(
+                "Tool selector hook failed for company '%s'. Falling back to full tool list.",
+                company_short_name,
+            )
+            return _finalize(tools, reason="hook_error")
+
+        hook_metadata = None
+        selected_tools = hook_response
+        if isinstance(hook_response, dict):
+            selected_tools = hook_response.get("tools")
+            hook_metadata_candidate = hook_response.get("metadata")
+            if isinstance(hook_metadata_candidate, dict):
+                hook_metadata = hook_metadata_candidate
+
+        if not isinstance(selected_tools, list):
+            return _finalize(tools, reason="invalid_hook_response", hook_metadata=hook_metadata)
+        if not selected_tools:
+            return _finalize(tools, reason="empty_selection", hook_metadata=hook_metadata)
+        if any(not isinstance(item, dict) or not item.get("name") for item in selected_tools):
+            return _finalize(tools, reason="invalid_tool_schema", hook_metadata=hook_metadata)
+
+        return _finalize(selected_tools, reason=None, mode="router_selected", hook_metadata=hook_metadata)
+
+    def _resolve_model(self,
+                       company_short_name: str,
+                       model: Optional[str],
+                       prompt_output_contract: dict | None = None) -> str:
+        # Priority: 1. Explicit model -> 2. Prompt default -> 3. Company config
         effective_model = model
+        if not effective_model and isinstance(prompt_output_contract, dict):
+            prompt_model = str(prompt_output_contract.get("llm_model") or "").strip()
+            if prompt_model:
+                effective_model = prompt_model
         if not effective_model:
             llm_config = self.configuration_service.get_configuration(company_short_name, 'llm')
             if llm_config and llm_config.get('model'):
@@ -71,9 +197,173 @@ class QueryService:
         else:
             return HistoryManagerService.TYPE_CLIENT_SIDE
 
+    def _normalize_selected_system_prompt_keys(self, keys) -> list[str]:
+        if not isinstance(keys, list):
+            return []
+        normalized: list[str] = []
+        for item in keys:
+            if isinstance(item, str):
+                candidate = item.strip()
+                if candidate:
+                    normalized.append(candidate)
+        return normalized
+
+    def _get_provider(self, model: str) -> str:
+        get_provider_fn = getattr(self.model_registry, "get_provider", None)
+        if not callable(get_provider_fn):
+            return "unknown"
+        try:
+            provider = get_provider_fn(model)
+            return provider or "unknown"
+        except Exception:
+            return "unknown"
+
+    def _resolve_prompt_output_contract(self, company, prompt_name: str | None) -> dict:
+        if not prompt_name:
+            return {}
+        try:
+            contract = self.context_builder.get_prompt_output_contract(company, prompt_name)
+            if not isinstance(contract, dict):
+                return {}
+            schema = contract.get("schema")
+            if not isinstance(schema, dict):
+                contract["schema"] = None
+            contract["schema_mode"] = str(contract.get("schema_mode") or "best_effort").strip().lower()
+            contract["response_mode"] = str(contract.get("response_mode") or "chat_compatible").strip().lower()
+            raw_attachment_mode = contract.get("attachment_mode")
+            raw_attachment_fallback = contract.get("attachment_fallback")
+            contract["attachment_mode"] = (
+                str(raw_attachment_mode).strip().lower() if raw_attachment_mode is not None else None
+            )
+            raw_attachment_parser_provider = contract.get("attachment_parser_provider")
+            contract["attachment_parser_provider"] = (
+                str(raw_attachment_parser_provider).strip().lower()
+                if raw_attachment_parser_provider is not None else None
+            )
+            contract["attachment_fallback"] = (
+                str(raw_attachment_fallback).strip().lower() if raw_attachment_fallback is not None else None
+            )
+            contract["provider"] = self._get_provider(contract.get("model") or "")
+            return contract
+        except Exception as e:
+            logging.debug(
+                "Could not resolve prompt output contract for '%s' in company '%s': %s",
+                prompt_name,
+                company.short_name if company else "-",
+                e,
+            )
+            return {}
+
+    @staticmethod
+    def _append_memory_search_instruction(prompt: str, should_suggest_memory_search: bool) -> str:
+        if not should_suggest_memory_search:
+            return prompt
+        return (
+            f"{prompt}\n\n"
+            "If helpful for continuity or saved user context, call `iat_memory_search` before answering."
+        ).strip()
+
+    def _resolve_company_attachment_defaults(self, company_short_name: str, prompt_name: str | None = None) -> dict:
+        llm_config = self.configuration_service.get_configuration(company_short_name, "llm") or {}
+
+        # Chat without prompt_name uses a more native-first fallback when the company
+        # does not explicitly declare attachment defaults in company.yaml.
+        if prompt_name:
+            fallback_mode = "extracted_only"
+            fallback_fallback = "extract"
+        else:
+            fallback_mode = "native_only"
+            fallback_fallback = "fail"
+
+        raw_mode = llm_config.get("default_attachment_mode", fallback_mode)
+        raw_fallback = llm_config.get("default_attachment_fallback", fallback_fallback)
+
+        if self.attachment_policy_service:
+            return {
+                "attachment_mode": self.attachment_policy_service.normalize_mode(raw_mode),
+                "attachment_fallback": self.attachment_policy_service.normalize_fallback(raw_fallback),
+            }
+
+        return {
+            "attachment_mode": str(raw_mode or fallback_mode).strip().lower() or fallback_mode,
+            "attachment_fallback": str(raw_fallback or fallback_fallback).strip().lower() or fallback_fallback,
+        }
+
+    def _resolve_effective_attachment_policy(
+            self,
+            company_short_name: str,
+            prompt_output_contract: dict | None,
+            prompt_name: str | None = None
+    ) -> dict:
+        prompt_policy = prompt_output_contract or {}
+        company_defaults = self._resolve_company_attachment_defaults(company_short_name, prompt_name=prompt_name)
+        candidate_mode = prompt_policy.get("attachment_mode") or company_defaults.get("attachment_mode")
+        candidate_fallback = prompt_policy.get("attachment_fallback") or company_defaults.get("attachment_fallback")
+
+        if self.attachment_policy_service:
+            return {
+                "attachment_mode": self.attachment_policy_service.normalize_mode(candidate_mode),
+                "attachment_fallback": self.attachment_policy_service.normalize_fallback(candidate_fallback),
+            }
+
+        return {
+            "attachment_mode": str(candidate_mode or "extracted_only").strip().lower() or "extracted_only",
+            "attachment_fallback": str(candidate_fallback or "extract").strip().lower() or "extract",
+        }
+
+    def _sanitize_schema_name(self, raw_name: str) -> str:
+        candidate = re.sub(r"[^a-zA-Z0-9_]", "_", (raw_name or "").strip())
+        candidate = candidate.strip("_")
+        if not candidate:
+            candidate = "prompt_output_schema"
+        return candidate[:64]
+
+    def _build_output_text_schema_payload(self, model: str, contract: dict) -> dict:
+        schema = contract.get("schema") if isinstance(contract, dict) else None
+        if not isinstance(schema, dict):
+            return {}
+
+        provider = self._get_provider(model)
+        schema_mode = str(contract.get("schema_mode") or "best_effort").strip().lower()
+        if provider in ("openai", "xai"):
+            return {
+                "format": {
+                    "type": "json_schema",
+                    "name": self._sanitize_schema_name(contract.get("prompt_name") or "prompt_output"),
+                    "schema": schema,
+                    "strict": schema_mode == "strict",
+                }
+            }
+
+        if provider == "gemini":
+            # Gemini structured output (native): keep app-side strict validation as source of truth.
+            return {
+                "response_mime_type": "application/json",
+                "response_schema": schema,
+            }
+
+        return {}
+
+    def _append_structured_schema_instruction(self, user_turn_prompt: str, contract: dict) -> str:
+        schema = contract.get("schema")
+        if not isinstance(schema, dict):
+            return user_turn_prompt
+
+        schema_json = json.dumps(schema, ensure_ascii=False)
+        return (
+            f"{user_turn_prompt}\n\n"
+            "### OUTPUT CONTRACT (MANDATORY)\n"
+            "Return ONLY one valid JSON object matching this schema.\n"
+            "Do not include markdown fences, explanations, or extra text.\n"
+            "Do NOT use wrapper keys like `answer` or `aditional_data`.\n"
+            "Ignore any previous output-format instruction that conflicts with this contract.\n"
+            f"Schema: {schema_json}\n"
+        )
+
     def _ensure_valid_history(self, company,
                               user_identifier: str,
                               effective_model: str,
+                              question: str,
                               user_turn_prompt: str,
                               ignore_history: bool
                               ) -> tuple[Optional[HistoryHandle], Optional[dict]]:
@@ -100,7 +390,11 @@ class QueryService:
             logging.warning(f"No valid history for {company.short_name}/{user_identifier}. Rebuilding context...")
 
             # try to rebuild the context
-            self.prepare_context(company_short_name=company.short_name, user_identifier=user_identifier)
+            self.prepare_context(
+                company_short_name=company.short_name,
+                user_identifier=user_identifier,
+                query_text=question,
+            )
             self.set_context_for_llm(company_short_name=company.short_name, user_identifier=user_identifier,
                                      model=effective_model)
 
@@ -153,7 +447,12 @@ class QueryService:
 
         return response
 
-    def prepare_context(self, company_short_name: str, user_identifier: str) -> dict:
+    def prepare_context(
+        self,
+        company_short_name: str,
+        user_identifier: str,
+        query_text: str | None = None,
+    ) -> dict:
         """
         Prepares the static context (Company + User Profile + Tools) and checks if it needs to be rebuilt.
         Delegates construction to ContextBuilderService.
@@ -162,9 +461,14 @@ class QueryService:
             return {'rebuild_needed': True, 'error': 'Invalid user identifier'}
 
         # Delegate context construction to the builder
-        final_system_context, user_profile = self.context_builder.build_system_context(
-            company_short_name, user_identifier
+        context_build_result = self.context_builder.build_system_context(
+            company_short_name, user_identifier, query_text=query_text
         )
+        if isinstance(context_build_result, tuple) and len(context_build_result) == 3:
+            final_system_context, user_profile, selected_system_prompt_keys = context_build_result
+        else:
+            final_system_context, user_profile = context_build_result
+            selected_system_prompt_keys = []
 
         if not final_system_context:
             logging.error(f"Failed to build system context for {company_short_name}")
@@ -173,6 +477,11 @@ class QueryService:
         # save the user information in the session context
         # it's needed for the jinja predefined prompts (filtering)
         self.session_context.save_profile_data(company_short_name, user_identifier, user_profile)
+        self.session_context.save_selected_system_prompt_keys(
+            company_short_name,
+            user_identifier,
+            selected_system_prompt_keys if isinstance(selected_system_prompt_keys, list) else [],
+        )
 
         # calculate the context version using the builder
         current_version = self.context_builder.compute_context_version(final_system_context)
@@ -272,24 +581,78 @@ class QueryService:
                 return {"error": True,
                         "error_message": self.i18n_service.t('services.start_query')}
 
-            # --- Model Resolution ---
-            effective_model = self._resolve_model(company_short_name, model)
+            # output contract
+            prompt_output_contract = self._resolve_prompt_output_contract(company, prompt_name)
+            effective_model = self._resolve_model(company_short_name, model, prompt_output_contract)
+            output_schema = self._build_output_text_schema_payload(effective_model, prompt_output_contract)
+
+            # attachment policy
+            provider = self._get_provider(effective_model)
+            effective_attachment_policy = self._resolve_effective_attachment_policy(
+                company_short_name=company_short_name,
+                prompt_output_contract=prompt_output_contract,
+                prompt_name=prompt_name,
+            )
+
+            attachment_plan = {
+                "files_for_context": files or [],
+                "native_attachments": [],
+                "errors": [],
+                "policy": effective_attachment_policy,
+                "capabilities": {},
+                "stats": {
+                    "total_files": len(files or []),
+                    "native_sent_count": 0,
+                    "extract_candidates": len(files or []),
+                    "fallback_to_extract": 0,
+                    "errors": 0,
+                },
+            }
+            if self.attachment_policy_service:
+                attachment_plan = self.attachment_policy_service.build_attachment_plan(
+                    company_short_name=company_short_name,
+                    provider=provider,
+                    files=files or [],
+                    policy=effective_attachment_policy,
+                )
+
+            if attachment_plan.get("errors"):
+                attachment_errors = "; ".join(attachment_plan["errors"])
+                logging.warning(
+                    "Attachment policy rejected files for company '%s' prompt '%s': %s",
+                    company_short_name,
+                    prompt_name,
+                    attachment_errors,
+                )
+                return {
+                    "error": True,
+                    "error_message": f"No se pudieron procesar los archivos adjuntos: {attachment_errors}",
+                }
 
             # --- Build User-Facing Prompt (Delegated to Builder) ---
             user_turn_prompt, effective_question, images = self.context_builder.build_user_turn_prompt(
                 company=company,
                 user_identifier=user_identifier,
                 client_data=client_data,
-                files=files,
+                files=attachment_plan.get("files_for_context", []),
                 prompt_name=prompt_name,
                 question=question
             )
+
+            if prompt_output_contract.get("schema") and (
+                not output_schema or provider == "gemini"
+            ):
+                user_turn_prompt = self._append_structured_schema_instruction(
+                    user_turn_prompt=user_turn_prompt,
+                    contract=prompt_output_contract,
+                )
 
             # --- History Management (Strategy Pattern) ---
             history_handle, error_response = self._ensure_valid_history(
                 company=company,
                 user_identifier=user_identifier,
                 effective_model=effective_model,
+                question=effective_question,
                 user_turn_prompt=user_turn_prompt,
                 ignore_history=ignore_history
             )
@@ -299,8 +662,87 @@ class QueryService:
             # get the tools availables for this company
             tools = self.tool_service.get_tools_for_llm(company)
 
-            # openai structured output instructions
-            output_schema = {}
+            tools, tool_router_metrics = self._select_tools_for_llm_with_metrics(
+                company_short_name=company_short_name,
+                company=company,
+                user_identifier=user_identifier,
+                question=effective_question,
+                tools=tools,
+            )
+            memory_lookup_decision = self.memory_lookup_policy_service.resolve(
+                question=effective_question,
+                tools=tools,
+                tool_router_metrics=tool_router_metrics,
+            )
+            tool_choice_override = memory_lookup_decision.tool_choice_override
+            user_turn_prompt = self._append_memory_search_instruction(
+                user_turn_prompt,
+                memory_lookup_decision.should_suggest_memory_search,
+            )
+            selected_system_prompt_keys = []
+            try:
+                selected_system_prompt_keys = self._normalize_selected_system_prompt_keys(
+                    self.session_context.get_selected_system_prompt_keys(
+                        company_short_name,
+                        user_identifier,
+                    )
+                )
+            except Exception as e:
+                logging.debug(
+                    "Could not read selected system prompt keys from session telemetry cache (company='%s'): %s",
+                    company_short_name,
+                    e,
+                )
+
+            if not selected_system_prompt_keys:
+                try:
+                    selected_system_prompt_keys = self._normalize_selected_system_prompt_keys(
+                        self.context_builder.get_selected_system_prompt_keys(
+                            company,
+                            query_text=effective_question,
+                        )
+                    )
+                    self.session_context.save_selected_system_prompt_keys(
+                        company_short_name,
+                        user_identifier,
+                        selected_system_prompt_keys,
+                    )
+                except Exception as e:
+                    logging.debug(
+                        "Could not resolve selected system prompt keys for telemetry (company='%s'): %s",
+                        company_short_name,
+                        e,
+                    )
+                    selected_system_prompt_keys = []
+
+            if selected_system_prompt_keys:
+                tool_router_metrics = dict(tool_router_metrics or {})
+                tool_router_metrics["selected_system_prompt_keys"] = selected_system_prompt_keys
+
+            execution_metadata = {"tool_router": tool_router_metrics}
+            if memory_lookup_decision.reason:
+                execution_metadata["tool_policy"] = {
+                    "tool_choice_override": tool_choice_override,
+                    "should_suggest_memory_search": memory_lookup_decision.should_suggest_memory_search,
+                    "reason": memory_lookup_decision.reason,
+                }
+                if memory_lookup_decision.confidence is not None:
+                    execution_metadata["tool_policy"]["confidence"] = memory_lookup_decision.confidence
+                if memory_lookup_decision.metadata:
+                    execution_metadata["tool_policy"]["metadata"] = memory_lookup_decision.metadata
+            if prompt_output_contract.get("schema"):
+                execution_metadata["structured_output"] = {
+                    "enabled": True,
+                    "schema_mode": prompt_output_contract.get("schema_mode", "best_effort"),
+                    "response_mode": prompt_output_contract.get("response_mode", "chat_compatible"),
+                    "provider": provider,
+                }
+            execution_metadata["attachments"] = {
+                "policy": attachment_plan.get("policy", {}),
+                "stats": attachment_plan.get("stats", {}),
+                "provider": provider,
+                "company_defaults": self._resolve_company_attachment_defaults(company_short_name, prompt_name=prompt_name),
+            }
 
             # Safely extract parameters for invoke using the handle
             # The handle is guaranteed to have request_params populated if no error returned
@@ -318,8 +760,12 @@ class QueryService:
                 question=effective_question,
                 context=user_turn_prompt,
                 tools=tools,
+                tool_choice_override=tool_choice_override,
                 text=output_schema,
                 images=images,
+                attachments=attachment_plan.get("native_attachments", []),
+                execution_metadata=execution_metadata,
+                response_contract=prompt_output_contract if prompt_output_contract.get("schema") else None,
             )
 
             if not response.get('valid_response'):

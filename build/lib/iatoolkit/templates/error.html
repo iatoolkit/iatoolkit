@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Error{% endblock %}
+
+{% block styles %}
+{# Carga las variables de CSS personalizadas de la empresa #}
+{% if branding %}
+    <style>
+        {{ branding.css_variables | safe }}
+    </style>
+{% endif %}
+    {# Enlace a los iconos de Bootstrap para el icono de error #}
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+
+{% include '_company_header.html' %}
+
+{# Contenedor principal para el mensaje de error #}
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+
+            {# Usamos una tarjeta para enmarcar el contenido del error #}
+            <div class="card shadow-sm text-center border-danger">
+                <div class="card-body p-4 p-md-5">
+
+                    {# Icono de error grande y visible #}
+                    <i class="bi bi-exclamation-triangle-fill text-danger" style="font-size: 4rem;"></i>
+
+                    <h4 class="card-title mt-4">Ha Ocurrido un Error</h4>
+                    <h5 class="card-title mt-4">Empresa: {{ company_short_name }} </h5>
+
+                    {# El mensaje de error dinámico que se pasa desde la vista #}
+                    <p class="text-muted mt-3 mb-4">
+                        {{ message | default('Lo sentimos, algo salió mal. Por favor, inténtalo de nuevo más tarde.') }}
+                    </p>
+
+                    <a href="javascript:history.back()"
+                        class="btn btn-branded-primary px-4">
+                            Volver
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+{% endblock %}

@@ -20,8 +20,8 @@ class BrandingService:
         """
         self._default_branding = {
             # --- Estilos del Encabezado Principal ---
-            "header_background_color": "#FFFFFF",
-            "header_text_color": "#6C757D",
+            "header_background_color": None,
+            "header_text_color": None,
             "primary_font_weight": "600",
             "primary_font_size": "1.2rem",
             "secondary_font_weight": "400",
@@ -66,7 +66,10 @@ class BrandingService:
             "prompt_assistant_item_hover_text": None,
 
             # Color para el botón de Enviar ---
-            "send_button_color": "#212529"          # Gris oscuro/casi negro por defecto
+            "send_button_color": "#212529",          # Gris oscuro/casi negro por defecto
+
+            # Loading spinner color in chat query flow (fallback to primary brand color)
+            "loading_spinner_color": None
         }
 
     def get_company_branding(self, company_short_name: str) -> dict:
@@ -76,9 +79,11 @@ class BrandingService:
         """
         final_branding_values = self._default_branding.copy()
         branding_data = self.config_service.get_configuration(company_short_name, 'branding')
-        final_branding_values.update(branding_data)
+        if isinstance(branding_data, dict):
+            final_branding_values.update(branding_data)
 
-
+        if not final_branding_values.get('header_background_color'):
+            final_branding_values['header_background_color'] = final_branding_values['brand_primary_color']
         # Función para convertir HEX a RGB
         def hex_to_rgb(hex_color):
             hex_color = hex_color.lstrip('#')
@@ -107,16 +112,16 @@ class BrandingService:
             :root {{
                 --brand-primary-color: {final_branding_values['brand_primary_color']};
                 --brand-secondary-color: {final_branding_values['brand_secondary_color']};
-                --brand-header-bg: {final_branding_values['header_background_color']};
-                --brand-header-text: {final_branding_values['header_text_color']};
+                --brand-header-bg: {final_branding_values['brand_primary_color']};
+                --brand-header-text: {final_branding_values['brand_text_on_primary']};
                 --brand-text-heading-color: {final_branding_values['brand_text_heading_color']};
 
                 --brand-primary-color-rgb: {', '.join(map(str, primary_rgb))};
                 --brand-secondary-color-rgb: {', '.join(map(str, secondary_rgb))};
                 --brand-text-on-primary: {final_branding_values['brand_text_on_primary']};
                 --brand-text-on-secondary: {final_branding_values['brand_text_on_secondary']};
-                --brand-modal-header-bg: {final_branding_values['header_background_color']};
-                --brand-modal-header-text: {final_branding_values['header_text_color']};
+                --brand-modal-header-bg: {final_branding_values['brand_primary_color']};
+                --brand-modal-header-text: {final_branding_values['brand_text_on_primary']};
                 --brand-danger-color: {final_branding_values['brand_danger_color']};
                 --brand-danger-bg: {final_branding_values['brand_danger_bg']};
                 --brand-danger-text: {final_branding_values['brand_danger_text']};
@@ -135,19 +140,21 @@ class BrandingService:
                 --brand-prompt-assistant-header-text: {final_branding_values['prompt_assistant_header_text']};
                 --brand-prompt-assistant-item-hover-bg: {final_branding_values['prompt_assistant_item_hover_bg'] or final_branding_values['brand_primary_color']};
                 --brand-prompt-assistant-item-hover-text: {final_branding_values['prompt_assistant_item_hover_text'] or final_branding_values['brand_text_on_primary']};
+                --brand-loading-spinner-color: {final_branding_values['loading_spinner_color'] or final_branding_values['brand_primary_color']};
 
             }}
         """
 
         # get the company name from configuration for the branding render
         company_name = self.config_service.get_configuration(company_short_name, 'name')
+        company_name = company_name or company_short_name
 
         return {
             "name": company_name,
             "primary_text_style": primary_text_style,
             "secondary_text_style": secondary_text_style,
             "tertiary_text_style": tertiary_text_style,
-            "header_text_color": final_branding_values['header_text_color'],
+            "header_text_color": final_branding_values['brand_text_on_primary'],
             "css_variables": css_variables,
             "send_button_color": final_branding_values['brand_primary_color']
         }

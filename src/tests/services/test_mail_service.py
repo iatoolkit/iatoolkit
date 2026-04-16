@@ -4,6 +4,7 @@
 # IAToolkit is open source software.
 
 import base64
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -11,8 +12,10 @@ import pytest
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.mail_service import MailService
 from iatoolkit.services.i18n_service import I18nService
+from iatoolkit.services.storage_service import StorageService
 from iatoolkit.infra.brevo_mail_app import BrevoMailApp
 from iatoolkit.common.exceptions import IAToolkitException
+from iatoolkit.common.interfaces.secret_provider import SecretProvider
 
 
 class TestMailService:
@@ -22,6 +25,22 @@ class TestMailService:
         self.mock_config_service = MagicMock(spec=ConfigurationService)
         self.mock_brevo_mail_app = MagicMock(spec=BrevoMailApp)
         self.mock_i18n_service = MagicMock(spec=I18nService)
+        self.mock_storage_service = MagicMock(spec=StorageService)
+        self.mock_secret_provider = MagicMock(spec=SecretProvider)
+        self.mock_secret_provider.get_secret.side_effect = (
+            lambda _company, key_name, default=None: os.getenv(
+                key_name,
+                {
+                    "BREVO_API_KEY": "dummy_key",
+                    "SMTP_HOST": "smtp.test.com",
+                    "SMTP_PORT": "587",
+                    "SMTP_USERNAME": "user",
+                    "SMTP_PASSWORD": "pass",
+                    "SMTP_USE_TLS": "true",
+                    "SMTP_USE_SSL": "false",
+                }.get(key_name, default),
+            )
+        )
 
         # Traducción mock
         self.mock_i18n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
@@ -36,6 +55,14 @@ class TestMailService:
             mail_app=self.mock_mail_app,
             i18n_service=self.mock_i18n_service,
             brevo_mail_app=self.mock_brevo_mail_app,
+            storage_service=self.mock_storage_service,
+            secret_provider=self.mock_secret_provider,
+        )
+
+        # Default behavior: invalid token
+        self.mock_storage_service.resolve_download_token.side_effect = IAToolkitException(
+            IAToolkitException.ErrorType.CALL_ERROR,
+            "Invalid download token."
         )
 
         # Datos comunes
@@ -50,26 +77,26 @@ class TestMailService:
 
     def _set_brevo_config(self):
         self.mock_config_service.get_configuration.return_value = {
-            "provider": "brevo_mail",
+            "provider": "iatoolkit_mail",
             "sender_email": "ia@test.com",
             "sender_name": "Test IA",
-            "brevo_mail": {
-                "brevo_api": "BREVO_API_KEY"
+            "iatoolkit_mail": {
+                "api_key_secret_ref": "BREVO_API_KEY"
             }
         }
 
-    def _set_smtplib_config(self):
+    def _set_smtp_config(self):
         self.mock_config_service.get_configuration.return_value = {
-            "provider": "smtplib",
+            "provider": "smtp",
             "sender_email": "ia@test.com",
             "sender_name": "Test IA",
-            "smtplib": {
-                "host_env": "SMTP_HOST",
-                "port_env": "SMTP_PORT",
-                "username_env": "SMTP_USERNAME",
-                "password_env": "SMTP_PASSWORD",
-                "use_tls_env": "SMTP_USE_TLS",
-                "use_ssl_env": "SMTP_USE_SSL",
+            "smtp": {
+                "host_secret_ref": "SMTP_HOST",
+                "port_secret_ref": "SMTP_PORT",
+                "username_secret_ref": "SMTP_USERNAME",
+                "password_secret_ref": "SMTP_PASSWORD",
+                "use_tls_secret_ref": "SMTP_USE_TLS",
+                "use_ssl_secret_ref": "SMTP_USE_SSL",
             },
         }
 
@@ -78,7 +105,7 @@ class TestMailService:
     # -----------------------
 
     def test_send_mail_brevo_success_without_attachments(self, monkeypatch):
-        """Debe usar BrevoMailApp cuando provider=brevo_mail y retornar mensaje traducido."""
+        """Debe usar BrevoMailApp cuando provider=iatoolkit_mail y retornar mensaje traducido."""
         self._set_brevo_config()
 
         # Evitar dependencias de entorno
@@ -105,23 +132,21 @@ class TestMailService:
 
         assert result == "translated:services.mail_sent"
 
-    def test_send_mail_brevo_with_attachment_token(self, tmp_path, monkeypatch):
-        """Cuando hay attachment_token debe leerse el archivo y normalizar a base64."""
+    def test_send_mail_brevo_with_attachment_token(self, monkeypatch):
+        """Cuando hay attachment_token válido debe leerse desde storage y normalizar a base64."""
         self._set_brevo_config()
         monkeypatch.setenv("BREVO_API_KEY", "dummy_key")
-
-        # Creamos archivo temporal para simular attachment_token
+        self.mock_storage_service.resolve_download_token.side_effect = None
+        self.mock_storage_service.resolve_download_token.return_value = {
+            "company": self.company_short_name,
+            "storage_key": "companies/test_company/generated_downloads/1/test.txt"
+        }
         content_bytes = b"hello world"
-        attach_file = tmp_path / "token123"
-        attach_file.write_bytes(content_bytes)
-
-        # Parchear TEMP_DIR en mail_service para que apunte al tmp_path
-        from iatoolkit.services import mail_service as mail_service_module
-        mail_service_module.TEMP_DIR = tmp_path
+        self.mock_storage_service.get_document_content.return_value = content_bytes
 
         attachment = {
             "filename": "test.txt",
-            "attachment_token": "token123",
+            "attachment_token": "signed-token",
         }
 
         result = self.mail_service.send_mail(
@@ -144,12 +169,12 @@ class TestMailService:
         assert result == "translated:services.mail_sent"
 
     # -----------------------
-    # Tests para smtplib
+    # Tests para smtp
     # -----------------------
 
-    def test_send_mail_smtplib_success(self, monkeypatch):
-        """Debe usar _send_with_smtplib cuando provider=smtplib."""
-        self._set_smtplib_config()
+    def test_send_mail_smtp_success(self, monkeypatch):
+        """Debe usar _send_with_smtplib cuando provider=smtp."""
+        self._set_smtp_config()
 
         # Mock de variables de entorno usadas en _build_provider_config
         monkeypatch.setenv("SMTP_HOST", "smtp.test.com")
@@ -170,7 +195,7 @@ class TestMailService:
             attachments=[],
         )
 
-        # Debe haberse llamado el método interno para smtplib
+        # Debe haberse llamado el método interno para smtp
         self.mail_service._send_with_smtplib.assert_called_once()
         call_args = self.mail_service._send_with_smtplib.call_args.kwargs
 
@@ -192,14 +217,14 @@ class TestMailService:
 
         assert result == "translated:services.mail_sent"
 
-    def test_send_mail_smtplib_real_flow_uses_smtplib(self, monkeypatch):
+    def test_send_mail_smtp_real_flow_uses_smtp(self, monkeypatch):
         """
-        Flujo completo smtplib: se ejecuta _send_with_smtplib y se verifica que
+        Flujo completo smtp: se ejecuta _send_with_smtplib y se verifica que
         smtplib.SMTP se use correctamente (mockeado).
         """
-        self._set_smtplib_config()
+        self._set_smtp_config()
 
-        # Configuración de entorno para smtplib
+        # Configuración de entorno para smtp
         monkeypatch.setenv("SMTP_HOST", "smtp.test.com")
         monkeypatch.setenv("SMTP_PORT", "587")
         monkeypatch.setenv("SMTP_USERNAME", "user")
@@ -246,7 +271,49 @@ class TestMailService:
             )
 
         assert exc.value.error_type == IAToolkitException.ErrorType.MAIL_ERROR
-        assert "missing mail provider" in str(exc.value)
+        assert "Unknown mail provider" in str(exc.value)
+
+    def test_send_mail_missing_mail_provider_uses_implicit_iatoolkit_defaults(self, monkeypatch):
+        self.mock_config_service.get_configuration.side_effect = lambda _company, key: {
+            "mail_provider": None,
+            "name": "Test Company",
+        }.get(key)
+        monkeypatch.setenv("BREVO_API_KEY", "dummy_key")
+
+        result = self.mail_service.send_mail(
+            company_short_name=self.company_short_name,
+            recipient=self.recipient,
+            subject=self.subject,
+            body=self.body,
+            attachments=[],
+        )
+
+        self.mock_brevo_mail_app.send_email.assert_called_once()
+        call_args = self.mock_brevo_mail_app.send_email.call_args.kwargs
+        assert call_args["sender"]["email"] == "test_company@iatoolkit.com"
+        assert call_args["sender"]["name"] == "Test Company"
+        assert result == "translated:services.mail_sent"
+
+    def test_send_mail_uses_iatoolkit_mail_by_default(self, monkeypatch):
+        self.mock_config_service.get_configuration.return_value = {
+            "sender_email": "ia@test.com",
+            "sender_name": "Test IA",
+            "iatoolkit_mail": {
+                "api_key_secret_ref": "BREVO_API_KEY"
+            }
+        }
+        monkeypatch.setenv("BREVO_API_KEY", "dummy_key")
+
+        result = self.mail_service.send_mail(
+            company_short_name=self.company_short_name,
+            recipient=self.recipient,
+            subject=self.subject,
+            body=self.body,
+            attachments=[],
+        )
+
+        self.mock_brevo_mail_app.send_email.assert_called_once()
+        assert result == "translated:services.mail_sent"
 
     def test_send_mail_partial_args_defaults(self):
         """Si faltan subject/body se pasan como None pero igual se envía y retorna mensaje."""
@@ -264,14 +331,10 @@ class TestMailService:
         assert call_args["body"] is None
         assert result == "translated:services.mail_sent"
 
-    def test_send_mail_invalid_attachment_token_raises(self, tmp_path, monkeypatch):
+    def test_send_mail_invalid_attachment_token_raises(self, monkeypatch):
         """attachment_token inválido debe levantar IAToolkitException de tipo MAIL_ERROR."""
         self._set_brevo_config()
         monkeypatch.setenv("BREVO_API_KEY", "dummy_key")
-
-        # TEMP_DIR apunta a tmp_path vacío -> archivo no existe
-        from iatoolkit.services import mail_service as mail_service_module
-        mail_service_module.TEMP_DIR = tmp_path
 
         attachment = {
             "filename": "test.txt",
@@ -288,4 +351,38 @@ class TestMailService:
             )
 
         assert exc.value.error_type == IAToolkitException.ErrorType.MAIL_ERROR
-        assert "attach file not found" in str(exc.value)
+        assert "attachment_token invalid" in str(exc.value)
+
+    def test_send_mail_brevo_with_signed_attachment_token_from_storage(self, monkeypatch):
+        self._set_brevo_config()
+        monkeypatch.setenv("BREVO_API_KEY", "dummy_key")
+        self.mock_storage_service.resolve_download_token.side_effect = None
+        self.mock_storage_service.resolve_download_token.return_value = {
+            "company": self.company_short_name,
+            "storage_key": "companies/test_company/generated_downloads/1/test.xlsx"
+        }
+        self.mock_storage_service.get_document_content.return_value = b"signed-bytes"
+
+        attachment = {
+            "filename": "test.xlsx",
+            "attachment_token": "signed-token",
+        }
+
+        result = self.mail_service.send_mail(
+            company_short_name=self.company_short_name,
+            recipient=self.recipient,
+            subject=self.subject,
+            body=self.body,
+            attachments=[attachment],
+        )
+
+        self.mock_storage_service.resolve_download_token.assert_called_once_with("signed-token")
+        self.mock_storage_service.get_document_content.assert_called_once_with(
+            self.company_short_name,
+            "companies/test_company/generated_downloads/1/test.xlsx"
+        )
+        self.mock_brevo_mail_app.send_email.assert_called_once()
+        call_args = self.mock_brevo_mail_app.send_email.call_args.kwargs
+        decoded = base64.b64decode(call_args["attachments"][0]["content"])
+        assert decoded == b"signed-bytes"
+        assert result == "translated:services.mail_sent"

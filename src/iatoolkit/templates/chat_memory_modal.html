@@ -1,0 +1,111 @@
+<div class="modal fade" id="memoryModal" tabindex="-1" aria-labelledby="memoryModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header branded">
+                <h5 class="modal-title" id="memoryModalLabel">
+                    <i class="bi bi-bookmark-star me-2"></i>
+                    {{ t('ui.memory.title') }}
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ t('ui.common.close') }}"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-4">
+                    <div class="col-lg-4">
+                        <div class="memory-capture-panel">
+                            <div class="memory-section-title">{{ t('ui.memory.capture_title') }}</div>
+                            <div id="memory-capture-editing" class="memory-editing-banner" style="display:none;"></div>
+                            <p class="memory-capture-copy mb-0">{{ t('ui.memory.capture_helper') }}</p>
+
+                            <label class="form-label small text-muted mt-3" for="memory-capture-input">{{ t('ui.memory.capture_label') }}</label>
+                            <textarea id="memory-capture-input" class="form-control" rows="5" placeholder="{{ t('ui.memory.capture_placeholder') }}"></textarea>
+
+                            <label class="form-label small text-muted mt-4" for="memory-file-input">{{ t('ui.memory.file_label') }}</label>
+                            <input id="memory-file-input" class="memory-filepond" type="file" multiple>
+                            <div id="memory-existing-items" class="memory-existing-items" style="display:none;"></div>
+
+                            <button type="button" class="btn btn-branded-primary mt-3 w-100" id="memory-save-capture-button">
+                                <i class="bi bi-bookmark-plus me-2"></i>
+                                {{ t('ui.memory.save_capture') }}
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary mt-2 w-100" id="memory-cancel-edit-button" style="display:none;">
+                                {{ t('ui.memory.cancel_edit') }}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="col-lg-8">
+                        <div class="memory-toolbar mb-3">
+                            <ul class="nav nav-pills memory-tab-nav" id="memory-tab-nav" role="tablist">
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link active" id="memory-recent-tab" data-bs-toggle="pill" data-bs-target="#memory-recent-pane" type="button" role="tab">
+                                        <span class="memory-tab-icon" aria-hidden="true">
+                                            <i class="bi bi-journal-arrow-down"></i>
+                                        </span>
+                                        <span class="memory-tab-copy">
+                                            <span class="memory-tab-title">{{ t('ui.memory.tab_recent') }}</span>
+                                            <span class="memory-tab-subtitle">{{ t('ui.memory.tab_recent_helper') }}</span>
+                                        </span>
+                                    </button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link" id="memory-pages-tab" data-bs-toggle="pill" data-bs-target="#memory-pages-pane" type="button" role="tab">
+                                        <span class="memory-tab-icon" aria-hidden="true">
+                                            <i class="bi bi-file-earmark-text"></i>
+                                        </span>
+                                        <span class="memory-tab-copy">
+                                            <span class="memory-tab-title">{{ t('ui.memory.tab_memories') }}</span>
+                                            <span class="memory-tab-subtitle">{{ t('ui.memory.tab_memories_helper') }}</span>
+                                        </span>
+                                    </button>
+                                </li>
+                            </ul>
+                            <div id="memory-loading" class="memory-loading-indicator" aria-live="polite" aria-atomic="true">
+                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                <span>{{ t('ui.memory.loading_dashboard') }}</span>
+                            </div>
+                        </div>
+
+                        <div id="memory-lint-summary" class="memory-lint-summary"></div>
+
+                        <div class="tab-content">
+                            <div class="tab-pane fade show active" id="memory-recent-pane" role="tabpanel">
+                                <div id="memory-recent-list" class="memory-list"></div>
+                                <div id="memory-empty-recent" class="text-muted small" style="display:none;">
+                                    {{ t('ui.memory.empty_recent') }}
+                                </div>
+                            </div>
+                            <div class="tab-pane fade" id="memory-pages-pane" role="tabpanel">
+                                <div id="memory-pages-list" class="memory-list"></div>
+                                <div id="memory-empty-pages" class="text-muted small" style="display:none;">
+                                    {{ t('ui.memory.empty_memories') }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="memoryDeleteConfirmModal" tabindex="-1" aria-labelledby="memoryDeleteConfirmModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="memoryDeleteConfirmModalLabel">{{ t('ui.memory.delete_modal_title') }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ t('ui.common.close') }}"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-0">{{ t('ui.memory.delete_modal_body') }}</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                    {{ t('ui.common.cancel') }}
+                </button>
+                <button type="button" class="btn btn-danger" id="memory-confirm-delete-button">
+                    {{ t('ui.memory.delete_confirm_button') }}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

@@ -12,11 +12,8 @@ from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.excel_service import ExcelService
-from iatoolkit.services.prompt_service import PromptService
-from iatoolkit.services.profile_service import ProfileService
-from iatoolkit.services.mail_service import MailService
-from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.tool_service import ToolService
+from iatoolkit.services.http_tool_service import HttpToolService
 from iatoolkit.common.util import Utility
 import base64
 
@@ -36,22 +33,19 @@ class TestDispatcher:
         registry.clear()
 
         # Mocks for services that are injected into the Dispatcher
-        self.mock_prompt_manager = MagicMock(spec=PromptService)
-        self.profile_service = MagicMock(spec=ProfileService)
         self.mock_llm_query_repo = MagicMock(spec=LLMQueryRepo)
         self.excel_service = MagicMock(spec=ExcelService)
-        self.mail_service = MagicMock(spec=MailService)
         self.util = MagicMock(spec=Utility)
         self.mock_profile_repo = MagicMock(spec=ProfileRepo)
-        self.mock_config_service = MagicMock(spec=ConfigurationService)
         self.mock_tool_service = MagicMock(spec=ToolService)
+        self.mock_http_tool_service = MagicMock(spec=HttpToolService)
 
         # Create a mock injector that will be used for instantiation.
         mock_injector = Injector()
         mock_injector.binder.bind(ProfileRepo, to=self.mock_profile_repo)
         mock_injector.binder.bind(LLMQueryRepo, to=self.mock_llm_query_repo)
-        mock_injector.binder.bind(PromptService, to=self.mock_prompt_manager)
         mock_injector.binder.bind(ToolService, to=self.mock_tool_service)  # Bind ToolService
+        mock_injector.binder.bind(HttpToolService, to=self.mock_http_tool_service)
 
         # Create a mock IAToolkit instance that returns our injector.
         self.toolkit_mock = MagicMock()
@@ -82,12 +76,8 @@ class TestDispatcher:
         # Instantiate all registered companies. The registry will use our mock_injector.
         registry.instantiate_companies(mock_injector)
 
-        self.mock_config_service.load_configuration.return_value = {"sample": {"key": "value"}}, []
-
         # Initialize the Dispatcher within the patched context
         self.dispatcher = Dispatcher(
-            config_service=self.mock_config_service,
-            prompt_service=self.mock_prompt_manager,
             llmquery_repo=self.mock_llm_query_repo,
             inference_service=MagicMock(),
             util=self.util,
@@ -123,7 +113,10 @@ class TestDispatcher:
 
     def test_dispatch_invalid_company(self):
         """Tests that dispatch raises an exception for an unconfigured company."""
-        # Dispatcher checks company existence BEFORE checking tool def
+        mock_tool_def = MagicMock(spec=Tool)
+        mock_tool_def.tool_type = Tool.TYPE_NATIVE
+        self.mock_tool_service.get_tool_definition.return_value = mock_tool_def
+
         with pytest.raises(IAToolkitException) as excinfo:
             self.dispatcher.dispatch("invalid_company", "some_tag")
         assert "Company 'invalid_company' not configured." in str(excinfo.value)
@@ -142,6 +135,20 @@ class TestDispatcher:
             self.dispatcher.dispatch("sample", "some_data")
 
         assert "Method 'some_data' not found in company 'sample' instance." in str(excinfo.value)
+        self.mock_llm_query_repo.rollback.assert_called_once()
+
+    def test_dispatch_native_method_runtime_exception_rolls_back(self):
+        """Native runtime errors should rollback the shared session and wrap the exception."""
+        mock_tool_def = MagicMock(spec=Tool)
+        mock_tool_def.tool_type = Tool.TYPE_NATIVE
+        self.mock_tool_service.get_tool_definition.return_value = mock_tool_def
+        self.mock_sample_company_instance.handle_request.side_effect = Exception("boom")
+
+        with pytest.raises(IAToolkitException) as excinfo:
+            self.dispatcher.dispatch("sample", "handle_request", key="value")
+
+        assert "Error executing native tool 'handle_request': boom" in str(excinfo.value)
+        self.mock_llm_query_repo.rollback.assert_called_once()
 
     def test_dispatch_system_function(self):
         """Tests that dispatch correctly handles system functions via ToolService."""
@@ -165,6 +172,30 @@ class TestDispatcher:
         # Ensure company handler was NOT called
         self.mock_sample_company_instance.handle_request.assert_not_called()
         assert result == {"file": "test.xlsx"}
+
+    def test_dispatch_user_scoped_system_function_passes_user_identifier_explicitly(self):
+        mock_tool_def = MagicMock(spec=Tool)
+        mock_tool_def.tool_type = Tool.TYPE_SYSTEM
+        self.mock_tool_service.get_tool_definition.return_value = mock_tool_def
+
+        mock_handler = MagicMock(return_value={"status": "success", "results": []})
+        self.mock_tool_service.get_system_handler.return_value = mock_handler
+
+        result = self.dispatcher.dispatch(
+            "sample",
+            "iat_memory_search",
+            user_identifier="user-123",
+            query="mis notas",
+            limit=5,
+        )
+
+        mock_handler.assert_called_once_with(
+            "sample",
+            user_identifier="user-123",
+            query="mis notas",
+            limit=5,
+        )
+        assert result == {"status": "success", "results": []}
 
     def test_dispatch_system_function_visual_search_success(self):
         """Tests visual search dispatching."""
@@ -196,6 +227,19 @@ class TestDispatcher:
         self.mock_tool_service.get_tool_definition.assert_called_once_with("sample", "iat_visual_search")
         self.mock_tool_service.get_system_handler.assert_called_once_with("iat_visual_search")
 
+    def test_dispatch_system_tool_without_handler_raises_system_error(self):
+        """System tools without handler must raise IAToolkitException with SYSTEM_ERROR."""
+        mock_tool_def = MagicMock(spec=Tool)
+        mock_tool_def.tool_type = Tool.TYPE_SYSTEM
+        self.mock_tool_service.get_tool_definition.return_value = mock_tool_def
+        self.mock_tool_service.get_system_handler.return_value = None
+
+        with pytest.raises(IAToolkitException) as excinfo:
+            self.dispatcher.dispatch("sample", "iat_web_search", query="test")
+
+        assert excinfo.value.error_type == IAToolkitException.ErrorType.SYSTEM_ERROR
+        assert "Handler for system tool 'iat_web_search' not found." in str(excinfo.value)
+
     def test_dispatch_tool_not_found(self):
         """Test that dispatch raises exception if tool definition is missing."""
         # Arrange
@@ -207,6 +251,53 @@ class TestDispatcher:
 
         assert "Tool 'unknown_tool' not registered" in str(excinfo.value)
 
+    def test_dispatch_http_tool_success(self):
+        """HTTP tools should be delegated to HttpToolService."""
+        mock_tool_def = MagicMock(spec=Tool)
+        mock_tool_def.tool_type = Tool.TYPE_HTTP
+        mock_tool_def.execution_config = {
+            "version": 1,
+            "request": {"method": "GET", "url": "https://api.example.com/orders"}
+        }
+        self.mock_tool_service.get_tool_definition.return_value = mock_tool_def
+        self.mock_http_tool_service.execute.return_value = {"status": "success", "data": {"id": 1}}
+
+        result = self.dispatcher.dispatch("sample", "http_orders", order_id=1)
+
+        self.mock_tool_service.get_tool_definition.assert_called_once_with("sample", "http_orders")
+        self.mock_http_tool_service.execute.assert_called_once_with(
+            company_short_name="sample",
+            tool_name="http_orders",
+            execution_config=mock_tool_def.execution_config,
+            input_data={"order_id": 1},
+        )
+        assert result == {"status": "success", "data": {"id": 1}}
+
+    def test_dispatch_http_tool_does_not_require_registered_company(self):
+        """HTTP tool dispatch should not depend on company registry instances."""
+        registry = get_company_registry()
+        registry.clear()
+        assert len(self.dispatcher.company_instances) == 0
+
+        mock_tool_def = MagicMock(spec=Tool)
+        mock_tool_def.tool_type = Tool.TYPE_HTTP
+        mock_tool_def.execution_config = {
+            "version": 1,
+            "request": {"method": "GET", "url": "https://api.example.com/orders"}
+        }
+        self.mock_tool_service.get_tool_definition.return_value = mock_tool_def
+        self.mock_http_tool_service.execute.return_value = {"status": "success", "data": {"id": 77}}
+
+        result = self.dispatcher.dispatch("ent_company", "http_orders", order_id=77)
+
+        self.mock_http_tool_service.execute.assert_called_once_with(
+            company_short_name="ent_company",
+            tool_name="http_orders",
+            execution_config=mock_tool_def.execution_config,
+            input_data={"order_id": 77},
+        )
+        assert result == {"status": "success", "data": {"id": 77}}
+
 
     def test_dispatcher_with_no_companies_registered(self):
         """Tests that the dispatcher works if no company is registered."""
@@ -215,43 +306,15 @@ class TestDispatcher:
         registry = get_company_registry()
         registry.clear()
 
-        # 2. Reset the internal cache of the dispatcher instance created in setup()
-        # This forces it to re-fetch from the (now empty) registry on next access property access
-        self.dispatcher._company_instances = None
-
-        # 3. Verify state
+        # 2. Verify state (cache invalidation should happen automatically by revision)
         assert len(self.dispatcher.company_instances) == 0
 
-        # 4. Execute dispatch and expect error
+        mock_tool_def = MagicMock(spec=Tool)
+        mock_tool_def.tool_type = Tool.TYPE_NATIVE
+        self.mock_tool_service.get_tool_definition.return_value = mock_tool_def
+
+        # 3. Execute dispatch and expect error
         with pytest.raises(IAToolkitException) as excinfo:
             self.dispatcher.dispatch("any_company", "some_action")
 
         assert "Company 'any_company' not configured" in str(excinfo.value)
-
-
-    def test_load_company_configs_success(self):
-        """Test load_company_configs loads configuration for all companies."""
-        # Dispatcher uses self.company_instances which is populated by registry.
-        # We have "sample" registered in setup()
-
-        # Call method under test
-        result = self.dispatcher.load_company_configs()
-
-        # Verify config_service.load_configuration called for "sample"
-        self.mock_config_service.load_configuration.assert_called_once_with(
-            "sample"
-        )
-
-        assert result is True
-
-    def test_load_company_configs_handles_exception(self):
-        """Test load_company_configs raises exception on failure."""
-        self.dispatcher.setup_iatoolkit_system = MagicMock()
-
-        # Simulate error during configuration loading
-        self.mock_config_service.load_configuration.side_effect = Exception("Config Error")
-
-        with pytest.raises(Exception) as excinfo:
-            self.dispatcher.load_company_configs()
-
-        assert "Config Error" in str(excinfo.value)

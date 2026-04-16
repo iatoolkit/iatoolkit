@@ -1,9 +1,11 @@
 import pytest
 from unittest.mock import MagicMock
+from types import SimpleNamespace
 from iatoolkit.services.context_builder_service import ContextBuilderService
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.company_context_service import CompanyContextService
+from iatoolkit.services.knowledge_base_service import KnowledgeBaseService
 from iatoolkit.services.parsers.parsing_service import ParsingService
 from iatoolkit.services.tool_service import ToolService
 from iatoolkit.services.prompt_service import PromptService
@@ -22,6 +24,7 @@ class TestContextBuilderService:
         self.mock_profile_service = MagicMock(spec=ProfileService)
         self.mock_profile_repo = MagicMock(spec=ProfileRepo)
         self.mock_company_context = MagicMock(spec=CompanyContextService)
+        self.mock_knowledge_base_service = MagicMock(spec=KnowledgeBaseService)
         self.mock_parsing_service = MagicMock(spec=ParsingService)
         self.mock_tool_service = MagicMock(spec=ToolService)
         self.mock_prompt_service = MagicMock(spec=PromptService)
@@ -33,11 +36,13 @@ class TestContextBuilderService:
             company_context_service=self.mock_company_context,
             parsing_service=self.mock_parsing_service,
             tool_service=self.mock_tool_service,
+            knowledge_base_service=self.mock_knowledge_base_service,
             prompt_service=self.mock_prompt_service,
             util=self.mock_util
         )
 
         self.mock_company = Company(short_name=MOCK_COMPANY_SHORT_NAME)
+        self.mock_company.id = 1
         self.mock_profile_repo.get_company_by_short_name.return_value = self.mock_company
 
     def test_build_system_context_success(self):
@@ -45,28 +50,62 @@ class TestContextBuilderService:
         # Arrange
         mock_profile = {"name": "John Doe"}
         self.mock_profile_service.get_profile_by_identifier.return_value = mock_profile
-        self.mock_prompt_service.get_system_prompt.return_value = "System Template"
+        self.mock_prompt_service.get_system_prompt_payload.return_value = {
+            "content": "System Template",
+            "selected_keys": ["query_main", "format_styles"],
+        }
         self.mock_tool_service.get_tools_for_llm.return_value = []
+        self.mock_knowledge_base_service.get_collection_descriptors.return_value = [
+            {"name": "legal", "description": "Contracts and annexes", "parser_provider": "docling"},
+            {"name": "support", "description": "Policies and operational manuals", "parser_provider": None},
+        ]
         self.mock_util.render_prompt_from_string.return_value = "Rendered System Prompt"
         self.mock_company_context.get_company_context.return_value = "DB Schema Context"
 
         # Act
-        context, profile = self.service.build_system_context(MOCK_COMPANY_SHORT_NAME, MOCK_USER_ID)
+        context, profile, selected_keys = self.service.build_system_context(MOCK_COMPANY_SHORT_NAME, MOCK_USER_ID)
 
         # Assert
         assert "DB Schema Context" in context
+        assert "Available Document Collections" in context
+        assert "### Personal Memory" in context
+        assert "has_native_files=true" in context
+        assert "- legal: Contracts and annexes" in context
+        assert "- support: Policies and operational manuals" in context
         assert "Rendered System Prompt" in context
         assert profile == mock_profile
+        assert selected_keys == ["query_main", "format_styles"]
         self.mock_util.render_prompt_from_string.assert_called_once()
+        self.mock_prompt_service.get_system_prompt_payload.assert_called_once_with(
+            company_id=1,
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            query_text=None,
+        )
 
     def test_build_system_context_company_not_found(self):
         """Should return None if company does not exist."""
         self.mock_profile_repo.get_company_by_short_name.return_value = None
 
-        context, profile = self.service.build_system_context("unknown", MOCK_USER_ID)
+        context, profile, selected_keys = self.service.build_system_context("unknown", MOCK_USER_ID)
 
         assert context is None
         assert profile is None
+        assert selected_keys == []
+
+    def test_build_system_context_omits_collection_block_when_no_collections(self):
+        self.mock_profile_service.get_profile_by_identifier.return_value = {}
+        self.mock_prompt_service.get_system_prompt_payload.return_value = {
+            "content": "System Template",
+            "selected_keys": [],
+        }
+        self.mock_tool_service.get_tools_for_llm.return_value = []
+        self.mock_knowledge_base_service.get_collection_descriptors.return_value = []
+        self.mock_util.render_prompt_from_string.return_value = "Rendered System Prompt"
+        self.mock_company_context.get_company_context.return_value = "DB Schema Context"
+
+        context, _, _ = self.service.build_system_context(MOCK_COMPANY_SHORT_NAME, MOCK_USER_ID)
+
+        assert "Available Document Collections" not in context
 
     def test_build_user_turn_prompt_basic(self):
         """Should build a simple prompt with a direct question and no files."""
@@ -151,3 +190,81 @@ class TestContextBuilderService:
         assert v1 == v2
         assert v1 != v3
         assert len(v1) == 64 # SHA256 length
+
+    def test_get_prompt_output_contract_uses_yaml_when_output_schema_is_null(self):
+        self.mock_prompt_service.get_prompt_definition.return_value = SimpleNamespace(
+            name="employee_prompt",
+            output_schema=None,
+            output_schema_yaml="""
+type: object
+properties:
+  employees:
+    type: array
+    items:
+      type: object
+required:
+  - employees
+""",
+            output_schema_mode="best_effort",
+            output_response_mode="chat_compatible",
+            attachment_mode=None,
+            attachment_parser_provider=None,
+            attachment_fallback=None,
+            llm_model=None,
+        )
+
+        contract = self.service.get_prompt_output_contract(self.mock_company, "employee_prompt")
+
+        assert isinstance(contract.get("schema"), dict)
+        assert contract["schema"]["type"] == "object"
+        assert "employees" in contract["schema"]["properties"]
+        assert contract["attachment_mode"] is None
+        assert contract["attachment_parser_provider"] is None
+        assert contract["attachment_fallback"] is None
+        assert contract["llm_model"] is None
+
+    def test_get_prompt_output_contract_accepts_json_string_schema(self):
+        self.mock_prompt_service.get_prompt_definition.return_value = SimpleNamespace(
+            name="employee_prompt",
+            output_schema='{"type":"object","properties":{"employees":{"type":"array"}}}',
+            output_schema_yaml=None,
+            output_schema_mode="strict",
+            output_response_mode="structured_only",
+            attachment_mode="native_only",
+            attachment_parser_provider="basic",
+            attachment_fallback="fail",
+            llm_model="gpt-4.1-mini",
+        )
+
+        contract = self.service.get_prompt_output_contract(self.mock_company, "employee_prompt")
+
+        assert isinstance(contract.get("schema"), dict)
+        assert contract["schema"]["type"] == "object"
+        assert contract["schema_mode"] == "strict"
+        assert contract["response_mode"] == "structured_only"
+        assert contract["attachment_mode"] == "native_only"
+        assert contract["attachment_parser_provider"] == "basic"
+        assert contract["attachment_fallback"] == "fail"
+        assert contract["llm_model"] == "gpt-4.1-mini"
+
+    def test_get_prompt_output_contract_returns_attachment_policy_even_without_schema(self):
+        self.mock_prompt_service.get_prompt_definition.return_value = SimpleNamespace(
+            name="employee_prompt",
+            output_schema=None,
+            output_schema_yaml=None,
+            output_schema_mode="best_effort",
+            output_response_mode="chat_compatible",
+            attachment_mode="native_only",
+            attachment_parser_provider="docling",
+            attachment_fallback="fail",
+            llm_model="gpt-4o-mini",
+        )
+
+        contract = self.service.get_prompt_output_contract(self.mock_company, "employee_prompt")
+
+        assert contract["prompt_name"] == "employee_prompt"
+        assert contract["schema"] is None
+        assert contract["attachment_mode"] == "native_only"
+        assert contract["attachment_parser_provider"] == "docling"
+        assert contract["attachment_fallback"] == "fail"
+        assert contract["llm_model"] == "gpt-4o-mini"

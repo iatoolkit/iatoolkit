@@ -1,6 +1,6 @@
 import pytest
 from flask import Flask
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from iatoolkit.views.configuration_api_view import ConfigurationApiView
 from iatoolkit.services.auth_service import AuthService
@@ -23,6 +23,7 @@ class TestConfigurationApiView:
         self.app.testing = True
         self.client = self.app.test_client()
         self.config_url = f'/{MOCK_COMPANY_SHORT_NAME}/api/config'
+        self.load_config_url = f'/{MOCK_COMPANY_SHORT_NAME}/api/load_configuration'
         self.validate_url = f"/{MOCK_COMPANY_SHORT_NAME}/api/config/validate"
 
         # Mocks for injected services
@@ -44,6 +45,12 @@ class TestConfigurationApiView:
             view_func=view_func,
             methods=["GET", "PATCH", "POST"],
         )
+        self.app.add_url_rule(
+            "/<company_short_name>/api/load_configuration",
+            view_func=view_func,
+            methods=["GET"],
+            defaults={"action": "load_configuration"},
+        )
 
         # Register the view for validation
         validate_view_func = ValidateConfigurationApiView.as_view(
@@ -59,7 +66,7 @@ class TestConfigurationApiView:
         )
 
         # Default: Successful authentication
-        self.mock_auth_service.verify.return_value = {
+        self.mock_auth_service.verify_for_company.return_value = {
             "success": True,
             "company_short_name": MOCK_COMPANY_SHORT_NAME,
             "user_identifier": "user@test.com",
@@ -69,7 +76,7 @@ class TestConfigurationApiView:
 
     def test_get_fails_if_auth_fails(self):
         """Should return auth status code (401) if authentication fails."""
-        self.mock_auth_service.verify.return_value = {
+        self.mock_auth_service.verify_for_company.return_value = {
             "success": False,
             "error_message": "Invalid API Key",
             "status_code": 401,
@@ -150,11 +157,75 @@ class TestConfigurationApiView:
         data = resp.get_json()
         assert data["status"] == "error"
 
+    def test_get_load_configuration_endpoint_triggers_runtime_refresh(self):
+        mock_company = MagicMock()
+        self.mock_profile_service.get_company_by_short_name.return_value = mock_company
+        config = {"id": MOCK_COMPANY_SHORT_NAME, "name": "Sample Company", "company": mock_company}
+        errors = []
+        self.mock_config_service.load_configuration.return_value = (config, errors)
+
+        with patch.object(
+            ConfigurationApiView,
+            "_refresh_runtime_clients",
+            return_value={"llm_proxy": True, "embedding_clients": True, "sql_connections": True},
+        ) as mock_runtime_refresh:
+            resp = self.client.get(self.load_config_url)
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["errors"] == []
+        assert data["runtime_refresh"] == {
+            "llm_proxy": True,
+            "embedding_clients": True,
+            "sql_connections": True,
+        }
+        self.mock_config_service.invalidate_configuration_cache.assert_called_once_with(MOCK_COMPANY_SHORT_NAME)
+        self.mock_config_service.register_data_sources.assert_called_once_with(
+            MOCK_COMPANY_SHORT_NAME,
+            config=config,
+        )
+        mock_runtime_refresh.assert_called_once_with(MOCK_COMPANY_SHORT_NAME)
+
+    def test_get_load_configuration_refreshes_runtime_before_registering_data_sources(self):
+        mock_company = MagicMock()
+        self.mock_profile_service.get_company_by_short_name.return_value = mock_company
+        config = {"id": MOCK_COMPANY_SHORT_NAME, "name": "Sample Company", "company": mock_company}
+
+        call_order = []
+
+        def invalidate_side_effect(*args, **kwargs):
+            call_order.append("invalidate")
+
+        def load_side_effect(*args, **kwargs):
+            call_order.append("load")
+            return config, []
+
+        def register_side_effect(*args, **kwargs):
+            call_order.append("register")
+
+        def refresh_side_effect(*args, **kwargs):
+            call_order.append("refresh")
+            return {"llm_proxy": True, "embedding_clients": True, "sql_connections": True}
+
+        self.mock_config_service.invalidate_configuration_cache.side_effect = invalidate_side_effect
+        self.mock_config_service.load_configuration.side_effect = load_side_effect
+        self.mock_config_service.register_data_sources.side_effect = register_side_effect
+
+        with patch.object(
+            ConfigurationApiView,
+            "_refresh_runtime_clients",
+            side_effect=refresh_side_effect,
+        ):
+            resp = self.client.get(self.load_config_url)
+
+        assert resp.status_code == 200
+        assert call_order == ["invalidate", "load", "refresh", "register"]
+
     # --- PATCH Tests (Update Configuration) ---
 
     def test_patch_fails_auth(self):
         """PATCH should fail if authentication fails (requires valid user)."""
-        self.mock_auth_service.verify.return_value = {"success": False, "status_code": 401}
+        self.mock_auth_service.verify_for_company.return_value = {"success": False, "status_code": 401}
 
         resp = self.client.patch(self.config_url, json={})
 
@@ -227,7 +298,7 @@ class TestConfigurationApiView:
 
     def test_post_fails_auth(self):
         """POST should fail if authentication fails."""
-        self.mock_auth_service.verify.return_value = {"success": False, "status_code": 401}
+        self.mock_auth_service.verify_for_company.return_value = {"success": False, "status_code": 401}
 
         resp = self.client.post(self.config_url, json={})
 
@@ -277,7 +348,7 @@ class TestConfigurationApiView:
 
     def test_validate_fails_auth(self):
         """GET validate should fail if authentication fails."""
-        self.mock_auth_service.verify.return_value = {"success": False, "status_code": 401}
+        self.mock_auth_service.verify_for_company.return_value = {"success": False, "status_code": 401}
 
         resp = self.client.get(self.validate_url)
 

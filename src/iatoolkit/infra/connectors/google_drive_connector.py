@@ -12,7 +12,12 @@ from typing import List
 
 
 class GoogleDriveConnector(FileConnector):
-    def __init__(self, folder_id: str, service_account_path: str = "service_account.json"):
+    def __init__(
+        self,
+        folder_id: str,
+        service_account_path: str = "service_account.json",
+        service_account_info: dict | None = None,
+    ):
         """
         Inicializa el conector de Google Drive utilizando la API oficial de Google.
         :param folder_id: ID de la carpeta en Google Drive.
@@ -20,17 +25,23 @@ class GoogleDriveConnector(FileConnector):
         """
         self.folder_id = folder_id
         self.service_account_path = service_account_path
+        self.service_account_info = service_account_info
         self.drive_service = self._authenticate()
 
     def _authenticate(self):
         """
         Autentica en Google Drive utilizando una cuenta de servicio.
         """
-        # Cargar credenciales desde el archivo de servicio
-        credentials = Credentials.from_service_account_file(
-            self.service_account_path,
-            scopes=["https://www.googleapis.com/auth/drive"]
-        )
+        if self.service_account_info:
+            credentials = Credentials.from_service_account_info(
+                self.service_account_info,
+                scopes=["https://www.googleapis.com/auth/drive"]
+            )
+        else:
+            credentials = Credentials.from_service_account_file(
+                self.service_account_path,
+                scopes=["https://www.googleapis.com/auth/drive"]
+            )
 
         # Crear el cliente de Google Drive API
         service = build('drive', 'v3', credentials=credentials)
@@ -97,3 +108,6 @@ class GoogleDriveConnector(FileConnector):
             # Si falla (ej: no existe), podríamos loguear o ignorar según diseño.
             # Aquí asumimos propagación de error o manejo silencioso si no crítico.
             pass
+
+    def generate_presigned_url(self, file_path: str, expiration: int = 3600) -> str:
+        raise NotImplementedError("not implemented yet")

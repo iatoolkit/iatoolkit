@@ -90,6 +90,14 @@ class TestUserSessionContextService(unittest.TestCase):
         self.service.clear_llm_history(self.company_short_name, self.user_identifier)
         self.mock_redis_manager.hdel.assert_called_once_with(self.session_key, 'last_response_id', 'context_history')
 
+    def test_clear_all_context_also_clears_selected_system_prompt_keys(self):
+        self.service.clear_all_context(self.company_short_name, self.user_identifier)
+
+        self.mock_redis_manager.hdel.assert_any_call(self.session_key, 'context_version')
+        self.mock_redis_manager.hdel.assert_any_call(self.session_key, 'context_history')
+        self.mock_redis_manager.hdel.assert_any_call(self.session_key, 'last_response_id')
+        self.mock_redis_manager.hdel.assert_any_call(self.session_key, 'selected_system_prompt_keys')
+
     def test_save_prepared_context(self):
         """Prueba que el contexto preparado y su versión se guardan correctamente."""
         context_str = "Este es el contexto preparado"
@@ -124,6 +132,22 @@ class TestUserSessionContextService(unittest.TestCase):
         mock_pipe.hdel.assert_called_once_with(self.session_key, 'prepared_context', 'prepared_context_version')
         mock_pipe.execute.assert_called_once()
 
+    def test_save_and_get_selected_system_prompt_keys(self):
+        keys = ["query_main", "format_styles", "query_main", " "]
+        expected_json = json.dumps(["query_main", "format_styles"])
+
+        self.service.save_selected_system_prompt_keys(self.company_short_name, self.user_identifier, keys)
+        self.mock_redis_manager.hset.assert_called_with(
+            self.session_key,
+            "selected_system_prompt_keys",
+            expected_json,
+        )
+
+        self.mock_redis_manager.hget.return_value = expected_json
+        result = self.service.get_selected_system_prompt_keys(self.company_short_name, self.user_identifier)
+        self.mock_redis_manager.hget.assert_called_with(self.session_key, "selected_system_prompt_keys")
+        self.assertEqual(result, ["query_main", "format_styles"])
+
     def test_methods_do_nothing_with_invalid_identifiers(self):
         """
         Prueba que ningún método interactúa con Redis si el company o user_identifier son inválidos.
@@ -138,6 +162,7 @@ class TestUserSessionContextService(unittest.TestCase):
                 self.service.save_context_version(self.company_short_name, user_id, "v1")
                 self.service.save_context_history(self.company_short_name, user_id, [])
                 self.service.save_prepared_context(self.company_short_name, user_id, "ctx", "v1")
+                self.service.save_selected_system_prompt_keys(self.company_short_name, user_id, ["query_main"])
                 self.service.clear_all_context(self.company_short_name, user_id)
                 self.service.clear_llm_history(self.company_short_name, user_id)
 
@@ -146,6 +171,7 @@ class TestUserSessionContextService(unittest.TestCase):
                 self.assertEqual(self.service.get_profile_data(self.company_short_name, user_id), {})
                 self.assertEqual(self.service.get_and_clear_prepared_context(self.company_short_name, user_id),
                                  (None, None))
+                self.assertEqual(self.service.get_selected_system_prompt_keys(self.company_short_name, user_id), [])
 
         # Verificar que NUNCA se llamó a los métodos de Redis
         self.mock_redis_manager.hset.assert_not_called()

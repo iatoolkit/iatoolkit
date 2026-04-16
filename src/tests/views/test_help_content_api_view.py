@@ -40,7 +40,7 @@ class TestHelpContentApiView:
         self.app.add_url_rule('/<company_short_name>/api/help-content', view_func=view_func, methods=['POST'])
 
         # Por defecto, la autenticación es exitosa en los tests
-        self.mock_auth_service.verify.return_value = {"success": True, 'user_identifier': MOCK_USER_IDENTIFIER}
+        self.mock_auth_service.verify_for_company.return_value = {"success": True, 'user_identifier': MOCK_USER_IDENTIFIER}
 
     def test_get_content_success(self):
         """
@@ -60,7 +60,7 @@ class TestHelpContentApiView:
         assert response.json == mock_help_response
 
         # Verifica que se llamó al servicio de autenticación y al de ayuda con los parámetros correctos
-        self.mock_auth_service.verify.assert_called_once()
+        self.mock_auth_service.verify_for_company.assert_called_once_with(MOCK_COMPANY_SHORT_NAME)
         self.mock_config_service.get_configuration.assert_called_once_with(
             company_short_name=MOCK_COMPANY_SHORT_NAME,
             content_key='help_content'
@@ -71,7 +71,7 @@ class TestHelpContentApiView:
         Prueba que la vista devuelve un error de autenticación si el servicio de auth falla.
         """
         # Arrange
-        self.mock_auth_service.verify.return_value = {"success": False, "error_message": "Token inválido", "status_code": 401}
+        self.mock_auth_service.verify_for_company.return_value = {"success": False, "error_message": "Token inválido", "status_code": 401}
 
         # Act
         response = self.client.post(self.url)

@@ -26,7 +26,7 @@ class TestToolApiView:
         self.mock_dispatcher = MagicMock(spec=Dispatcher)
 
         # Default Auth Success
-        self.mock_auth.verify.return_value = {"success": True, "status_code": 200}
+        self.mock_auth.verify_for_company.return_value = {"success": True, "status_code": 200}
 
         # View setup
         view = ToolApiView.as_view(
@@ -90,7 +90,7 @@ class TestToolApiView:
 
     def test_list_tools_auth_fail(self):
         """Should return 401 if auth fails."""
-        self.mock_auth.verify.return_value = {"success": False, "status_code": 401}
+        self.mock_auth.verify_for_company.return_value = {"success": False, "status_code": 401}
 
         resp = self.client.get(f'/{self.MOCK_COMPANY}/api/tools')
         assert resp.status_code == 401
@@ -106,7 +106,11 @@ class TestToolApiView:
 
         assert resp.status_code == 201
         assert resp.json['id'] == 5
-        self.mock_tool_service.create_tool.assert_called_with(self.MOCK_COMPANY, payload)
+        self.mock_tool_service.create_tool.assert_called_with(
+            self.MOCK_COMPANY,
+            payload,
+            actor_identifier=None,
+        )
 
     def test_create_tool_duplicate(self):
         """POST should return 409 on duplicate."""
@@ -137,7 +141,30 @@ class TestToolApiView:
 
         assert resp.status_code == 200
         assert resp.json['description'] == "updated"
-        self.mock_tool_service.update_tool.assert_called_with(self.MOCK_COMPANY, 1, payload)
+        self.mock_tool_service.update_tool.assert_called_with(
+            self.MOCK_COMPANY,
+            1,
+            payload,
+            allow_system_update=False,
+            actor_identifier=None,
+        )
+
+    def test_update_tool_system_still_blocked_for_admin_role(self):
+        """PUT should keep allow_system_update=False even for admin/owner roles."""
+        self.mock_auth.verify_for_company.return_value = {"success": True, "status_code": 200, "user_role": "admin"}
+        payload = {"description": "updated"}
+        self.mock_tool_service.update_tool.return_value = {"id": 1, "description": "updated"}
+
+        resp = self.client.put(f'/{self.MOCK_COMPANY}/api/tools/1', json=payload)
+
+        assert resp.status_code == 200
+        self.mock_tool_service.update_tool.assert_called_with(
+            self.MOCK_COMPANY,
+            1,
+            payload,
+            allow_system_update=False,
+            actor_identifier=None,
+        )
 
     def test_update_system_tool_fails(self):
         """PUT should return 409 if trying to update system tool."""
@@ -147,6 +174,13 @@ class TestToolApiView:
 
         resp = self.client.put(f'/{self.MOCK_COMPANY}/api/tools/1', json={})
         assert resp.status_code == 409
+        self.mock_tool_service.update_tool.assert_called_with(
+            self.MOCK_COMPANY,
+            1,
+            {},
+            allow_system_update=False,
+            actor_identifier=None,
+        )
 
     # --- DELETE ---
 
@@ -156,7 +190,11 @@ class TestToolApiView:
 
         assert resp.status_code == 200
         assert resp.json['status'] == 'success'
-        self.mock_tool_service.delete_tool.assert_called_with(self.MOCK_COMPANY, 1)
+        self.mock_tool_service.delete_tool.assert_called_with(
+            self.MOCK_COMPANY,
+            1,
+            actor_identifier=None,
+        )
 
     def test_delete_tool_exception(self):
         """DELETE should handle exceptions (e.g. system tool)."""
@@ -194,13 +232,38 @@ class TestToolApiView:
             document="abc"
         )
 
+    def test_execute_http_tool_success(self):
+        """POST /api/tools/execute should run an HTTP tool through dispatcher."""
+        tool_def = MagicMock()
+        tool_def.tool_type = Tool.TYPE_HTTP
+        self.mock_tool_service.get_tool_definition.return_value = tool_def
+        self.mock_dispatcher.dispatch.return_value = {"status": "success", "data": {"id": 10}}
+
+        payload = {
+            "tool_name": "http_orders",
+            "kwargs": {"order_id": 10}
+        }
+
+        resp = self.client.post(f'/{self.MOCK_COMPANY}/api/tools/execute', json=payload)
+
+        assert resp.status_code == 200
+        assert resp.json["result"] == "success"
+        assert resp.json["tool_name"] == "http_orders"
+        assert resp.json["data"] == {"status": "success", "data": {"id": 10}}
+        self.mock_tool_service.get_tool_definition.assert_called_with(self.MOCK_COMPANY, "http_orders")
+        self.mock_dispatcher.dispatch.assert_called_with(
+            company_short_name=self.MOCK_COMPANY,
+            function_name="http_orders",
+            order_id=10
+        )
+
     def test_execute_requires_tool_name(self):
         """POST /api/tools/execute should return 400 when tool_name is missing."""
         resp = self.client.post(f'/{self.MOCK_COMPANY}/api/tools/execute', json={"kwargs": {}})
         assert resp.status_code == 400
 
-    def test_execute_requires_native_tool_type(self):
-        """POST /api/tools/execute should reject non-native tools."""
+    def test_execute_rejects_non_executable_tool_type(self):
+        """POST /api/tools/execute should reject non-executable tool types."""
         tool_def = MagicMock()
         tool_def.tool_type = Tool.TYPE_SYSTEM
         self.mock_tool_service.get_tool_definition.return_value = tool_def

@@ -1,0 +1,468 @@
+# Copyright (c) 2024 Fernando Libedinsky
+# Product: IAToolkit
+#
+# IAToolkit is open source software.
+
+from sqlalchemy import Column, Integer, BigInteger, String, DateTime, Enum, Text, JSON, Boolean, ForeignKey, Table, MetaData
+from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import relationship, class_mapper
+from sqlalchemy.sql import func
+from sqlalchemy import UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
+from datetime import datetime
+from pgvector.sqlalchemy import Vector
+import enum
+
+
+# Canonical ORM schema for the platform tables.
+# SQLite tests translate this schema to None at engine level.
+ORM_SCHEMA = "iatoolkit"
+
+
+# base class for the ORM
+class Base(DeclarativeBase):
+    metadata = MetaData(schema=ORM_SCHEMA)
+
+
+class DocumentStatus(str, enum.Enum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    ACTIVE = "active"
+    FAILED = "failed"
+
+class PromptType(str, enum.Enum):
+    COMPANY = "company"
+    AGENT = "agent"
+
+
+# Cross-database JSON type:
+# - PostgreSQL: JSONB (for jsonb operators/functions/indexing)
+# - SQLite/others (tests): JSON
+JSON_NATIVE = JSON().with_variant(JSONB, "postgresql")
+
+
+# relation table for many-to-many relationship between companies and users
+user_company = Table('iat_user_company',
+                     Base.metadata,
+                    Column('user_id', Integer,
+                           ForeignKey(f'{ORM_SCHEMA}.iat_users.id', ondelete='CASCADE'),
+                                primary_key=True),
+                     Column('company_id', Integer,
+                            ForeignKey(f'{ORM_SCHEMA}.iat_companies.id',ondelete='CASCADE'),
+                                primary_key=True),
+                     Column('role', String, nullable=True, default='user'),
+                     Column('created_at', DateTime, default=datetime.now)
+                     )
+
+class ApiKey(Base):
+    """Represents an API key for a company to authenticate against the system."""
+    __tablename__ = 'iat_api_keys'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_companies.id', ondelete='CASCADE'), nullable=False)
+    key_name = Column(String, nullable=False)
+    key = Column(String, unique=True, nullable=False, index=True) # La API Key en sí
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+    last_used_at = Column(DateTime, nullable=True) # Opcional: para rastrear uso
+
+    company = relationship("Company", back_populates="api_keys")
+
+
+class Company(Base):
+    """Represents a company or tenant in the multi-tenant system."""
+    __tablename__ = 'iat_companies'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    short_name = Column(String, nullable=False, unique=True, index=True)
+    name = Column(String, nullable=False)
+    is_active = Column(Boolean, nullable=False, default=True, index=True)
+    runtime_mode = Column(String(32), nullable=False, default='static', index=True)
+
+    parameters = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+    documents = relationship("Document",
+                             back_populates="company",
+                             cascade="all, delete-orphan",
+                             lazy='dynamic')
+    tools = relationship("Tool",
+                           back_populates="company",
+                           cascade="all, delete-orphan")
+    vsdocs = relationship("VSDoc",
+                          back_populates="company",
+                          cascade="all, delete-orphan")
+    vsimages = relationship("VSImage",
+                        back_populates="company",
+                        cascade="all, delete-orphan")
+    llm_queries = relationship("LLMQuery",
+                               back_populates="company",
+                               cascade="all, delete-orphan")
+    users = relationship("User",
+                         secondary=user_company,
+                         back_populates="companies")
+    api_keys = relationship("ApiKey",
+                            back_populates="company",
+                            cascade="all, delete-orphan")
+
+    feedbacks = relationship("UserFeedback",
+                               back_populates="company",
+                               cascade="all, delete-orphan")
+    prompts = relationship("Prompt",
+                             back_populates="company",
+                             cascade="all, delete-orphan")
+    collection_types = relationship(
+        "CollectionType",
+        back_populates="company",
+        cascade="all, delete-orphan"
+    )
+    sql_sources = relationship(
+        "SqlSource",
+        back_populates="company",
+        cascade="all, delete-orphan",
+    )
+
+
+    def to_dict(self):
+        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
+
+# users with rights to use this app
+class User(Base):
+    """Represents an IAToolkit user who can be associated with multiple companies."""
+    __tablename__ = 'iat_users'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String, unique=True, nullable=False)
+    first_name = Column(String, nullable=False)
+    last_name = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+    password = Column(String, nullable=False)
+    verified = Column(Boolean, nullable=False, default=False)
+    preferred_language = Column(String, nullable=True)
+    verification_url = Column(String, nullable=True)
+    temp_code = Column(String, nullable=True)
+
+    companies = relationship(
+        "Company",
+        secondary=user_company,
+        back_populates="users",
+        cascade="all",
+        passive_deletes=True,
+        lazy='dynamic'
+    )
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'email': self.email,
+            'first_name': self.first_name,
+            'last_name': self.last_name,
+            'created_at': str(self.created_at),
+            'verified': self.verified,
+            'companies': [company.to_dict() for company in self.companies]
+        }
+
+class Tool(Base):
+    """Represents a custom or system function that the LLM can call (tool)."""
+    __tablename__ = 'iat_tools'
+
+    # Execution types
+    TYPE_SYSTEM = 'SYSTEM'
+    TYPE_NATIVE = 'NATIVE'       # executed by company class in Python
+    TYPE_INFERENCE = 'INFERENCE' # executed by InferenceService
+    TYPE_HTTP = 'HTTP'           # executed by HttpToolService
+
+    # source of the definition (Source of Truth)
+    SOURCE_SYSTEM = 'SYSTEM'
+    SOURCE_YAML = 'YAML'         # defined in company.yaml
+    SOURCE_USER = 'USER'         # defined via GUI/API
+    SOURCE_PACK = 'PACK'         # materialized by enterprise control-plane
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer,
+                        ForeignKey(f'{ORM_SCHEMA}.iat_companies.id',ondelete='CASCADE'),
+                        nullable=True)
+    name = Column(String, nullable=False)
+    tool_type = Column(String, default=TYPE_NATIVE, nullable=False)
+    source = Column(String, default=SOURCE_YAML, nullable=False)
+
+    description = Column(Text, nullable=False)
+    parameters = Column(JSON, nullable=False)
+    execution_config = Column(JSON_NATIVE, nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+    company = relationship('Company', back_populates='tools')
+
+    def to_dict(self):
+        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
+
+
+class CollectionType(Base):
+    """Defines the available document collections/categories for a company."""
+    __tablename__ = 'iat_collection_types'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_companies.id', ondelete='CASCADE'), nullable=False)
+    name = Column(String, nullable=False)  # e.g., "Contracts", "Manuals"
+    parser_provider = Column(String, nullable=True)
+
+    # description - optional for the LLM to understand what's inside'
+    description = Column(Text, nullable=True)
+
+    __table_args__ = (UniqueConstraint('company_id', 'name', name='uix_company_collection_name'),)
+
+    company = relationship("Company", back_populates="collection_types")
+    documents = relationship("Document", back_populates="collection_type")
+
+class Document(Base):
+    """Represents a file or document uploaded by a company for context."""
+    __tablename__ = 'iat_documents'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_companies.id',
+                    ondelete='CASCADE'), nullable=False)
+    collection_type_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_collection_types.id', ondelete='SET NULL'), nullable=True)
+
+    user_identifier = Column(String, nullable=True)
+    filename = Column(String, nullable=False, index=True)
+    status = Column(Enum(DocumentStatus), default=DocumentStatus.PENDING, nullable=False)
+    meta = Column(JSON_NATIVE, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+    # Stores the path in the cloud storage (S3/GCS)
+    storage_key = Column(String, index=True, nullable=True)
+
+    # For feedback if OCR or embedding fails
+    error_message = Column(Text, nullable=True)
+
+    # Hash column for deduplication (SHA-256 hex digest)
+    hash = Column(String(64), index=True, nullable=True)
+
+    company = relationship("Company", back_populates="documents")
+    collection_type = relationship("CollectionType", back_populates="documents")
+
+    document_images = relationship("DocumentImage",
+                                   back_populates="document",
+                                   cascade="all, delete-orphan")
+
+    def to_dict(self):
+        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
+
+    @property
+    def description(self):
+        collection_type = self.collection_type.name if self.collection_type else None
+        return f"Document ID {self.id}: {self.filename} ({collection_type})"
+
+
+class DocumentImage(Base):
+    """Represents an image extracted from a document or an uploaded standalone image.."""
+    __tablename__ = 'iat_document_images'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    document_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_documents.id', ondelete='CASCADE'), nullable=False)
+
+    page = Column(Integer, nullable=True)
+    image_index = Column(Integer, nullable=True)
+    storage_key = Column(String, index=True, nullable=True)
+    meta = Column(JSON_NATIVE, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+    document = relationship("Document", back_populates="document_images")
+    vsimage = relationship("VSImage",
+                           uselist=False,
+                           back_populates="document_image",
+                           cascade="all, delete-orphan")
+
+    def to_dict(self):
+        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
+
+class LLMQuery(Base):
+    """Logs a query made to the LLM, including input, output, and metadata."""
+    __tablename__ = 'iat_queries'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_companies.id',
+                            ondelete='CASCADE'), nullable=False)
+    user_identifier = Column(String, nullable=False)
+    query = Column(Text, nullable=False)
+    output = Column(Text, nullable=False)
+    response = Column(JSON, nullable=True, default={})
+    valid_response = Column(Boolean, nullable=False, default=False)
+    function_calls = Column(JSON, nullable=True, default={})
+    stats = Column(JSON, default={})
+    answer_time = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.now)
+    task_id = Column(Integer, default=None, nullable=True)
+
+    company = relationship("Company", back_populates="llm_queries")
+
+    def to_dict(self):
+        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
+
+
+class VSDoc(Base):
+    """Stores a text chunk and its corresponding vector embedding for similarity search."""
+    __tablename__ = "iat_vsdocs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_companies.id',
+                    ondelete='CASCADE'), nullable=False)
+    document_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_documents.id',
+                        ondelete='CASCADE'), nullable=False)
+    text = Column(Text, nullable=False)
+    meta = Column(JSON_NATIVE, nullable=True)
+
+    # the size of this vector is dynamic to support multiple models
+    # (e.g. OpenAI=1536, HuggingFace=384, etc.)
+    embedding = Column(Vector, nullable=False)
+    company = relationship("Company", back_populates="vsdocs")
+
+    def to_dict(self):
+        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
+
+class VSImage(Base):
+    """Stores the vector embedding for an image document for visual similarity search."""
+    __tablename__ = "iat_vsimages"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_companies.id',
+                                            ondelete='CASCADE'), nullable=False)
+    document_image_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_document_images.id',
+                                                   ondelete='CASCADE'), nullable=False)
+
+    # Vector dimension depends on the multimodal model (e.g., CLIP uses 512 or 768)
+    embedding = Column(Vector, nullable=False)
+
+    company = relationship("Company", back_populates="vsimages")
+    document_image = relationship("DocumentImage", back_populates="vsimage")
+
+    def to_dict(self):
+        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
+
+
+class UserFeedback(Base):
+    """Stores feedback and ratings submitted by users for specific interactions."""
+    __tablename__ = 'iat_feedback'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_companies.id',
+                                            ondelete='CASCADE'), nullable=False)
+    user_identifier = Column(String, default='', nullable=True)
+    message = Column(Text, nullable=False)
+    rating = Column(Integer, nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+
+    company = relationship("Company", back_populates="feedbacks")
+
+
+class PromptCategory(Base):
+    """Represents a category to group and organize prompts."""
+    __tablename__ = 'iat_prompt_categories'
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False)
+    order = Column(Integer, nullable=False, default=0)
+    company_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_companies.id', ondelete='CASCADE'), nullable=False)
+
+    prompts = relationship(
+        "Prompt",
+        back_populates="category",
+        order_by="Prompt.order",
+        passive_deletes=True,
+    )
+
+    def __repr__(self):
+        return f"<PromptCategory(name='{self.name}', order={self.order})>"
+
+
+class Prompt(Base):
+    """Represents a user-defined prompt template for the LLM."""
+    __tablename__ = 'iat_prompt'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_companies.id',
+                                            ondelete='CASCADE'), nullable=True)
+    name = Column(String, nullable=False)
+    description = Column(String, nullable=False)
+    filename = Column(String, nullable=False)
+    active = Column(Boolean, default=True)
+    prompt_type = Column(String, default=PromptType.COMPANY.value, nullable=False)
+    order = Column(Integer, nullable=True, default=0)
+    category_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_prompt_categories.id', ondelete='SET NULL'), nullable=True)
+    custom_fields = Column(JSON, nullable=False, default=[])
+    output_schema = Column(JSON, nullable=True, default=None)
+    output_schema_yaml = Column(Text, nullable=True, default=None)
+    output_schema_mode = Column(String, nullable=False, default="best_effort")
+    output_response_mode = Column(String, nullable=False, default="chat_compatible")
+    attachment_mode = Column(String, nullable=False, default="extracted_only")
+    attachment_fallback = Column(String, nullable=False, default="extract")
+    created_at = Column(DateTime, default=datetime.now)
+    def to_dict(self):
+        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
+
+    company = relationship("Company", back_populates="prompts")
+    category = relationship("PromptCategory", back_populates="prompts")
+
+
+class SqlSource(Base):
+    """
+    Canonical SQL source catalog per company.
+    Runtime SQL registration is resolved from this table (not directly from YAML).
+    """
+    __tablename__ = "iat_sql_sources"
+
+    SOURCE_YAML = "YAML"
+    SOURCE_USER = "USER"
+
+    CONNECTION_DIRECT = "direct"
+    CONNECTION_BRIDGE = "bridge"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_companies.id", ondelete="CASCADE"), nullable=False)
+
+    database = Column(String, nullable=False)
+    connection_type = Column(String(32), nullable=False, default=CONNECTION_DIRECT)
+    connection_string_env = Column(String, nullable=True)
+    schema = Column(String, nullable=False, default="public")
+    description = Column(Text, nullable=True)
+    bridge_id = Column(String, nullable=True)
+
+    source = Column(String(16), nullable=False, default=SOURCE_YAML)
+    is_active = Column(Boolean, nullable=False, default=True)
+
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    __table_args__ = (
+        UniqueConstraint("company_id", "database", name="uix_company_sql_source_database"),
+    )
+
+    company = relationship("Company", back_populates="sql_sources")
+
+    def to_dict(self):
+        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
+
+
+class AccessLog(Base):
+    # Modelo ORM para registrar cada intento de acceso a la plataforma.
+    __tablename__ = 'iat_access_log'
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+
+    timestamp = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
+    company_short_name = Column(String, nullable=False, index=True)
+    user_identifier = Column(String, index=True)
+
+    # Cómo y el Resultado
+    auth_type = Column(String, nullable=False) # 'local', 'external_api', 'redeem_token', etc.
+    outcome = Column(String, nullable=False)   # 'success' o 'failure'
+    reason_code = Column(String)               # Causa de fallo, ej: 'INVALID_CREDENTIALS'
+
+    # Contexto de la Petición
+    source_ip = Column(String, nullable=False)
+    user_agent_hash = Column(String)           # Hash corto del User-Agent
+    request_path = Column(String, nullable=False)
+
+    def __repr__(self):
+        return (f"<AccessLog(id={self.id}, company='{self.company_short_name}', "
+                f"user='{self.user_identifier}', outcome='{self.outcome}')>")

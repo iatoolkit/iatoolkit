@@ -6,6 +6,10 @@
 from injector import inject
 import os
 import json
+import logging
+import re
+import unicodedata
+from urllib.parse import urlparse
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.visual_kb_service import VisualKnowledgeBaseService
@@ -14,13 +18,53 @@ from iatoolkit.repositories.models import Company, Tool
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.sql_service import SqlService
 from iatoolkit.services.excel_service import ExcelService
+from iatoolkit.services.pdf_service import PdfService
 from iatoolkit.services.mail_service import MailService
 from iatoolkit.services.visual_tool_service import VisualToolService
-from iatoolkit.services.system_tools import SYSTEM_TOOLS_DEFINITIONS
+from iatoolkit.services.system_tools import (
+    SYSTEM_TOOLS_DEFINITIONS,
+    get_system_tools_catalog_source,
+)
 from iatoolkit import current_iatoolkit
 
 
 class ToolService:
+    HTTP_ALLOWED_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
+    HTTP_ALLOWED_BODY_MODES = {"none", "json_map", "full_args"}
+    HTTP_ALLOWED_AUTH_TYPES = {"none", "bearer", "api_key_header", "api_key_query", "basic"}
+    HTTP_ALLOWED_RESPONSE_MODES = {"json", "text", "raw"}
+
+    TOOL_EVENT_CREATED = "created"
+    TOOL_EVENT_UPDATED = "updated"
+    TOOL_EVENT_DELETED = "deleted"
+    MEMORY_NATIVE_ATTACHMENT_QUERY_HINTS = (
+        "abre",
+        "abreme",
+        "abrir",
+        "lee",
+        "leeme",
+        "leer",
+        "extrae",
+        "extraer",
+        "extraeme",
+        "documento",
+        "archivo",
+        "pdf",
+        "monto",
+        "credito",
+        "declaracion",
+        "jurada",
+        "fogape",
+        "open",
+        "read",
+        "extract",
+        "document",
+        "file",
+        "amount",
+        "credit",
+    )
+    _tool_lifecycle_hook = None
+
     @inject
     def __init__(self,
                  llm_query_repo: LLMQueryRepo,
@@ -30,30 +74,62 @@ class ToolService:
                  profile_repo: ProfileRepo,
                  sql_service: SqlService,
                  excel_service: ExcelService,
-                 mail_service: MailService):
+                 pdf_service: PdfService,
+                 mail_service: MailService,
+                 memory_service=None,
+                 web_search_service=None):
         self.llm_query_repo = llm_query_repo
         self.profile_repo = profile_repo
         self.sql_service = sql_service
         self.excel_service = excel_service
+        self.pdf_service = pdf_service
         self.mail_service = mail_service
+        self._memory_service = memory_service
         self.knowledge_base_service = knowledge_base_service
         self.visual_kb_service = visual_kb_service
         self.visual_tool_service = visual_tool_service
+        self._web_search_service = web_search_service
 
         # execution mapper for system tools
         self.system_handlers = {
             "iat_generate_excel": self.excel_service.excel_generator,
+            "iat_generate_pdf": self.pdf_service.pdf_generator,
             "iat_send_email": self.mail_service.send_mail,
             "iat_sql_query": self.sql_service.exec_sql,
             "iat_image_search": self._handle_image_search_tool,
             "iat_visual_search": self._handle_visual_search_tool,
-            "iat_document_search": self._handle_document_search_tool
+            "iat_document_search": self._handle_document_search_tool,
+            "iat_memory_search": self._handle_memory_search_tool,
+            "iat_memory_get_page": self._handle_memory_get_page_tool,
+            "iat_web_search": self._handle_web_search_tool,
         }
+
+    @property
+    def web_search_service(self):
+        if self._web_search_service is None:
+            from iatoolkit.services.web_search_service import WebSearchService
+            self._web_search_service = current_iatoolkit().get_injector().get(WebSearchService)
+        return self._web_search_service
+
+    @property
+    def memory_service(self):
+        if self._memory_service is None:
+            from iatoolkit.services.memory_service import MemoryService
+            self._memory_service = current_iatoolkit().get_injector().get(MemoryService)
+        return self._memory_service
+
+    @classmethod
+    def register_tool_lifecycle_hook(cls, hook):
+        cls._tool_lifecycle_hook = hook
+
+    @classmethod
+    def clear_tool_lifecycle_hook(cls):
+        cls._tool_lifecycle_hook = None
 
     def _handle_document_search_tool(self,
                                      company_short_name: str,
                                      query: str,
-                                     collection: str = None,
+                                     collection: str | list[str] | None = None,
                                      metadata_filter=None,
                                      n_results: int = 5,
                                      **kwargs):
@@ -110,6 +186,119 @@ class ToolService:
             metadata_filter=metadata_filter,
             structured_output=True,
         )
+
+    def _handle_web_search_tool(self,
+                                company_short_name: str,
+                                query: str,
+                                n_results: int | None = None,
+                                recency_days: int | None = None,
+                                include_domains: list[str] | None = None,
+                                exclude_domains: list[str] | None = None,
+                                **kwargs):
+        return self.web_search_service.search(
+            company_short_name=company_short_name,
+            query=query,
+            n_results=n_results,
+            recency_days=recency_days,
+            include_domains=include_domains,
+            exclude_domains=exclude_domains,
+            **kwargs,
+        )
+
+    def _handle_memory_search_tool(self,
+                                   company_short_name: str,
+                                   query: str,
+                                   limit: int = 5,
+                                   user_identifier: str | None = None,
+                                   **kwargs):
+        if not user_identifier:
+            logging.warning(
+                "Memory search tool invoked without user_identifier for company '%s'.",
+                company_short_name,
+            )
+            return {"status": "error", "results": [], "error_message": "memory not available"}
+        try:
+            response = self.memory_service.search_pages(
+                company_short_name=company_short_name,
+                user_identifier=user_identifier,
+                query=query,
+                limit=limit,
+                include_native_attachments=self._memory_search_should_attach_native_files(query),
+            )
+        except Exception:
+            logging.exception(
+                "Memory search tool failed for company='%s' user='%s' query='%s'.",
+                company_short_name,
+                user_identifier,
+                query,
+            )
+            raise
+
+        if response.get("status") != "success":
+            logging.warning(
+                "Memory search returned status='%s' for company='%s' user='%s' query='%s': %s",
+                response.get("status"),
+                company_short_name,
+                user_identifier,
+                query,
+                response.get("error_message", ""),
+            )
+        else:
+            logging.debug(
+                "Memory search succeeded for company='%s' user='%s' query='%s' results=%s.",
+                company_short_name,
+                user_identifier,
+                query,
+                len(response.get("results") or []),
+            )
+
+        return response
+
+    @classmethod
+    def _memory_search_should_attach_native_files(cls, query: str | None) -> bool:
+        normalized_query = unicodedata.normalize("NFKD", str(query or "").lower())
+        normalized_query = "".join(char for char in normalized_query if not unicodedata.combining(char))
+        tokens = set(re.findall(r"[a-z0-9]+", normalized_query))
+        return any(hint in tokens for hint in cls.MEMORY_NATIVE_ATTACHMENT_QUERY_HINTS)
+
+    def _handle_memory_get_page_tool(self,
+                                     company_short_name: str,
+                                     page_id: int,
+                                     user_identifier: str | None = None,
+                                     **kwargs):
+        if not user_identifier:
+            logging.warning(
+                "Memory get page tool invoked without user_identifier for company '%s'.",
+                company_short_name,
+            )
+            return {"status": "error", "error_message": "memory not available"}
+        try:
+            response = self.memory_service.get_page(
+                company_short_name=company_short_name,
+                user_identifier=user_identifier,
+                page_id=page_id,
+                include_native_attachments=True,
+            )
+        except Exception:
+            logging.exception(
+                "Memory get page tool failed for company='%s' user='%s' page_id='%s'.",
+                company_short_name,
+                user_identifier,
+                page_id,
+            )
+            raise
+
+        if response.get("status") != "success":
+            logging.warning(
+                "Memory get page returned status='%s' for company='%s' user='%s' page_id='%s': %s",
+                response.get("status"),
+                company_short_name,
+                user_identifier,
+                page_id,
+                response.get("error_message", ""),
+            )
+
+        return response
 
     @staticmethod
     def _serialize_document_chunks(chunks: list[dict]) -> str:
@@ -191,16 +380,258 @@ class ToolService:
             return text
         return f"[{text}]({url})"
 
+    def _validate_tool_contract(self, tool_type: str, execution_config):
+        if tool_type != Tool.TYPE_HTTP:
+            return
+
+        if execution_config is None:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.MISSING_PARAMETER,
+                "execution_config is required for HTTP tools"
+            )
+
+        self._validate_http_execution_config(execution_config)
+
+    def _validate_http_execution_config(self, execution_config):
+        if not isinstance(execution_config, dict):
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "execution_config must be a JSON object"
+            )
+
+        version = execution_config.get("version")
+        if version != 1:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "execution_config.version must be 1"
+            )
+
+        request_cfg = execution_config.get("request")
+        if not isinstance(request_cfg, dict):
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "execution_config.request must be a JSON object"
+            )
+
+        method = str(request_cfg.get("method", "")).upper()
+        if method not in self.HTTP_ALLOWED_METHODS:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                f"execution_config.request.method must be one of {sorted(self.HTTP_ALLOWED_METHODS)}"
+            )
+
+        url = request_cfg.get("url")
+        if not isinstance(url, str) or not url.strip():
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "execution_config.request.url is required and must be a non-empty string"
+            )
+
+        parsed = urlparse(url)
+        if parsed.scheme.lower() != "https" or not parsed.netloc:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "execution_config.request.url must be an absolute HTTPS URL"
+            )
+
+        timeout_ms = request_cfg.get("timeout_ms")
+        if timeout_ms is not None:
+            if not isinstance(timeout_ms, int) or timeout_ms <= 0 or timeout_ms > 120000:
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.request.timeout_ms must be an integer between 1 and 120000"
+                )
+
+        for dict_key in ("path_params", "query_params", "headers"):
+            value = request_cfg.get(dict_key)
+            if value is not None and not isinstance(value, dict):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    f"execution_config.request.{dict_key} must be a JSON object"
+                )
+
+        body_cfg = request_cfg.get("body")
+        if body_cfg is not None:
+            if not isinstance(body_cfg, dict):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.request.body must be a JSON object"
+                )
+
+            body_mode = str(body_cfg.get("mode", "none")).lower()
+            if body_mode not in self.HTTP_ALLOWED_BODY_MODES:
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    f"execution_config.request.body.mode must be one of {sorted(self.HTTP_ALLOWED_BODY_MODES)}"
+                )
+            if body_mode == "json_map" and not isinstance(body_cfg.get("json_map"), dict):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.request.body.json_map must be a JSON object when mode is 'json_map'"
+                )
+
+        auth_cfg = execution_config.get("auth")
+        if auth_cfg is not None:
+            if not isinstance(auth_cfg, dict):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.auth must be a JSON object"
+                )
+
+            auth_type = str(auth_cfg.get("type", "none")).lower()
+            if auth_type not in self.HTTP_ALLOWED_AUTH_TYPES:
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    f"execution_config.auth.type must be one of {sorted(self.HTTP_ALLOWED_AUTH_TYPES)}"
+                )
+
+            if auth_type == "bearer" and not auth_cfg.get("secret_ref"):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.auth.secret_ref is required for bearer auth"
+                )
+            if auth_type == "api_key_header":
+                if not auth_cfg.get("header_name") or not auth_cfg.get("secret_ref"):
+                    raise IAToolkitException(
+                        IAToolkitException.ErrorType.INVALID_PARAMETER,
+                        "execution_config.auth.header_name and secret_ref are required for api_key_header auth"
+                    )
+            if auth_type == "api_key_query":
+                if not auth_cfg.get("query_param") or not auth_cfg.get("secret_ref"):
+                    raise IAToolkitException(
+                        IAToolkitException.ErrorType.INVALID_PARAMETER,
+                        "execution_config.auth.query_param and secret_ref are required for api_key_query auth"
+                    )
+            if auth_type == "basic":
+                if not auth_cfg.get("username_secret_ref") or not auth_cfg.get("password_secret_ref"):
+                    raise IAToolkitException(
+                        IAToolkitException.ErrorType.INVALID_PARAMETER,
+                        "execution_config.auth.username_secret_ref and password_secret_ref are required for basic auth"
+                    )
+
+        response_cfg = execution_config.get("response")
+        if response_cfg is not None:
+            if not isinstance(response_cfg, dict):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.response must be a JSON object"
+                )
+
+            response_mode = str(response_cfg.get("mode", "json")).lower()
+            if response_mode not in self.HTTP_ALLOWED_RESPONSE_MODES:
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    f"execution_config.response.mode must be one of {sorted(self.HTTP_ALLOWED_RESPONSE_MODES)}"
+                )
+
+            success_codes = response_cfg.get("success_status_codes")
+            if success_codes is not None:
+                if (not isinstance(success_codes, list) or
+                        not success_codes or
+                        any(not isinstance(code, int) or code < 100 or code > 599 for code in success_codes)):
+                    raise IAToolkitException(
+                        IAToolkitException.ErrorType.INVALID_PARAMETER,
+                        "execution_config.response.success_status_codes must be a non-empty list of HTTP status codes"
+                    )
+
+            max_bytes = response_cfg.get("max_response_bytes")
+            if max_bytes is not None and (not isinstance(max_bytes, int) or max_bytes <= 0):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.response.max_response_bytes must be a positive integer"
+                )
+
+        security_cfg = execution_config.get("security")
+        if security_cfg is not None:
+            if not isinstance(security_cfg, dict):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.security must be a JSON object"
+                )
+
+            allowed_hosts = security_cfg.get("allowed_hosts")
+            if allowed_hosts is not None:
+                if not isinstance(allowed_hosts, list):
+                    raise IAToolkitException(
+                        IAToolkitException.ErrorType.INVALID_PARAMETER,
+                        "execution_config.security.allowed_hosts must be a list"
+                    )
+                for host in allowed_hosts:
+                    if not isinstance(host, str) or not host.strip():
+                        raise IAToolkitException(
+                            IAToolkitException.ErrorType.INVALID_PARAMETER,
+                            "execution_config.security.allowed_hosts must contain non-empty strings"
+                        )
+
+            allow_private_network = security_cfg.get("allow_private_network")
+            if allow_private_network is True:
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.security.allow_private_network=true is not supported"
+                )
+
+    @staticmethod
+    def _build_tool_snapshot(tool_obj) -> dict:
+        if tool_obj is None:
+            return {}
+        if isinstance(tool_obj, dict):
+            return dict(tool_obj)
+
+        snapshot = {}
+        for key in (
+            "id",
+            "company_id",
+            "name",
+            "description",
+            "parameters",
+            "execution_config",
+            "tool_type",
+            "source",
+            "is_active",
+        ):
+            if hasattr(tool_obj, key):
+                snapshot[key] = getattr(tool_obj, key)
+        return snapshot
+
+    def _notify_tool_lifecycle_hook(
+        self,
+        event: str,
+        company_short_name: str,
+        tool_obj,
+        actor_identifier: str | None = None,
+    ) -> None:
+        hook = type(self)._tool_lifecycle_hook
+        if not callable(hook):
+            return
+
+        tool_snapshot = self._build_tool_snapshot(tool_obj)
+        if not tool_snapshot:
+            return
+
+        try:
+            hook(
+                event=event,
+                company_short_name=company_short_name,
+                tool_snapshot=tool_snapshot,
+                actor_identifier=actor_identifier,
+            )
+        except Exception:
+            logging.exception(
+                "Tool lifecycle hook failed: event=%s company=%s tool_id=%s",
+                event,
+                company_short_name,
+                tool_snapshot.get("id"),
+            )
+
     def register_system_tools(self):
         """
         Creates or updates system functions in the database.
         Called by the init_company cli command, the IAToolkit bootstrap process.
         """
         try:
-            # delete all system tools
-            self.llm_query_repo.delete_system_tools()
+            self._validate_configured_system_handlers(SYSTEM_TOOLS_DEFINITIONS)
 
-            # create new system tools
+            # Upsert configured system tools. This is idempotent and avoids destructive deletes.
             for function in SYSTEM_TOOLS_DEFINITIONS:
                 new_tool = Tool(
                     company_id=None,
@@ -208,11 +639,137 @@ class ToolService:
                     description=function['description'],
                     parameters=function['parameters'],
                     tool_type=Tool.TYPE_SYSTEM,
-                    source=Tool.SOURCE_SYSTEM
+                    source=Tool.SOURCE_SYSTEM,
+                    is_active=True,
                 )
                 self.llm_query_repo.create_or_update_tool(new_tool)
 
             self.llm_query_repo.commit()
+        except IAToolkitException:
+            self.llm_query_repo.rollback()
+            raise
+        except Exception as e:
+            self.llm_query_repo.rollback()
+            raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR, str(e))
+
+    def _validate_configured_system_handlers(self, definitions: list[dict]) -> None:
+        # Validate upfront that all configured system tools have a local handler.
+        # SYSTEM tools must be executed internally (never over HTTP).
+        for function in definitions:
+            function_name = function.get("function_name")
+            if not function_name:
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "Invalid system tool definition: missing function_name.",
+                )
+            if not self.get_system_handler(function_name):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.SYSTEM_ERROR,
+                    f"Handler for system tool '{function_name}' not found.",
+                )
+
+    @staticmethod
+    def _system_tool_matches_definition(tool: Tool, definition: dict) -> bool:
+        return (
+            tool is not None
+            and tool.tool_type == Tool.TYPE_SYSTEM
+            and tool.company_id is None
+            and tool.source == Tool.SOURCE_SYSTEM
+            and bool(tool.is_active)
+            and tool.description == definition.get("description")
+            and (tool.parameters or {}) == (definition.get("parameters") or {})
+        )
+
+    def _system_tools_catalog_has_drift(
+        self,
+        definitions: list[dict],
+        existing_by_name: dict[str, Tool],
+    ) -> bool:
+        desired_names = {str(item.get("function_name") or "").strip() for item in definitions}
+        desired_names.discard("")
+
+        for name, tool in existing_by_name.items():
+            if name not in desired_names and bool(tool.is_active):
+                return True
+
+        for item in definitions:
+            function_name = str(item.get("function_name") or "").strip()
+            if not function_name:
+                continue
+            existing_tool = existing_by_name.get(function_name)
+            if not self._system_tool_matches_definition(existing_tool, item):
+                return True
+
+        return False
+
+    def sync_system_tools_if_catalog_changed(self) -> dict:
+        definitions = SYSTEM_TOOLS_DEFINITIONS or []
+        catalog_source = get_system_tools_catalog_source()
+
+        try:
+            self._validate_configured_system_handlers(definitions)
+            existing_system_tools = self.llm_query_repo.list_system_tools() or []
+            existing_by_name = {tool.name: tool for tool in existing_system_tools if tool and tool.name}
+
+            if not self._system_tools_catalog_has_drift(definitions, existing_by_name):
+                return {
+                    "data": {
+                        "status": "skipped",
+                        "reason": "no_changes",
+                        "catalog_source": catalog_source,
+                        "upserted_tools": 0,
+                        "deactivated_tools": 0,
+                    }
+                }
+
+            upserted_tools = 0
+            for function in definitions:
+                function_name = str(function.get("function_name") or "").strip()
+                if not function_name:
+                    continue
+                existing_tool = existing_by_name.get(function_name)
+                if self._system_tool_matches_definition(existing_tool, function):
+                    continue
+
+                new_tool = Tool(
+                    company_id=None,
+                    name=function_name,
+                    description=function.get("description"),
+                    parameters=function.get("parameters") or {},
+                    tool_type=Tool.TYPE_SYSTEM,
+                    source=Tool.SOURCE_SYSTEM,
+                    is_active=True,
+                )
+                self.llm_query_repo.create_or_update_tool(new_tool)
+                upserted_tools += 1
+
+            desired_names = {str(item.get("function_name") or "").strip() for item in definitions}
+            desired_names.discard("")
+            deactivated_tools = 0
+            for name, tool in existing_by_name.items():
+                if name in desired_names or not bool(tool.is_active):
+                    continue
+                tool.is_active = False
+                deactivated_tools += 1
+
+            self.llm_query_repo.commit()
+            logging.info(
+                "System tools sync applied: upserted=%s deactivated=%s",
+                upserted_tools,
+                deactivated_tools,
+            )
+            return {
+                "data": {
+                    "status": "synced",
+                    "reason": "catalog_drift",
+                    "catalog_source": catalog_source,
+                    "upserted_tools": upserted_tools,
+                    "deactivated_tools": deactivated_tools,
+                }
+            }
+        except IAToolkitException:
+            self.llm_query_repo.rollback()
+            raise
         except Exception as e:
             self.llm_query_repo.rollback()
             raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR, str(e))
@@ -224,7 +781,7 @@ class ToolService:
         - WE ONLY TOUCH TOOLS WHERE source='YAML'.
         - We Upsert tools present in the YAML list.
         - We Delete tools present in DB (source='YAML') but missing in YAML list.
-        - We IGNORE tools where source='USER' (GUI) or source='SYSTEM'.
+        - We IGNORE tools where source is not YAML (SYSTEM/USER/PACK).
         """
 
         # enterprise edition has its own tool management
@@ -243,6 +800,11 @@ class ToolService:
         try:
             # 1. Get all current tools to identify what needs to be deleted
             all_tools = self.llm_query_repo.get_company_tools(company)
+            company_tools_by_name = {
+                tool.name: tool
+                for tool in all_tools
+                if tool.company_id == company.id
+            }
 
             # Set of tool names defined in the current YAML
             yaml_tool_names = set()
@@ -251,6 +813,15 @@ class ToolService:
             for tool_data in tools_config:
                 name = tool_data['function_name']
                 yaml_tool_names.add(name)
+
+                # Protect non-YAML tools from being overwritten by company.yaml.
+                existing_tool = company_tools_by_name.get(name)
+                if existing_tool and existing_tool.source != Tool.SOURCE_YAML:
+                    logging.warning(
+                        f"Skipping YAML tool '{name}' for '{company_short_name}': "
+                        f"name is already used by source '{existing_tool.source}'."
+                    )
+                    continue
 
                 # Tools from YAML are always NATIVE and source=YAML
                 tool_obj = Tool(
@@ -291,13 +862,18 @@ class ToolService:
         if not company:
             raise IAToolkitException(IAToolkitException.ErrorType.INVALID_NAME, "Company not found")
 
-        tool = self.llm_query_repo.get_tool_by_id(company.id, tool_id)
+        tool = self.llm_query_repo.get_tool_by_id(company.id, tool_id, include_system=True)
         if not tool:
             raise IAToolkitException(IAToolkitException.ErrorType.NOT_FOUND, "Tool not found")
 
         return tool.to_dict()
 
-    def create_tool(self, company_short_name: str, tool_data: dict) -> dict:
+    def create_tool(
+        self,
+        company_short_name: str,
+        tool_data: dict,
+        actor_identifier: str | None = None,
+    ) -> dict:
         """Creates a new tool via API (Source=USER)."""
         company = self.profile_repo.get_company_by_short_name(company_short_name)
         if not company:
@@ -307,12 +883,17 @@ class ToolService:
         if not tool_data.get('name') or not tool_data.get('description'):
             raise IAToolkitException(IAToolkitException.ErrorType.MISSING_PARAMETER, "Name and Description are required")
 
+        tool_type = tool_data.get('tool_type', Tool.TYPE_NATIVE)
+        execution_config = tool_data.get('execution_config')
+        self._validate_tool_contract(tool_type, execution_config)
+
         new_tool = Tool(
             company_id=company.id,
             name=tool_data['name'],
             description=tool_data['description'],
             parameters=tool_data.get('parameters', {"type": "object", "properties": {}}),
-            tool_type=tool_data.get('tool_type', Tool.TYPE_NATIVE),
+            execution_config=execution_config,
+            tool_type=tool_type,
             source=Tool.SOURCE_USER,
             is_active=tool_data.get('is_active', True)
         )
@@ -323,21 +904,40 @@ class ToolService:
             raise IAToolkitException(IAToolkitException.ErrorType.DUPLICATE_ENTRY, f"Tool '{new_tool.name}' already exists.")
 
         created_tool = self.llm_query_repo.add_tool(new_tool)
+        self._notify_tool_lifecycle_hook(
+            event=self.TOOL_EVENT_CREATED,
+            company_short_name=company_short_name,
+            tool_obj=created_tool,
+            actor_identifier=actor_identifier,
+        )
         return created_tool.to_dict()
 
-    def update_tool(self, company_short_name: str, tool_id: int, tool_data: dict) -> dict:
+    def update_tool(
+        self,
+        company_short_name: str,
+        tool_id: int,
+        tool_data: dict,
+        allow_system_update: bool = False,
+        actor_identifier: str | None = None,
+    ) -> dict:
         """Updates an existing tool (Only if source=USER usually, but we allow editing YAML ones locally if needed or override)."""
         company = self.profile_repo.get_company_by_short_name(company_short_name)
         if not company:
             raise IAToolkitException(IAToolkitException.ErrorType.INVALID_NAME, "Company not found")
 
-        tool = self.llm_query_repo.get_tool_by_id(company.id, tool_id)
+        tool = self.llm_query_repo.get_tool_by_id(company.id, tool_id, include_system=True)
         if not tool:
             raise IAToolkitException(IAToolkitException.ErrorType.NOT_FOUND, "Tool not found")
 
         # Prevent modifying System tools
-        if tool.tool_type == Tool.TYPE_SYSTEM:
+        if tool.tool_type == Tool.TYPE_SYSTEM and not allow_system_update:
             raise IAToolkitException(IAToolkitException.ErrorType.INVALID_OPERATION, "Cannot modify System Tools")
+        if tool.source == Tool.SOURCE_PACK:
+            raise IAToolkitException(IAToolkitException.ErrorType.INVALID_OPERATION, "Cannot modify PACK tools")
+
+        effective_tool_type = tool_data.get('tool_type', tool.tool_type)
+        effective_execution_config = tool_data.get('execution_config', tool.execution_config)
+        self._validate_tool_contract(effective_tool_type, effective_execution_config)
 
         # Update fields
         if 'name' in tool_data:
@@ -346,26 +946,50 @@ class ToolService:
             tool.description = tool_data['description']
         if 'parameters' in tool_data:
             tool.parameters = tool_data['parameters']
+        if 'execution_config' in tool_data:
+            tool.execution_config = tool_data['execution_config']
+        if 'tool_type' in tool_data:
+            tool.tool_type = tool_data['tool_type']
         if 'is_active' in tool_data:
             tool.is_active = tool_data['is_active']
 
         self.llm_query_repo.commit()
+        self._notify_tool_lifecycle_hook(
+            event=self.TOOL_EVENT_UPDATED,
+            company_short_name=company_short_name,
+            tool_obj=tool,
+            actor_identifier=actor_identifier,
+        )
         return tool.to_dict()
 
-    def delete_tool(self, company_short_name: str, tool_id: int):
+    def delete_tool(
+        self,
+        company_short_name: str,
+        tool_id: int,
+        actor_identifier: str | None = None,
+    ):
         """Deletes a tool."""
         company = self.profile_repo.get_company_by_short_name(company_short_name)
         if not company:
             raise IAToolkitException(IAToolkitException.ErrorType.INVALID_NAME, "Company not found")
 
-        tool = self.llm_query_repo.get_tool_by_id(company.id, tool_id)
+        tool = self.llm_query_repo.get_tool_by_id(company.id, tool_id, include_system=True)
         if not tool:
             raise IAToolkitException(IAToolkitException.ErrorType.NOT_FOUND, "Tool not found")
 
         if tool.tool_type == Tool.TYPE_SYSTEM:
             raise IAToolkitException(IAToolkitException.ErrorType.INVALID_OPERATION, "Cannot delete System Tools")
+        if tool.source == Tool.SOURCE_PACK:
+            raise IAToolkitException(IAToolkitException.ErrorType.INVALID_OPERATION, "Cannot delete PACK tools")
 
+        tool_snapshot = self._build_tool_snapshot(tool)
         self.llm_query_repo.delete_tool(tool)
+        self._notify_tool_lifecycle_hook(
+            event=self.TOOL_EVENT_DELETED,
+            company_short_name=company_short_name,
+            tool_obj=tool_snapshot,
+            actor_identifier=actor_identifier,
+        )
 
     def get_tool_definition(self, company_short_name: str, tool_name: str) -> Tool:
         """Helper to retrieve tool metadata for the Dispatcher."""
@@ -381,6 +1005,21 @@ class ToolService:
 
         # 2. Fallback to system tools
         return self.llm_query_repo.get_system_tool(tool_name)
+    def _is_strict_compatible_schema(self, parameters: dict) -> bool:
+        if not isinstance(parameters, dict):
+            return False
+
+        properties = parameters.get("properties")
+        if not isinstance(properties, dict):
+            return False
+
+        required = parameters.get("required")
+        if not isinstance(required, list):
+            return False
+        if any(not isinstance(item, str) for item in required):
+            return False
+
+        return set(required) == set(properties.keys())
 
     def get_tools_for_llm(self, company: Company) -> list[dict]:
         """
@@ -404,7 +1043,7 @@ class ToolService:
                 "name": function.name,
                 "description": function.description,
                 "parameters": params,
-                "strict": True
+                "strict": self._is_strict_compatible_schema(params)
             }
 
             tools.append(ai_tool)

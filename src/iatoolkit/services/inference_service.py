@@ -2,12 +2,13 @@
 # Copyright (c) 2024 Fernando Libedinsky
 # Product: IAToolkit
 
-import os
 import logging
 import base64
 import uuid
 from typing import Optional, Dict, Any
 from injector import inject
+from iatoolkit.common.interfaces.secret_provider import SecretProvider
+from iatoolkit.common.secret_resolver import resolve_secret
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.infra.call_service import CallServiceClient
@@ -25,13 +26,21 @@ class InferenceService:
                  config_service: ConfigurationService,
                  call_service: CallServiceClient,
                  storage_service: StorageService,
-                 i18n_service: I18nService):
+                 i18n_service: I18nService,
+                 secret_provider: SecretProvider):
         self.config_service = config_service
         self.call_service = call_service
         self.storage_service = storage_service
         self.i18n_service = i18n_service
+        self.secret_provider = secret_provider
 
-    def predict(self, company_short_name: str, tool_name: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
+    def predict(
+            self,
+            company_short_name: str,
+            tool_name: str,
+            input_data: Dict[str, Any],
+            suppress_error_logging: bool = False
+    ) -> Dict[str, Any]:
         """
         Executes an inference task by calling the configured HF endpoint.
 
@@ -47,17 +56,23 @@ class InferenceService:
         config = self._get_tool_config(company_short_name, tool_name)
 
         endpoint_url = config.get('endpoint_url')
-        api_key_name = config.get('api_key_name', 'HF_TOKEN')
+        endpoint_url_env = config.get('endpoint_url_env')
+        api_key_ref = config.get('api_key_secret_ref') or config.get('api_key_name', 'HF_TOKEN')
         model_id = config.get('model_id')
         model_parameters = config.get('model_parameters', {})
 
         if not endpoint_url:
+            if endpoint_url_env:
+                raise ValueError(
+                    f"Missing endpoint URL for tool '{tool_name}' in company '{company_short_name}'. "
+                    f"Environment variable '{endpoint_url_env}' is not set."
+                )
             raise ValueError(f"Missing 'endpoint_url' for tool '{tool_name}' in company '{company_short_name}'.")
 
         # 2. Get the API Key
-        api_key = os.getenv(api_key_name)
+        api_key = resolve_secret(self.secret_provider, company_short_name, api_key_ref)
         if not api_key:
-            raise ValueError(f"Environment variable '{api_key_name}' is not set.")
+            raise ValueError(f"Secret reference '{api_key_ref}' is not set.")
 
         # 3. Construct the payload
         payload = {
@@ -77,7 +92,12 @@ class InferenceService:
 
         # 4. Execute Call
         logging.debug(f"Called inference tool {tool_name} with model {model_id}.")
-        response_data = self._call_endpoint(endpoint_url, api_key, payload)
+        response_data = self._call_endpoint(
+            endpoint_url,
+            api_key,
+            payload,
+            suppress_error_logging=suppress_error_logging,
+        )
 
         # 5. Post-Processing
 
@@ -159,7 +179,10 @@ class InferenceService:
             return {"error": True, "message": "Failed to save generated content."}
 
     def _get_tool_config(self, company_short_name: str, tool_name: str) -> dict:
-        """Helper to safely extract tool configuration from company.yaml."""
+        """
+        Helper to safely extract and resolve tool configuration from company.yaml.
+        It supports shared defaults via inference_tools._defaults and endpoint URL indirection via endpoint_url_env.
+        """
         inference_config = self.config_service.get_configuration(company_short_name, 'inference_tools')
 
         if not inference_config:
@@ -169,9 +192,41 @@ class InferenceService:
         if not tool_config:
             raise ValueError(f"Tool '{tool_name}' not configured in 'inference_tools' for '{company_short_name}'.")
 
-        return tool_config
+        defaults = inference_config.get("_defaults") or {}
+        if not isinstance(defaults, dict):
+            defaults = {}
 
-    def _call_endpoint(self, url: str, api_key: str, payload: dict) -> Any:
+        if not isinstance(tool_config, dict):
+            raise ValueError(
+                f"Tool '{tool_name}' config must be a dictionary in 'inference_tools' for '{company_short_name}'."
+            )
+
+        resolved_config = {**defaults, **tool_config}
+
+        endpoint_url = (resolved_config.get("endpoint_url") or "").strip()
+        if not endpoint_url:
+            endpoint_url_secret_ref = (resolved_config.get("endpoint_url_secret_ref") or "").strip()
+            if endpoint_url_secret_ref:
+                endpoint_url = (
+                    resolve_secret(self.secret_provider, company_short_name, endpoint_url_secret_ref, default="") or ""
+                ).strip()
+        if not endpoint_url:
+            endpoint_url_env = (resolved_config.get("endpoint_url_env") or "").strip()
+            if endpoint_url_env:
+                endpoint_url = (resolve_secret(self.secret_provider, company_short_name, endpoint_url_env, default="") or "").strip()
+
+        if endpoint_url:
+            resolved_config["endpoint_url"] = endpoint_url
+
+        return resolved_config
+
+    def _call_endpoint(
+            self,
+            url: str,
+            api_key: str,
+            payload: dict,
+            suppress_error_logging: bool = False
+    ) -> Any:
         """Performs the POST request to the HF Endpoint."""
         headers = {
             "Authorization": f"Bearer {api_key}",
@@ -190,11 +245,13 @@ class InferenceService:
                 error_msg = f"Inference Endpoint Error {status}"
                 if isinstance(resp, dict) and 'error' in resp:
                     error_msg += f": {resp['error']}"
-                logging.error(f"{error_msg} | Payload keys: {list(payload.keys())}")
+                if not suppress_error_logging:
+                    logging.error(f"{error_msg} | Payload keys: {list(payload.keys())}")
                 raise ValueError(error_msg)
 
             return resp
 
         except Exception as e:
-            logging.error(f"Failed to call inference endpoint: {e}")
+            if not suppress_error_logging:
+                logging.error(f"Failed to call inference endpoint: {e}")
             raise

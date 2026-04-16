@@ -58,6 +58,19 @@ class KnowledgeBaseService:
         self.min_chunk_chars = int(os.getenv("RAG_MIN_CHUNK_CHARS", "250"))
         self.merge_target_chars = int(os.getenv("RAG_MERGE_TARGET_CHARS", "800"))
 
+    @staticmethod
+    def _strip_nul_chars(value: Any) -> Any:
+        """Recursively removes NUL bytes from text/metadata before persisting to Postgres."""
+        if isinstance(value, str):
+            return value.replace("\x00", "")
+        if isinstance(value, dict):
+            return {k: KnowledgeBaseService._strip_nul_chars(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [KnowledgeBaseService._strip_nul_chars(item) for item in value]
+        if isinstance(value, tuple):
+            return tuple(KnowledgeBaseService._strip_nul_chars(item) for item in value)
+        return value
+
     def ingest_document_sync(self,
                              company: Company,
                              filename: str,
@@ -68,7 +81,7 @@ class KnowledgeBaseService:
         """
         Synchronously processes a document through the entire RAG pipeline:
         1. Saves initial metadata and raw content reference to the SQL Document table.
-        2. Parses content via configured parsing provider (docling/legacy/custom).
+        2. Parses content via configured parsing provider (docling/basic/custom).
         3. Splits the text into semantic chunks using LangChain.
         4. Vectorizes and saves chunks to the Vector Store (VSRepo).
         5. Updates the document status to ACTIVE or FAILED.
@@ -84,6 +97,8 @@ class KnowledgeBaseService:
         """
         if not metadata:
             metadata = {}
+
+        metadata = self._strip_nul_chars(metadata)
 
         # --- Logic for Collection ---
         # priority: 1. method parameter 2. metadata
@@ -108,7 +123,7 @@ class KnowledgeBaseService:
 
         # 2. Check for duplicates by HASH (Content deduplication)
         # If the same content exists (even with a different filename), we skip processing.
-        existing_doc = self.document_repo.get_by_hash(company.id, file_hash)
+        existing_doc = self.document_repo.get_by_hash(company.id, file_hash, collection_id)
         if existing_doc:
             if existing_doc.status == DocumentStatus.FAILED:
                 # If the previous ingestion failed, we delete the failed document and try again.
@@ -176,7 +191,7 @@ class KnowledgeBaseService:
             document.status = DocumentStatus.PROCESSING
             session.commit()
 
-            # B. Provider-based parsing (docling/legacy/custom)
+            # B. Provider-based parsing (docling/basic/custom)
             parse_result = self.parsing_service.parse_document(
                 company_short_name=company.short_name,
                 filename=document.filename,
@@ -194,7 +209,7 @@ class KnowledgeBaseService:
                 doc_meta["parser_version"] = parse_result.provider_version
             if parse_result.warnings:
                 doc_meta["parser_warnings"] = parse_result.warnings
-            document.meta = doc_meta
+            document.meta = self._strip_nul_chars(doc_meta)
 
             # C. Splitting & chunking
             vs_docs = []
@@ -248,6 +263,7 @@ class KnowledgeBaseService:
                 continue
             chunks = self.text_splitter.split_text(unit["text"])
             for chunk_index, chunk_text in enumerate(chunks):
+                chunk_text = self._strip_nul_chars(chunk_text)
                 meta = {
                     "source_type": "text",
                     "block_index": block_index,
@@ -258,6 +274,8 @@ class KnowledgeBaseService:
 
                 if unit["meta"]:
                     meta.update(unit["meta"])
+
+                meta = self._strip_nul_chars(meta)
                 vs_docs.append(VSDoc(
                     company_id=document.company_id,
                     document_id=document.id,
@@ -280,16 +298,19 @@ class KnowledgeBaseService:
         def flush_current():
             nonlocal current_text, current_meta
             if current_text.strip():
-                compacted.append({"text": current_text.strip(), "meta": dict(current_meta)})
+                compacted.append({
+                    "text": self._strip_nul_chars(current_text.strip()),
+                    "meta": self._strip_nul_chars(dict(current_meta))
+                })
             current_text = ""
             current_meta = {}
 
         for item in parsed_texts or []:
-            text = (item.text or "").strip()
+            text = self._strip_nul_chars((item.text or "").strip())
             if not text:
                 continue
 
-            item_meta = dict(item.meta or {})
+            item_meta = self._strip_nul_chars(dict(item.meta or {}))
             source_label = (item_meta.get("source_label") or "").lower()
 
             # Titles should enrich the next text instead of creating tiny standalone chunks.
@@ -386,14 +407,15 @@ class KnowledgeBaseService:
 
             # 1. Sanitize the JSON to remove heavy visual metadata (bbox, coords)
             clean_json = self._sanitize_table_data(table.table_json)
+            clean_json = self._strip_nul_chars(clean_json)
 
             # 2. Use provider text, fallback to clean JSON string
-            table_text = table.text or json.dumps(clean_json, ensure_ascii=False)
+            table_text = self._strip_nul_chars(table.text or json.dumps(clean_json, ensure_ascii=False))
             if not table_text:
                 continue
 
             # 3. Serialize clean JSON for metadata
-            table_json_str = json.dumps(clean_json, ensure_ascii=False) if clean_json else None
+            table_json_str = self._strip_nul_chars(json.dumps(clean_json, ensure_ascii=False)) if clean_json else None
 
             # Every table in its own chunk
             meta = {
@@ -408,6 +430,7 @@ class KnowledgeBaseService:
             if table.meta:
                 meta.update(table.meta)
 
+            meta = self._strip_nul_chars(meta)
             vs_docs.append(VSDoc(
                 company_id=document.company_id,
                 document_id=document.id,
@@ -463,7 +486,7 @@ class KnowledgeBaseService:
                company_short_name: str,
                query: str,
                n_results: int = 5,
-               collection: str = None,
+               collection: str | list[str] | None = None,
                metadata_filter: dict = None
                ):
         """
@@ -475,7 +498,7 @@ class KnowledgeBaseService:
             query: The user's question or search term.
             n_results: Max number of chunks to retrieve.
             metadata_filter: Optional filter for document metadata.
-            collection: Optional collection name.
+            collection: Optional collection name or list of collection names.
 
         Returns:
             List of Document objects found.
@@ -486,8 +509,20 @@ class KnowledgeBaseService:
             logging.warning(f"Company {company_short_name} not found during raw search.")
             return []
 
-        # If collection name provided, resolve to ID or handle in VSRepo
-        collection_id = self.document_repo.get_collection_id_by_name(company.short_name, collection)
+        normalized_collection = self._normalize_search_collection(collection)
+        collection_ids = None
+        if isinstance(normalized_collection, str):
+            collection_id = self.document_repo.get_collection_id_by_name(company.short_name, normalized_collection)
+            if collection_id is None:
+                return []
+            collection_ids = [collection_id]
+        elif isinstance(normalized_collection, list):
+            collection_ids = self.document_repo.get_collection_ids_by_name(
+                company.short_name,
+                normalized_collection,
+            )
+            if not collection_ids:
+                return []
 
         # Queries VSRepo directly
         chunk_list = self.vs_repo.query(
@@ -495,10 +530,31 @@ class KnowledgeBaseService:
             query_text=query,
             n_results=n_results,
             metadata_filter=metadata_filter,
-            collection_id=collection_id,
+            collection_ids=collection_ids,
         )
 
         return chunk_list
+
+    @staticmethod
+    def _normalize_search_collection(collection: str | list[str] | None) -> str | list[str] | None:
+        if collection is None:
+            return None
+
+        if isinstance(collection, str):
+            normalized = collection.strip()
+            return normalized or None
+
+        if isinstance(collection, list):
+            normalized_items = []
+            for item in collection:
+                if not isinstance(item, str):
+                    continue
+                normalized = item.strip()
+                if normalized:
+                    normalized_items.append(normalized)
+            return normalized_items or None
+
+        return None
 
     def list_documents(self,
                        company_short_name: str,
@@ -649,26 +705,30 @@ class KnowledgeBaseService:
         for entry in normalized_entries:
             cat_name = entry["name"]
             parser_provider = entry["parser_provider"]
+            description = entry["description"]
             if cat_name not in existing_names:
                 new_type = CollectionType(
                     company_id=company.id,
                     name=cat_name,
-                    parser_provider=parser_provider
+                    parser_provider=parser_provider,
+                    description=description,
                 )
                 session.add(new_type)
             else:
                 existing = existing_names[cat_name]
-                if parser_provider is not None:
+                if entry.get("parser_provider_provided"):
                     existing.parser_provider = parser_provider
+                if entry.get("description_provided"):
+                    existing.description = description
 
         session.commit()
 
     @staticmethod
     def _normalize_collection_config_entries(categories_config: list) -> list[dict]:
         """
-        Accepts legacy list[str] and new list[dict{name, parser_provider,...}].
+        Accepts legacy list[str] and new list[dict{name, parser_provider, description,...}].
         Returns normalized entries:
-            [{"name": "contracts", "parser_provider": "docling"|None}, ...]
+            [{"name": "contracts", "parser_provider": "docling"|None, "description": "..."|None}, ...]
         """
         normalized: list[dict] = []
         seen_names = set()
@@ -676,6 +736,9 @@ class KnowledgeBaseService:
         for item in categories_config or []:
             name = None
             parser_provider = None
+            description = None
+            parser_provider_provided = False
+            description_provided = False
 
             if isinstance(item, str):
                 name = item.strip().lower()
@@ -683,9 +746,16 @@ class KnowledgeBaseService:
                 raw_name = item.get("name")
                 if isinstance(raw_name, str):
                     name = raw_name.strip().lower()
-                raw_provider = item.get("parser_provider")
-                if isinstance(raw_provider, str) and raw_provider.strip():
-                    parser_provider = raw_provider.strip().lower()
+                if "parser_provider" in item:
+                    parser_provider_provided = True
+                    raw_provider = item.get("parser_provider")
+                    if isinstance(raw_provider, str) and raw_provider.strip():
+                        parser_provider = raw_provider.strip().lower()
+                if "description" in item:
+                    description_provided = True
+                    raw_description = item.get("description")
+                    if isinstance(raw_description, str):
+                        description = raw_description.strip() or None
             else:
                 continue
 
@@ -695,21 +765,39 @@ class KnowledgeBaseService:
             normalized.append({
                 "name": name,
                 "parser_provider": parser_provider,
+                "description": description,
+                "parser_provider_provided": parser_provider_provided,
+                "description_provided": description_provided,
             })
             seen_names.add(name)
 
         return normalized
 
 
-    def get_collection_names(self, company_short_name: str) -> List[str]:
+    def get_collection_descriptors(self, company_short_name: str) -> List[dict]:
         """
-        Retrieves the names of all collections defined for a specific company.
+        Retrieves collection descriptors for a specific company.
+        Returns entries with name, description and parser provider.
         """
         company = self.profile_service.get_company_by_short_name(company_short_name)
         if not company:
-            logging.warning(f"Company {company_short_name} not found when listing collections.")
+            logging.warning(f"Company {company_short_name} not found when listing collection descriptors.")
             return []
 
         session = self.document_repo.session
         collections = session.query(CollectionType).filter_by(company_id=company.id).all()
-        return [c.name for c in collections]
+        return [
+            {
+                "name": c.name,
+                "description": c.description,
+                "parser_provider": c.parser_provider,
+            }
+            for c in collections
+        ]
+
+
+    def get_collection_names(self, company_short_name: str) -> List[str]:
+        """
+        Retrieves the names of all collections defined for a specific company.
+        """
+        return [entry["name"] for entry in self.get_collection_descriptors(company_short_name)]

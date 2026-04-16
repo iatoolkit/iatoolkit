@@ -1,0 +1,347 @@
+{% extends "base.html" %}
+
+{% block title %}{{ branding.name }} IA{% endblock %}
+
+{% block content %}
+<div class="chat-layout-container container">
+{% block styles %}
+    {# Movemos los estilos y los links aquí para que se rendericen en el <head> #}
+    <style>
+        {{ branding.css_variables | safe }}
+        {{ branding.css_variables | safe }}
+    </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+
+    {% endblock %}
+
+<!-- Sección de encabezado con el usuario conectado -->
+    <div id="company-section"
+         class="company-section d-flex flex-column flex-md-row justify-content-md-between align-items-center px-3 py-2"
+         style="{{ branding.header_style }}">
+
+        <!-- Fila 1 (Móvil) / Columna Izquierda (Desktop): Nombre de la Empresa -->
+        <div class="d-flex align-items-center mb-2 mb-md-0">
+            <span style="{{ branding.primary_text_style }}">
+                {{ branding.name }}
+            </span>
+            <span class="ms-2" data-bs-toggle="tooltip" data-bs-placement="bottom"
+                  title="Powered by IAToolkit {{ license }} ver. {{ iatoolkit_version }}">
+                <i class="bi bi-info-circle" style="color: {{ branding.header_text_color }}; opacity: 0.7; font-size: 0.9rem;"></i>
+            </span>
+
+            </div>
+
+        <!-- Contenedor para la derecha que agrupa ID de usuario y botones -->
+        <div class="d-flex flex-column flex-md-row align-items-center">
+
+            <!-- Fila 2 (Móvil) / Parte 1 de la Columna Derecha (Desktop): ID de Usuario -->
+            <span style="{{ branding.secondary_text_style }}" class="mb-2 mb-md-0">
+                {{ user_identifier }}
+            </span>
+
+
+            <!-- Separador Vertical (Solo visible en Desktop) -->
+            <div class="vr mx-3 d-none d-md-block"></div>
+
+            <!-- Fila 3 (Móvil) / Parte 2 de la Columna Derecha (Desktop): Iconos de Acción -->
+            <div class="d-flex align-items-center">
+                <!-- Selector de modelo LLM -->
+                <button type="button"
+                        id="llm-model-button"
+                        class="btn btn-sm py-1 px-3"
+                        style="border-radius: 0.4rem; border: 1px solid rgba(255,255,255,0.7); background: rgba(0,0,0,0.08); color: {{ branding.header_text_color }};">
+                    <i class="bi bi-cpu me-1"></i>
+                    <span id="llm-model-button-label">
+                        {{ (llm_available_models[0].label if llm_available_models and llm_available_models[0].label else llm_default_model) or 'Modelo IA' }}
+                    </span>
+                </button>
+                <!-- Popup simple para selección de modelo -->
+                <div id="llm-model-popup"
+                     class="card shadow-sm llm-model-popup"
+                     style="position: absolute; z-index: 9999; display: none; min-width: 260px;">
+                    <div class="card-body py-2">
+                        <div class="small mb-1 fw-bold">Modelo de IA</div>
+                        <div class="small mb-2 llm-model-subtitle">
+                            Este modelo se usará en las próximas consultas.
+                        </div>
+                        <div id="llm-model-list" class="list-group list-group-flush">
+                            {# El contenido se inyecta vía JavaScript con window.availableLlmModels #}
+                        </div>
+                    </div>
+                </div>
+                <a href="javascript:void(0);"
+                   id="history-button"
+                   class="ms-3 action-icon-style" title="{{ t('ui.tooltips.history') }}"
+                   style="color: {{ branding.header_text_color }};">
+                    <i class="bi bi-clock-history"></i>
+                </a>
+                <a href="javascript:void(0);"
+                   id="force-reload-button"
+                   class="ms-3 action-icon-style"
+                   title="{{ t('ui.tooltips.reload_context') }}"
+                   style="color: {{ branding.header_text_color }};">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </a>
+                <a href="javascript:void(0);"
+                   id="send-feedback-button"
+                   class="ms-3 action-icon-style"
+                   title="{{ t('ui.tooltips.feedback') }}"
+                   style="color: {{ branding.header_text_color }};">
+                    <i class="bi bi-emoji-smile"></i>
+                </a>
+
+                <a href="javascript:void(0);"
+                   id="onboarding-button"
+                   class="ms-3 action-icon-style"
+                   title="{{ t('ui.tooltips.onboarding') }}"
+                   style="color: {{ branding.header_text_color }};">
+                    <i class="bi bi-lightbulb"></i>
+                </a>
+                <a href="javascript:void(0);"
+                       id="open-help-button"
+                       class="ms-3 action-icon-style"
+                        title="{{ t('ui.tooltips.usage_guide') }}"
+                       style="color: {{ branding.header_text_color }};">
+                        <i class="bi bi-question-circle-fill"></i>
+                </a>
+                {% if user_role != "user" and license == 'enterprise' %}
+                    <a href="/{{ company_short_name }}/admin/dashboard"
+                       target="_blank"
+                           id="preferences-button"
+                           class="ms-3 action-icon-style"
+                            title="{{ t('ui.tooltips.preferences') }}"
+                           style="color: {{ branding.header_text_color }};">
+                            <i class="bi bi-gear"></i>
+                    </a>
+                {% endif %}
+                <a href="javascript:void(0);"
+                   id="logout-button"
+                   class="ms-3 action-icon-style"
+                   title="{{ t('ui.tooltips.logout') }}"
+                   style="color: {{ branding.header_text_color }}; !important;">
+                    <i class="bi bi-box-arrow-right"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+
+<div id="chat-container"
+     class="chat-block mt-2 flex-grow-1" style="overflow-y: auto;">
+
+    <!-- Mensaje de bienvenida  -->
+    <div class="answer-section">
+         {{ t('ui.chat.welcome_message') }}
+    </div>
+</div>
+
+<!-- Input oculto de FilePond -->
+<div class="filepond-container" style="display: none;">
+    <input type="file" id="file-upload" class="filepond" data-max-files="5" multiple>
+</div>
+
+<div id="input-area" class="input-area chat-block  mt-2 mb-2">
+
+    <!-- 1. Contenido Colapsable del Asistente de prompts -->
+    <div class="collapse" id="prompt-assistant-collapse">
+        <div class="card card-body mb-2">
+            <div class="row g-2">
+                {% set prompt_col_class = 'col-md-4' %}
+                <div class="{{ prompt_col_class }}">
+                    <div class="position-relative h-100">
+                        <div class="input-group dropup h-100">
+                            <button type="button" id="prompt-select-button"
+                                    class="btn prompt-select-button  border dropdown-toggle w-100 text-start"
+                                    data-bs-toggle="dropdown"
+                                    aria-expanded="false">
+                                {{ t('ui.chat.prompts_available') }} ....
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-soft w-100">
+                                {% if prompts and prompts.message %}
+                                {% for category_group in prompts.message %}
+                                    <li><h6 class="dropdown-header">{{ category_group.category_name }}</h6></li>
+                                    {% for prompt in category_group.prompts %}
+                                        <li>
+                                            <a class="dropdown-item" href="#"
+                                               data-prompt-name="{{ prompt.prompt }}"
+                                               data-prompt-description="{{ prompt.description }}"
+                                               data-custom-fields='{{ prompt.custom_fields | tojson  }}'>
+                                                {{ prompt.description }}
+                                            </a>
+                                        </li>
+                                    {% endfor %}
+                                    {% if not loop.last %}
+                                        <li><hr class="dropdown-divider"></li>
+                                    {% endif %}
+                                {% endfor %}
+                                {% endif %}
+                            </ul>
+                        </div>
+                        <button type="button"
+                                id="clear-selection-button"
+                                class="btn clear-specific-data-button position-absolute end-0 me-1" style="display: none;">
+                            <i class="bi bi-x-circle-fill"></i>
+                        </button>
+                    </div>
+                    <input type="hidden" id="prompt-select-value" name="prompt_select_value">
+                    <input type="hidden" id="prompt-select-description" name="prompt-select-description">
+                </div>
+                <!-- Contenedor donde JavaScript inyectará los inputs dinámicos -->
+                <div id="dynamic-inputs-container" class="col-md">
+                    <!-- aca se renderizarán los customs_fields del prompt seleccionado -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. La Barra de Entrada Principal -->
+    <div id="chat-input-bar" class="chat-input-bar d-flex align-items-center">
+        <!-- Iconos de la izquierda -->
+        <div class="d-flex align-items-center">
+            <!-- varita magica -->
+            <a class="p-2" href="#prompt-assistant-collapse" data-bs-toggle="collapse" role="button"
+               aria-expanded="false" aria-controls="prompt-assistant-collapse"
+               title="{{ t('ui.tooltips.use_prompt_assistant') }}">
+                <i class="bi bi-magic"></i>
+            </a>
+            <a class="p-2" href="javascript:void(0);" id="paperclip-button"
+               title="{{ t('ui.tooltips.attach_files') }}">
+                <i class="bi bi-plus-circle"></i>
+            </a>
+
+        </div>
+
+        <!-- Textarea Central -->
+        <textarea id="question" placeholder="{{ t('ui.chat.input_placeholder') }}"
+                  class="form-control chat-textarea" style="resize: none;" rows="1"></textarea>
+
+        <!-- Botón de Enviar a la derecha -->
+        <div class="d-flex align-items-center">
+            <div id="send-button-container">
+                <a href="javascript:void(0);" id="send-button"
+                   class="p-2 send-button-icon"
+                   title="{{ t('ui.buttons.send') }}">
+                    <i class="bi bi-arrow-up-circle-fill"></i>
+                </a>
+            </div>
+            <div id="stop-button-container" style="display: none;">
+                <a href="javascript:void(0);" id="stop-button"
+                   class="p-2 text-danger"
+                   title="{{ t('ui.buttons.stop') }}">
+                    <i class="bi bi-stop-circle-fill"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- NUEVO: Área de Adjuntos (Lista + Dropzone) -->
+    <div id="attachments-wrapper" class="px-1">
+        <!-- Lista de archivos cargados -->
+        <div id="inline-file-list" class="file-list-inline"></div>
+
+        <!-- Dropzone siempre visible -->
+        <div id="chat-dropzone" class="chat-dropzone">
+            <i class="bi bi-cloud-upload"></i>
+            <span>Arrastra archivos aquí o haz clic para adjuntar</span>
+            <span id="file-counter" class="dropzone-counter" style="display:none;">0/5</span>
+        </div>
+    </div>
+
+</div>
+
+<!-- Incluir los modales desde un archivo externo -->
+{% include 'chat_modals.html' %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // --- Global Configuration from Backend ---
+    window.companyShortName = "{{ company_short_name }}";
+    window.user_identifier = "{{ user_identifier }}";
+    window.redeemToken = {{ redeem_token | tojson | default('null') }};
+    window.iatoolkit_base_url = "{{ iatoolkit_base_url }}";
+    window.availablePrompts = {{ prompts.message | tojson }};
+    window.onboardingCards = {{ onboarding_cards | tojson }};
+    window.sendButtonColor = "{{ branding.send_button_color }}";
+
+    // LLM configuration from backend
+    window.defaultLlmModel = {{ llm_default_model | tojson }};
+    window.availableLlmModels = {{ llm_available_models | tojson }};
+
+
+    // JS translations helper
+    window.i18n = {{ js_translations | tojson }};
+    function t_js(key) {
+        return window.i18n[key] || key;
+    }
+
+
+</script>
+
+<!-- Carga de los scripts JS externos después de definir las variables globales -->
+    <script src="{{ url_for('static', filename='js/chat_history_button.js', _external=True) }}"></script>
+    <script src="{{ url_for('static', filename='js/chat_reload_button.js', _external=True) }}"></script>
+    <script src="{{ url_for('static', filename='js/chat_feedback_button.js', _external=True) }}"></script>
+    <script src="{{ url_for('static', filename='js/chat_help_content.js', _external=True) }}"></script>
+    <script src="{{ url_for('static', filename='js/chat_onboarding_button.js', _external=True) }}"></script>
+    <script src="{{ url_for('static', filename='js/chat_logout_button.js', _external=True) }}"></script>
+    <script src="{{ url_for('static', filename='js/chat_prompt_manager.js', _external=True) }}"></script>
+    <script src="{{ url_for('static', filename='js/chat_filepond.js', _external=True) }}"></script>
+    <script src="{{ url_for('static', filename='js/chat_model_selector.js', _external=True) }}"></script>
+    <script src="{{ url_for('static', filename='js/chat_main.js', _external=True) }}"></script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+
+    <script>
+
+    document.addEventListener('DOMContentLoaded', function () {
+        // Inicializar todos los tooltips de la página
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
+        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl)
+        })
+    });
+
+// Inicialización del modal de onboarding
+document.addEventListener('DOMContentLoaded', function () {
+  const btn = document.getElementById('onboarding-button');
+  if (!btn) return;
+
+  const modalEl = document.getElementById('onboardingModal');
+  const modal = new bootstrap.Modal(modalEl);
+
+  if (!window.initOnboarding) {
+    console.error('initOnboarding no disponible. Verifica chat_onboarding.js');
+    return;
+  }
+
+  const onboarding = initOnboarding({
+    mode: 'modal',
+    cards: Array.isArray(window.onboardingCards) ? window.onboardingCards : [],
+    ui: {
+      icon: '#ob-icon',
+      title: '#ob-title',
+      text: '#ob-text',
+        example: '#ob-example',
+      dots: '#ob-dots',
+      prev: '#ob-prev',
+      next: '#ob-next'
+    },
+    autoRotateMs: 5000
+  });
+
+  modalEl.addEventListener('hidden.bs.modal', () => onboarding.stop());
+
+  btn.addEventListener('click', () => {
+    if (!onboarding.hasCards()) {
+      toastr.info('No hay información de onboarding disponible.');
+      return;
+    }
+    onboarding.start();
+    modal.show();
+  });
+});
+</script>
+{% endblock %}

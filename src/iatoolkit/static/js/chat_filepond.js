@@ -1,6 +1,4 @@
-document.addEventListener('DOMContentLoaded', function () {
-    // 1. Register FilePond Plugins
-    // Ensure plugin scripts are loaded in your base layout or template
+function registerAvailableFilePondPlugins() {
     if (typeof FilePondPluginFileEncode !== 'undefined') {
         FilePond.registerPlugin(FilePondPluginFileEncode);
     }
@@ -13,31 +11,46 @@ document.addEventListener('DOMContentLoaded', function () {
     if (typeof FilePondPluginImagePreview !== 'undefined') {
         FilePond.registerPlugin(FilePondPluginImagePreview);
     }
+}
 
-    // 2. Create FilePond instance on the hidden input
-    const inputElement = document.querySelector('input.filepond');
+function createSharedFilePond(inputElement, overrides = {}) {
+    if (!inputElement || typeof FilePond === 'undefined') {
+        return null;
+    }
 
-    // FilePond base configuration
-    const filePond = FilePond.create(inputElement, {
+    return FilePond.create(inputElement, {
         allowMultiple: true,
         maxFiles: 5,
         maxFileSize: '30MB',
-
-        // Extensive list of accepted types (Images, PDF, Text, Excel, Word)
         acceptedFileTypes: [
             'image/*',
             'application/pdf',
             'text/plain',
             'text/csv',
-            'application/vnd.ms-excel',                                                 // .xls
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',        // .xlsx
-            'application/msword',                                                       // .doc
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'   // .docx
+            'application/vnd.ms-excel',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
         ],
-        labelIdle: '', // Left empty because we use our own UI
+        labelIdle: '',
         credits: false,
-        storeAsFile: true, // Important for encode to work if used
+        storeAsFile: true,
+        ...overrides,
     });
+}
+
+window.createSharedFilePond = createSharedFilePond;
+
+document.addEventListener('DOMContentLoaded', function () {
+    // 1. Register FilePond Plugins
+    // Ensure plugin scripts are loaded in your base layout or template
+    registerAvailableFilePondPlugins();
+
+    // 2. Create FilePond instance on the hidden input
+    const inputElement = document.querySelector('input.filepond');
+
+    // FilePond base configuration
+    const filePond = createSharedFilePond(inputElement);
 
     // Expose globally so chat_main.js can access (getFiles, removeFiles)
     window.filePond = filePond;

@@ -6,6 +6,7 @@ from iatoolkit.infra.llm_proxy import LLMProxy
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.common.model_registry import ModelRegistry
+from iatoolkit.common.interfaces.secret_provider import SecretProvider
 
 class TestLLMProxy:
     def setup_method(self):
@@ -14,6 +15,10 @@ class TestLLMProxy:
         self.util_mock = MagicMock()
         self.config_service_mock = MagicMock(spec=ConfigurationService)
         self.model_registry_mock = MagicMock(spec=ModelRegistry)
+        self.secret_provider_mock = MagicMock(spec=SecretProvider)
+        self.secret_provider_mock.get_secret.side_effect = (
+            lambda _company, key_name, default=None: os.getenv(key_name, default)
+        )
 
         # Empresa base
         self.company_short_name = "test_company"
@@ -27,25 +32,30 @@ class TestLLMProxy:
         self.openai_adapter_patcher = patch("iatoolkit.infra.llm_proxy.OpenAIAdapter")
         self.gemini_adapter_patcher = patch("iatoolkit.infra.llm_proxy.GeminiAdapter")
         self.deepseek_adapter_patcher = patch("iatoolkit.infra.llm_proxy.DeepseekAdapter")
+        self.anthropic_adapter_patcher = patch("iatoolkit.infra.llm_proxy.AnthropicAdapter")
 
         self.mock_openai_adapter_class = self.openai_adapter_patcher.start()
         self.mock_gemini_adapter_class = self.gemini_adapter_patcher.start()
         self.mock_deepseek_adapter_class = self.deepseek_adapter_patcher.start()
+        self.mock_anthropic_adapter_class = self.anthropic_adapter_patcher.start()
 
         # Instancias mock de adaptadores
         self.mock_openai_adapter_instance = MagicMock()
         self.mock_gemini_adapter_instance = MagicMock()
         self.mock_deepseek_adapter_instance = MagicMock()
+        self.mock_anthropic_adapter_instance = MagicMock()
 
         self.mock_openai_adapter_class.return_value = self.mock_openai_adapter_instance
         self.mock_gemini_adapter_class.return_value = self.mock_gemini_adapter_instance
         self.mock_deepseek_adapter_class.return_value = self.mock_deepseek_adapter_instance
+        self.mock_anthropic_adapter_class.return_value = self.mock_anthropic_adapter_instance
 
         # Instancia de LLMProxy bajo prueba
         self.proxy = LLMProxy(
             util=self.util_mock,
             configuration_service=self.config_service_mock,
-            model_registry=self.model_registry_mock
+            model_registry=self.model_registry_mock,
+            secret_provider=self.secret_provider_mock,
         )
 
         # Aseguramos que el cache global esté limpio para cada test
@@ -100,6 +110,8 @@ class TestLLMProxy:
                 return "gemini"
             if "deepseek" in model:
                 return "deepseek"
+            if "claude" in model:
+                return "anthropic"
             return "unknown"
 
         self.model_registry_mock.get_provider.side_effect = provider_side_effect
@@ -122,6 +134,7 @@ class TestLLMProxy:
             self.mock_openai_adapter_instance.reset_mock()
             self.mock_gemini_adapter_instance.reset_mock()
             self.mock_deepseek_adapter_instance.reset_mock()
+            self.mock_anthropic_adapter_instance.reset_mock()
 
             # 2) Modelo Gemini
             self.proxy.create_response(
@@ -137,6 +150,7 @@ class TestLLMProxy:
             self.mock_openai_adapter_instance.reset_mock()
             self.mock_gemini_adapter_instance.reset_mock()
             self.mock_deepseek_adapter_instance.reset_mock()
+            self.mock_anthropic_adapter_instance.reset_mock()
 
             # 3) Modelo DeepSeek
             self.proxy.create_response(
@@ -147,3 +161,58 @@ class TestLLMProxy:
             self.mock_deepseek_adapter_instance.create_response.assert_called_once()
             self.mock_openai_adapter_instance.create_response.assert_not_called()
             self.mock_gemini_adapter_instance.create_response.assert_not_called()
+            self.mock_anthropic_adapter_instance.create_response.assert_not_called()
+
+            # Reset de llamadas
+            self.mock_openai_adapter_instance.reset_mock()
+            self.mock_gemini_adapter_instance.reset_mock()
+            self.mock_deepseek_adapter_instance.reset_mock()
+            self.mock_anthropic_adapter_instance.reset_mock()
+
+            # 4) Modelo Anthropic (mockeamos _get_or_create_client para no depender del SDK real)
+            with patch.object(self.proxy, "_get_or_create_client", return_value=MagicMock()):
+                self.proxy.create_response(
+                    company_short_name=self.company_short_name,
+                    model="claude-3-5-sonnet-latest",
+                    input=[],
+                )
+            self.mock_anthropic_adapter_instance.create_response.assert_called_once()
+            self.mock_openai_adapter_instance.create_response.assert_not_called()
+            self.mock_gemini_adapter_instance.create_response.assert_not_called()
+            self.mock_deepseek_adapter_instance.create_response.assert_not_called()
+
+    def test_adapter_cache_uses_provider_and_api_key(self):
+        """
+        _get_or_create_adapter debe cachear por (provider, api_key), no solo por provider.
+        """
+        self.config_service_mock.get_configuration.side_effect = (
+            lambda company, _section: {
+                "provider_api_keys": {
+                    "openai": "OPENAI_KEY_A" if company == "company_a" else "OPENAI_KEY_B"
+                }
+            }
+        )
+
+        adapter_a = MagicMock(name="adapter_a")
+        adapter_b = MagicMock(name="adapter_b")
+        self.mock_openai_adapter_class.side_effect = [adapter_a, adapter_b]
+
+        with patch.dict(os.environ, {"OPENAI_KEY_A": "sk-a", "OPENAI_KEY_B": "sk-b"}, clear=True):
+            first = self.proxy._get_or_create_adapter(LLMProxy.PROVIDER_OPENAI, "company_a")
+            second = self.proxy._get_or_create_adapter(LLMProxy.PROVIDER_OPENAI, "company_b")
+            third = self.proxy._get_or_create_adapter(LLMProxy.PROVIDER_OPENAI, "company_a")
+
+        assert first is adapter_a
+        assert second is adapter_b
+        assert third is adapter_a
+        assert self.mock_openai_adapter_class.call_count == 2
+
+    def test_clear_runtime_cache_clears_adapter_and_client_caches(self):
+        self.proxy.adapters = {(LLMProxy.PROVIDER_OPENAI, "key"): MagicMock()}
+        LLMProxy._clients_cache[(LLMProxy.PROVIDER_OPENAI, "key")] = MagicMock()
+
+        self.proxy.clear_runtime_cache()
+        LLMProxy.clear_low_level_clients_cache()
+
+        assert self.proxy.adapters == {}
+        assert LLMProxy._clients_cache == {}

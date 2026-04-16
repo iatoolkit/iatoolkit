@@ -58,6 +58,8 @@ class TestBaseLoginView:
         mock_rt.assert_called_once()
         template_name, ctx = mock_rt.call_args[0], mock_rt.call_args[1]
         assert template_name[0] == "onboarding_shell.html"
+        assert ctx["company_short_name"] == COMPANY_SHORT_NAME
+        assert ctx["user_identifier"] == USER_IDENTIFIER
         assert ctx["iframe_src_url"] == DUMMY_TARGET_URL
         assert ctx["branding"] == {"logo": "logo.png"}
         assert ctx["onboarding_cards"] == [{"title": "Card 1"}]

@@ -9,7 +9,7 @@ from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.knowledge_base_service import KnowledgeBaseService
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
-from iatoolkit.repositories.models import PromptType, Company, PromptCategory
+from iatoolkit.repositories.models import Company, PromptCategory, Tool
 from iatoolkit.services.prompt_service import PromptService
 
 class TestCategoriesView:
@@ -35,7 +35,7 @@ class TestCategoriesView:
         self.llm_query_repo.session = self.mock_session
 
         self.company_short_name = 'test_co'
-        self.auth_service.verify.return_value = {'success': True}
+        self.auth_service.verify_for_company.return_value = {'success': True}
 
         self.mock_company = Company(id=1, short_name='test_co')
         self.profile_service.get_company_by_short_name.return_value = self.mock_company
@@ -53,7 +53,10 @@ class TestCategoriesView:
 
     def test_get_categories_success(self):
         # 1. Mock collection types
-        self.kb_service.get_collection_names.return_value = ["Contracts", "Manuals"]
+        self.kb_service.get_collection_descriptors.return_value = [
+            {"name": "Contracts", "description": "Signed contracts", "parser_provider": "docling"},
+            {"name": "Manuals", "description": "Operations manuals", "parser_provider": None},
+        ]
 
         # 2. Mock prompt categories query
         mock_cat1 = PromptCategory(name="Sales", order=1)
@@ -75,17 +78,24 @@ class TestCategoriesView:
         data = response.json
 
         assert "prompt_types" in data
-        assert PromptType.COMPANY.value in data["prompt_types"]
+        assert data["prompt_types"] == ["company", "agent"]
 
         assert "prompt_categories" in data
         assert "Sales" in data["prompt_categories"]
 
         assert "collection_types" in data
         assert "Contracts" in data["collection_types"]
+        assert "collection_type_details" in data
+        assert data["collection_type_details"][0]["name"] == "Contracts"
+        assert data["collection_type_details"][0]["description"] == "Signed contracts"
 
         assert "llm_models" in data
         assert "gpt-4" in data["llm_models"]
         assert "claude-3" in data["llm_models"]
+
+        assert "tool_types" in data
+        assert Tool.TYPE_HTTP in data["tool_types"]
+        assert Tool.TYPE_NATIVE in data["tool_types"]
 
     def test_post_sync_categories(self):
         """
@@ -114,4 +124,20 @@ class TestCategoriesView:
         self.prompt_service.sync_prompt_categories.assert_called_once_with(
             self.company_short_name,
             ["Creative", "Coding", "Analysis"]
+        )
+
+    def test_post_sync_collection_type_details(self):
+        payload = {
+            "collection_type_details": [
+                {"name": "HR Docs", "description": "HR policies and templates"},
+                {"name": "Legal", "description": "Contracts and annexes"},
+            ]
+        }
+
+        response = self.client.post(f'/{self.company_short_name}/api/categories', json=payload)
+
+        assert response.status_code == 200
+        self.kb_service.sync_collection_types.assert_called_once_with(
+            self.company_short_name,
+            payload["collection_type_details"]
         )

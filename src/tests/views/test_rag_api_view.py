@@ -101,7 +101,7 @@ class TestRagApiView:
         self.company_short_name = "acme"
 
         # Setup Auth Success by default
-        self.mock_auth_service.verify.return_value = {
+        self.mock_auth_service.verify_for_company.return_value = {
             "success": True,
             "user_identifier": "test@acme.com",
             "company_short_name": "acme"
@@ -150,11 +150,11 @@ class TestRagApiView:
             limit=10,
             offset=0
         )
-        self.mock_auth_service.verify.assert_called_once()
+        self.mock_auth_service.verify_for_company.assert_called_once_with(self.company_short_name)
 
     def test_list_files_auth_error(self):
         """Should return error if auth verify fails."""
-        self.mock_auth_service.verify.return_value = {
+        self.mock_auth_service.verify_for_company.return_value = {
             "success": False,
             "status_code": 401,
             "error_message": "Auth failed"
@@ -202,7 +202,7 @@ class TestRagApiView:
 
     def test_get_file_content_auth_fail(self):
         """Should return 401 if auth fails."""
-        self.mock_auth_service.verify.return_value = {"success": False, "status_code": 401}
+        self.mock_auth_service.verify_for_company.return_value = {"success": False, "status_code": 401}
 
         response = self.client.get(f'/{self.company_short_name}/api/rag/files/10/content')
 

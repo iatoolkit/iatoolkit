@@ -45,7 +45,7 @@ class TestEmbeddingApiView:
         )
 
         # Default successful authentication for most tests
-        self.mock_auth_service.verify.return_value = {
+        self.mock_auth_service.verify_for_company.return_value = {
             "success": True,
             'user_identifier': MOCK_USER_IDENTIFIER
         }
@@ -70,7 +70,10 @@ class TestEmbeddingApiView:
             "model": MOCK_MODEL_NAME
         }
 
-        self.mock_auth_service.verify.assert_called_once()
+        self.mock_auth_service.verify_for_company.assert_called_once_with(
+            MOCK_COMPANY_SHORT_NAME,
+            anonymous=True,
+        )
         self.mock_embedding_service.embed_text.assert_called_once_with(
             text=MOCK_TEXT_TO_EMBED,
             company_short_name=MOCK_COMPANY_SHORT_NAME,
@@ -84,7 +87,7 @@ class TestEmbeddingApiView:
         when the auth service fails verification.
         """
         # Arrange: Override the auth mock to simulate failure
-        self.mock_auth_service.verify.return_value = {
+        self.mock_auth_service.verify_for_company.return_value = {
             "success": False,
             "error": "Invalid session",
             "status_code": 401

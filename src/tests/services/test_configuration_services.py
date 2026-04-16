@@ -11,6 +11,7 @@ from iatoolkit.base_company import BaseCompany
 from iatoolkit.repositories.models import Company
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.repositories.profile_repo import ProfileRepo
+from iatoolkit.common.interfaces.secret_provider import SecretProvider
 
 # A complete and valid mock configuration, passing all validation rules.
 MOCK_VALID_CONFIG = {
@@ -58,10 +59,10 @@ MOCK_VALID_CONFIG = {
         }
     },
     'mail_provider': {
-        'provider': 'brevo_mail',
+        'provider': 'iatoolkit_mail',
         'sender_email': 'no-reply@acme.com',
         'sender_name': 'ACME IA',
-        'brevo_mail': {'brevo_api': 'TEST_BREVO_API'}
+        'iatoolkit_mail': {'api_key_secret_ref': 'TEST_BREVO_API'}
     },
     'help_files': {
         'onboarding_cards': 'onboarding.yaml'
@@ -101,6 +102,7 @@ class TestConfigurationService:
         self.mock_llm_query_repo = Mock(spec=LLMQueryRepo)
         self.profile_repo = Mock(spec=ProfileRepo)
         self.mock_asset_repo = Mock(spec=AssetRepository)
+        self.mock_secret_provider = Mock(spec=SecretProvider)
 
         self.mock_company_instance = Mock(spec=BaseCompany)
         self.mock_company = Company(id=1, short_name='ACME')
@@ -110,7 +112,8 @@ class TestConfigurationService:
         self.service = ConfigurationService(utility=self.mock_utility,
                                             llm_query_repo=self.mock_llm_query_repo,
                                             profile_repo=self.profile_repo,
-                                            asset_repo=self.mock_asset_repo)
+                                            asset_repo=self.mock_asset_repo,
+                                            secret_provider=self.mock_secret_provider)
         self.COMPANY_NAME = 'acme'
 
     @patch('iatoolkit.current_iatoolkit')
@@ -127,6 +130,7 @@ class TestConfigurationService:
         mock_tool_service = Mock()
         mock_prompt_service = Mock()
         mock_sql_service = Mock()
+        mock_sql_source_service = Mock()
 
         # Simulate injector.get returning correct service based on requested class
         def get_side_effect(service_class):
@@ -134,6 +138,8 @@ class TestConfigurationService:
                 return mock_tool_service
             if "PromptService" in str(service_class):
                 return mock_prompt_service
+            if "SqlSourceService" in str(service_class):
+                return mock_sql_source_service
             if "SqlService" in str(service_class):
                 return mock_sql_service
             return Mock()
@@ -183,6 +189,10 @@ class TestConfigurationService:
             prompt_list=MOCK_VALID_CONFIG['prompts']['prompt_list'],
             categories_config=MOCK_VALID_CONFIG['prompts']['prompt_categories']
         )
+        mock_sql_source_service.sync_from_yaml.assert_called_once_with(
+            self.COMPANY_NAME,
+            MOCK_VALID_CONFIG["data_sources"]["sql"],
+        )
 
     def test_get_configuration_uses_cache_on_second_call(self):
         """
@@ -224,12 +234,15 @@ class TestConfigurationService:
         mock_tool_service = Mock()
         mock_prompt_service = Mock()
         mock_sql_service = Mock()
+        mock_sql_source_service = Mock()
 
         def get_side_effect(service_class):
             if "ToolService" in str(service_class):
                 return mock_tool_service
             if "PromptService" in str(service_class):
                 return mock_prompt_service
+            if "SqlSourceService" in str(service_class):
+                return mock_sql_source_service
             if "SqlService" in str(service_class):
                 return mock_sql_service
             return Mock()
@@ -265,6 +278,7 @@ class TestConfigurationService:
             prompt_list=[],
             categories_config=[]
         )
+        mock_sql_source_service.sync_from_yaml.assert_called_once_with('minimal_co', [])
 
     # --- New Tests for Update and Validation ---
 
@@ -461,6 +475,86 @@ class TestConfigurationService:
         # Assert
         assert errors == []
 
+    def test_validate_configuration_accepts_prompt_attachment_policy_values(self):
+        valid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        valid_config["prompts"]["prompt_list"][0]["attachment_mode"] = "native_plus_extracted"
+        valid_config["prompts"]["prompt_list"][0]["attachment_parser_provider"] = "basic"
+        valid_config["prompts"]["prompt_list"][0]["attachment_fallback"] = "extract"
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = valid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert errors == []
+
+    def test_validate_configuration_rejects_invalid_prompt_attachment_mode(self):
+        invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        invalid_config["prompts"]["prompt_list"][0]["attachment_mode"] = "native_all_the_way"
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = invalid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert any("attachment_mode" in e for e in errors)
+
+    def test_validate_configuration_rejects_prompt_attachment_mode_auto(self):
+        invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        invalid_config["prompts"]["prompt_list"][0]["attachment_mode"] = "auto"
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = invalid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert any("attachment_mode" in e for e in errors)
+
+    def test_validate_configuration_rejects_invalid_prompt_attachment_parser_provider(self):
+        invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        invalid_config["prompts"]["prompt_list"][0]["attachment_parser_provider"] = "ancient_magic"
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = invalid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert any("attachment_parser_provider" in e for e in errors)
+
+    def test_validate_configuration_accepts_llm_default_attachment_policy(self):
+        valid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        valid_config["llm"]["default_attachment_mode"] = "native_plus_extracted"
+        valid_config["llm"]["default_attachment_fallback"] = "extract"
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = valid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert errors == []
+
+    def test_validate_configuration_rejects_invalid_llm_default_attachment_policy(self):
+        invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        invalid_config["llm"]["default_attachment_mode"] = "invalid_mode"
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = invalid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert any("llm.default_attachment_mode" in e for e in errors)
+
+    def test_validate_configuration_rejects_llm_default_attachment_mode_auto(self):
+        invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        invalid_config["llm"]["default_attachment_mode"] = "auto"
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = invalid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert any("llm.default_attachment_mode" in e for e in errors)
+
     def test_validate_configuration_with_errors(self):
         """
         GIVEN an invalid configuration file
@@ -509,3 +603,55 @@ class TestConfigurationService:
 
         errors = self.service.validate_configuration(self.COMPANY_NAME)
         assert any("knowledge_base.collections[0].parser_provider" in e for e in errors)
+
+    def test_validate_configuration_accepts_web_search_section(self):
+        valid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        valid_config["web_search"] = {
+            "enabled": True,
+            "provider": "brave",
+            "max_results": 5,
+            "timeout_ms": 10000,
+            "providers": {
+                "brave": {
+                    "api_base_url": "https://api.search.brave.com/res/v1/web/search",
+                    "secret_ref": "BRAVE_SEARCH_API_KEY",
+                }
+            }
+        }
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = valid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert errors == []
+
+    def test_validate_configuration_rejects_web_search_missing_secret_ref(self):
+        invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        invalid_config["web_search"] = {
+            "enabled": True,
+            "provider": "brave",
+            "providers": {
+                "brave": {
+                    "api_base_url": "https://api.search.brave.com/res/v1/web/search",
+                }
+            }
+        }
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = invalid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert any("web_search.providers.brave.secret_ref" in e for e in errors)
+
+    def test_validate_configuration_rejects_unsupported_prompt_type(self):
+        invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        invalid_config["prompts"]["prompt_list"][0]["prompt_type"] = "system"
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = invalid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert any("Unsupported prompt_type 'system'" in e for e in errors)

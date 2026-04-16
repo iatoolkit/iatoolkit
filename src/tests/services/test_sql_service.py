@@ -142,6 +142,17 @@ class TestSqlService:
         # Assert
         assert set(db_names_A) == {'db_sales', 'db_hr'}
 
+    @patch('iatoolkit.services.sql_service.DatabaseManager')
+    def test_clear_company_connections_removes_only_company_entries(self, MockDatabaseManager):
+        config = {'DATABASE_URI': DUMMY_URI}
+        self.service.register_database('company_A', 'db_sales', config)
+        self.service.register_database('company_B', 'db_sales', config)
+
+        self.service.clear_company_connections('company_A')
+
+        assert ('company_A', 'db_sales') not in self.service._db_connections
+        assert ('company_B', 'db_sales') in self.service._db_connections
+
     # --- Tests for exec_sql (Delegation Logic) ---
 
     @patch('iatoolkit.services.sql_service.DatabaseManager')

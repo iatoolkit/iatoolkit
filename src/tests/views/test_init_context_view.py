@@ -48,7 +48,7 @@ class TestInitContextApiView:
         )
         self.app.add_url_rule('/api/<company_short_name>/init-context', view_func=view_func, methods=['POST'])
 
-        self.mock_auth_service.verify.return_value = \
+        self.mock_auth_service.verify_for_company.return_value = \
             {"success": True,
              "company_short_name": MOCK_COMPANY_SHORT_NAME,
              "user_identifier": MOCK_USER_IDENTIFIER}
@@ -77,7 +77,7 @@ class TestInitContextApiView:
         """
         Tests that the view returns a 401 if authentication fails.
         """
-        self.mock_auth_service.verify.return_value = {"success": False, "error_message": "Invalid API Key",
+        self.mock_auth_service.verify_for_company.return_value = {"success": False, "error_message": "Invalid API Key",
                                                       "status_code": 401}
 
         response = self.client.post(f'/api/{MOCK_COMPANY_SHORT_NAME}/init-context', json={'external_user_id': 'any'})

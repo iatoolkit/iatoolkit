@@ -2,11 +2,13 @@
 # Copyright (c) 2024 Fernando Libedinsky
 # Product: IAToolkit
 
-import os
 import base64
+import io
 import numpy as np
 from openai import OpenAI
 from injector import inject
+from iatoolkit.common.interfaces.secret_provider import SecretProvider
+from iatoolkit.common.secret_resolver import resolve_secret
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.repositories.profile_repo import ProfileRepo
@@ -16,6 +18,7 @@ import logging
 import importlib
 import inspect
 from typing import Union, Optional
+from PIL import Image
 
 
 # Wrapper classes to create a common interface for embedding clients
@@ -26,7 +29,7 @@ class EmbeddingClientWrapper:
         self.model = model
         self.dimensions = dimensions
 
-    def get_embedding(self, text: str) -> list[float]:
+    def get_embedding(self, text: str, suppress_error_logging: bool = False) -> list[float]:
         """Generates and returns an embedding for the given text."""
         raise NotImplementedError
 
@@ -55,14 +58,15 @@ class HuggingFaceClientWrapper(EmbeddingClientWrapper):
         if not self.inference_service or not self.company_short_name or not self.tool_name:
             raise ValueError("HuggingFaceClientWrapper requires inference_service, company_short_name, and tool_name.")
 
-    def get_embedding(self, text: str) -> list[float]:
+    def get_embedding(self, text: str, suppress_error_logging: bool = False) -> list[float]:
         # Adapt text input to InferenceService payload structure
         input_data = {"mode": "text", "text": text}
 
         result = self.inference_service.predict(
             self.company_short_name,
             self.tool_name,
-            input_data
+            input_data,
+            suppress_error_logging=suppress_error_logging,
         )
         return result["embedding"]
 
@@ -72,12 +76,13 @@ class HuggingFaceClientWrapper(EmbeddingClientWrapper):
                             ) -> list[float]:
         input_data = {"mode": "image"}
 
-        if presigned_url:
-            input_data["url"] = presigned_url
-        elif image_bytes:
+        if image_bytes:
             # InferenceService/Handler expects raw base64 string
-            b64_data = base64.b64encode(image_bytes).decode("utf-8")
+            normalized_image_bytes = self._normalize_image_bytes(image_bytes)
+            b64_data = base64.b64encode(normalized_image_bytes).decode("utf-8")
             input_data["base64"] = b64_data
+        elif presigned_url:
+            input_data["url"] = presigned_url
         else:
             raise ValueError("Missing image data (presigned_url or image_bytes).")
 
@@ -88,8 +93,27 @@ class HuggingFaceClientWrapper(EmbeddingClientWrapper):
         )
         return result["embedding"]
 
+    def _normalize_image_bytes(self, image_bytes: bytes) -> bytes:
+        """
+        Convert non-RGB images to RGB before sending them to remote CLIP-like endpoints.
+        Falls back to the original bytes if decoding is not possible.
+        """
+        try:
+            with Image.open(io.BytesIO(image_bytes)) as image:
+                if image.mode == "RGB":
+                    return image_bytes
+
+                converted = image.convert("RGB")
+                buffer = io.BytesIO()
+                save_format = image.format or "PNG"
+                converted.save(buffer, format=save_format)
+                return buffer.getvalue()
+        except Exception:
+            logging.debug("Could not normalize image bytes before embedding request.", exc_info=True)
+            return image_bytes
+
 class OpenAIClientWrapper(EmbeddingClientWrapper):
-    def get_embedding(self, text: str) -> list[float]:
+    def get_embedding(self, text: str, suppress_error_logging: bool = False) -> list[float]:
         # The OpenAI API expects the input text to be clean
         text = text.replace("\n", " ")
 
@@ -115,7 +139,7 @@ class CustomClassClientWrapper(EmbeddingClientWrapper):
         # We assume the instance has methods compatible with our needs
         # or we adapt them here. For simplicity, we assume Duck Typing.
 
-    def get_embedding(self, text: str) -> list[float]:
+    def get_embedding(self, text: str, suppress_error_logging: bool = False) -> list[float]:
         if hasattr(self.client, 'get_embedding'):
             embedding = self.client.get_embedding(text)
         else:
@@ -143,10 +167,12 @@ class EmbeddingClientFactory:
     def __init__(self,
                  config_service: ConfigurationService,
                  call_service: CallServiceClient,
-                 inference_service: InferenceService):
+                 inference_service: InferenceService,
+                 secret_provider: SecretProvider):
         self.config_service = config_service
         self.call_service = call_service
         self.inference_service = inference_service
+        self.secret_provider = secret_provider
         self._clients = {}  # Cache for storing initialized client wrappers
 
     def get_client(self, company_short_name: str, model_type: str = 'text') -> EmbeddingClientWrapper:
@@ -201,7 +227,7 @@ class EmbeddingClientFactory:
                 params = sig.parameters
 
                 if 'api_key' in params:
-                    init_params['api_key'] = self._get_api_key_from_config(embedding_config)
+                    init_params['api_key'] = self._get_api_key_from_config(company_short_name, embedding_config)
                 if 'call_service' in params:
                     init_params['call_service'] = self.call_service
                 if 'model' in params and 'model' not in init_params:
@@ -244,7 +270,7 @@ class EmbeddingClientFactory:
             )
 
         elif provider == 'openai':
-            api_key = self._get_api_key_from_config(embedding_config)
+            api_key = self._get_api_key_from_config(company_short_name, embedding_config)
 
             client = OpenAI(api_key=api_key)
             if not model:
@@ -257,14 +283,23 @@ class EmbeddingClientFactory:
         self._clients[cache_key] = wrapper
         return wrapper
 
-    def _get_api_key_from_config(self, embedding_config: dict):
-        api_key_name = embedding_config.get('api_key_name')
-        if not api_key_name:
-            raise ValueError(f"Missing configuration for embedding api_key_name in config.yaml.")
+    def clear_runtime_cache(self, company_short_name: str | None = None):
+        if not company_short_name:
+            self._clients.clear()
+            return
 
-        api_key = os.getenv(api_key_name)
+        keys_to_clear = [key for key in self._clients if key[0] == company_short_name]
+        for key in keys_to_clear:
+            self._clients.pop(key, None)
+
+    def _get_api_key_from_config(self, company_short_name: str, embedding_config: dict):
+        api_key_ref = embedding_config.get('api_key_secret_ref') or embedding_config.get('api_key_name')
+        if not api_key_ref:
+            raise ValueError("Missing configuration for embedding api_key_secret_ref (or legacy api_key_name).")
+
+        api_key = resolve_secret(self.secret_provider, company_short_name, api_key_ref)
         if not api_key:
-            raise ValueError(f"Environment variable '{api_key_name}' is not set.")
+            raise ValueError(f"Secret reference '{api_key_ref}' is not set.")
 
         return api_key
 
@@ -284,7 +319,14 @@ class EmbeddingService:
         self.i18n_service = i18n_service
         self.profile_repo = profile_repo
 
-    def embed_text(self, company_short_name: str, text: str, to_base64: bool = False, model_type: str = 'text') -> list[float] | str:
+    def embed_text(
+            self,
+            company_short_name: str,
+            text: str,
+            to_base64: bool = False,
+            model_type: str = 'text',
+            suppress_error_logging: bool = False
+    ) -> list[float] | str:
         """
         Generates the embedding for a given text using the appropriate company model.
         model_type: 'text' (default) or 'image_query' (for CLIP-like text encoders)
@@ -298,14 +340,15 @@ class EmbeddingService:
             client_wrapper = self.client_factory.get_client(company_short_name, model_type)
 
             # 2. Use the wrapper's common interface to get the embedding
-            embedding = client_wrapper.get_embedding(text)
+            embedding = client_wrapper.get_embedding(text, suppress_error_logging=suppress_error_logging)
             # 3. Process the result
             if to_base64:
                 return base64.b64encode(np.array(embedding, dtype=np.float32).tobytes()).decode('utf-8')
 
             return embedding
         except Exception as e:
-            logging.error(f"Error generating embedding for text: {text[:80]}... - {e}")
+            if not suppress_error_logging:
+                logging.error(f"Error generating embedding for text: {text[:80]}... - {e}")
             raise
 
     def embed_image(self, company_short_name: str,

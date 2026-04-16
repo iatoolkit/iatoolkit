@@ -9,7 +9,12 @@ from typing import List
 
 
 class GoogleCloudStorageConnector(FileConnector):
-    def __init__(self, bucket_name: str, service_account_path: str = "service_account.json"):
+    def __init__(
+        self,
+        bucket_name: str,
+        service_account_path: str = "service_account.json",
+        service_account_info: dict | None = None,
+    ):
         """
         Inicializa el conector de Google Cloud Storage utilizando la API oficial de Google.
         :param bucket_name: Nombre del bucket en Google Cloud Storage.
@@ -17,6 +22,7 @@ class GoogleCloudStorageConnector(FileConnector):
         """
         self.bucket_name = bucket_name
         self.service_account_path = service_account_path
+        self.service_account_info = service_account_info
         self.storage_client = self._authenticate()
         self.bucket = self.storage_client.bucket(bucket_name)
 
@@ -24,8 +30,10 @@ class GoogleCloudStorageConnector(FileConnector):
         """
         Autentica en Google Cloud Storage utilizando una cuenta de servicio.
         """
-        # Crear cliente de GCS con las credenciales
-        client = storage.Client.from_service_account_json(self.service_account_path)
+        if self.service_account_info:
+            client = storage.Client.from_service_account_info(self.service_account_info)
+        else:
+            client = storage.Client.from_service_account_json(self.service_account_path)
         return client
 
     def list_files(self) -> List[dict]:
@@ -65,3 +73,6 @@ class GoogleCloudStorageConnector(FileConnector):
         """
         blob = self.bucket.blob(file_path)
         blob.upload_from_string(content, content_type=content_type)
+
+    def generate_presigned_url(self, file_path: str, expiration: int = 3600) -> str:
+        raise NotImplementedError("not implemented yet")

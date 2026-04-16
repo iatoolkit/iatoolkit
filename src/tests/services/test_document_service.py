@@ -6,14 +6,14 @@
 import pytest
 from unittest.mock import patch, MagicMock
 
-from iatoolkit.services.parsers.providers.legacy_provider import LegacyParsingProvider
+from iatoolkit.services.parsers.providers.basic_provider import BasicParsingProvider
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.excel_service import ExcelService
 from iatoolkit.services.parsers.contracts import ParseRequest
 
 
-class TestLegacyParsingProvider:
+class TestBasicParsingProvider:
 
     @pytest.fixture(autouse=True)
     def setup_method(self, monkeypatch):
@@ -23,7 +23,7 @@ class TestLegacyParsingProvider:
         self.mock_i18n_service = MagicMock(spec=I18nService)
         self.mock_i18n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
 
-        self.provider = LegacyParsingProvider(
+        self.provider = BasicParsingProvider(
             excel_service=self.mock_excel_service,
             i18n_service=self.mock_i18n_service,
         )
@@ -42,17 +42,78 @@ class TestLegacyParsingProvider:
         result = self.provider.file_to_txt("test.xlsx", "dummy_content")
         assert result == 'json_content'
 
-    @patch("iatoolkit.services.parsers.providers.legacy_provider.LegacyParsingProvider.is_scanned_pdf")
-    @patch("iatoolkit.services.parsers.providers.legacy_provider.LegacyParsingProvider.read_scanned_pdf", return_value="Scanned text")
-    @patch("iatoolkit.services.parsers.providers.legacy_provider.LegacyParsingProvider.read_pdf", return_value="PDF text")
+    @patch("iatoolkit.services.parsers.providers.basic_provider.BasicParsingProvider.is_scanned_pdf")
+    @patch("iatoolkit.services.parsers.providers.basic_provider.BasicParsingProvider.read_scanned_pdf", return_value="Scanned text")
+    @patch("iatoolkit.services.parsers.providers.basic_provider.BasicParsingProvider.read_pdf", return_value="PDF text")
     def test_extension_file_detection(self, mock_read_pdf, mock_read_scanned_pdf, mock_is_scanned_pdf):
         mock_is_scanned_pdf.return_value = True
-        result = self.provider.file_to_txt("test.pdf", "dummy_content")
+        result = self.provider.file_to_txt("test.pdf", "dummy_content", allow_ocr=True)
         assert result == "Scanned text"
 
         mock_is_scanned_pdf.return_value = False
         result = self.provider.file_to_txt("test.pdf", "dummy_content")
         assert result == "PDF text"
+
+    @patch("iatoolkit.services.parsers.providers.basic_provider.BasicParsingProvider.pdf_to_figure_entries", return_value=[])
+    @patch("iatoolkit.services.parsers.providers.basic_provider.shutil.which", return_value="/usr/bin/tesseract")
+    @patch("iatoolkit.services.parsers.providers.basic_provider.BasicParsingProvider.extract_text", return_value="ocr text")
+    def test_parse_pdf_uses_ocr_for_non_prompt_requests_when_tesseract_is_available(self, mock_extract_text, _, __):
+        with patch.dict("os.environ", {"TESSERACT_ENABLED": "true"}):
+            result = self.provider.parse(ParseRequest(
+                company_short_name="acme",
+                filename="scan.pdf",
+                content=b"pdf",
+                metadata={"source": "task_parse_document"},
+            ))
+
+        assert result.metrics["used_ocr"] is True
+        assert result.metrics["ocr_engine"] == "tesseract"
+        mock_extract_text.assert_called_once_with("scan.pdf", b"pdf", allow_ocr=True, pdf_needs_ocr=None)
+
+    @patch("iatoolkit.services.parsers.providers.basic_provider.BasicParsingProvider.pdf_to_figure_entries", return_value=[])
+    @patch("iatoolkit.services.parsers.providers.basic_provider.shutil.which", return_value="/usr/bin/tesseract")
+    @patch("iatoolkit.services.parsers.providers.basic_provider.BasicParsingProvider.extract_text", return_value="")
+    def test_parse_pdf_skips_ocr_for_prompt_attachments(self, mock_extract_text, _, __):
+        with patch.dict("os.environ", {"TESSERACT_ENABLED": "true"}):
+            result = self.provider.parse(ParseRequest(
+                company_short_name="acme",
+                filename="scan.pdf",
+                content=b"pdf",
+                metadata={"source": "prompt_task_attachment"},
+            ))
+
+        assert result.metrics["used_ocr"] is False
+        assert "ocr_engine" not in result.metrics
+        mock_extract_text.assert_called_once_with("scan.pdf", b"pdf", allow_ocr=False, pdf_needs_ocr=None)
+
+    @patch("iatoolkit.services.parsers.providers.basic_provider.BasicParsingProvider.pdf_to_figure_entries", return_value=[])
+    @patch("iatoolkit.services.parsers.providers.basic_provider.shutil.which", return_value="/usr/bin/tesseract")
+    @patch("iatoolkit.services.parsers.providers.basic_provider.BasicParsingProvider.extract_text", return_value="ocr text")
+    def test_parse_pdf_reuses_precomputed_pdf_ocr_decision(self, mock_extract_text, __, _):
+        with patch.dict("os.environ", {"TESSERACT_ENABLED": "true"}):
+            result = self.provider.parse(ParseRequest(
+                company_short_name="acme",
+                filename="scan.pdf",
+                content=b"pdf",
+                provider_config={"allow_ocr": True, "pdf_needs_ocr": True},
+            ))
+
+        assert result.metrics["used_ocr"] is True
+        assert result.metrics["ocr_engine"] == "tesseract"
+        mock_extract_text.assert_called_once_with("scan.pdf", b"pdf", allow_ocr=True, pdf_needs_ocr=True)
+
+    @patch("iatoolkit.services.parsers.providers.basic_provider.shutil.which", return_value=None)
+    def test_parse_pdf_fails_explicitly_when_ocr_is_required_and_tesseract_is_unavailable(self, _):
+        with pytest.raises(IAToolkitException) as excinfo:
+            self.provider.parse(ParseRequest(
+                company_short_name="acme",
+                filename="scan.pdf",
+                content=b"pdf",
+                provider_config={"pdf_needs_ocr": True},
+            ))
+
+        assert excinfo.value.error_type == IAToolkitException.ErrorType.CONFIG_ERROR
+        assert "requires OCR but Tesseract is unavailable" in str(excinfo.value)
 
     def test_parse_builds_text_result(self):
         with patch.object(self.provider, "extract_text", return_value="hello world"):
@@ -62,12 +123,12 @@ class TestLegacyParsingProvider:
                 content=b"abc",
             ))
 
-        assert result.provider == "legacy"
+        assert result.provider == "basic"
         assert len(result.texts) == 1
         assert result.texts[0].text == "hello world"
         assert len(result.images) == 0
 
-    @patch("iatoolkit.services.parsers.providers.legacy_provider.LegacyParsingProvider.pdf_to_images", return_value=[])
+    @patch("iatoolkit.services.parsers.providers.basic_provider.BasicParsingProvider.pdf_to_figure_entries", return_value=[])
     def test_parse_pdf_without_images(self, _):
         with patch.object(self.provider, "extract_text", return_value="pdf text"):
             result = self.provider.parse(ParseRequest(
@@ -78,3 +139,29 @@ class TestLegacyParsingProvider:
 
         assert len(result.texts) == 1
         assert len(result.images) == 0
+
+    @patch("iatoolkit.services.parsers.providers.basic_provider.normalize_image")
+    @patch("iatoolkit.services.parsers.providers.basic_provider.BasicParsingProvider.pdf_to_figure_entries")
+    def test_parse_pdf_returns_figure_metadata(self, mock_pdf_to_figure_entries, mock_normalize_image):
+        mock_pdf_to_figure_entries.return_value = [
+            {"page": 2, "pixmap": MagicMock()},
+        ]
+        mock_normalize_image.return_value = (
+            b"pngbytes",
+            "a_pdf_img_1.png",
+            "image/png",
+            "rgb",
+            120,
+            80,
+        )
+
+        with patch.object(self.provider, "extract_text", return_value="pdf text"):
+            result = self.provider.parse(ParseRequest(
+                company_short_name="acme",
+                filename="a.pdf",
+                content=b"pdf",
+            ))
+
+        assert len(result.images) == 1
+        assert result.images[0].meta["page"] == 2
+        assert result.images[0].meta["image_index"] == 1

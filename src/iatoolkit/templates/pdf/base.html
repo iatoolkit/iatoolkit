@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      @page { size: auto; margin: 0; }
+      body {
+        font-family: Helvetica, Arial, sans-serif;
+        font-size: 11pt;
+        line-height: 1.45;
+        color: #222;
+        margin: 0;
+        padding: 0;
+      }
+      .document-shell {
+        padding: 28px 36px 24px;
+      }
+      .document-header {
+        margin-bottom: 14px;
+      }
+      .document-header-row {
+        width: 100%;
+      }
+      .company-name {
+        font-size: 10pt;
+        font-weight: 600;
+        color: #6b7280;
+        letter-spacing: 0.01em;
+      }
+      .document-title {
+        margin-bottom: 18px;
+      }
+      .document-title h1 {
+        margin: 0;
+        font-size: 19pt;
+        color: #111827;
+      }
+      .document-title p {
+        margin: 6px 0 0;
+        color: #6b7280;
+      }
+      .content {
+        min-height: 0;
+      }
+      h1, h2, h3, h4, h5, h6 {
+        color: #111;
+        margin: 0.6em 0 0.35em;
+      }
+      p, ul, ol {
+        margin: 0.35em 0 0.7em;
+      }
+      code, pre {
+        font-family: Courier, monospace;
+        font-size: 10pt;
+      }
+      pre {
+        white-space: pre-wrap;
+        border: 1px solid #ddd;
+        padding: 10px;
+        background: #f7f7f7;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 0.5em 0 1em;
+      }
+      th, td {
+        border: 1px solid #cfcfcf;
+        padding: 6px 8px;
+        vertical-align: top;
+      }
+      th {
+        background: #f1f1f1;
+        text-align: left;
+      }
+      blockquote {
+        border-left: 3px solid #d0d0d0;
+        padding-left: 12px;
+        color: #555;
+      }
+      .document-footer {
+        border-top: 1px solid #e5e7eb;
+        margin-top: 24px;
+        padding-top: 10px;
+        font-size: 9.5pt;
+        color: #6b7280;
+        text-align: center;
+      }
+      {% block template_css %}{% endblock %}
+      {{ extra_css }}
+    </style>
+  </head>
+  <body>
+    <div class="document-shell">
+      <header class="document-header">
+        <div class="document-header-row">
+          <span class="company-name">{{ company_name }}</span>
+        </div>
+      </header>
+
+      {% if title %}
+      <section class="document-title">
+        <h1>{{ title }}</h1>
+        {% if subtitle %}<p>{{ subtitle }}</p>{% endif %}
+      </section>
+      {% endif %}
+
+      <main class="content {{ content_class }}">
+        {{ body_html }}
+      </main>
+
+      <footer class="document-footer">
+        {{ footer_text }} | {{ generated_date }}
+      </footer>
+    </div>
+  </body>
+</html>

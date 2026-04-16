@@ -1,0 +1,398 @@
+/* static/styles/landing_page.css */
+
+/* --- Variables y Estilos Globales --- */
+:root {
+    --website-primary-color: #4A55A2;
+    --website-primary-color-dark: #3A448A;
+    --website-gradient-start: #4A55A2;
+    --website-gradient-end: #7895CB;
+    --website-dark-text: #212529;
+    --website-light-bg: #f8f9fa;
+    --website-muted-text: #6c757d;
+}
+
+body {
+    background-color: #fff;
+    color: var(--website-dark-text);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+/* --- Encabezado Propio (sin usar .navbar) --- */
+.website-header {
+    margin-top: 1rem;
+    padding: 1rem 1.5rem; /* Padding vertical y horizontal */
+    border-radius: 0.5rem;
+    display: flex;
+    align-items: center;
+
+    /* Estilos de color (se mantienen) */
+    background-color: var(--website-primary-color);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.website-brand {
+    font-weight: 700;
+    font-size: 1.75rem;
+     color: #ffffff;
+}
+
+/* --- Header & Link Styles --- */
+.website-header .website-brand,
+.website-header a.website-brand,
+.website-header a.website-brand:hover {
+    text-decoration: none; /* Elimina el subrayado de los enlaces */
+}
+
+
+/* --- Sección Principal (Hero) --- */
+.hero-section {
+}
+
+.hero-title {
+    font-size: 3rem;
+    font-weight: 800;
+    line-height: 1.2;
+    margin-bottom: 1.5rem;
+}
+.gradient-text {
+    background: linear-gradient(90deg, var(--website-gradient-start), var(--website-gradient-end));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-fill-color: transparent;
+}
+
+.hero-bullets {
+    list-style: none;
+    padding-left: 0;
+    font-size: 1.25rem;
+    line-height: 1.5;
+    margin-top: 1.5rem;
+}
+
+.hero-bullets li {
+    display: flex;
+    align-items: flex-start;   /* necesario para alinear texto superior */
+    gap: 1rem;
+    margin-bottom: 1.4rem;
+    color: var(--website-muted-text);
+}
+
+.hero-bullets .bi {
+    font-size: 2rem;
+    color: var(--website-primary-color);
+    flex-shrink: 0;
+    line-height: 1;            /* evita que el ícono genere espacio extra */
+    margin-top: 0.35rem;       /* ESTE valor alinea perfecto el ícono con el texto */
+}
+
+/* --- Botón de Llamada a la Acción (CTA) --- */
+.hero-section .btn-primary {
+    background-color: var(--website-primary-color);
+    border-color: var(--website-primary-color);
+    transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out;
+}
+.hero-section .btn-primary:hover {
+    background-color: var(--website-primary-color-dark);
+    border-color: var(--website-primary-color-dark);
+}
+
+.bg-light h3 {
+    color: var(--website-primary-color);
+}
+
+.features-section {
+    padding: 2rem 1rem;
+    background-color: var(--website-light-bg);
+}
+.feature-item {
+    background-color: #fff;
+    padding: 2rem;
+    border-radius: 0.75rem;
+    border: 1px solid #e9ecef;
+    height: 100%;
+    transition: all 0.3s ease;
+}
+.feature-item:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+}
+.feature-icon {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+    color: var(--website-primary-color);
+}
+.feature-item h3 {
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+.feature-item p {
+    color: var(--website-muted-text);
+}
+
+/* Estilo especial para la caja de Open Source */
+.opensource-box {
+    background: var(--website-dark-text);
+    color: #fff;
+    padding: 2rem;
+    border-radius: 0.75rem;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    border: 1px solid transparent;
+    transition: all 0.3s ease;
+}
+.opensource-box:hover {
+     transform: translateY(-5px);
+     box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+}
+.opensource-icon .bi-github {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+}
+.opensource-box h3 {
+    font-weight: 600;
+}
+.opensource-box p {
+    color: #ced4da;
+    margin-bottom: 1.5rem;
+}
+
+.article-footer {
+    margin-top: 4rem;
+    padding-top: 2rem;
+    border-top: 1px solid #e9ecef; /* Separador visual */
+}
+
+/* --- Sección del Autor --- */
+.author-section {
+    background-color: #fff;
+}
+.author-card {
+    background-color: var(--website-light-bg);
+    border-radius: 0.75rem;
+    border: 1px solid #e9ecef;
+}
+.author-card h5 {
+    color: var(--website-primary-color);
+    font-weight: 600;
+}
+.author-bio {
+    color: var(--website-muted-text);
+    line-height: 1.6;
+}
+.author-linkedin {
+    text-decoration: none;
+    color: #0077b5;
+    font-weight: 500;
+    transition: opacity 0.2s;
+}
+.author-linkedin:hover {
+    opacity: 0.8;
+}
+.author-box {
+    display: flex;
+    align-items: center;
+    gap: 25px;
+    background-color: #f8f9fa;
+    padding: 25px;
+    border-radius: 12px;
+}
+
+.author-avatar img {
+    width: 90px;
+    height: 90px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 3px solid #fff;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.author-details {
+    line-height: 1.4; /* Reduce el espacio entre líneas */
+}
+
+.author-details p {
+    margin: 0; /* Elimina los márgenes por defecto de los párrafos */
+}
+
+.author-name {
+    font-weight: 600;
+    font-size: 1.25rem;
+    color: #212529;
+}
+
+.author-title {
+    font-size: 1rem;
+    color: #6c757d;
+    margin-top: 2px; /* Pequeño espacio después del nombre */
+    font-style: normal;
+}
+
+.author-social-link {
+    display: inline-block;
+    margin-top: 8px; /* Espacio reducido antes del enlace */
+    font-size: 0.95rem;
+    color: #007bff;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.author-social-link:hover {
+    text-decoration: underline;
+}
+
+.author-social-link i {
+    margin-right: 5px;
+}
+
+/* --- Footer --- */
+.landing-footer {
+    background-color: var(--website-light-bg);
+    color: var(--website-muted-text);
+    padding: 2rem 0;
+    text-align: center;
+    margin-top: 4rem;
+    border-top: 1px solid #e9ecef;
+}
+
+
+/* Language Switcher within header */
+.language-switcher {
+    display: flex;
+    align-items: center;
+    font-size: 0.9rem;
+    /* margen izquierdo auto no es necesario si usas justify-content-between,
+       pero no molesta si el header cambia en el futuro */
+    margin-left: auto;
+}
+
+/* Links de idioma sobre fondo azul */
+.language-link {
+    text-decoration: none;
+    color: #ffffff;             /* texto blanco */
+    padding: 2px 8px;
+    font-weight: 500;
+    border-radius: 4px;
+    transition: background-color 0.2s ease;
+}
+
+/* Separador | puede heredar color blanco */
+.language-switcher .mx-1 {
+    color: #ffffff;
+}
+
+/* Hover: blanco translúcido encima del azul */
+.language-link:hover {
+    background-color: rgba(255, 255, 255, 0.25);
+}
+
+/* Idioma activo: un poco más marcado */
+.language-link.active {
+    background-color: rgba(255, 255, 255, 0.35);
+    font-weight: 700;
+    color: #ffffff;
+}
+
+.btn-outline-website {
+    border: 2px solid var(--website-primary-color);
+    color: var(--website-primary-color);
+    background-color: transparent;
+    font-weight: 600;
+    transition: 0.2s ease-in-out;
+}
+
+.btn-outline-website:hover {
+    background-color: var(--website-primary-color);
+    color: #fff;
+}
+
+/* ------- Editions Section (Community vs Enterprise) ------- */
+.edition-box {
+    background: #ffffff;
+    border: 1px solid rgba(0,0,0,0.08);
+    border-radius: 12px;
+    padding: 2rem;
+    text-align: left;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.edition-box h3 {
+    font-weight: 600;
+    font-size: 1.4rem;
+    margin-bottom: 0.5rem;
+    color: var(--website-primary-color);
+}
+
+.edition-box p {
+    margin-bottom: 1.2rem;
+    color: var(--website-muted-text);
+}
+
+.edition-box ul {
+    padding-left: 0;
+    list-style: none;
+    margin: 0;
+}
+
+.edition-box ul li {
+    margin-bottom: 0.4rem;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.edition-box ul li::before {
+    content: "✔";
+    font-weight: bold;
+    color: var(--website-primary-color);
+    font-size: 1rem;
+}
+
+/* Hover effect (solo desktop) */
+@media (hover: hover) {
+    .edition-box:hover {
+        transform: translateY(-6px);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+    }
+}
+
+/* Enterprise highlighting */
+.edition-box.enterprise {
+    background: var(--website-light-bg);
+    border: 1px solid rgba(0,0,0,0.12);
+}
+
+/* Section title & spacing */
+.editions-section h2 {
+    color: var(--website-dark-text);
+    font-weight: 700;
+}
+
+.editions-section .edition-box {
+    min-height: 100%;
+}
+
+.trusted-subtitle {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--website-primary-color-dark);
+    opacity: 0.8;
+    text-align: center;
+    margin-top: -0.5rem;
+    margin-bottom: 1.2rem;
+}
+
+/* Estilo del link dentro del badge */
+.trusted-link {
+    color: var(--website-primary-color-dark);
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.trusted-link:hover {
+    text-decoration: underline;
+}

@@ -4,6 +4,8 @@ import pytest
 from unittest.mock import Mock, MagicMock, patch, call
 import numpy as np
 import base64
+import io
+from PIL import Image
 from iatoolkit.repositories.models import Company
 
 # Import the classes to be tested, including the new wrappers
@@ -20,6 +22,7 @@ from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.infra.call_service import CallServiceClient
 from iatoolkit.services.inference_service import InferenceService
+from iatoolkit.common.interfaces.secret_provider import SecretProvider
 
 class TestEmbeddingService:
     """
@@ -90,12 +93,20 @@ class TestEmbeddingService:
         self.mock_i18n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
         self.mock_call_service = MagicMock(spec=CallServiceClient)
         self.mock_inference_service = MagicMock(spec=InferenceService)
+        self.mock_secret_provider = MagicMock(spec=SecretProvider)
+        self.mock_secret_provider.get_secret.side_effect = (
+            lambda _company, key_name, default=None: {
+                "OPENAI_KEY": "fake-openai-key",
+                "CUSTOM_KEY": "fake-custom-key",
+            }.get(key_name, default)
+        )
 
         # Instantiate the classes under test
         self.client_factory = EmbeddingClientFactory(
             config_service=self.mock_config_service,
             call_service=self.mock_call_service,
-            inference_service=self.mock_inference_service
+            inference_service=self.mock_inference_service,
+            secret_provider=self.mock_secret_provider,
         )
         self.embedding_service = EmbeddingService(client_factory=self.client_factory,
                                                   profile_repo=self.mock_profile_repo,
@@ -182,6 +193,19 @@ class TestEmbeddingService:
         assert wrapper_text.model == 'openai-model' # From MOCK_CONFIG_OPENAI
         assert wrapper_image.model == 'clip-vit-base' # From MOCK_CONFIG_VISUAL
 
+    def test_factory_clear_runtime_cache_for_specific_company(self):
+        self.client_factory._clients = {
+            ("company_openai", "text"): MagicMock(),
+            ("company_openai", "image"): MagicMock(),
+            ("other_company", "text"): MagicMock(),
+        }
+
+        self.client_factory.clear_runtime_cache("company_openai")
+
+        assert ("company_openai", "text") not in self.client_factory._clients
+        assert ("company_openai", "image") not in self.client_factory._clients
+        assert ("other_company", "text") in self.client_factory._clients
+
     # --- Service Tests (Provider Agnostic) ---
 
     def test_service_embed_text_returns_vector(self, mocker):
@@ -199,7 +223,7 @@ class TestEmbeddingService:
 
         # Assert
         self.client_factory.get_client.assert_called_once_with("any_company", "text")
-        mock_wrapper.get_embedding.assert_called_once_with("some text")
+        mock_wrapper.get_embedding.assert_called_once_with("some text", suppress_error_logging=False)
         assert result == self.SAMPLE_VECTOR
 
     def test_service_embed_image_returns_vector(self, mocker):
@@ -281,7 +305,8 @@ class TestEmbeddingService:
             self.mock_inference_service.predict.assert_called_once_with(
                 "test_co",
                 "test_tool",
-                {"mode": "text", "text": "hola"}
+                {"mode": "text", "text": "hola"},
+                suppress_error_logging=False,
             )
 
         def test_huggingface_wrapper_init_raises_missing_dependencies(self):
@@ -337,6 +362,30 @@ class TestEmbeddingService:
                 "test_tool",
                 {"mode": "image", "base64": expected_b64}
             )
+
+        def test_huggingface_wrapper_get_image_embedding_normalizes_grayscale_bytes_to_rgb(self):
+            """Tests grayscale images are converted to RGB before sending to inference."""
+            self.mock_inference_service.predict.return_value = {"embedding": [0.5, 0.5]}
+            wrapper = HuggingFaceClientWrapper(
+                client=None, model="clip",
+                inference_service=self.mock_inference_service,
+                company_short_name="test_co", tool_name="test_tool"
+            )
+
+            buffer = io.BytesIO()
+            Image.new("L", (2, 2), color=128).save(buffer, format="PNG")
+
+            result = wrapper.get_image_embedding("https://example.com/should-not-be-used.png", buffer.getvalue())
+
+            assert result == [0.5, 0.5]
+            self.mock_inference_service.predict.assert_called_once()
+            _, _, payload = self.mock_inference_service.predict.call_args[0]
+            assert payload["mode"] == "image"
+            assert "url" not in payload
+
+            normalized_bytes = base64.b64decode(payload["base64"])
+            with Image.open(io.BytesIO(normalized_bytes)) as normalized_image:
+                assert normalized_image.mode == "RGB"
 
         def test_huggingface_wrapper_get_image_embedding_raises_if_no_data(self):
             """Tests validation when no image data is provided."""

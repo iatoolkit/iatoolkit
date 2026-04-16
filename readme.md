@@ -27,17 +27,7 @@ IAToolkit lets you build the assistant that *your* organization needs — not a 
 
 ## 🧩 Architecture in a Nutshell
 
-IAToolkit is a structured, layered framework:
-
-Interfaces (Web & API)
-        ↓
-Intelligence Layer (prompts, tools, SQL orchestration, RAG)
-        ↓
-Execution Layer (services, workflows, validation)
-        ↓
-Data Access (SQLAlchemy, connectors)
-        ↓
-Company Modules (company.yaml + custom tools)
+IAToolkit is a structured, layered framework, with a clear separation of concerns.
 
 ### ✔ Interfaces  
 Chat UI, REST API, auth, sessions, JSON/HTML responses.

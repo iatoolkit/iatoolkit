@@ -66,8 +66,30 @@ class LLMQueryRepo:
             name=tool_name
         ).first()
 
-    def get_tool_by_id(self, company_id: int, tool_id: int) -> Tool | None:
-        return self.session.query(Tool).filter_by(id=tool_id, company_id=company_id).first()
+    def list_system_tools(self) -> list[Tool]:
+        return (
+            self.session.query(Tool)
+            .filter(Tool.tool_type == Tool.TYPE_SYSTEM)
+            .filter(Tool.company_id.is_(None))
+            .order_by(Tool.name.asc())
+            .all()
+        )
+
+    def get_tool_by_id(self, company_id: int, tool_id: int, include_system: bool = False) -> Tool | None:
+        query = self.session.query(Tool).filter(Tool.id == tool_id)
+        if include_system:
+            query = query.filter(
+                or_(
+                    Tool.company_id == company_id,
+                    and_(
+                        Tool.company_id.is_(None),
+                        Tool.tool_type == Tool.TYPE_SYSTEM
+                    )
+                )
+            )
+            return query.first()
+
+        return query.filter(Tool.company_id == company_id).first()
 
     def add_tool(self, tool: Tool):
         """Adds a new tool to the session (without checking by name logic)."""
@@ -90,8 +112,11 @@ class LLMQueryRepo:
             tool.name = new_tool.name
             tool.description = new_tool.description
             tool.parameters = new_tool.parameters
+            tool.execution_config = new_tool.execution_config
             tool.tool_type = new_tool.tool_type
             tool.source = new_tool.source
+            if new_tool.is_active is not None:
+                tool.is_active = new_tool.is_active
         else:
             self.session.add(new_tool)
             tool = new_tool
@@ -109,10 +134,12 @@ class LLMQueryRepo:
         return self.session.query(Prompt).filter_by(company_id=company.id, name=prompt_name).first()
 
     def get_prompts(self, company: Company, include_all: bool = False) -> list[Prompt]:
+        editable_types = [PromptType.COMPANY.value, PromptType.AGENT.value]
         if include_all:
             # Include all prompts (for the prompt admin dashboard)
             return self.session.query(Prompt).filter(
                 Prompt.company_id == company.id,
+                Prompt.prompt_type.in_(editable_types),
             ).all()
         else:
             # Only active company prompts (default behavior for end users)
@@ -122,9 +149,20 @@ class LLMQueryRepo:
                 Prompt.active == True
             ).all()
 
-    def get_system_prompts(self) -> list[Prompt]:
-        return self.session.query(Prompt).filter_by(prompt_type=PromptType.SYSTEM.value, active=True).order_by(
-            Prompt.order).all()
+    def delete_prompts_by_type(self, company_id: int, prompt_types: list[str]) -> int:
+        if not prompt_types:
+            return 0
+
+        deleted_count = (
+            self.session.query(Prompt)
+            .filter(
+                Prompt.company_id == company_id,
+                Prompt.prompt_type.in_(prompt_types),
+            )
+            .delete(synchronize_session=False)
+        )
+        self.session.commit()
+        return int(deleted_count or 0)
 
     def create_or_update_prompt(self, new_prompt: Prompt):
         prompt = self.session.query(Prompt).filter_by(company_id=new_prompt.company_id,
@@ -136,7 +174,29 @@ class LLMQueryRepo:
             prompt.prompt_type = new_prompt.prompt_type
             prompt.filename = new_prompt.filename
             prompt.custom_fields = new_prompt.custom_fields
+            prompt.output_schema = new_prompt.output_schema
+            prompt.output_schema_yaml = new_prompt.output_schema_yaml
+            prompt.output_schema_mode = new_prompt.output_schema_mode or prompt.output_schema_mode or "best_effort"
+            prompt.output_response_mode = (
+                new_prompt.output_response_mode or prompt.output_response_mode or "chat_compatible"
+            )
+            prompt.attachment_mode = new_prompt.attachment_mode or prompt.attachment_mode or "extracted_only"
+            prompt.attachment_parser_provider = (
+                new_prompt.attachment_parser_provider or prompt.attachment_parser_provider or "basic"
+            )
+            prompt.attachment_fallback = new_prompt.attachment_fallback or prompt.attachment_fallback or "extract"
+            prompt.llm_model = new_prompt.llm_model
         else:
+            if not new_prompt.output_schema_mode:
+                new_prompt.output_schema_mode = "best_effort"
+            if not new_prompt.output_response_mode:
+                new_prompt.output_response_mode = "chat_compatible"
+            if not new_prompt.attachment_mode:
+                new_prompt.attachment_mode = "extracted_only"
+            if not new_prompt.attachment_parser_provider:
+                new_prompt.attachment_parser_provider = "basic"
+            if not new_prompt.attachment_fallback:
+                new_prompt.attachment_fallback = "extract"
             self.session.add(new_prompt)
             prompt = new_prompt
 
@@ -166,4 +226,3 @@ class LLMQueryRepo:
 
         self.session.commit()
         return category
-

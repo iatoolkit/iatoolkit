@@ -29,4 +29,4 @@ version = { attr = "iatoolkit.__version__" }
 dependencies = { file = ["requirements.txt"] }
 
 [tool.setuptools.package-data]
-iatoolkit = ["system_prompts/*.prompt", "templates/**/*", "static/**/*", "locales/*.yaml"]
+iatoolkit = ["system_prompts/*.prompt", "templates/**/*", "static/**/*", "locales/*.yaml", "config/*.yaml"]

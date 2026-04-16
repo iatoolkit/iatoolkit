@@ -2,7 +2,7 @@
 
 import logging
 from injector import inject, singleton
-from flask import g, request
+from flask import g, request, has_request_context
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.common.session_manager import SessionManager
@@ -11,7 +11,7 @@ from iatoolkit.common.session_manager import SessionManager
 class LanguageService:
     """
     Determines the correct language for the current request
-    based on a defined priority order (session, URL, etc.)
+    based on a defined priority order (company config, URL, etc.)
     and caches it in the Flask 'g' object for the request's lifecycle.
     """
 
@@ -42,33 +42,41 @@ class LanguageService:
         self.config_service = config_service
         self.profile_repo = profile_repo
 
+    def _safe_rollback(self):
+        """
+        Best-effort rollback to recover the shared SQLAlchemy scoped session
+        after transient DB failures (e.g. SSL/network errors).
+        """
+        try:
+            self.profile_repo.session.rollback()
+        except Exception as rollback_error:
+            logging.warning(f"LanguageService rollback failed: {rollback_error}")
+
     def _get_company_short_name(self) -> str | None:
         """
         Gets the company_short_name from the current request context.
         This handles different scenarios like web sessions, public URLs, and API calls.
 
         Priority Order:
-        1. Flask Session (for logged-in web users).
-        2. URL rule variable (for public pages and API endpoints).
+        1. URL rule variable (for company-scoped pages and API endpoints).
+        2. Active company in Flask session.
         """
-        # 1. Check session for logged-in users
-        company_short_name = SessionManager.get('company_short_name')
+        # 1. Check URL arguments (e.g., /<company_short_name>/login)
+        if has_request_context() and request.view_args and 'company_short_name' in request.view_args:
+            return request.view_args['company_short_name']
+
+        # 2. Check the active company in session for non-company-scoped endpoints.
+        company_short_name = SessionManager.get('active_company_short_name')
         if company_short_name:
             return company_short_name
-
-        # 2. Check URL arguments (e.g., /<company_short_name>/login)
-        # This covers public pages and most API calls.
-        if request.view_args and 'company_short_name' in request.view_args:
-            return request.view_args['company_short_name']
 
         return None
 
     def get_current_language(self) -> str:
         """
             Determines and caches the language for the current request using a priority order:
-            0. Query parameter '?lang=<code>' (highest priority; e.g., 'en', 'es').
-            1. User's preference (from their profile).
-            2. Company's default language.
+            1. Company's default language from company.yaml ('locale').
+            2. Query parameter '?lang=<code>' (e.g., 'en', 'es').
             3. System-wide fallback language ('es').
             """
         if 'locale_ctx' in g:
@@ -103,13 +111,7 @@ class LanguageService:
         return g.locale_ctx
 
     def _resolve_locale_string(self) -> str:
-        # Priority 1: Query param
-        lang_arg = request.args.get('lang')
-        if lang_arg:
-            return lang_arg
-
-
-        # Priority 2: Company Config
+        # Priority 1: Company Config (source of truth)
         company_short_name = self._get_company_short_name()
         if company_short_name:
             # cnfig returns something like 'es_ES' o 'en_US'
@@ -118,7 +120,13 @@ class LanguageService:
                 if conf_locale:
                     return conf_locale
             except Exception as e:
+                self._safe_rollback()
                 logging.warning(f"Error fetching configuration for '{company_short_name}': {e}")
+
+        # Priority 2: Query param (only if company locale was not available)
+        lang_arg = request.args.get('lang')
+        if lang_arg:
+            return lang_arg
 
 
         logging.debug(f"Language determined by system fallback: {self.FALLBACK_LANGUAGE}")

@@ -6,9 +6,32 @@
         </p>
     </div>
 
+    {% set current_lang = request.args.get('lang', 'en') %}
+    {% if request.args.get('session_expired') == '1' %}
+    <div class="alert alert-warning small py-2" role="alert">
+        {{ t('ui.login_widget.session_expired_message') }}
+    </div>
+    {% endif %}
+
+    {% if google_login_enabled|default(false) %}
+    <a href="{{ url_for('login_google_start', company_short_name=company_short_name, lang=current_lang) }}"
+       class="btn btn-outline-secondary w-100 fw-semibold py-2 d-flex align-items-center justify-content-center gap-2">
+        <i class="bi bi-google"></i>
+        {{ t('ui.login_widget.google_button') }}
+    </a>
+
+    <div class="d-flex align-items-center gap-3 my-4">
+        <div class="flex-grow-1" style="height: 1px; background: #e0e0e0;"></div>
+        <span class="text-muted text-uppercase" style="font-size: 0.75rem; letter-spacing: 0.08em;">
+            {{ t('ui.login_widget.or_continue_with') }}
+        </span>
+        <div class="flex-grow-1" style="height: 1px; background: #e0e0e0;"></div>
+    </div>
+    {% endif %}
+
     <!-- 2. Formulario de Inicio de Sesión -->
     <form id="login-form"
-          action="{{ url_for('login', company_short_name=company_short_name, lang=request.args.get('lang', 'en')) }}"
+          action="{{ url_for('login', company_short_name=company_short_name, lang=current_lang) }}"
           method="post">
       <div class="mb-3">
         <label for="email" class="form-label d-block">{{ t('ui.signup.email_label') }}</label>
@@ -28,14 +51,14 @@
     <!-- 3. Nueva Sección de Registro más Atractiva -->
     <div class="mt-4 pt-3 text-center" style="border-top: 1px solid #e0e0e0;">
         <span class="text-muted small">{{ t('ui.login_widget.no_account_prompt') }}</span>
-        <a href="{{ url_for('signup', company_short_name=company_short_name, lang=request.args.get('lang', 'en')) }}" id="signup-link"
+        <a href="{{ url_for('signup', company_short_name=company_short_name, lang=current_lang) }}" id="signup-link"
            class="fw-bold ms-1 text-decoration-none" style="color: var(--brand-primary-color);">
             {{ t('ui.login_widget.signup_link') }}</a>
     </div>
 
     <!-- 4. Enlace de Recuperación de Contraseña (más sutil) -->
     <div class="text-center mt-2">
-      <a href="{{ url_for('forgot_password', company_short_name=company_short_name, lang=request.args.get('lang', 'en')) }}" class="text-decoration-none text-muted" style="font-size: 0.8rem;">
+      <a href="{{ url_for('forgot_password', company_short_name=company_short_name, lang=current_lang) }}" class="text-decoration-none text-muted" style="font-size: 0.8rem;">
         {{ t('ui.login_widget.forgot_password_link') }}
       </a>
     </div>

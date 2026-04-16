@@ -15,6 +15,7 @@ from iatoolkit.services.llm_client_service import llmClient
 from iatoolkit.services.dispatcher_service import Dispatcher
 from iatoolkit.services.tool_service import ToolService
 from iatoolkit.common.model_registry import ModelRegistry
+from iatoolkit.services.attachment_policy_service import AttachmentPolicyService
 
 # --- Constantes para los Tests ---
 MOCK_COMPANY_SHORT_NAME = "test_company"
@@ -40,9 +41,48 @@ class TestQueryService:
         self.mock_configuration_service = MagicMock(spec=ConfigurationService)
         self.mock_history_manager = MagicMock(spec=HistoryManagerService)
         self.model_registry = MagicMock(spec=ModelRegistry)
+        self.model_registry.get_provider.return_value = "openai"
 
         # New dependency mock
         self.mock_context_builder = MagicMock(spec=ContextBuilderService)
+        self.mock_attachment_policy_service = MagicMock(spec=AttachmentPolicyService)
+        self.mock_attachment_policy_service.normalize_mode.side_effect = (
+            lambda mode: str(mode or "extracted_only").strip().lower()
+            if str(mode or "extracted_only").strip().lower() in {"extracted_only", "native_only", "native_plus_extracted", "auto"}
+            else "extracted_only"
+        )
+        self.mock_attachment_policy_service.normalize_fallback.side_effect = (
+            lambda fallback: str(fallback or "extract").strip().lower()
+            if str(fallback or "extract").strip().lower() in {"extract", "fail"}
+            else "extract"
+        )
+        self.mock_attachment_policy_service.get_company_default_policy.side_effect = (
+            lambda company_short_name: {
+                "attachment_mode": "extracted_only",
+                "attachment_fallback": "extract",
+            }
+        )
+        self.mock_attachment_policy_service.build_attachment_plan.side_effect = (
+            lambda company_short_name, provider, files, policy: {
+                "files_for_context": files or [],
+                "native_attachments": [],
+                "errors": [],
+                "policy": {
+                    "attachment_mode": (policy or {}).get("attachment_mode") or "extracted_only",
+                    "attachment_fallback": (policy or {}).get("attachment_fallback") or "extract",
+                },
+                "capabilities": {},
+                "stats": {
+                    "total_files": len(files or []),
+                    "native_sent_count": 0,
+                    "extract_candidates": len(files or []),
+                    "fallback_to_extract": 0,
+                    "errors": 0,
+                },
+            }
+        )
+
+        QueryService.clear_tool_selector_hook()
 
         # --- Instancia del servicio bajo prueba ---
         self.service = QueryService(
@@ -55,7 +95,8 @@ class TestQueryService:
             configuration_service=self.mock_configuration_service,
             history_manager=self.mock_history_manager,
             model_registry=self.model_registry,
-            context_builder=self.mock_context_builder
+            context_builder=self.mock_context_builder,
+            attachment_policy_service=self.mock_attachment_policy_service,
         )
 
         self.mock_i18n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
@@ -68,9 +109,12 @@ class TestQueryService:
         self.mock_user_profile = {"id": MOCK_LOCAL_USER_ID, "name": "Test User"}
 
         self.mock_context_builder.build_system_context.return_value = (
-            self.mock_final_context, self.mock_user_profile
+            self.mock_final_context, self.mock_user_profile, ["query_main", "format_styles"]
         )
+        self.mock_context_builder.get_selected_system_prompt_keys.return_value = ["query_main", "format_styles"]
+        self.mock_session_context.get_selected_system_prompt_keys.return_value = ["query_main", "format_styles"]
         self.mock_context_builder.compute_context_version.return_value = "v_hash_123"
+        self.mock_configuration_service.get_configuration.return_value = {"model": "company-default-model"}
 
     # --- Tests para prepare_context ---
 
@@ -85,7 +129,7 @@ class TestQueryService:
 
         # 1. Verifica delegación al builder
         self.mock_context_builder.build_system_context.assert_called_once_with(
-            MOCK_COMPANY_SHORT_NAME, MOCK_LOCAL_USER_ID
+            MOCK_COMPANY_SHORT_NAME, MOCK_LOCAL_USER_ID, query_text=None
         )
         self.mock_context_builder.compute_context_version.assert_called_once_with(
             self.mock_final_context
@@ -94,6 +138,9 @@ class TestQueryService:
         # 2. Verifica interacción con session context
         self.mock_session_context.save_profile_data.assert_called_once_with(
             MOCK_COMPANY_SHORT_NAME, MOCK_LOCAL_USER_ID, self.mock_user_profile
+        )
+        self.mock_session_context.save_selected_system_prompt_keys.assert_called_once_with(
+            MOCK_COMPANY_SHORT_NAME, MOCK_LOCAL_USER_ID, ["query_main", "format_styles"]
         )
         self.mock_session_context.save_prepared_context.assert_called_once_with(
             MOCK_COMPANY_SHORT_NAME, MOCK_LOCAL_USER_ID, self.mock_final_context, mock_version
@@ -196,9 +243,275 @@ class TestQueryService:
         assert kwargs['context'] == user_prompt
         assert kwargs['question'] == effective_q
         assert kwargs['previous_response_id'] == 'existing_id'
+        assert kwargs["execution_metadata"]["tool_router"]["selected_system_prompt_keys"] == [
+            "query_main", "format_styles"
+        ]
+        self.mock_session_context.get_selected_system_prompt_keys.assert_called_once_with(
+            MOCK_COMPANY_SHORT_NAME,
+            MOCK_LOCAL_USER_ID,
+        )
+        self.mock_context_builder.get_selected_system_prompt_keys.assert_not_called()
 
         # Verificar actualización de historia
         self.mock_history_manager.update_history.assert_called_once()
+
+    def test_llm_query_sends_native_attachments_when_policy_requires_it(self):
+        self.mock_attachment_policy_service.build_attachment_plan.side_effect = None
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "schema": None,
+            "attachment_mode": "native_only",
+            "attachment_fallback": "extract",
+        }
+        self.mock_attachment_policy_service.build_attachment_plan.return_value = {
+            "files_for_context": [],
+            "native_attachments": [
+                {
+                    "name": "sales.csv",
+                    "mime_type": "text/csv",
+                    "base64": "U0FNUExF",
+                }
+            ],
+            "errors": [],
+            "policy": {"attachment_mode": "native_only", "attachment_fallback": "extract"},
+            "capabilities": {"supports_native_files": True},
+            "stats": {
+                "total_files": 1,
+                "native_sent_count": 1,
+                "extract_candidates": 0,
+                "fallback_to_extract": 0,
+                "errors": 0,
+            },
+        }
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "q", [])
+        self.mock_history_manager.populate_request_params.side_effect = (
+            lambda handle, prompt, ignore: setattr(handle, "request_params", {"previous_response_id": None, "context_history": None}) or False
+        )
+        self.mock_llm_client.invoke.return_value = {"valid_response": True, "answer": "ok"}
+
+        result = self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="sales_prompt",
+            question="ventas 2025",
+            files=[{"filename": "sales.csv", "base64": "U0FNUExF"}],
+            model="gpt-test",
+        )
+
+        assert result["valid_response"] is True
+        self.mock_context_builder.build_user_turn_prompt.assert_called_once()
+        build_kwargs = self.mock_context_builder.build_user_turn_prompt.call_args.kwargs
+        assert build_kwargs["files"] == []
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert len(invoke_kwargs["attachments"]) == 1
+        assert invoke_kwargs["attachments"][0]["name"] == "sales.csv"
+        assert invoke_kwargs["execution_metadata"]["attachments"]["stats"]["native_sent_count"] == 1
+
+    def test_llm_query_returns_error_when_attachment_policy_fails(self):
+        self.mock_attachment_policy_service.build_attachment_plan.side_effect = None
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "schema": None,
+            "attachment_mode": "native_only",
+            "attachment_fallback": "fail",
+        }
+        self.mock_attachment_policy_service.build_attachment_plan.return_value = {
+            "files_for_context": [],
+            "native_attachments": [],
+            "errors": ["Attachment 'sales.csv' cannot be sent as native file for provider 'openai'."],
+            "policy": {"attachment_mode": "native_only", "attachment_fallback": "fail"},
+            "capabilities": {"supports_native_files": False},
+            "stats": {
+                "total_files": 1,
+                "native_sent_count": 0,
+                "extract_candidates": 0,
+                "fallback_to_extract": 0,
+                "errors": 1,
+            },
+        }
+
+        result = self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="sales_prompt",
+            question="ventas 2025",
+            files=[{"filename": "sales.csv", "base64": "U0FNUExF"}],
+            model="gpt-test",
+        )
+
+        assert result["error"] is True
+        assert "No se pudieron procesar los archivos adjuntos" in result["error_message"]
+        self.mock_context_builder.build_user_turn_prompt.assert_not_called()
+        self.mock_llm_client.invoke.assert_not_called()
+
+    def test_llm_query_without_prompt_name_uses_company_default_attachment_policy(self):
+        self.mock_attachment_policy_service.build_attachment_plan.side_effect = None
+        self.mock_attachment_policy_service.get_company_default_policy.side_effect = None
+        self.mock_attachment_policy_service.get_company_default_policy.return_value = {
+            "attachment_mode": "native_only",
+            "attachment_fallback": "fail",
+        }
+        self.mock_attachment_policy_service.build_attachment_plan.return_value = {
+            "files_for_context": [],
+            "native_attachments": [{"name": "sales.csv", "mime_type": "text/csv", "base64": "U0FNUExF"}],
+            "errors": [],
+            "policy": {"attachment_mode": "native_only", "attachment_fallback": "fail"},
+            "capabilities": {"supports_native_files": True},
+            "stats": {
+                "total_files": 1,
+                "native_sent_count": 1,
+                "extract_candidates": 0,
+                "fallback_to_extract": 0,
+                "errors": 0,
+            },
+        }
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "q", [])
+        self.mock_history_manager.populate_request_params.side_effect = (
+            lambda handle, prompt, ignore: setattr(handle, "request_params", {"previous_response_id": None, "context_history": None}) or False
+        )
+        self.mock_llm_client.invoke.return_value = {"valid_response": True, "answer": "ok"}
+
+        result = self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            question="ventas 2025",
+            files=[{"filename": "sales.csv", "base64": "U0FNUExF"}],
+            model="gpt-test",
+        )
+
+        assert result["valid_response"] is True
+        policy_kwargs = self.mock_attachment_policy_service.build_attachment_plan.call_args.kwargs["policy"]
+        assert policy_kwargs["attachment_mode"] == "native_only"
+        assert policy_kwargs["attachment_fallback"] == "fail"
+
+    def test_llm_query_without_prompt_name_uses_native_fail_fallback_when_company_defaults_missing(self):
+        self.mock_attachment_policy_service.build_attachment_plan.side_effect = None
+        self.mock_configuration_service.get_configuration.return_value = {"model": "gpt-test"}
+        self.mock_attachment_policy_service.build_attachment_plan.return_value = {
+            "files_for_context": [],
+            "native_attachments": [{"name": "sales.csv", "mime_type": "text/csv", "base64": "U0FNUExF"}],
+            "errors": [],
+            "policy": {"attachment_mode": "native_only", "attachment_fallback": "fail"},
+            "capabilities": {"supports_native_files": True},
+            "stats": {
+                "total_files": 1,
+                "native_sent_count": 1,
+                "extract_candidates": 0,
+                "fallback_to_extract": 0,
+                "errors": 0,
+            },
+        }
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "q", [])
+        self.mock_history_manager.populate_request_params.side_effect = (
+            lambda handle, prompt, ignore: setattr(handle, "request_params", {"previous_response_id": None, "context_history": None}) or False
+        )
+        self.mock_llm_client.invoke.return_value = {"valid_response": True, "answer": "ok"}
+
+        result = self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            question="ventas 2025",
+            files=[{"filename": "sales.csv", "base64": "U0FNUExF"}],
+            model="gpt-test",
+        )
+
+        assert result["valid_response"] is True
+        policy_kwargs = self.mock_attachment_policy_service.build_attachment_plan.call_args.kwargs["policy"]
+        assert policy_kwargs["attachment_mode"] == "native_only"
+        assert policy_kwargs["attachment_fallback"] == "fail"
+        execution_attachments = self.mock_llm_client.invoke.call_args.kwargs["execution_metadata"]["attachments"]
+        assert execution_attachments["company_defaults"]["attachment_mode"] == "native_only"
+        assert execution_attachments["company_defaults"]["attachment_fallback"] == "fail"
+
+    def test_llm_query_prompt_policy_overrides_company_defaults(self):
+        self.mock_attachment_policy_service.build_attachment_plan.side_effect = None
+        self.mock_attachment_policy_service.get_company_default_policy.side_effect = None
+        self.mock_attachment_policy_service.get_company_default_policy.return_value = {
+            "attachment_mode": "native_only",
+            "attachment_fallback": "fail",
+        }
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "schema": None,
+            "attachment_mode": "extracted_only",
+            "attachment_fallback": "extract",
+        }
+        self.mock_attachment_policy_service.build_attachment_plan.return_value = {
+            "files_for_context": [{"filename": "sales.csv", "base64": "U0FNUExF"}],
+            "native_attachments": [],
+            "errors": [],
+            "policy": {"attachment_mode": "extracted_only", "attachment_fallback": "extract"},
+            "capabilities": {"supports_native_files": True},
+            "stats": {
+                "total_files": 1,
+                "native_sent_count": 0,
+                "extract_candidates": 1,
+                "fallback_to_extract": 0,
+                "errors": 0,
+            },
+        }
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "q", [])
+        self.mock_history_manager.populate_request_params.side_effect = (
+            lambda handle, prompt, ignore: setattr(handle, "request_params", {"previous_response_id": None, "context_history": None}) or False
+        )
+        self.mock_llm_client.invoke.return_value = {"valid_response": True, "answer": "ok"}
+
+        result = self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="sales_prompt",
+            question="ventas 2025",
+            files=[{"filename": "sales.csv", "base64": "U0FNUExF"}],
+            model="gpt-test",
+        )
+
+        assert result["valid_response"] is True
+        policy_kwargs = self.mock_attachment_policy_service.build_attachment_plan.call_args.kwargs["policy"]
+        assert policy_kwargs["attachment_mode"] == "extracted_only"
+        assert policy_kwargs["attachment_fallback"] == "extract"
+
+    def test_llm_query_with_prompt_name_keeps_legacy_company_fallback_when_defaults_missing(self):
+        self.mock_attachment_policy_service.build_attachment_plan.side_effect = None
+        self.mock_configuration_service.get_configuration.return_value = {"model": "gpt-test"}
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "schema": None,
+            "attachment_mode": None,
+            "attachment_fallback": None,
+        }
+        self.mock_attachment_policy_service.build_attachment_plan.return_value = {
+            "files_for_context": [{"filename": "sales.csv", "base64": "U0FNUExF"}],
+            "native_attachments": [],
+            "errors": [],
+            "policy": {"attachment_mode": "extracted_only", "attachment_fallback": "extract"},
+            "capabilities": {"supports_native_files": True},
+            "stats": {
+                "total_files": 1,
+                "native_sent_count": 0,
+                "extract_candidates": 1,
+                "fallback_to_extract": 0,
+                "errors": 0,
+            },
+        }
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "q", [])
+        self.mock_history_manager.populate_request_params.side_effect = (
+            lambda handle, prompt, ignore: setattr(handle, "request_params", {"previous_response_id": None, "context_history": None}) or False
+        )
+        self.mock_llm_client.invoke.return_value = {"valid_response": True, "answer": "ok"}
+
+        result = self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="sales_prompt",
+            question="ventas 2025",
+            files=[{"filename": "sales.csv", "base64": "U0FNUExF"}],
+            model="gpt-test",
+        )
+
+        assert result["valid_response"] is True
+        policy_kwargs = self.mock_attachment_policy_service.build_attachment_plan.call_args.kwargs["policy"]
+        assert policy_kwargs["attachment_mode"] == "extracted_only"
+        assert policy_kwargs["attachment_fallback"] == "extract"
+        execution_attachments = self.mock_llm_client.invoke.call_args.kwargs["execution_metadata"]["attachments"]
+        assert execution_attachments["company_defaults"]["attachment_mode"] == "extracted_only"
+        assert execution_attachments["company_defaults"]["attachment_fallback"] == "extract"
 
     def test_llm_query_rebuilds_context_if_needed(self):
         """Prueba que llm_query reconstruye el contexto si el history manager lo indica."""
@@ -223,3 +536,416 @@ class TestQueryService:
         result = self.service.llm_query("invalid_company", "user")
         assert result['error'] is True
         assert "translated:errors.company_not_found" in result['error_message']
+
+    def test_llm_query_applies_tool_selector_hook_when_registered(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = [
+            {"type": "function", "name": "tool_one", "description": "one", "parameters": {}, "strict": True},
+            {"type": "function", "name": "tool_two", "description": "two", "parameters": {}, "strict": True},
+        ]
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "authors metrics", [])
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        hook_kwargs = {}
+
+        def selector_hook(**kwargs):
+            hook_kwargs.update(kwargs)
+            return [kwargs["tools"][1]]
+
+        QueryService.register_tool_selector_hook(selector_hook)
+
+        result = self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            question="authors metrics",
+            model='gpt-test'
+        )
+
+        assert result["valid_response"] is True
+        self.mock_llm_client.invoke.assert_called_once()
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert [tool["name"] for tool in invoke_kwargs["tools"]] == ["tool_two"]
+        assert hook_kwargs["company_short_name"] == MOCK_COMPANY_SHORT_NAME
+        assert "execution_metadata" in invoke_kwargs
+        assert "tool_router" in invoke_kwargs["execution_metadata"]
+        assert invoke_kwargs["execution_metadata"]["tool_router"]["selection_mode"] == "router_selected"
+        assert hook_kwargs["question"] == "authors metrics"
+
+    def test_llm_query_falls_back_to_all_tools_when_selector_hook_fails(self):
+        full_tools = [
+            {"type": "function", "name": "tool_one", "description": "one", "parameters": {}, "strict": True},
+            {"type": "function", "name": "tool_two", "description": "two", "parameters": {}, "strict": True},
+        ]
+        self.mock_tool_service.get_tools_for_llm.return_value = full_tools
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "authors metrics", [])
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        def selector_hook(**kwargs):
+            _ = kwargs
+            raise RuntimeError("selector failure")
+
+        QueryService.register_tool_selector_hook(selector_hook)
+
+        result = self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            question="authors metrics",
+            model='gpt-test'
+        )
+
+        assert result["valid_response"] is True
+        self.mock_llm_client.invoke.assert_called_once()
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert [tool["name"] for tool in invoke_kwargs["tools"]] == ["tool_one", "tool_two"]
+        assert invoke_kwargs["execution_metadata"]["tool_router"]["fallback_reason"] == "hook_error"
+
+    def test_llm_query_resolves_selected_system_prompt_keys_from_builder_when_session_cache_is_empty(self):
+        self.mock_session_context.get_selected_system_prompt_keys.return_value = []
+        self.mock_tool_service.get_tools_for_llm.return_value = [
+            {"type": "function", "name": "tool_one", "description": "one", "parameters": {}, "strict": True},
+        ]
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "question", [])
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            question="question",
+            model='gpt-test'
+        )
+
+        self.mock_context_builder.get_selected_system_prompt_keys.assert_called_once_with(
+            self.mock_company,
+            query_text="question",
+        )
+        self.mock_session_context.save_selected_system_prompt_keys.assert_called_with(
+            MOCK_COMPANY_SHORT_NAME,
+            MOCK_LOCAL_USER_ID,
+            ["query_main", "format_styles"],
+        )
+
+    def test_llm_query_ignores_invalid_selected_system_prompt_keys_from_session_cache(self):
+        self.mock_session_context.get_selected_system_prompt_keys.return_value = MagicMock()
+        self.mock_tool_service.get_tools_for_llm.return_value = [
+            {"type": "function", "name": "tool_one", "description": "one", "parameters": {}, "strict": True},
+        ]
+        self.mock_context_builder.get_selected_system_prompt_keys.return_value = ["query_main"]
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "question", [])
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            question="question",
+            model='gpt-test'
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["execution_metadata"]["tool_router"]["selected_system_prompt_keys"] == ["query_main"]
+
+    def test_llm_query_passes_openai_json_schema_text_payload_when_prompt_contract_is_configured(self):
+        self.model_registry.get_provider.return_value = "openai"
+        self.mock_tool_service.get_tools_for_llm.return_value = []
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt content", "question", [])
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "scored_prompt",
+            "schema": {
+                "type": "object",
+                "required": ["customer_id"],
+                "properties": {
+                    "customer_id": {"type": "string"},
+                },
+            },
+            "schema_mode": "strict",
+            "response_mode": "structured_only",
+        }
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="scored_prompt",
+            model="gpt-5"
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert "format" in invoke_kwargs["text"]
+        assert invoke_kwargs["text"]["format"]["type"] == "json_schema"
+        assert invoke_kwargs["text"]["format"]["strict"] is True
+        assert invoke_kwargs["response_contract"]["schema_mode"] == "strict"
+        assert invoke_kwargs["response_contract"]["response_mode"] == "structured_only"
+
+    def test_llm_query_uses_prompt_llm_model_when_request_model_is_missing(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = []
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt content", "question", [])
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "sales_prompt",
+            "schema": None,
+            "schema_mode": "best_effort",
+            "response_mode": "chat_compatible",
+            "llm_model": "gpt-4.1-mini",
+        }
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="sales_prompt",
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["model"] == "gpt-4.1-mini"
+
+    def test_llm_query_request_model_takes_precedence_over_prompt_llm_model(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = []
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt content", "question", [])
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "sales_prompt",
+            "schema": None,
+            "schema_mode": "best_effort",
+            "response_mode": "chat_compatible",
+            "llm_model": "gpt-4.1-mini",
+        }
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="sales_prompt",
+            model="gpt-5",
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["model"] == "gpt-5"
+
+    def test_llm_query_passes_gemini_response_schema_payload_when_prompt_contract_is_configured(self):
+        self.model_registry.get_provider.return_value = "gemini"
+        self.mock_tool_service.get_tools_for_llm.return_value = []
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt content", "question", [])
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "sales_prompt",
+            "schema": {
+                "type": "object",
+                "required": ["sales_2025"],
+                "properties": {
+                    "sales_2025": {
+                        "type": "array",
+                        "items": {"type": "object"},
+                    },
+                },
+            },
+            "schema_mode": "strict",
+            "response_mode": "structured_only",
+        }
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="sales_prompt",
+            model="gemini-2.5-flash"
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert "prompt content" in invoke_kwargs["context"]
+        assert "OUTPUT CONTRACT (MANDATORY)" in invoke_kwargs["context"]
+        assert "format" not in invoke_kwargs["text"]
+        assert invoke_kwargs["text"]["response_mime_type"] == "application/json"
+        assert invoke_kwargs["text"]["response_schema"]["required"] == ["sales_2025"]
+        assert invoke_kwargs["response_contract"]["schema_mode"] == "strict"
+        assert invoke_kwargs["response_contract"]["response_mode"] == "structured_only"
+
+    def test_llm_query_forces_memory_search_for_explicit_memory_intent(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = [
+            {"type": "function", "name": "iat_memory_search", "description": "memory", "parameters": {}, "strict": True},
+            {"type": "function", "name": "tool_two", "description": "other", "parameters": {}, "strict": True},
+        ]
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "usa mi memoria sobre onboarding", [])
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            question="usa mi memoria sobre onboarding",
+            model='gpt-test'
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["tool_choice_override"] == "iat_memory_search"
+        assert "call `iat_memory_search` before answering" in invoke_kwargs["context"]
+        assert invoke_kwargs["execution_metadata"]["tool_policy"]["reason"] == "fallback_memory_keywords"
+        assert invoke_kwargs["execution_metadata"]["tool_policy"]["confidence"] == 0.45
+        assert invoke_kwargs["execution_metadata"]["tool_policy"]["should_suggest_memory_search"] is True
+
+    def test_llm_query_does_not_force_memory_search_without_explicit_memory_intent(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = [
+            {"type": "function", "name": "iat_memory_search", "description": "memory", "parameters": {}, "strict": True},
+        ]
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "qué opinas del onboarding", [])
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            question="qué opinas del onboarding",
+            model='gpt-test'
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["tool_choice_override"] is None
+        assert "tool_policy" not in invoke_kwargs["execution_metadata"]
+
+    def test_llm_query_suggests_memory_search_from_router_memory_ranking_without_forcing_it(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = [
+            {"type": "function", "name": "iat_memory_search", "description": "memory", "parameters": {}, "strict": True},
+            {"type": "function", "name": "tool_two", "description": "other", "parameters": {}, "strict": True},
+        ]
+        self.mock_context_builder.build_user_turn_prompt.return_value = (
+            "prompt",
+            "que tengo pensado para implementar esta semana en iatoolkit",
+            [],
+        )
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        def selector_hook(**kwargs):
+            _ = kwargs
+            return {
+                "tools": kwargs["tools"],
+                "metadata": {
+                    "top_k": 8,
+                    "selected_tool_names": ["iat_memory_search", "tool_two"],
+                    "ranked_tools_preview": [
+                        {"name": "iat_memory_search", "score": 0.81},
+                        {"name": "tool_two", "score": 0.44},
+                    ],
+                },
+            }
+
+        QueryService.register_tool_selector_hook(selector_hook)
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            question="que tengo pensado para implementar esta semana en iatoolkit",
+            model='gpt-test'
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["tool_choice_override"] is None
+        assert "call `iat_memory_search` before answering" in invoke_kwargs["context"]
+        assert invoke_kwargs["execution_metadata"]["tool_policy"]["reason"] == "router_ranked_memory_tool"
+        assert invoke_kwargs["execution_metadata"]["tool_policy"]["confidence"] == 0.81
+        assert invoke_kwargs["execution_metadata"]["tool_policy"]["should_suggest_memory_search"] is True
+        assert invoke_kwargs["execution_metadata"]["tool_policy"]["metadata"] == {
+            "memory_tool_rank": 1,
+            "top_k": 8,
+        }
+
+    def test_llm_query_does_not_suggest_memory_when_document_search_competes(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = [
+            {"type": "function", "name": "iat_memory_search", "description": "memory", "parameters": {}, "strict": True},
+            {"type": "function", "name": "iat_document_search", "description": "docs", "parameters": {}, "strict": True},
+        ]
+        self.mock_context_builder.build_user_turn_prompt.return_value = (
+            "prompt",
+            "que dice la documentacion interna sobre onboarding",
+            [],
+        )
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        def selector_hook(**kwargs):
+            _ = kwargs
+            return {
+                "tools": kwargs["tools"],
+                "metadata": {
+                    "top_k": 8,
+                    "selected_tool_names": ["iat_memory_search", "iat_document_search"],
+                    "ranked_tools_preview": [
+                        {"name": "iat_memory_search", "score": 0.88},
+                        {"name": "iat_document_search", "score": 0.84},
+                    ],
+                },
+            }
+
+        QueryService.register_tool_selector_hook(selector_hook)
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            question="que dice la documentacion interna sobre onboarding",
+            model='gpt-test'
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["tool_choice_override"] is None
+        assert "call `iat_memory_search` before answering" not in invoke_kwargs["context"]
+        assert "tool_policy" not in invoke_kwargs["execution_metadata"]

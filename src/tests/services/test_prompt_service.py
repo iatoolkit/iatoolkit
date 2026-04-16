@@ -1,12 +1,14 @@
 import pytest
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 from iatoolkit.services.prompt_service import PromptService
 from iatoolkit.services.i18n_service import I18nService
+from iatoolkit.services.sql_service import SqlService
+from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.common.interfaces.asset_storage import AssetRepository, AssetType
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.repositories.models import (Prompt, PromptCategory,
-                                           Company, PromptType)
+                                           Company)
 from iatoolkit.common.exceptions import IAToolkitException
 
 
@@ -20,6 +22,16 @@ class TestPromptService:
         self.profile_repo = MagicMock(spec=ProfileRepo)
         self.mock_i18n_service = MagicMock(spec=I18nService)
         self.mock_asset_repo = MagicMock(spec=AssetRepository)
+        self.mock_sql_service = MagicMock(spec=SqlService)
+        self.mock_configuration_service = MagicMock(spec=ConfigurationService)
+        self.mock_configuration_service.get_configuration.return_value = {}
+        self.mock_configuration_service.get_llm_configuration.return_value = (
+            "gpt-4o-mini",
+            [
+                {"id": "gpt-4o-mini", "label": "GPT-4o mini"},
+                {"id": "gpt-4.1-mini", "label": "GPT-4.1 mini"},
+            ],
+        )
 
         self.mock_i18n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
 
@@ -27,7 +39,9 @@ class TestPromptService:
             llm_query_repo=self.llm_query_repo,
             profile_repo=self.profile_repo,
             i18n_service=self.mock_i18n_service,
-            asset_repo=self.mock_asset_repo
+            asset_repo=self.mock_asset_repo,
+            sql_service=self.mock_sql_service,
+            configuration_service=self.mock_configuration_service,
         )
         self.mock_company = MagicMock(spec=Company)
         self.mock_company.id = 1
@@ -49,46 +63,65 @@ class TestPromptService:
 
     # --- Tests para get_system_prompt ---
 
-    @patch('iatoolkit.services.prompt_service.importlib.resources.read_text')
-    def test_get_system_prompt_success(self, mock_read_text):
+    @patch('iatoolkit.services.prompt_service.build_system_prompt_payload')
+    def test_get_system_prompt_success(self, mock_build_payload):
         """Prueba la obtención exitosa de los prompts de sistema concatenados."""
-        prompt1 = Prompt(filename='system1.prompt')
-        prompt2 = Prompt(filename='system2.prompt')
-        self.llm_query_repo.get_system_prompts.return_value = [prompt1, prompt2]
+        self.mock_sql_service.get_db_names.return_value = ["main_db"]
+        mock_build_payload.return_value = {
+            "content": "Contenido 1\nContenido 2",
+            "selected_keys": ["query_main", "sql_rules"],
+        }
 
-        # Configurar el mock para devolver diferentes contenidos en cada llamada
-        mock_read_text.side_effect = [
-            'Contenido 1',
-            'Contenido 2'
-        ]
-
-        result = self.prompt_service.get_system_prompt()
+        result = self.prompt_service.get_system_prompt(company_id=1, company_short_name="test_co")
 
         assert result == "Contenido 1\nContenido 2"
-        assert mock_read_text.call_count == 2
+        mock_build_payload.assert_called_once_with({"has_sql_sources"}, query_text=None)
 
-    @patch('iatoolkit.services.prompt_service.os.path.exists', return_value=False)
-    @patch('iatoolkit.services.prompt_service.logging')
-    def test_get_system_prompt_file_not_found(self, mock_logging, mock_exists):
-        """Prueba que se loguea una advertencia si un archivo de prompt no existe."""
-        prompt1 = Prompt(filename='missing.prompt')
-        self.llm_query_repo.get_system_prompts.return_value = [prompt1]
+    @patch('iatoolkit.services.prompt_service.build_system_prompt_payload')
+    def test_get_system_prompt_payload_resolves_company_short_name_from_id(self, mock_build_payload):
+        self.mock_company.short_name = "resolved_short_name"
+        self.profile_repo.get_company_by_id.return_value = self.mock_company
+        self.mock_sql_service.get_db_names.return_value = []
+        mock_build_payload.return_value = {"content": "Contenido base", "selected_keys": ["query_main"]}
 
-        result = self.prompt_service.get_system_prompt()
+        payload = self.prompt_service.get_system_prompt_payload(company_id=1)
 
-        assert result == ""
-        mock_logging.warning.assert_called_once()
-        assert "file does not exist" in mock_logging.warning.call_args[0][0]
+        assert payload == {"content": "Contenido base", "selected_keys": ["query_main"]}
+        self.profile_repo.get_company_by_id.assert_called_once_with(1)
+        mock_build_payload.assert_called_once_with(set(), query_text=None)
 
-    def test_get_system_prompt_handles_repo_exception(self):
-        """Prueba que se maneja una excepción del repositorio."""
-        self.llm_query_repo.get_system_prompts.side_effect = Exception("DB Connection Error")
+    @patch('iatoolkit.services.prompt_service.build_system_prompt_payload')
+    def test_get_system_prompt_payload_forwards_query_text(self, mock_build_payload):
+        self.mock_sql_service.get_db_names.return_value = []
+        mock_build_payload.return_value = {"content": "Contenido base", "selected_keys": ["query_main"]}
+
+        payload = self.prompt_service.get_system_prompt_payload(
+            company_id=1,
+            company_short_name="test_co",
+            query_text="dame una tabla html",
+        )
+
+        assert payload == {"content": "Contenido base", "selected_keys": ["query_main"]}
+        mock_build_payload.assert_called_once_with(set(), query_text="dame una tabla html")
+
+    def test_get_system_prompt_payload_raises_when_company_does_not_exist(self):
+        self.profile_repo.get_company_by_id.return_value = None
 
         with pytest.raises(IAToolkitException) as exc_info:
-            self.prompt_service.get_system_prompt()
+            self.prompt_service.get_system_prompt_payload(company_id=999)
+
+        assert exc_info.value.error_type == IAToolkitException.ErrorType.DOCUMENT_NOT_FOUND
+
+    @patch('iatoolkit.services.prompt_service.build_system_prompt_payload')
+    def test_get_system_prompt_handles_catalog_exception(self, mock_build_payload):
+        self.mock_sql_service.get_db_names.return_value = []
+        mock_build_payload.side_effect = Exception("catalog error")
+
+        with pytest.raises(IAToolkitException) as exc_info:
+            self.prompt_service.get_system_prompt(company_id=1, company_short_name="test_co")
 
         assert exc_info.value.error_type == IAToolkitException.ErrorType.PROMPT_ERROR
-        assert "DB Connection Error" in str(exc_info.value)
+        assert "catalog error" in str(exc_info.value)
 
     # --- Tests para get_prompt_content ---
 
@@ -187,11 +220,119 @@ class TestPromptService:
 
         assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_NAME
 
+    def test_save_prompt_invalid_prompt_type_falls_back_to_company(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_category_by_name.return_value = None
+
+        self.prompt_service.save_prompt(
+            'test_co',
+            'my_prompt',
+            {
+                'content': 'Prompt text',
+                'prompt_type': 'system',
+            }
+        )
+
+        saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
+        assert saved_prompt.prompt_type == 'company'
+
+    def test_save_prompt_persists_structured_output_schema_yaml_and_json(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_category_by_name.return_value = None
+
+        self.prompt_service.save_prompt(
+            'test_co',
+            'structured_prompt',
+            {
+                'content': 'Prompt text',
+                'output_schema_yaml': """
+type: object
+required:
+  - customer_id
+properties:
+  customer_id:
+    type: string
+  score:
+    type: number
+                """,
+                'output_schema_mode': 'strict',
+                'output_response_mode': 'structured_only',
+                'attachment_mode': 'native_only',
+                'attachment_parser_provider': 'basic',
+                'attachment_fallback': 'fail',
+            },
+        )
+
+        saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
+        assert saved_prompt.output_schema is not None
+        assert saved_prompt.output_schema.get("type") == "object"
+        assert "customer_id" in (saved_prompt.output_schema.get("properties") or {})
+        assert isinstance(saved_prompt.output_schema_yaml, str)
+        assert "customer_id" in saved_prompt.output_schema_yaml
+        assert saved_prompt.output_schema_mode == "strict"
+        assert saved_prompt.output_response_mode == "structured_only"
+        assert saved_prompt.attachment_mode == "native_only"
+        assert saved_prompt.attachment_parser_provider == "basic"
+        assert saved_prompt.attachment_fallback == "fail"
+
+    def test_save_prompt_persists_llm_model(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_category_by_name.return_value = None
+
+        self.prompt_service.save_prompt(
+            'test_co',
+            'model_prompt',
+            {
+                'content': 'Prompt text',
+                'llm_model': 'gpt-4.1-mini',
+            },
+        )
+
+        saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
+        assert saved_prompt.llm_model == 'gpt-4.1-mini'
+
+    def test_save_prompt_rejects_unknown_llm_model(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_category_by_name.return_value = None
+
+        with pytest.raises(IAToolkitException) as exc_info:
+            self.prompt_service.save_prompt(
+                'test_co',
+                'bad_model_prompt',
+                {
+                    'content': 'Prompt text',
+                    'llm_model': 'unknown-model',
+                },
+            )
+
+        assert exc_info.value.error_type == IAToolkitException.ErrorType.INVALID_PARAMETER
+        assert "Unsupported llm_model" in str(exc_info.value)
+
+    def test_save_prompt_uses_company_default_attachment_policy_when_not_provided(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_category_by_name.return_value = None
+        self.mock_configuration_service.get_configuration.return_value = {
+            "default_attachment_mode": "native_only",
+            "default_attachment_fallback": "fail",
+        }
+
+        self.prompt_service.save_prompt(
+            "test_co",
+            "default_attachment_prompt",
+            {
+                "content": "Prompt text",
+            },
+        )
+
+        saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
+        assert saved_prompt.attachment_mode == "native_only"
+        assert saved_prompt.attachment_parser_provider == "basic"
+        assert saved_prompt.attachment_fallback == "fail"
+
     # --- Tests para sync_company_prompts ---
 
     @patch('iatoolkit.services.prompt_service.current_iatoolkit')
-    @patch('iatoolkit.services.prompt_service.PromptService.register_system_prompts')
-    def test_sync_company_prompts_enterprise_mode(self, mock_register_sys, mock_current_toolkit):
+    def test_sync_company_prompts_enterprise_mode(self, mock_current_toolkit):
         """
         Prueba que si NO es community (Enterprise), sync_company_prompts retorna
         después de registrar prompts de sistema, sin sincronizar prompts de compañía desde YAML.
@@ -211,8 +352,7 @@ class TestPromptService:
 
 
     @patch('iatoolkit.services.prompt_service.current_iatoolkit')
-    @patch('iatoolkit.services.prompt_service.PromptService.register_system_prompts')
-    def test_sync_company_prompts_community_mode(self, mock_register_sys, mock_current_toolkit):
+    def test_sync_company_prompts_community_mode(self, mock_current_toolkit):
         """
         Prueba que si ES community, realiza la sincronización completa.
         """
@@ -289,51 +429,6 @@ class TestPromptService:
 
         assert exc.value.error_type == IAToolkitException.ErrorType.DATABASE_ERROR
         self.llm_query_repo.rollback.assert_called_once()
-
-    # --- Tests para register_system_prompts ---
-
-    @patch('iatoolkit.services.prompt_service.importlib.resources.read_text')
-    def test_register_system_prompts_success(self, mock_read_text):
-        """
-        Prueba que se registren los prompts del sistema definidos en _SYSTEM_PROMPTS.
-        """
-        # Arrange
-        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
-        mock_read_text.return_value = "System prompt content"
-
-        # Simular creación de categoría System
-        sys_cat = MagicMock(id=999)
-        self.llm_query_repo.create_or_update_prompt_category.return_value = sys_cat
-
-        # Act
-        result = self.prompt_service.register_system_prompts('test_co')
-
-        # Assert
-        assert result is True
-
-        # Verificar que se creó la categoría System
-        args_cat = self.llm_query_repo.create_or_update_prompt_category.call_args[0][0]
-        assert args_cat.name == "System"
-
-        # Verificar que se intentaron crear prompts
-        # Como _SYSTEM_PROMPTS tiene 3 elementos por defecto en el código fuente, esperamos llamadas
-        assert self.llm_query_repo.create_or_update_prompt.call_count >= 1
-
-        # Verificar que se escribieron los assets físicos
-        assert self.mock_asset_repo.write_text.call_count >= 1
-        # Verificar un ejemplo de llamada a write_text
-        self.mock_asset_repo.write_text.assert_any_call(
-            'test_co', AssetType.PROMPT, 'query_main.prompt', "System prompt content"
-        )
-
-        self.llm_query_repo.commit.assert_called_once()
-
-    def test_register_system_prompts_company_not_found(self):
-        """Prueba error si company no existe en register_system_prompts."""
-        self.profile_repo.get_company_by_short_name.return_value = None
-        with pytest.raises(IAToolkitException) as exc:
-            self.prompt_service.register_system_prompts('missing_co')
-        assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_NAME
 
     # --- Tests para delete_prompt ---
 

@@ -1,7 +1,7 @@
 # tests/services/test_language_service.py
 import pytest
 from flask import Flask, g
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch
 from iatoolkit.services.language_service import LanguageService
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.repositories.profile_repo import ProfileRepo
@@ -22,6 +22,7 @@ class TestLanguageService:
         - Creates a Flask app to provide a request context.
         """
         self.mock_profile_repo = MagicMock(spec=ProfileRepo)
+        self.mock_profile_repo.session = MagicMock()
         self.mock_config_service = MagicMock(spec=ConfigurationService)
         self.language_service = LanguageService(config_service=self.mock_config_service,
                                                 profile_repo=self.mock_profile_repo)
@@ -49,8 +50,7 @@ class TestLanguageService:
         """
         # Arrange
         def session_get_side_effect(key):
-            if key == 'user_identifier': return 'user-no-lang@acme.com'
-            if key == 'company_short_name': return 'acme-en'
+            if key == 'active_company_short_name': return 'acme-en'
             return None
         mock_session_manager.get.side_effect = session_get_side_effect
         self.mock_profile_repo.get_user_by_email.return_value = self.user_without_lang
@@ -63,6 +63,22 @@ class TestLanguageService:
 
             # Assert
             assert lang == 'en'  # Should extract 'en' from 'en_US'
+            self.mock_config_service.get_configuration.assert_called_once_with('acme-en', 'locale')
+
+    @patch('iatoolkit.services.language_service.SessionManager')
+    def test_company_locale_overrides_lang_query_param(self, mock_session_manager):
+        """
+        GIVEN a company with locale 'en_US' and a conflicting query param '?lang=es'
+        WHEN the current language is requested
+        THEN the company locale wins and the resulting language is 'en'.
+        """
+        mock_session_manager.get.return_value = None
+        self.mock_config_service.get_configuration.return_value = 'en_US'
+
+        with self.app.test_request_context('/acme-en/login?lang=es'):
+            lang = self.language_service.get_current_language()
+
+            assert lang == 'en'
             self.mock_config_service.get_configuration.assert_called_once_with('acme-en', 'locale')
 
     @patch('iatoolkit.services.language_service.SessionManager')
@@ -85,6 +101,22 @@ class TestLanguageService:
             assert lang == 'es'
             self.mock_config_service.get_configuration.assert_called_once_with('acme-fr', 'locale')
             self.mock_profile_repo.get_user_by_email.assert_not_called()
+
+    @patch('iatoolkit.services.language_service.SessionManager')
+    def test_uses_query_lang_when_company_locale_is_missing(self, mock_session_manager):
+        """
+        GIVEN a company context exists but company.yaml has no locale
+        WHEN a query param '?lang=en' is provided
+        THEN the query language is used.
+        """
+        mock_session_manager.get.return_value = None
+        self.mock_config_service.get_configuration.return_value = None
+
+        with self.app.test_request_context('/acme-no-locale/login?lang=en'):
+            lang = self.language_service.get_current_language()
+
+            assert lang == 'en'
+            self.mock_config_service.get_configuration.assert_called_once_with('acme-no-locale', 'locale')
 
     # --- Priority 3 Tests: System Fallback ---
 
@@ -133,7 +165,7 @@ class TestLanguageService:
         THEN the service fails gracefully and returns the fallback language ('es').
         """
         # Arrange
-        mock_session_manager.get.side_effect = [None, 'acme-en'] # No user, but company context
+        mock_session_manager.get.return_value = 'acme-en'
         self.mock_config_service.get_configuration.side_effect = Exception("YAML file is corrupted")
 
         with self.app.test_request_context():
@@ -142,6 +174,7 @@ class TestLanguageService:
 
             # Assert
             assert lang == self.language_service.FALLBACK_LANGUAGE
+            self.mock_profile_repo.session.rollback.assert_called_once()
 
     # --- Caching Test ---
 

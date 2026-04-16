@@ -188,10 +188,10 @@ Depending on the provider you configured in your `company.yaml`,
 you will need to add the following variables to your production environment 
 configuration (e.g., in Heroku Config Vars):
 
-#### For Brevo (`provider: "brevo_mail"`)
-*   `BREVO_API_KEY`: Your API key from Brevo. The name of this environment variable is what you define in the `brevo_api` key inside `company.yaml`.
+#### For IAToolkit Mail (`provider: "iatoolkit_mail"`)
+*   `BREVO_API_KEY`: Your API key from Brevo. The name of this environment variable is what you define in the `iatoolkit_mail.api_key_secret_ref` key inside `company.yaml`.
 
-#### For SMTP (`provider: "smtplib"`)
+#### For SMTP (`provider: "smtp"`)
 *   `SMTP_HOST`: Your SMTP server hostname.
 *   `SMTP_PORT`: The port for the SMTP server.
 *   `SMTP_USERNAME`: Your SMTP username.
@@ -199,7 +199,7 @@ configuration (e.g., in Heroku Config Vars):
 *   `SMTP_USE_TLS`: Set to "true" to enable TLS.
 *   `SMTP_USE_SSL`: Set to "true" to enable SSL.
 
-**Note**: The names for the SMTP environment variables (`SMTP_HOST`, `SMTP_PORT`, etc.) are configurable in the `smtplib` section of your `company.yaml` file.
+**Note**: The names for the SMTP environment variables (`SMTP_HOST`, `SMTP_PORT`, etc.) are configurable in the `smtp` section of your `company.yaml` file.
 
 Once these variables are set according to your `company.yaml` configuration, the mail service will be operational.
 
@@ -499,7 +499,6 @@ curl -X POST \
   "model": "text-embedding-3-small"
 }
 ```
-
 
 
 

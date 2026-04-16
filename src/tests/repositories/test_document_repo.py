@@ -5,7 +5,7 @@
 
 import pytest
 from unittest.mock import MagicMock
-from iatoolkit.repositories.models import Document, Company
+from iatoolkit.repositories.models import Document, Company, CollectionType
 from iatoolkit.repositories.document_repo import DocumentRepo
 from iatoolkit.common.exceptions import IAToolkitException
 import base64
@@ -72,3 +72,48 @@ class TestDocumentRepo:
 
         assert result == self.mock_document
         self.session.query.assert_called()
+
+    def test_get_by_hash_scopes_by_collection(self):
+        self.session.query.return_value.filter_by.return_value.first.return_value = self.mock_document
+
+        result = self.repo.get_by_hash(1, "abc123", 7)
+
+        assert result == self.mock_document
+        self.session.query.return_value.filter_by.assert_called_once_with(
+            company_id=1,
+            hash="abc123",
+            collection_type_id=7,
+        )
+
+    def test_get_by_hash_scopes_null_collection(self):
+        self.session.query.return_value.filter_by.return_value.first.return_value = self.mock_document
+
+        result = self.repo.get_by_hash(1, "abc123", None)
+
+        assert result == self.mock_document
+        self.session.query.return_value.filter_by.assert_called_once_with(
+            company_id=1,
+            hash="abc123",
+            collection_type_id=None,
+        )
+
+    def test_get_collection_ids_by_name_normalizes_and_deduplicates(self):
+        legal = CollectionType(id=10, name="legal")
+        contracts = CollectionType(id=20, name="contracts")
+        self.session.query.return_value.join.return_value.filter.return_value.all.return_value = [
+            contracts,
+            legal,
+        ]
+
+        result = self.repo.get_collection_ids_by_name(
+            "acme",
+            [" Legal ", "contracts", "LEGAL", "", "contracts"],
+        )
+
+        assert result == [10, 20]
+
+    def test_get_collection_ids_by_name_returns_empty_for_empty_input(self):
+        result = self.repo.get_collection_ids_by_name("acme", [])
+
+        assert result == []
+        self.session.query.assert_not_called()

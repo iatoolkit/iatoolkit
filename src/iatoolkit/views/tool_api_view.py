@@ -49,7 +49,7 @@ class ToolApiView(MethodView):
         GET /<company>/api/tools       -> List all tools
         GET /<company>/api/tools/<id>  -> Get specific tool details
         """
-        auth_result = self.auth_service.verify()
+        auth_result = self.auth_service.verify_for_company(company_short_name)
         if not auth_result.get("success"):
             return jsonify(auth_result), auth_result.get("status_code", 401)
 
@@ -72,13 +72,18 @@ class ToolApiView(MethodView):
         POST /<company>/api/tools -> Create a new tool
         Body: { "name": "...", "description": "...", "tool_type": "...", ... }
         """
-        auth_result = self.auth_service.verify()
+        auth_result = self.auth_service.verify_for_company(company_short_name)
         if not auth_result.get("success"):
             return jsonify(auth_result), auth_result.get("status_code", 401)
 
         try:
             data = request.get_json() or {}
-            new_tool = self.tool_service.create_tool(company_short_name, data)
+            actor = auth_result.get("user_identifier")
+            new_tool = self.tool_service.create_tool(
+                company_short_name,
+                data,
+                actor_identifier=actor,
+            )
             return jsonify(new_tool), 201
 
         except IAToolkitException as e:
@@ -91,13 +96,21 @@ class ToolApiView(MethodView):
         """
         PUT /<company>/api/tools/<id> -> Update an existing tool
         """
-        auth_result = self.auth_service.verify()
+        auth_result = self.auth_service.verify_for_company(company_short_name)
         if not auth_result.get("success"):
             return jsonify(auth_result), auth_result.get("status_code", 401)
 
         try:
             data = request.get_json() or {}
-            updated_tool = self.tool_service.update_tool(company_short_name, tool_id, data)
+            allow_system_update = self._can_edit_system_tools(auth_result)
+            actor = auth_result.get("user_identifier")
+            updated_tool = self.tool_service.update_tool(
+                company_short_name,
+                tool_id,
+                data,
+                allow_system_update=allow_system_update,
+                actor_identifier=actor,
+            )
             return jsonify(updated_tool), 200
 
         except IAToolkitException as e:
@@ -110,12 +123,17 @@ class ToolApiView(MethodView):
         """
         DELETE /<company>/api/tools/<id> -> Delete a tool
         """
-        auth_result = self.auth_service.verify()
+        auth_result = self.auth_service.verify_for_company(company_short_name)
         if not auth_result.get("success"):
             return jsonify(auth_result), auth_result.get("status_code", 401)
 
         try:
-            self.tool_service.delete_tool(company_short_name, tool_id)
+            actor = auth_result.get("user_identifier")
+            self.tool_service.delete_tool(
+                company_short_name,
+                tool_id,
+                actor_identifier=actor,
+            )
             return jsonify({"status": "success"}), 200
 
         except IAToolkitException as e:
@@ -126,14 +144,14 @@ class ToolApiView(MethodView):
 
     def execute(self, company_short_name: str):
         """
-        POST /<company>/api/tools/execute -> Execute a NATIVE tool by name.
+        POST /<company>/api/tools/execute -> Execute a NATIVE or HTTP tool by name.
         Body:
         {
             "tool_name": "identity_risk",
             "kwargs": {...}
         }
         """
-        auth_result = self.auth_service.verify()
+        auth_result = self.auth_service.verify_for_company(company_short_name)
         if not auth_result.get("success"):
             return jsonify(auth_result), auth_result.get("status_code", 401)
 
@@ -160,10 +178,10 @@ class ToolApiView(MethodView):
                     f"Tool '{tool_name}' not found"
                 )
 
-            if tool_def.tool_type != Tool.TYPE_NATIVE:
+            if tool_def.tool_type not in {Tool.TYPE_NATIVE, Tool.TYPE_HTTP}:
                 raise IAToolkitException(
                     IAToolkitException.ErrorType.INVALID_OPERATION,
-                    f"Tool '{tool_name}' is not NATIVE"
+                    f"Tool '{tool_name}' is not executable via this endpoint"
                 )
 
             # Reuse dispatcher invocation for exact NATIVE execution path.
@@ -197,3 +215,8 @@ class ToolApiView(MethodView):
             status_code = 409
 
         return jsonify({"error": str(e), "error_type": e.error_type.value}), status_code
+
+    @staticmethod
+    def _can_edit_system_tools(auth_result: dict) -> bool:
+        _ = auth_result
+        return False

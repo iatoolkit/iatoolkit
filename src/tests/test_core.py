@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch, ANY
 import os
 import pytest
 from flask import Flask
+from datetime import timedelta
 from iatoolkit.core import IAToolkit, current_iatoolkit, create_app
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.repositories.database_manager import DatabaseManager
@@ -47,8 +48,7 @@ class TestIAToolkit(unittest.TestCase):
                 patch.object(toolkit, '_instantiate_company_instances') as mock_init_companies, \
                 patch.object(toolkit, '_setup_redis_sessions') as mock_setup_redis, \
                 patch.object(toolkit, '_setup_cors') as mock_setup_cors, \
-                patch.object(toolkit, '_setup_cli_commands') as mock_setup_cli, \
-                patch.object(toolkit, '_setup_download_dir') as mock_setup_dl:
+                patch.object(toolkit, '_setup_cli_commands') as mock_setup_cli:
             # Act
             app = toolkit.create_iatoolkit()
 
@@ -70,7 +70,6 @@ class TestIAToolkit(unittest.TestCase):
             mock_setup_redis.assert_called_once()
             mock_setup_cors.assert_called_once()
             mock_setup_cli.assert_called_once()
-            mock_setup_dl.assert_called_once()
 
     def test_singleton_pattern(self):
         """Test that IAToolkit follows the Singleton pattern strictly."""
@@ -94,14 +93,13 @@ class TestIAToolkit(unittest.TestCase):
                 patch.object(tk1, '_configure_core_dependencies'), \
                 patch.object(tk1, '_register_routes'), \
                 patch.object(tk1, '_instantiate_company_instances'), \
-                patch.object(tk1, '_load_company_configuration'), \
+                patch.object(tk1, '_hydrate_company_configuration'), \
                 patch.object(tk1, '_setup_redis_sessions'), \
                 patch.object(tk1, '_setup_cors'), \
                 patch.object(tk1, '_setup_additional_services'), \
                 patch.object(tk1, '_setup_cli_commands'), \
                 patch.object(tk1, '_setup_docling'), \
-                patch.object(tk1, 'register_data_sources'), \
-                patch.object(tk1, '_setup_download_dir'):
+                patch.object(tk1, 'register_data_sources'):
             # Inject dummy objects to allow flow to proceed
             tk1.app = MagicMock()
             tk1.create_iatoolkit()
@@ -164,6 +162,14 @@ class TestIAToolkit(unittest.TestCase):
         mock_session_cls.assert_called_once_with(toolkit.app)
         self.assertEqual(toolkit.app.config['SESSION_TYPE'], 'redis')
 
+    def test_create_flask_instance_configures_idle_session_timeout(self):
+        toolkit = IAToolkit({})
+
+        toolkit._create_flask_instance()
+
+        self.assertEqual(toolkit.app.config['PERMANENT_SESSION_LIFETIME'], timedelta(minutes=60))
+        self.assertTrue(toolkit.app.config['SESSION_REFRESH_EACH_REQUEST'])
+
     @patch('iatoolkit.cli_commands.register_core_commands')
     @patch('iatoolkit.company_registry.get_company_registry')
     def test_setup_cli_commands(self, mock_get_registry, mock_register_core):
@@ -202,17 +208,32 @@ class TestIAToolkit(unittest.TestCase):
         mock_instance.create_iatoolkit.assert_called_once()
         self.assertEqual(app, "flask_app_instance")
 
-    @patch('iatoolkit.core.os.makedirs')
-    def test_setup_download_dir_creates_directory(self, mock_makedirs):
-        """Test that the download directory is created."""
-        config = {'IATOOLKIT_DOWNLOAD_DIR': '/custom/path'}
-        toolkit = IAToolkit(config)
-        toolkit.app = Flask(__name__)
+    def test_bootstrap_defaults_repairs_schema_and_loads_configuration(self):
+        toolkit = IAToolkit({})
+        toolkit.db_manager = MagicMock()
 
-        toolkit._setup_download_dir()
+        mock_tool_service = MagicMock()
+        mock_config_service = MagicMock()
+        mock_config = {"company": MagicMock()}
+        mock_config_service.load_configuration.return_value = (mock_config, [])
 
-        mock_makedirs.assert_called_once_with('/custom/path', exist_ok=True)
-        self.assertEqual(toolkit.app.config['IATOOLKIT_DOWNLOAD_DIR'], '/custom/path')
+        def injector_get(dependency):
+            if dependency.__name__ == "ConfigurationService":
+                return mock_config_service
+            if dependency.__name__ == "ToolService":
+                return mock_tool_service
+            raise AssertionError(f"Unexpected dependency requested: {dependency}")
+
+        toolkit._injector = MagicMock()
+        toolkit._injector.get.side_effect = injector_get
+
+        result = toolkit.bootstrap_defaults(" sample_company ")
+
+        toolkit.db_manager.create_all.assert_called_once()
+        mock_config_service.load_configuration.assert_called_once_with("sample_company")
+        mock_tool_service.register_system_tools.assert_called_once()
+        mock_config_service.register_data_sources.assert_called_once_with("sample_company", mock_config)
+        self.assertEqual(result, {"company_short_name": "sample_company", "errors": []})
 
     @patch('iatoolkit.company_registry.get_company_registry')
     @patch('iatoolkit.core.CORS')

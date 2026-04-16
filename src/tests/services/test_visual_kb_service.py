@@ -45,7 +45,6 @@ class TestVisualKnowledgeBaseService:
     def test_ingest_image_skips_duplicates(self):
         """Should return existing document if hash matches."""
         # Arrange
-        file_hash = hashlib.sha256(self.image_content).hexdigest()
         existing_doc = Document(id=99, filename=self.filename)
         self.mock_doc_repo.get_by_hash.return_value = existing_doc
 
@@ -54,8 +53,39 @@ class TestVisualKnowledgeBaseService:
 
         # Assert
         assert result == existing_doc
+        self.mock_doc_repo.get_by_hash.assert_called_once_with(
+            self.company.id,
+            hashlib.sha256(self.image_content).hexdigest(),
+            None,
+        )
         self.mock_doc_repo.insert.assert_not_called()
         self.mock_storage_service.upload_document.assert_not_called()
+
+    def test_ingest_image_scopes_duplicate_check_by_collection(self):
+        self.mock_doc_repo.get_by_hash.return_value = None
+        self.mock_storage_service.upload_document.return_value = "s3://bucket/photo.png"
+        self.mock_storage_service.generate_presigned_url.return_value = "https://signed.url/photo.png"
+        self.mock_embedding_service.embed_image.return_value = [0.1, 0.2, 0.3]
+
+        with patch("PIL.Image.open") as mock_img_open:
+            mock_img = MagicMock()
+            mock_img.width = 800
+            mock_img.height = 600
+            mock_img.format = "PNG"
+            mock_img_open.return_value.__enter__.return_value = mock_img
+
+            self.service.ingest_image_sync(
+                self.company,
+                self.filename,
+                self.image_content,
+                collection_type_id=77,
+            )
+
+        self.mock_doc_repo.get_by_hash.assert_called_once_with(
+            self.company.id,
+            hashlib.sha256(self.image_content).hexdigest(),
+            77,
+        )
 
     def test_ingest_image_success_flow(self):
         """Should upload to storage, embed, and save records."""

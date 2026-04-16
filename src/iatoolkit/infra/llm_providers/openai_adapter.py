@@ -10,6 +10,7 @@ from iatoolkit.common.exceptions import IAToolkitException
 from typing import List
 import mimetypes
 import re
+import base64
 
 
 class OpenAIAdapter:
@@ -27,12 +28,13 @@ class OpenAIAdapter:
                         text: Optional[Dict] = None,
                         reasoning: Optional[Dict] = None,
                         tool_choice: str = "auto",
-                        images: Optional[List[Dict]] = None) -> LLMResponse:
+                        images: Optional[List[Dict]] = None,
+                        attachments: Optional[List[Dict]] = None) -> LLMResponse:
         """Llamada a la API de OpenAI y mapeo a estructura común"""
         try:
             # Handle multimodal input if images are present
-            if images:
-                input = self._prepare_multimodal_input(input, images)
+            if images or attachments:
+                input = self._prepare_multimodal_input(input, images or [], attachments or [])
 
             # Preparar parámetros para OpenAI
             params = {
@@ -52,8 +54,9 @@ class OpenAIAdapter:
                 params['text'] = text
             if reasoning:
                 params['reasoning'] = reasoning
-            if tool_choice != "auto":
-                params['tool_choice'] = tool_choice
+            tool_choice_payload = self._map_tool_choice(tool_choice, tools or [])
+            if tool_choice_payload is not None:
+                params['tool_choice'] = tool_choice_payload
 
             # Llamar a la API de OpenAI
             openai_response = self.client.responses.create(**params)
@@ -67,7 +70,30 @@ class OpenAIAdapter:
 
             raise IAToolkitException(IAToolkitException.ErrorType.LLM_ERROR, error_message)
 
-    def _prepare_multimodal_input(self, messages: List[Dict], images: List[Dict]) -> List[Dict]:
+    @staticmethod
+    def _map_tool_choice(tool_choice: str, tools_payload: List[Dict]) -> Optional[Dict | str]:
+        if tool_choice in ("", None, "auto"):
+            return None
+
+        if tool_choice in {"none", "required"}:
+            return tool_choice
+
+        tool_names = {
+            tool.get("name")
+            for tool in (tools_payload or [])
+            if isinstance(tool, dict) and tool.get("type") == "function" and tool.get("name")
+        }
+        if tool_choice in tool_names:
+            return {"type": "function", "name": tool_choice}
+
+        return tool_choice
+
+    def _prepare_multimodal_input(
+        self,
+        messages: List[Dict],
+        images: List[Dict],
+        attachments: List[Dict],
+    ) -> List[Dict]:
         """
         Transforma el mensaje del usuario de texto simple a contenido multimodal (texto + imágenes)
         usando el formato de Responses API (input_text/input_image).
@@ -104,6 +130,26 @@ class OpenAIAdapter:
                 "image_url": url
             })
 
+        # Agregar archivos nativos (Responses API)
+        for attachment in attachments:
+            filename = attachment.get("name") or attachment.get("filename") or "attachment"
+            mime_type = str(
+                attachment.get("mime_type")
+                or attachment.get("type")
+                or mimetypes.guess_type(filename)[0]
+                or "application/octet-stream"
+            ).strip().lower()
+            base64_data = str(attachment.get("base64") or attachment.get("content") or "").strip()
+            if not base64_data:
+                continue
+
+            file_data = self._to_data_url(base64_data, mime_type)
+            content_parts.append({
+                "type": "input_file",
+                "filename": filename,
+                "file_data": file_data,
+            })
+
         # Construir nueva lista de mensajes con el contenido actualizado
         final_messages = []
         for msg in messages:
@@ -115,6 +161,19 @@ class OpenAIAdapter:
                 final_messages.append(msg)
 
         return final_messages
+
+    @staticmethod
+    def _to_data_url(base64_data: str, mime_type: str) -> str:
+        payload = str(base64_data or "").strip()
+        if payload.lower().startswith("data:") and "," in payload:
+            return payload
+        try:
+            # Validate base64 quickly; preserve original payload if valid.
+            base64.b64decode(payload, validate=True)
+            return f"data:{mime_type};base64,{payload}"
+        except Exception:
+            # If it already includes non-standard wrapping, pass as-is.
+            return payload
 
     def _map_openai_response(self, openai_response) -> LLMResponse:
         """Mapear respuesta de OpenAI (Responses API) a estructura común."""

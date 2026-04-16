@@ -114,6 +114,81 @@ class TestLLMQueryRepo:
         assert result.parameters == {'a': 2}
         assert result.tool_type == Tool.TYPE_INFERENCE
 
+    def test_create_or_update_tool_keeps_existing_is_active_when_not_provided(self):
+        tool = Tool(
+            name="func_update_active",
+            company_id=self.company.id,
+            description="Original",
+            parameters={'a': 1},
+            tool_type=Tool.TYPE_NATIVE,
+            source=Tool.SOURCE_USER,
+            is_active=True,
+        )
+        self.session.add(tool)
+        self.session.commit()
+
+        updated_tool_data = Tool(
+            name="func_update_active",
+            company_id=self.company.id,
+            description="Updated",
+            parameters={'a': 2},
+            tool_type=Tool.TYPE_NATIVE,
+            source=Tool.SOURCE_USER,
+            is_active=None,
+        )
+
+        result = self.repo.create_or_update_tool(updated_tool_data)
+        self.session.commit()
+
+        assert result.id == tool.id
+        assert result.description == "Updated"
+        assert result.is_active is True
+
+    def test_create_or_update_http_tool_persists_execution_config(self):
+        """HTTP tools should persist execution_config on create and update."""
+        new_tool = Tool(
+            name="http_customer_lookup",
+            company_id=self.company.id,
+            description="Calls customer API",
+            parameters={"type": "object"},
+            execution_config={
+                "version": 1,
+                "request": {"method": "GET", "url": "https://api.example.com/customers"}
+            },
+            tool_type=Tool.TYPE_HTTP,
+            source=Tool.SOURCE_USER,
+        )
+
+        created = self.repo.create_or_update_tool(new_tool)
+        self.session.commit()
+
+        assert created.tool_type == Tool.TYPE_HTTP
+        assert created.execution_config["version"] == 1
+        assert created.execution_config["request"]["method"] == "GET"
+
+        updated_tool_data = Tool(
+            name="http_customer_lookup",
+            company_id=self.company.id,
+            description="Calls customer API with timeout",
+            parameters={"type": "object"},
+            execution_config={
+                "version": 1,
+                "request": {
+                    "method": "GET",
+                    "url": "https://api.example.com/customers",
+                    "timeout_ms": 15000
+                }
+            },
+            tool_type=Tool.TYPE_HTTP,
+            source=Tool.SOURCE_USER,
+        )
+
+        updated = self.repo.create_or_update_tool(updated_tool_data)
+        self.session.commit()
+
+        assert updated.id == created.id
+        assert updated.execution_config["request"]["timeout_ms"] == 15000
+
     def test_delete_system_tools(self):
         """Test deleting only system tools."""
         t1 = Tool(name="s1", tool_type=Tool.TYPE_SYSTEM, description="s", parameters={})
@@ -164,7 +239,7 @@ class TestLLMQueryRepo:
             description="New Desc",
             filename="new.txt",
             order=10,
-            prompt_type=PromptType.SYSTEM.value,
+            prompt_type=PromptType.AGENT.value,
             custom_fields=[{'key': 'val'}]
         )
 
@@ -177,7 +252,7 @@ class TestLLMQueryRepo:
         assert result.description == "New Desc"
         assert result.filename == "new.txt"
         assert result.order == 10
-        assert result.prompt_type == PromptType.SYSTEM.value
+        assert result.prompt_type == PromptType.AGENT.value
         assert result.custom_fields == [{'key': 'val'}]
 
     def test_create_prompt_category(self):
@@ -415,8 +490,8 @@ class TestLLMQueryRepo:
         p2 = Prompt(name="p2", company_id=other_company.id, description="d2", filename="f2",
                     prompt_type=PromptType.COMPANY.value)
 
-        # System prompt (should be filtered out by logic usually, but strict company filter applies first)
-        p3 = Prompt(name="sys", description="sys", filename="sys", prompt_type=PromptType.SYSTEM.value)
+        # Agent prompt (should be filtered out by get_prompts, which only returns company prompts)
+        p3 = Prompt(name="agent_prompt", description="sys", filename="sys", prompt_type=PromptType.AGENT.value)
 
         self.session.add_all([p1, p2, p3])
         self.session.commit()
@@ -426,23 +501,59 @@ class TestLLMQueryRepo:
         assert len(prompts) == 1
         assert prompts[0].name == "p1"
 
-    def test_get_system_prompts(self):
-        """Test get_system_prompts filters correctly."""
-        p1 = Prompt(name="s1", description="s1", filename="s1", prompt_type=PromptType.SYSTEM.value, order=2)
-        p2 = Prompt(name="s2", description="s2", filename="s2", prompt_type=PromptType.SYSTEM.value, order=1)
-        # Non-system prompt
-        p3 = Prompt(name="c1", company_id=self.company.id, description="c1", filename="c1",
-                    prompt_type=PromptType.COMPANY.value)
-
+    def test_get_prompts_include_all_excludes_legacy_system_type(self):
+        p1 = Prompt(
+            name="company_prompt",
+            company_id=self.company.id,
+            description="d1",
+            filename="f1",
+            prompt_type=PromptType.COMPANY.value,
+        )
+        p2 = Prompt(
+            name="agent_prompt",
+            company_id=self.company.id,
+            description="d2",
+            filename="f2",
+            prompt_type=PromptType.AGENT.value,
+        )
+        p3 = Prompt(
+            name="legacy_system_prompt",
+            company_id=self.company.id,
+            description="legacy",
+            filename="f3",
+            prompt_type="system",
+        )
         self.session.add_all([p1, p2, p3])
         self.session.commit()
 
-        sys_prompts = self.repo.get_system_prompts()
+        prompts = self.repo.get_prompts(self.company, include_all=True)
+        prompt_names = {p.name for p in prompts}
 
-        assert len(sys_prompts) == 2
-        # Verify ordering
-        assert sys_prompts[0].name == "s2"
-        assert sys_prompts[1].name == "s1"
+        assert prompt_names == {"company_prompt", "agent_prompt"}
+
+    def test_delete_prompts_by_type(self):
+        p1 = Prompt(
+            name="legacy_system_prompt",
+            company_id=self.company.id,
+            description="legacy",
+            filename="f1",
+            prompt_type="system",
+        )
+        p2 = Prompt(
+            name="company_prompt",
+            company_id=self.company.id,
+            description="active",
+            filename="f2",
+            prompt_type=PromptType.COMPANY.value,
+        )
+        self.session.add_all([p1, p2])
+        self.session.commit()
+
+        deleted = self.repo.delete_prompts_by_type(self.company.id, ["system"])
+        remaining = self.repo.get_prompts(self.company, include_all=True)
+
+        assert deleted == 1
+        assert {p.name for p in remaining} == {"company_prompt"}
 
     def test_get_prompt_by_name(self):
         """Test get_prompt_by_name returns the correct prompt."""

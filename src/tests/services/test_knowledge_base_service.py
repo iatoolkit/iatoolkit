@@ -5,6 +5,7 @@
 
 import pytest
 from unittest.mock import MagicMock
+from types import SimpleNamespace
 from iatoolkit.services.knowledge_base_service import KnowledgeBaseService
 from iatoolkit.repositories.document_repo import DocumentRepo
 from iatoolkit.repositories.vs_repo import VSRepo
@@ -49,8 +50,9 @@ class TestKnowledgeBaseService:
         self.metadata = {'type': 'contract'}
 
         self.mock_i18n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
+        self.mock_doc_repo.get_collection_id_by_name.return_value = None
         self.mock_parsing_service.parse_document.return_value = ParseResult(
-            provider="legacy",
+            provider="basic",
             provider_version="1.0",
             texts=[ParsedText(text="New fresh content", meta={"source_type": "text"})],
             tables=[],
@@ -64,6 +66,11 @@ class TestKnowledgeBaseService:
         result = self.service.ingest_document_sync(self.company, self.filename, self.content)
 
         assert result == existing_doc
+        self.mock_doc_repo.get_by_hash.assert_called_once_with(
+            self.company.id,
+            "7e7f04c8b5646f7ad29b1cb0c8085d4ff9c6b08f2a632f496641b31f524c7b98",
+            None,
+        )
         self.mock_doc_repo.insert.assert_not_called()
         self.mock_storage.upload_document.assert_not_called()
 
@@ -140,6 +147,11 @@ class TestKnowledgeBaseService:
 
         self.service.ingest_document_sync(self.company, "file.pdf", b"data", metadata=metadata)
 
+        self.mock_doc_repo.get_by_hash.assert_called_once_with(
+            self.company.id,
+            "3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7",
+            99,
+        )
         inserted_doc = self.mock_doc_repo.insert.call_args[0][0]
         assert inserted_doc.collection_type_id == 99
 
@@ -203,7 +215,7 @@ class TestKnowledgeBaseService:
         self.mock_session.query.return_value.filter_by.return_value.all.return_value = []
 
         self.service.sync_collection_types("acme", [
-            {"name": "Invoices", "parser_provider": "docling"},
+            {"name": "Invoices", "parser_provider": "docling", "description": "AP invoices and billing support docs"},
             {"name": "Contracts"},
             "legacy_collection",
         ])
@@ -214,6 +226,35 @@ class TestKnowledgeBaseService:
         assert inserted_names == ["contracts", "invoices", "legacy_collection"]
         invoices = [item for item in inserted if item.name == "invoices"][0]
         assert invoices.parser_provider == "docling"
+        assert invoices.description == "AP invoices and billing support docs"
+
+    def test_sync_collection_types_updates_existing_description(self):
+        self.mock_profile_service.get_company_by_short_name.return_value = self.company
+        existing = SimpleNamespace(name="invoices", parser_provider=None, description=None)
+        self.mock_session.query.return_value.filter_by.return_value.all.return_value = [existing]
+
+        self.service.sync_collection_types("acme", [
+            {"name": "Invoices", "description": "Accounts payable and billing records"}
+        ])
+
+        assert existing.description == "Accounts payable and billing records"
+        self.mock_session.add.assert_not_called()
+        self.mock_session.commit.assert_called()
+
+    def test_get_collection_descriptors_returns_description_and_parser_provider(self):
+        self.mock_profile_service.get_company_by_short_name.return_value = self.company
+        collection = SimpleNamespace(name="legal", description="Contracts and annexes", parser_provider="docling")
+        self.mock_session.query.return_value.filter_by.return_value.all.return_value = [collection]
+
+        result = self.service.get_collection_descriptors("acme")
+
+        assert result == [
+            {
+                "name": "legal",
+                "description": "Contracts and annexes",
+                "parser_provider": "docling",
+            }
+        ]
 
     def test_search_passes_metadata_filter_to_vs_repo(self):
         self.mock_profile_service.get_company_by_short_name.return_value = self.company
@@ -232,5 +273,90 @@ class TestKnowledgeBaseService:
             query_text="find invoice",
             n_results=5,
             metadata_filter={"source_type": "table", "doc.category": "finance"},
-            collection_id=7,
+            collection_ids=[7],
         )
+
+    def test_search_resolves_multiple_collection_ids(self):
+        self.mock_profile_service.get_company_by_short_name.return_value = self.company
+        self.mock_doc_repo.get_collection_ids_by_name.return_value = [7, 8]
+        self.mock_vs_repo.query.return_value = []
+
+        self.service.search(
+            company_short_name="acme",
+            query="find contract",
+            collection=["Legal", "Contracts"],
+        )
+
+        self.mock_doc_repo.get_collection_ids_by_name.assert_called_once_with(
+            "acme",
+            ["Legal", "Contracts"],
+        )
+        self.mock_vs_repo.query.assert_called_with(
+            company_short_name="acme",
+            query_text="find contract",
+            n_results=5,
+            metadata_filter=None,
+            collection_ids=[7, 8],
+        )
+
+    def test_search_with_empty_collection_list_does_not_filter(self):
+        self.mock_profile_service.get_company_by_short_name.return_value = self.company
+        self.mock_vs_repo.query.return_value = []
+
+        self.service.search(
+            company_short_name="acme",
+            query="find policy",
+            collection=[],
+        )
+
+        self.mock_doc_repo.get_collection_ids_by_name.assert_not_called()
+        self.mock_vs_repo.query.assert_called_with(
+            company_short_name="acme",
+            query_text="find policy",
+            n_results=5,
+            metadata_filter=None,
+            collection_ids=None,
+        )
+
+    def test_search_with_unknown_collection_list_returns_no_results(self):
+        self.mock_profile_service.get_company_by_short_name.return_value = self.company
+        self.mock_doc_repo.get_collection_ids_by_name.return_value = []
+
+        result = self.service.search(
+            company_short_name="acme",
+            query="find policy",
+            collection=["MissingA", "MissingB"],
+        )
+
+        assert result == []
+        self.mock_vs_repo.query.assert_not_called()
+
+    def test_ingest_document_sync_strips_nul_chars_from_chunks_and_metadata(self):
+        self.mock_doc_repo.get_by_hash.return_value = None
+        self.mock_storage.upload_document.return_value = "key"
+        self.mock_parsing_service.parse_document.return_value = ParseResult(
+            provider="basic",
+            provider_version="1.0",
+            warnings=["warn\x00ing"],
+            texts=[ParsedText(text="Hello\x00 world", meta={"section_title": "Intro\x00", "source_type": "text"})],
+            tables=[],
+            images=[],
+        )
+
+        self.service.ingest_document_sync(
+            self.company,
+            self.filename,
+            self.content,
+            metadata={"type": "contr\x00act"},
+        )
+
+        inserted_doc = self.mock_doc_repo.insert.call_args[0][0]
+        assert inserted_doc.meta["type"] == "contract"
+        assert inserted_doc.meta["parser_warnings"] == ["warning"]
+
+        vs_docs = self.mock_vs_repo.add_document.call_args[0][1]
+        assert len(vs_docs) == 1
+        assert "\x00" not in vs_docs[0].text
+        assert vs_docs[0].text == "Hello world"
+        assert vs_docs[0].meta["type"] == "contract"
+        assert vs_docs[0].meta["section_title"] == "Intro"

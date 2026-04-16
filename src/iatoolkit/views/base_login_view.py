@@ -17,6 +17,7 @@ from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.common.util import Utility
 from iatoolkit.services.jwt_service import JWTService
 from iatoolkit.repositories.models import Company
+import logging
 
 
 class BaseLoginView(MethodView):
@@ -55,6 +56,8 @@ class BaseLoginView(MethodView):
         """
         Centralized logic to decide between the fast path and the slow path.
         """
+        self._trigger_warmup(company_short_name, "post_login")
+
         # --- Get the company branding and onboarding_cards
         branding_data = self.branding_service.get_company_branding(company_short_name)
         onboarding_cards = self.config_service.get_configuration(company_short_name, 'onboarding_cards')
@@ -68,6 +71,8 @@ class BaseLoginView(MethodView):
             # --- SLOW PATH: Render the loading shell ---
             return render_template(
                 "onboarding_shell.html",
+                company_short_name=company_short_name,
+                user_identifier=user_identifier,
                 iframe_src_url=target_url,
                 branding=branding_data,
                 onboarding_cards=onboarding_cards
@@ -94,3 +99,13 @@ class BaseLoginView(MethodView):
                 llm_default_model=default_llm_model,
                 llm_available_models = available_llm_models,
                 )
+
+    def _trigger_warmup(self, company_short_name: str, trigger: str):
+        try:
+            from iatoolkit import current_iatoolkit
+            from iatoolkit.services.warmup_service import WarmupService
+
+            warmup_service = current_iatoolkit().get_injector().get(WarmupService)
+            warmup_service.warmup_company(company_short_name, trigger=trigger)
+        except Exception as e:
+            logging.debug("Warm-up trigger skipped for company='%s' trigger='%s': %s", company_short_name, trigger, e)

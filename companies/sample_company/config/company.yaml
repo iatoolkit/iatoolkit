@@ -10,8 +10,8 @@ llm:
   - id: deepseek-chat
     label: deepseek-chat
     description: Fast and cheap.
-  - id: gemini-3-flash-preview
-    label: gemini-3-flash-preview
+  - id: gemini-3-pro-preview
+    label: gemini-3-pro-preview
     description: Fast
   provider_api_keys:
     openai: OPENAI_API_KEY
@@ -94,6 +94,15 @@ parameters:
   - https://portal-interno.empresa_de_ejemplo.cl
   external_urls:
     logout_url: ''
+web_search:
+  enabled: true
+  provider: brave
+  max_results: 5
+  timeout_ms: 10000
+  providers:
+    brave:
+      api_base_url: https://api.search.brave.com/res/v1/web/search
+      secret_ref: BRAVE_SEARCH_API_KEY
 branding:
   header_background_color: '#4C6A8D'
   header_text_color: '#FFFFFF'
@@ -130,16 +139,16 @@ knowledge_base:
       path: companies/sample_company/sample_data/employee_contracts
       folder: employee_contracts
 mail_provider:
-  provider: brevo_mail
+  provider: iatoolkit_mail
   sender_email: sample_ia@iatoolkit.com
   sender_name: Sample Company IA
-  brevo_mail:
-    brevo_api: BREVO_API_KEY
-  smtplib:
-    host_env: SMTP_HOST
-    port_env: SMTP_PORT
-    username_env: SMTP_USERNAME
-    password_env: SMTP_PASSWORD
+  iatoolkit_mail:
+    api_key_secret_ref: BREVO_API_KEY
+  smtp:
+    host_secret_ref: SMTP_HOST
+    port_secret_ref: SMTP_PORT
+    username_secret_ref: SMTP_USERNAME
+    password_secret_ref: SMTP_PASSWORD
 
 connectors:
   iatoolkit_storage:
@@ -177,28 +186,25 @@ visual_embedding_provider:
 
 # Definición centralizada de herramientas de inferencia
 inference_tools:
-  # Ancla para reutilizar la configuración base
-  _defaults: &hf_config
-    endpoint_url: https://wj5yzzh7hw21srg9.us-east-1.aws.endpoints.huggingface.cloud
+  # Configuración base compartida por todas las herramientas.
+  # endpoint_url_env apunta al nombre de la variable de entorno que contiene la URL del endpoint.
+  _defaults:
+    endpoint_url_env: HF_INFERENCE_ENDPOINT_URL
     api_key_name: HF_TOKEN
 
   # Herramienta para CLIP (usada por visual_embedding_provider)
   clip_embeddings:
-    <<: *hf_config
     model_id: openai/clip-vit-base-patch32
     model_parameters:
       from_tf: true
 
   # Herramienta para Texto (usada por embedding_provider)
   text_embeddings:
-    <<: *hf_config
     model_id: sentence-transformers/all-MiniLM-L6-v2
 
   # Otras herramientas disponibles para el futuro (Voice, Whisper, etc.)
   vibe_voice:
-    <<: *hf_config
     model_id: microsoft/VibeVoice-1.5B
 
   whisper:
-    <<: *hf_config
     model_id: openai/whisper-large-v3

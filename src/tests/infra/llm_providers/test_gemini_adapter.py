@@ -25,9 +25,6 @@ class TestGeminiAdapter:
 
         patch('iatoolkit.infra.llm_providers.gemini_adapter.uuid.uuid4', return_value=uuid.UUID('12345678-1234-5678-1234-567812345678')).start()
 
-        self.message_to_dict_patcher = patch('iatoolkit.infra.llm_providers.gemini_adapter.MessageToDict')
-        self.mock_message_to_dict = self.message_to_dict_patcher.start()
-
         # Mockear types.Part para el test multimodal
         self.types_patcher = patch('iatoolkit.infra.llm_providers.gemini_adapter.types')
         self.mock_types = self.types_patcher.start()
@@ -54,10 +51,7 @@ class TestGeminiAdapter:
             # Crea un mock para el objeto `function_call` y asigna sus atributos directamente.
             mock_fc_obj = MagicMock()
             mock_fc_obj.name = function_call['name']
-            mock_fc_obj._pb = "mock_pb"  # Simular el objeto protobuf interno
-
-            # Configura el mock del conversor para que devuelva los args esperados
-            self.mock_message_to_dict.return_value = {'args': function_call['args']}
+            mock_fc_obj.args = function_call['args']
 
             part = MagicMock()
             part.function_call = mock_fc_obj
@@ -90,6 +84,28 @@ class TestGeminiAdapter:
         assert isinstance(response, LLMResponse)
         assert response.output_text == "Hola mundo"
         assert len(response.output) == 0
+        assert response.usage.input_tokens == 0
+        assert response.usage.output_tokens == 0
+        assert response.usage.total_tokens == 0
+
+        config_kwargs = self.mock_types.GenerateContentConfig.call_args.kwargs
+        assert config_kwargs["max_output_tokens"] == 10000
+
+    def test_extract_usage_metadata_sums_prompt_and_candidates_when_total_is_missing(self):
+        usage = self.adapter._extract_usage_metadata(
+            self._create_mock_gemini_response(
+                text_content="Hola mundo",
+                usage_metadata={
+                    "prompt_token_count": 120,
+                    "candidates_token_count": 30,
+                    "total_token_count": 0,
+                },
+            )
+        )
+
+        assert usage.input_tokens == 120
+        assert usage.output_tokens == 30
+        assert usage.total_tokens == 150
 
     def test_create_response_text_with_history(self):
         """Prueba una llamada simple que devuelve solo texto."""
@@ -106,6 +122,22 @@ class TestGeminiAdapter:
         assert response.output_text == "Hola mundo"
         assert len(context_history) == 2
 
+    def test_create_response_uses_parsed_structured_output_when_text_parts_are_empty(self):
+        mock_response = self._create_mock_gemini_response()
+        mock_response.parsed = {
+            "evaluacion": {},
+            "sociedad": {},
+            "constitucion_y_modificaciones": {},
+            "apoderados": [],
+            "observaciones_generales": [],
+        }
+        self.mock_generative_model.generate_content.return_value = mock_response
+
+        response = self.adapter.create_response(model="gemini-2.5-flash", input=[])
+
+        assert json.loads(response.output_text) == mock_response.parsed
+        assert response.content_parts[0]["type"] == "text"
+
     def test_create_response_with_tool_call(self):
         """Prueba una llamada que devuelve una function_call."""
         func_call_data = {'name': 'get_weather', 'args': {'location': 'Santiago'}}
@@ -119,7 +151,34 @@ class TestGeminiAdapter:
         assert isinstance(tool_call, ToolCall)
         assert tool_call.name == "get_weather"
         assert tool_call.arguments == json.dumps(func_call_data['args'])
-        self.mock_message_to_dict.assert_called_once_with("mock_pb")
+
+    def test_create_response_with_tool_call_args_without_pb(self):
+        """Debe soportar args serializados como string JSON."""
+        mock_response = MagicMock()
+        mock_candidate = MagicMock()
+        part = MagicMock()
+
+        part.text = None
+        part.inline_data = None
+        part.blob = None
+        part.function_call = MagicMock(name="function_call")
+        part.function_call.name = "get_weather"
+        part.function_call.args = "{\"location\": \"Santiago\"}"
+
+        mock_candidate.content.parts = [part]
+        mock_candidate.finish_reason = "STOP"
+        mock_response.candidates = [mock_candidate]
+        del mock_response.usage_metadata
+
+        self.mock_generative_model.generate_content.return_value = mock_response
+
+        response = self.adapter.create_response(model="gemini-flash", input=[], tools=[{}])
+
+        assert len(response.output) == 1
+        tool_call = response.output[0]
+        assert isinstance(tool_call, ToolCall)
+        assert tool_call.name == "get_weather"
+        assert tool_call.arguments == json.dumps({"location": "Santiago"})
 
     def test_create_response_multimodal_input(self):
         """Prueba que se fusionan las imágenes en el mensaje de usuario."""
@@ -153,8 +212,42 @@ class TestGeminiAdapter:
         # Verificar que from_bytes fue llamado con los datos correctos
         calls = self.mock_types.Part.from_bytes.call_args_list
         assert len(calls) == 2
-        assert calls[0].kwargs == {'data': 'AAAA', 'mime_type': 'image/jpeg'}
-        assert calls[1].kwargs == {'data': 'BBBB', 'mime_type': 'image/png'}
+        assert calls[0].kwargs == {'data': b'\x00\x00\x00', 'mime_type': 'image/jpeg'}
+        assert calls[1].kwargs == {'data': b'\x04\x10A', 'mime_type': 'image/png'}
+
+    def test_create_response_multimodal_input_with_native_attachments(self):
+        self.mock_types.Content = MagicMock(side_effect=lambda **kwargs: MagicMock(**kwargs))
+        self.mock_types.Part.from_text = MagicMock(side_effect=lambda text: MagicMock(text=text, inline_data=None))
+
+        def mock_from_bytes(data, mime_type):
+            mock_part = MagicMock()
+            mock_part.text = None
+            mock_part.inline_data = MagicMock(data=data, mime_type=mime_type)
+            return mock_part
+
+        self.mock_types.Part.from_bytes = MagicMock(side_effect=mock_from_bytes)
+        self.mock_types.SafetySetting = MagicMock()
+        self.mock_types.GenerateContentConfig = MagicMock()
+        self.mock_types.Tool = MagicMock()
+        self.mock_types.FunctionDeclaration = MagicMock()
+
+        mock_response = self._create_mock_gemini_response(text_content="ok")
+        self.mock_generative_model.generate_content.return_value = mock_response
+
+        input_data = [{"role": "user", "content": "Analiza adjuntos"}]
+        attachments = [
+            {'name': 'sales.csv', 'mime_type': 'text/csv', 'base64': 'U0FNUExF'}
+        ]
+
+        self.adapter.create_response(
+            model="gemini-1.5-flash",
+            input=input_data,
+            attachments=attachments,
+        )
+
+        calls = self.mock_types.Part.from_bytes.call_args_list
+        assert len(calls) == 1
+        assert calls[0].kwargs == {'data': b'SAMPLE', 'mime_type': 'text/csv'}
 
 
     def test_history_not_modified_if_no_content_in_response(self):
@@ -228,3 +321,131 @@ class TestGeminiAdapter:
 
         # Verificar que output_text tenga el placeholder
         assert "[Imagen Generada]" in response.output_text
+
+    def test_create_response_uses_response_schema_in_generate_config(self):
+        mock_response = self._create_mock_gemini_response(text_content='{"sales_2025":[]}')
+        self.mock_generative_model.generate_content.return_value = mock_response
+
+        response_schema = {
+            "type": "object",
+            "required": ["sales_2025"],
+            "properties": {
+                "sales_2025": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {
+                            "id": {"type": "integer"},
+                        },
+                    },
+                }
+            },
+            "additionalProperties": False,
+        }
+
+        self.adapter.create_response(
+            model="gemini-pro",
+            input=[{"role": "user", "content": "test"}],
+            text={
+                "response_mime_type": "application/json",
+                "response_schema": response_schema,
+            },
+        )
+
+        config_kwargs = self.mock_types.GenerateContentConfig.call_args.kwargs
+        assert config_kwargs["response_mime_type"] == "application/json"
+        assert "response_schema" in config_kwargs
+        assert "additionalProperties" not in config_kwargs["response_schema"]
+        assert "additionalProperties" not in config_kwargs["response_schema"]["properties"]["sales_2025"]["items"]
+
+    def test_create_response_raises_explicit_error_when_structured_output_hits_max_tokens(self):
+        mock_response = self._create_mock_gemini_response(
+            text_content='{"sociedad": {',
+            finish_reason="FinishReason.MAX_TOKENS",
+        )
+        self.mock_generative_model.generate_content.return_value = mock_response
+
+        with pytest.raises(IAToolkitException, match="Gemini truncó la respuesta JSON por límite de salida"):
+            self.adapter.create_response(
+                model="gemini-2.5-flash",
+                input=[{"role": "user", "content": "test"}],
+                text={
+                    "response_mime_type": "application/json",
+                    "response_schema": {"type": "object", "properties": {"sociedad": {"type": "object"}}},
+                },
+            )
+
+    def test_create_response_retries_without_response_schema_when_sdk_does_not_support_it(self):
+        mock_response = self._create_mock_gemini_response(text_content='{"sales_2025":[]}')
+        self.mock_generative_model.generate_content.return_value = mock_response
+        self.mock_types.GenerateContentConfig.side_effect = [TypeError("unexpected keyword"), MagicMock()]
+
+        result = self.adapter.create_response(
+            model="gemini-pro",
+            input=[{"role": "user", "content": "test"}],
+            text={
+                "response_mime_type": "application/json",
+                "response_schema": {"type": "object", "properties": {"sales_2025": {"type": "array"}}},
+            },
+        )
+
+        assert isinstance(result, LLMResponse)
+        assert self.mock_types.GenerateContentConfig.call_count == 2
+        first_kwargs = self.mock_types.GenerateContentConfig.call_args_list[0].kwargs
+        second_kwargs = self.mock_types.GenerateContentConfig.call_args_list[1].kwargs
+        assert "response_schema" in first_kwargs
+        assert "response_schema" not in second_kwargs
+        assert "response_mime_type" not in second_kwargs
+
+
+def test_prepare_gemini_tools_normalizes_nullable_type_lists():
+    adapter = GeminiAdapter(gemini_client=MagicMock())
+    tools = [
+        {
+            "type": "function",
+            "name": "search_tweets",
+            "description": "Busca tweets",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "max_results": {"type": ["integer", "null"]},
+                    "next_token": {"type": ["string", "null"]},
+                },
+                "required": [],
+            },
+        }
+    ]
+
+    gemini_tools = adapter._prepare_gemini_tools(tools)
+
+    assert gemini_tools is not None
+    declaration = gemini_tools[0].function_declarations[0]
+    max_results = declaration.parameters.properties["max_results"]
+    next_token = declaration.parameters.properties["next_token"]
+
+    assert max_results.type.value == "INTEGER"
+    assert max_results.nullable is True
+    assert next_token.type.value == "STRING"
+    assert next_token.nullable is True
+
+
+def test_prepare_gemini_tools_removes_additional_properties():
+    adapter = GeminiAdapter(gemini_client=MagicMock())
+    raw_schema = {
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "data": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "additionalProperties": {"type": "string"},
+                },
+            }
+        },
+    }
+    clean_schema = adapter._clean_openai_specific_fields(raw_schema)
+
+    assert "additionalProperties" not in clean_schema
+    assert "additionalProperties" not in clean_schema["properties"]["data"]["items"]

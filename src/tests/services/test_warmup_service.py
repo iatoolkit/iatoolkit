@@ -1,0 +1,95 @@
+import pytest
+from unittest.mock import MagicMock, call, patch
+
+from iatoolkit.services.warmup_service import WarmupService
+from iatoolkit.services.configuration_service import ConfigurationService
+from iatoolkit.services.embedding_service import EmbeddingService
+from iatoolkit.common.interfaces.secret_provider import SecretProvider
+
+
+class TestWarmupService:
+    @pytest.fixture(autouse=True)
+    def setup_method(self):
+        self.mock_config_service = MagicMock(spec=ConfigurationService)
+        self.mock_embedding_service = MagicMock(spec=EmbeddingService)
+        self.mock_secret_provider = MagicMock(spec=SecretProvider)
+        self.service = WarmupService(
+            config_service=self.mock_config_service,
+            embedding_service=self.mock_embedding_service,
+            secret_provider=self.mock_secret_provider,
+        )
+
+    def test_warmup_company_calls_embed_text_for_remote_hf(self):
+        def config_side_effect(company_short_name, key):
+            if key == "embedding_provider":
+                return {"provider": "huggingface", "tool_name": "text_embeddings"}
+            if key == "inference_tools":
+                return {"text_embeddings": {"endpoint_url": "https://hf.endpoint"}}
+            return None
+
+        self.mock_config_service.get_configuration.side_effect = config_side_effect
+
+        self.service.warmup_company("acme", trigger="test")
+
+        self.mock_embedding_service.embed_text.assert_called_once_with(
+            "acme",
+            "hello",
+            suppress_error_logging=True,
+        )
+
+    def test_warmup_company_skips_when_provider_is_not_huggingface(self):
+        self.mock_config_service.get_configuration.return_value = {"provider": "openai"}
+
+        self.service.warmup_company("acme", trigger="test")
+
+        self.mock_embedding_service.embed_text.assert_not_called()
+
+    def test_warmup_company_skips_when_tool_has_no_endpoint(self):
+        def config_side_effect(company_short_name, key):
+            if key == "embedding_provider":
+                return {"provider": "huggingface", "tool_name": "text_embeddings"}
+            if key == "inference_tools":
+                return {"text_embeddings": {}}
+            return None
+
+        self.mock_config_service.get_configuration.side_effect = config_side_effect
+
+        self.service.warmup_company("acme", trigger="test")
+
+        self.mock_embedding_service.embed_text.assert_not_called()
+
+    def test_warmup_company_uses_defaults_endpoint_url_env(self):
+        def config_side_effect(company_short_name, key):
+            if key == "embedding_provider":
+                return {"provider": "huggingface", "tool_name": "text_embeddings"}
+            if key == "inference_tools":
+                return {
+                    "_defaults": {"endpoint_url_env": "HF_INFERENCE_ENDPOINT_URL"},
+                    "text_embeddings": {"model_id": "sentence-transformers/all-MiniLM-L6-v2"},
+                }
+            return None
+
+        self.mock_config_service.get_configuration.side_effect = config_side_effect
+        self.mock_secret_provider.get_secret.return_value = "https://hf.endpoint"
+
+        self.service.warmup_company("acme", trigger="test")
+
+        self.mock_embedding_service.embed_text.assert_called_once_with(
+            "acme",
+            "hello",
+            suppress_error_logging=True,
+        )
+
+    def test_warmup_registered_companies_calls_each_company(self):
+        self.service.warmup_company = MagicMock()
+
+        with patch(
+            "iatoolkit.services.warmup_service.get_registered_companies",
+            return_value={"acme": object(), "beta": object()},
+        ):
+            self.service.warmup_registered_companies(trigger="startup")
+
+        self.service.warmup_company.assert_has_calls(
+            [call("acme", trigger="startup"), call("beta", trigger="startup")],
+            any_order=True,
+        )

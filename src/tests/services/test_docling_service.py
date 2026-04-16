@@ -1,12 +1,12 @@
-import pytest
 from unittest.mock import MagicMock, patch
-import os
-import sys
+
+import pytest
 from PIL import Image
 
-from iatoolkit.services.parsers.providers.docling_provider import DoclingParsingProvider
-from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.common.exceptions import IAToolkitException
+from iatoolkit.services.configuration_service import ConfigurationService
+from iatoolkit.services.i18n_service import I18nService
+from iatoolkit.services.parsers.providers.docling_provider import DoclingParsingProvider
 
 
 class TestDoclingParsingProvider:
@@ -18,9 +18,14 @@ class TestDoclingParsingProvider:
         return service
 
     @pytest.fixture
-    def provider(self, mock_i18n):
-        with patch.dict(os.environ, {"DOCLING_ENABLED": "true"}):
-            return DoclingParsingProvider(i18n_service=mock_i18n)
+    def mock_config(self):
+        config = MagicMock(spec=ConfigurationService)
+        config.get_configuration.return_value = {}
+        return config
+
+    @pytest.fixture
+    def provider(self, mock_i18n, mock_config):
+        return DoclingParsingProvider(i18n_service=mock_i18n, config_service=mock_config)
 
     def test_supports(self, provider):
         request_pdf = MagicMock(filename="file.pdf")
@@ -28,58 +33,48 @@ class TestDoclingParsingProvider:
         assert provider.supports(request_pdf) is True
         assert provider.supports(request_png) is False
 
-    def test_parse_raises_if_disabled(self, mock_i18n):
-        with patch.dict(os.environ, {"DOCLING_ENABLED": "false"}):
-            provider = DoclingParsingProvider(i18n_service=mock_i18n)
+    def test_parse_raises_if_provider_is_marked_unavailable(self, mock_i18n):
+        provider = DoclingParsingProvider(i18n_service=mock_i18n, config_service=MagicMock(spec=ConfigurationService))
+        provider.enabled = False
         with pytest.raises(IAToolkitException):
-            provider.parse(MagicMock(filename="a.pdf", content=b"x"))
+            provider.parse(MagicMock(filename="a.pdf", content=b"x", provider_config={}))
 
     @patch("iatoolkit.services.parsers.providers.docling_provider.tempfile.NamedTemporaryFile")
-    def test_parse_success_flow(self, mock_temp, provider):
-        mock_converter_cls = MagicMock()
-        mock_options_cls = MagicMock()
+    def test_parse_success_flow_without_tables(self, mock_temp, provider):
+        mock_tmp_file = MagicMock()
+        mock_tmp_file.name = "/tmp/test.pdf"
+        mock_temp.return_value.__enter__.return_value = mock_tmp_file
 
-        mock_docling_mod = MagicMock()
-        mock_docling_mod.document_converter.DocumentConverter = mock_converter_cls
-        mock_docling_mod.datamodel.pipeline_options.PdfPipelineOptions = mock_options_cls
+        mock_converter = MagicMock()
+        provider._converter_cache[(False, False)] = mock_converter
 
-        with patch.dict(sys.modules, {
-            "docling": mock_docling_mod,
-            "docling.document_converter": mock_docling_mod.document_converter,
-            "docling.datamodel.base_models": MagicMock(),
-            "docling.datamodel.pipeline_options": mock_docling_mod.datamodel.pipeline_options,
-        }):
-            mock_converter = mock_converter_cls.return_value
+        mock_doc = MagicMock()
+        mock_res = MagicMock()
+        mock_res.document = mock_doc
+        mock_converter.convert.return_value = mock_res
 
-            mock_doc = MagicMock()
-            mock_res = MagicMock()
-            mock_res.document = mock_doc
-            mock_converter.convert.return_value = mock_res
+        mock_doc.export_to_markdown.return_value = "Contenido Markdown"
+        mock_doc.export_to_dict.return_value = {
+            "body": [
+                {"type": "text", "text": "Texto extraido", "prov": [{"page_no": 1}]},
+                {"type": "list_item", "text": "item"},
+                {"type": "section_header", "text": "Sec"}
+            ]
+        }
+        mock_doc.tables = [MagicMock()]
+        mock_doc.pictures = []
 
-            mock_doc.export_to_markdown.return_value = "Contenido Markdown"
-            mock_doc.export_to_dict.return_value = {
-                "body": [
-                    {"type": "text", "text": "Texto extraido", "prov": [{"page_no": 1}]},
-                    {"type": "list_item", "text": "item"},
-                    {"type": "section_header", "text": "Sec"}
-                ]
-            }
-
-            mock_table_obj = MagicMock()
-            mock_table_obj.export_to_markdown.return_value = "| A | B |"
-            mock_table_obj.export_to_dict.return_value = {"grid": []}
-            mock_table_obj.prov = [MagicMock(page_no=1)]
-            mock_doc.tables = [mock_table_obj]
-            mock_doc.pictures = []
-
-            request = MagicMock(filename="test.pdf", content=b"fake_content")
+        request = MagicMock(filename="test.pdf", content=b"fake_content", provider_config={})
+        with patch.object(provider, "_should_enable_ocr", return_value=False):
             result = provider.parse(request)
 
-            assert result.provider == "docling"
-            assert len(result.texts) == 1
-            assert result.texts[0].text == "Texto extraido"
-            assert result.texts[0].meta.get("source_label") == "text"
-            assert len(result.tables) == 1
+        assert result.provider == "docling"
+        assert len(result.texts) == 1
+        assert result.texts[0].text == "Texto extraido"
+        assert result.texts[0].meta.get("source_label") == "text"
+        assert len(result.tables) == 0
+        assert result.metrics["detect_tables"] is False
+        mock_converter.convert.assert_called_once_with("/tmp/test.pdf")
 
     def test_extract_texts_skips_list_item_and_section_header(self, provider):
         doc_dict = {
@@ -136,3 +131,26 @@ class TestDoclingParsingProvider:
         assert len(images) == 1
         assert images[0].meta.get("caption_text") == "Figura 3: Diagrama general"
         assert images[0].meta.get("caption_source") == "inferred"
+
+    def test_resolve_detect_tables_uses_provider_config(self, provider):
+        request = MagicMock(provider_config={"detect_tables": True})
+        assert provider._resolve_detect_tables(request) is True
+
+    def test_should_enable_ocr_only_for_scanned_pdfs(self, provider):
+        request = MagicMock(filename="scan.pdf", content=b"fake-content")
+        with patch.object(provider, "_pdf_needs_ocr", return_value=True):
+            assert provider._should_enable_ocr(request) is True
+
+    def test_init_uses_rapidocr_with_onnxruntime_when_ocr_is_enabled(self, provider):
+        pytest.importorskip("docling")
+
+        with patch("docling.document_converter.DocumentConverter") as mock_converter_cls:
+            provider.init(use_ocr=True, detect_tables=False)
+
+            format_options = mock_converter_cls.call_args.kwargs["format_options"]
+            pdf_option = next(iter(format_options.values()))
+            pipeline_options = pdf_option.pipeline_options
+
+            assert pipeline_options.do_ocr is True
+            assert pipeline_options.ocr_options.kind == "rapidocr"
+            assert pipeline_options.ocr_options.backend == "onnxruntime"

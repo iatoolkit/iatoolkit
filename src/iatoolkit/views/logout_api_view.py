@@ -8,7 +8,6 @@ from flask import redirect, url_for, jsonify, request, g
 from injector import inject
 from iatoolkit.services.auth_service import AuthService
 from iatoolkit.services.profile_service import ProfileService
-from iatoolkit.common.session_manager import SessionManager
 import logging
 
 class LogoutApiView(MethodView):
@@ -22,7 +21,7 @@ class LogoutApiView(MethodView):
     def get(self, company_short_name: str = None):
         try:
             # 1. Get the authenticated user's
-            auth_result = self.auth_service.verify(anonymous=True)
+            auth_result = self.auth_service.verify_for_company(company_short_name, anonymous=True)
             if not auth_result.get("success"):
                 return jsonify(auth_result), auth_result.get("status_code", 401)
 
@@ -43,8 +42,8 @@ class LogoutApiView(MethodView):
                                            company_short_name=company_short_name,
                                            lang=current_lang)
 
-            # clear de session cookie
-            SessionManager.clear()
+            # clear only the session bound to this company
+            self.profile_service.clear_session_for_company(company_short_name)
 
             return {
                 'status': 'success',
@@ -53,5 +52,3 @@ class LogoutApiView(MethodView):
         except Exception as e:
             logging.exception(f"Unexpected error: {e}")
             return {'status': 'error'}, 500
-
-

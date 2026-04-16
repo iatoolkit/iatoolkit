@@ -188,10 +188,10 @@ company.yaml
 │   └── external_urls{}           # External URLs (e.g., logout redirects, portals)
 │
 ├── mail_provider                 # email configuration
-│   ├── provider                  # define an email provider (brevo_mail or smptlib)
+│   ├── provider                  # define an email provider (iatoolkit_mail or smtp)
 │   ├── sender_email              # sender email address
 │   ├── sender_name               # sender name
-│   └── brevo_mail                # brevo_mail configuration
+│   └── iatoolkit_mail            # default IAToolkit mail configuration
 │       └── brevo_api             # api-key for brevo mail
 │
 ├── Branding                      # Visual customization for this company
@@ -304,7 +304,8 @@ data_sources:
 
 *   **`database`**: A logical name for this database.
 *   **`schema`**: The name of a schema within this database (postgres only)
-*   **`connection_string_env`**: The name of the environment variable containing the database connection URI.
+*   **`connection_string_secret_ref`**: Preferred secret reference for the database URI (resolved through `SecretProvider`).
+*   **`connection_string_env`**: Legacy alias for `connection_string_secret_ref` (still supported).
 *   **`description`**: A crucial high-level summary that helps the AI understand when to use this database.
 *   **`include_all_tables`**: If `true`, IAToolkit will automatically inspect the database and load all table schemas.
 *   **`exclude_tables`**: Global rules to hide specific tables from the AI.
@@ -347,6 +348,47 @@ tools:
 *   **`function_name`**: The name of the function the LLM will invoke. This maps to a function you implement in your Company's Python code.
 *   **`description`**: A clear, natural language description telling the AI *when* and *why* it should use this tool.
 *   **`params`**: An OpenAPI-style schema defining the parameters the function accepts.
+
+#### 3.3.1 HTTP Tools (GUI/API first)
+
+For GUI-managed tools, you can create `tool_type: HTTP` tools using `POST /<company>/api/tools`.
+In this mode, the tool definition is stored in database (`iat_tools`) and executed by the HTTP dispatcher.
+
+Minimum payload for a HTTP tool:
+
+```json
+{
+  "name": "http_orders",
+  "description": "Fetches order details from external API",
+  "tool_type": "HTTP",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "order_id": { "type": "integer" }
+    },
+    "required": ["order_id"]
+  },
+  "execution_config": {
+    "version": 1,
+    "request": {
+      "method": "GET",
+      "url": "https://api.example.com/orders/{order_id}",
+      "path_params": { "order_id": "order_id" }
+    }
+  }
+}
+```
+
+`execution_config` supports:
+- `request`: `method`, `url`, optional `path_params`, `query_params`, `headers`, `timeout_ms`, `body`.
+- `auth`: `none`, `bearer`, `api_key_header`, `api_key_query`, `basic` (by secret references).
+- `response`: `mode`, `extract_path`, `success_status_codes`, `max_response_bytes`.
+- `security.allowed_hosts`: optional per-tool host allowlist.
+
+Security defaults:
+- only absolute HTTPS URLs are allowed.
+- localhost, `.local`, and private/link-local/loopback IP targets are blocked.
+- you can define company-level allowlist in `parameters.http_tools.allowed_hosts`.
 
 ### 3.4 Prompts
 
@@ -430,7 +472,35 @@ parameters:
   # External URLs for the login and logout buttons
   external_urls:
     logout_url: ""
+
+  # Optional host allowlist for HTTP tools (GUI/API tools with tool_type=HTTP)
+  http_tools:
+    allowed_hosts:
+      - "api.example.com"
+      - "*.partner.com"
 ```
+
+### 3.5.1 Web Search
+
+`web_search` is a dedicated top-level section used by the built-in system tool `iat_web_search`.
+It defines provider selection and provider-specific credentials/settings.
+
+```yaml
+web_search:
+  enabled: true
+  provider: "brave"
+  max_results: 5
+  timeout_ms: 10000
+  providers:
+    brave:
+      api_base_url: "https://api.search.brave.com/res/v1/web/search"
+      secret_ref: "BRAVE_SEARCH_API_KEY"
+```
+
+Notes:
+- `provider` currently supports `brave`.
+- `secret_ref` is resolved via the configured `SecretProvider`.
+- `max_results` can be overridden per tool call using the `n_results` argument.
 
 ### 3.6 Knowledge Base (RAG)
 
@@ -451,7 +521,7 @@ documents into an interactive knowledge base that your AI can query and reason o
 # Defines the sources of unstructured documents for indexing.
 knowledge_base:
   # Global parsing provider fallback for document ingestion
-  # Supported: auto, docling, legacy
+  # Supported: auto, docling, basic
   parsing_provider: "auto"
 
   # Collections can be defined as strings (legacy) or objects.
@@ -460,7 +530,7 @@ knowledge_base:
     - name: "supplier_manual"
       parser_provider: "docling"
     - name: "employee_contract"
-      parser_provider: "legacy"
+      parser_provider: "basic"
 
   # Connectors
   # Defines how to connect to the document storage for different environments.
@@ -502,7 +572,7 @@ knowledge_base:
       LLM tool calls must send list format:
       `[{"key":"doc.type","value":"invoice"},{"key":"chunk.source_type","value":"table"}]`.
       By default, unprefixed keys are resolved as document metadata, except canonical parser keys such as `source_type`, `page`, `page_start`, `page_end`, `section_title`, `table_index`, `image_index`, and `caption_text`, which resolve to chunk/image metadata depending on the search mode.
-*   **`parsing_provider`**: Global default parser for document ingestion. `auto` selects `docling` when available and supported, with fallback to `legacy`.
+*   **`parsing_provider`**: Global default parser for document ingestion. `auto` selects `docling` when available and supported, with fallback to `basic`.
 *   **`collections`**: Optional logical groups. The object format supports `parser_provider` per collection. Legacy list-of-strings remains supported for backward compatibility.
 ---
 
@@ -539,18 +609,21 @@ This section configures which embedding model your company will use to convert d
 embedding_provider:
   provider: "openai"
   model: "text-embedding-ada-002"
-  api_key_name: "OPENAI_API_KEY"          # value in .env file
+  api_key_secret_ref: "OPENAI_API_KEY"    # preferred
+  api_key_name: "OPENAI_API_KEY"          # legacy alias
 ```
 *   **`provider`**: The embedding service. Currently supports `openai` and `huggingface`.
 *   **`model`**: The specific embedding model to use.
-*   **`api_key_name`**: The **name of the environment variable** that holds the API key for the embedding provider. Often, this is the same as the LLM's API key.
+*   **`api_key_secret_ref`**: Preferred secret reference for the embedding API key.
+*   **`api_key_name`**: Legacy alias for `api_key_secret_ref`.
 
 **Alternative configuration for HuggingFace:**
 ```yaml
 embedding_provider:
   provider: "huggingface"
   model: "sentence-transformers/all-MiniLM-L6-v2"
-  api_key_name: "huggingface_token"       # value in .env file
+  api_key_secret_ref: "huggingface_token" # preferred
+  api_key_name: "huggingface_token"       # legacy alias
 ```
 ## 3.9 Mail Provider Configuration
 
@@ -562,45 +635,43 @@ The `mail_provider` section in `company.yaml` allows you to define how emails sh
 # Email / Mail Provider configuration
 mail_provider:
   # current provider to use:
-  provider: "brevo_mail"
+  provider: "iatoolkit_mail"
 
   # For mails sent from the Company, default sender email and name.
   sender_email: "sample_ia@iatoolkit.com"
   sender_name: "Sample Company IA"
 
-  brevo_mail:
-    # name of the env var that holds the Brevo API key
-    brevo_api: "BREVO_API_KEY"
+  iatoolkit_mail:
+    api_key_secret_ref: "BREVO_API_KEY"
 
-  smtplib:
-    # names of the env vars used by smtplib
-    host_env: "SMTP_HOST"
-    port_env: "SMTP_PORT"
-    username_env: "SMTP_USERNAME"
-    password_env: "SMTP_PASSWORD"
-    use_tls_env: "SMTP_USE_TLS"
-    use_ssl_env: "SMTP_USE_SSL"
+  smtp:
+    host_secret_ref: "SMTP_HOST"
+    port_secret_ref: "SMTP_PORT"
+    username_secret_ref: "SMTP_USERNAME"
+    password_secret_ref: "SMTP_PASSWORD"
+    use_tls_secret_ref: "SMTP_USE_TLS"
+    use_ssl_secret_ref: "SMTP_USE_SSL"
 ```
 
 #### Key Parameters
 
 *   **`provider`**: Specifies which email service to use. The currently supported options are:
-    *   `"brevo_mail"`: For sending emails via the Brevo API.
-    *   `"smtplib"`: For sending emails through a standard SMTP server (e.g., Gmail, SendGrid, or a corporate mail server).
-*   **`sender_email`**: The default "From" email address that will appear on all emails sent by this company's assistant.
-*   **`sender_name`**: The default "From" name that will appear on all emails.
+    *   `"iatoolkit_mail"`: Default IAToolkit-managed mail provider, currently backed by Brevo.
+    *   `"smtp"`: For sending emails through a standard SMTP server (e.g., Gmail, SendGrid, or a corporate mail server).
+*   **`sender_email`**: Optional. If omitted, IAToolkit uses `<company_short_name>@iatoolkit.com`.
+*   **`sender_name`**: Optional. If omitted, IAToolkit uses the company `name`.
 
 #### Provider-Specific Blocks
 
-*   **`brevo_mail`**: This block is required if `provider` is set to `"brevo_mail"`.
-    *   **`brevo_api`**: Defines the **name of the environment variable** that holds your Brevo API key. The actual key should be stored securely in your `.env` file.
+*   **`iatoolkit_mail`**: This block is used when `provider` is set to `"iatoolkit_mail"`.
+    *   **`api_key_secret_ref`**: Secret reference for the provider API key.
 
-*   **`smtplib`**: This block is required if `provider` is set to `"smtplib"`. It contains keys that map to the **names of the environment variables** for your SMTP server credentials.
-    *   `host_env`: The environment variable for the SMTP server hostname (e.g., `smtp.gmail.com`).
-    *   `port_env`: The environment variable for the SMTP port (e.g., `587`).
-    *   `username_env`: The environment variable for the SMTP username.
-    *   `password_env`: The environment variable for the SMTP password or app-specific password.
-    *   `use_tls_env` / `use_ssl_env`: Environment variables to control the use of transport-layer security. Set the value to `"true"` in your `.env` file to enable them.
+*   **`smtp`**: This block is used when `provider` is set to `"smtp"`.
+    *   `host_secret_ref`: SMTP server hostname (e.g., `smtp.gmail.com`).
+    *   `port_secret_ref`: Secret reference for the SMTP port (e.g., `587`).
+    *   `username_secret_ref`: Secret reference for the SMTP username.
+    *   `password_secret_ref`: Secret reference for the SMTP password or app-specific password.
+    *   `use_tls_secret_ref` / `use_ssl_secret_ref`: Secret references to control transport security. Set the resolved value to `"true"` to enable them.
 
 By separating the configuration from the secrets, you can safely commit `company.yaml` to version control while keeping your sensitive credentials secure in the `.env` file.
 

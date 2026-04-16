@@ -5,22 +5,23 @@
 
 from __future__ import annotations
 
-from injector import inject
+from injector import inject, singleton
 
+from iatoolkit.services.parsers.providers.basic_provider import BasicParsingProvider
 from iatoolkit.services.parsers.providers.docling_provider import DoclingParsingProvider
-from iatoolkit.services.parsers.providers.legacy_provider import LegacyParsingProvider
 
-
+@singleton
 class ParsingProviderFactory:
     @inject
     def __init__(self,
                  docling_provider: DoclingParsingProvider,
-                 legacy_provider: LegacyParsingProvider):
+                 basic_provider: BasicParsingProvider):
         self.docling_provider = docling_provider
-        self.legacy_provider = legacy_provider
+        self.basic_provider = basic_provider
         self._providers = {
             "docling": self.docling_provider,
-            "legacy": self.legacy_provider,
+            "basic": self.basic_provider,
+            "legacy": self.basic_provider,
         }
 
     def get_provider(self, provider_name: str):

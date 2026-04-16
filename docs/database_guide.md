@@ -171,6 +171,7 @@ Key fields for **`iat_prompt`**:
 - `description`: The user-facing description shown in the UI.
 - `category_id`: A foreign key linking the prompt to its category.
 - `custom_fields`: A JSON field defining any extra input fields needed for the prompt.
+- `llm_model`: Optional per-prompt model override. When null, the company default model is used.
 
 These tables are used by the `ConfigurationService` during setup and the `PromptManagerService` at runtime to render and manage prompts.
 
@@ -231,4 +232,3 @@ The `VSRepo` (`iatoolkit.repositories.vs_repo.VSRepo`) manages interactions with
   - Joins with `iat_documents` to return document-level results.
 
 ---
-

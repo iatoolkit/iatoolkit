@@ -32,7 +32,7 @@ class TestLoadDocumentView:
                                                            profile_repo=self.mock_profile_repo,
                                                            auth_service=self.mock_auth)
         self.app.add_url_rule(self.url, view_func=self.file_store_view, methods=["POST"])
-        self.mock_auth.verify.return_value = {"success": True}
+        self.mock_auth.verify_for_company.return_value = {"success": True}
 
     @pytest.mark.parametrize("missing_field", ["company", "filename", "content"])
     def test_post_when_missing_required_fields(self, missing_field):
@@ -77,7 +77,7 @@ class TestLoadDocumentView:
 
     def test_post_when_company_not_auth(self):
         # Mock auth failure
-        self.mock_auth.verify.return_value = {"success": False, "status_code": 401}
+        self.mock_auth.verify_for_company.return_value = {"success": False, "status_code": 401}
 
         payload = {
             "company": "nonexistent_company",

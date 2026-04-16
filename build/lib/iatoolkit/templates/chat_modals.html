@@ -1,0 +1,185 @@
+
+
+<!-- Modal para historial -->
+<div class="modal fade" id="historyModal" tabindex="-1" aria-labelledby="historyModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header branded">
+                <h5 class="modal-title" id="historyModalLabel">
+                    <i class="bi bi-clock-history me-3"></i>
+                    {{ t('ui.modals.history_title') }}
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="history-loading" style="display: none;" class="text-center p-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Cargando...</span>
+                    </div>
+                    <p class="mt-2">{{ t('ui.modals.loading_history') }}</p>
+                </div>
+
+                <div id="history-content" style="display: none;">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead class="thead-branded">
+                                <tr>
+                                    <th scope="col">{{ t('ui.modals.history_table_date') }}</th>
+                                    <th scope="col">{{ t('ui.modals.history_table_query') }}</th>
+                                    <th scope="col" class="col-icon"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="history-table-body">
+                                <!-- Los datos se cargarán aquí -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="no-history-message" style="display: none;">
+                        {{ t('js_messages.no_history_found') }}
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-branded-secondary" data-bs-dismiss="modal">
+                    <i class="bi bi-x-circle me-1"></i>
+                    {{ t('ui.buttons.cancel') }}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- Modal para feedback -->
+<div class="modal fade" id="feedbackModal" tabindex="-1" aria-labelledby="feedbackModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header branded">
+                <h5 class="modal-title" id="feedbackModalLabel">
+                    <i class="bi bi-chat-dots me-3"></i>
+                    {{ t('ui.modals.feedback_title') }}
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-center mb-2"><strong>{{ t('ui.modals.feedback_prompt') }}</strong></p>
+
+                <div class="rating-stars mb-4">
+                    <span class="star" data-rating="1" onclick="gfg(1)"></span>
+                    <span class="star" data-rating="2" onclick="gfg(2)"></span>
+                    <span class="star" data-rating="3" onclick="gfg(3)"></span>
+                    <span class="star" data-rating="4" onclick="gfg(4)"></span>
+                    <span class="star" data-rating="5" onclick="gfg(5)"></span>
+                </div>
+
+                <div class="form-group">
+                    <label for="feedback-text" class="form-label text-muted">
+                        {{ t('ui.modals.feedback_comment_label') }}</label>
+                    <textarea
+                    class="form-control feedback-text"
+                    id="feedback-text"
+                    rows="4"
+                    placeholder="{{ t('ui.modals.feedback_comment_placeholder') }}"
+                    style="resize: vertical; min-height: 100px;"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-branded-secondary" data-bs-dismiss="modal">
+                    <i class="bi bi-x-circle me-1"></i>
+                    {{ t('ui.buttons.cancel') }}
+                </button>
+                <button type="button" class="btn btn-branded-primary" id="submit-feedback">
+                    <i class="bi bi-send me-1"></i>
+                    {{ t('ui.buttons.send') }}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- Modal de Onboarding -->
+<div class="modal fade" id="onboardingModal" tabindex="-1" aria-labelledby="onboardingModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content" style="border-radius:12px;">
+      <div class="modal-header">
+        <h5 class="modal-title w-100 text-center" id="onboardingModalLabel" style="color: var(--brand-primary-color, #FF5100);">
+            {{ branding.name }}
+        </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+
+      <div class="modal-body ob-root">
+        <div id="ob-card" class="ob-card">
+          <div id="ob-icon" class="ob-icon"><i class="bi bi-lightbulb"></i></div>
+          <h6 id="ob-title" class="ob-title"></h6>
+          <div id="ob-text" class="ob-text"></div>
+            <div id="ob-example" class="ob-example"></div>
+          <div class="ob-nav">
+            <button id="ob-prev" class="ob-btn" aria-label="Anterior"><i class="bi bi-chevron-left"></i></button>
+            <div id="ob-dots" class="ob-dots"></div>
+            <button id="ob-next" class="ob-btn" aria-label="Siguiente"><i class="bi bi-chevron-right"></i></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button id="ob-close" type="button" class="btn btn-branded-primary" data-bs-dismiss="modal">
+            {{ t('ui.buttons.cancel') }}
+        </button>
+        </div>
+    </div>
+  </div>
+</div>
+
+    <!-- Modal de Guía de Uso / Ayuda -->
+    <div class="modal fade" id="helpModal" tabindex="-1" aria-labelledby="helpModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header branded">
+            <h5 class="modal-title" id="helpModalLabel">
+                <i class="bi bi-info-circle me-2"></i>
+                {{ t('ui.modals.help_title') }}
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <!-- El acordeón con el contenido de ayuda se inyectará aquí dinámicamente -->
+            <div id="help-spinner" class="text-center p-5" style="display: none;">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Cargando...</span>
+                </div>
+            </div>
+            <div class="accordion" id="help-accordion-container">
+                <!-- Contenido generado por JS -->
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-branded-secondary"
+                    data-bs-dismiss="modal">
+                {{ t('ui.buttons.cancel') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+<!-- Modal para mostrar archivos cargados -->
+<div class="modal fade" id="uploadedFilesModal" tabindex="-1" aria-labelledby="uploadedFilesModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header branded">
+        <h5 class="modal-title" id="uploadedFilesModalLabel">Archivos Cargados</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <ul id="uploaded-files-list" class="list-group">
+          <!-- Los nombres de los archivos se agregarán aquí por JS -->
+        </ul>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-branded-secondary" data-bs-dismiss="modal">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>

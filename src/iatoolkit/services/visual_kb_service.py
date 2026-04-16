@@ -46,7 +46,7 @@ class VisualKnowledgeBaseService:
         """
         # 1. Deduplication Check
         file_hash = hashlib.sha256(content).hexdigest()
-        existing_doc = self.document_repo.get_by_hash(company.id, file_hash)
+        existing_doc = self.document_repo.get_by_hash(company.id, file_hash, collection_type_id)
         if existing_doc:
             logging.info(f"Duplicate image skipped: {filename}")
             return existing_doc

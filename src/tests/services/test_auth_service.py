@@ -2,10 +2,12 @@ import pytest
 from unittest.mock import MagicMock, patch
 from iatoolkit.services.auth_service import AuthService
 from iatoolkit.services.profile_service import ProfileService
+from iatoolkit.services.api_key_service import ApiKeyService
 from iatoolkit.services.jwt_service import JWTService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.repositories.database_manager import DatabaseManager
 from iatoolkit.repositories.models import ApiKey, Company, AccessLog
+from iatoolkit.infra.google_auth_client import GoogleIdentity, GoogleAuthError
 from flask import Flask
 import hashlib
 
@@ -21,14 +23,18 @@ class TestAuthServiceVerify:
     def setup_method(self):
         """Set up mocks for verify() tests."""
         self.mock_profile_service = MagicMock(spec=ProfileService)
+        self.mock_api_key_service = MagicMock(spec=ApiKeyService)
         self.mock_jwt_service = MagicMock(spec=JWTService)
         self.mock_db_manager = MagicMock(spec=DatabaseManager)
+        self.mock_google_auth_client = MagicMock()
         self.mock_i18n_service = MagicMock(spec=I18nService)
 
         self.service = AuthService(
             profile_service=self.mock_profile_service,
+            api_key_service=self.mock_api_key_service,
             jwt_service=self.mock_jwt_service,
             db_manager=self.mock_db_manager,
+            google_auth_client=self.mock_google_auth_client,
             i18n_service=self.mock_i18n_service
         )
         self.app = Flask(__name__)
@@ -41,7 +47,11 @@ class TestAuthServiceVerify:
 
     def test_verify_success_with_flask_session(self):
         """verify() should succeed if a valid Flask session is found."""
-        session_info = {"user_identifier": "user_session_123", "company_short_name": "testco"}
+        session_info = {
+            "user_identifier": "user_session_123",
+            "company_short_name": "testco",
+            "profile": {"user_role": "admin"}
+        }
         self.mock_profile_service.get_current_session_info.return_value = session_info
 
         with self.app.test_request_context():
@@ -50,12 +60,13 @@ class TestAuthServiceVerify:
         assert result['success'] is True
         assert result['user_identifier'] == "user_session_123"
         assert result['company_short_name'] == "testco"
-        self.mock_profile_service.get_active_api_key_entry.assert_not_called()
+        assert result['user_role'] == "admin"
+        self.mock_api_key_service.get_active_api_key_entry.assert_not_called()
 
     def test_verify_success_with_api_key_and_user_identifier(self):
         """verify() should succeed if a valid API key and user_identifier in JSON are provided."""
         self.mock_profile_service.get_current_session_info.return_value = {}
-        self.mock_profile_service.get_active_api_key_entry.return_value = self.mock_api_key_entry
+        self.mock_api_key_service.get_active_api_key_entry.return_value = self.mock_api_key_entry
 
         # FIX: Added json body with user_identifier, which is required by the service
         with self.app.test_request_context(
@@ -67,12 +78,12 @@ class TestAuthServiceVerify:
         assert result['success'] is True
         assert result['company_short_name'] == "apico"
         assert result['user_identifier'] == "api-user-456"
-        self.mock_profile_service.get_active_api_key_entry.assert_called_once_with("valid-api-key")
+        self.mock_api_key_service.get_active_api_key_entry.assert_called_once_with("valid-api-key")
 
     def test_verify_fails_with_api_key_but_no_user_identifier(self):
         """REPURPOSED: verify() should fail with 403 if API key is valid but user_identifier is missing."""
         self.mock_profile_service.get_current_session_info.return_value = {}
-        self.mock_profile_service.get_active_api_key_entry.return_value = self.mock_api_key_entry
+        self.mock_api_key_service.get_active_api_key_entry.return_value = self.mock_api_key_entry
 
         # Test without a JSON body
         with self.app.test_request_context(headers={'Authorization': 'Bearer valid-api-key'}):
@@ -85,7 +96,7 @@ class TestAuthServiceVerify:
     def test_verify_success_with_api_key_and_anonymous_flag(self):
         """NEW: verify(anonymous=True) should succeed even without a user_identifier."""
         self.mock_profile_service.get_current_session_info.return_value = {}
-        self.mock_profile_service.get_active_api_key_entry.return_value = self.mock_api_key_entry
+        self.mock_api_key_service.get_active_api_key_entry.return_value = self.mock_api_key_entry
 
         # Call verify with anonymous=True and no user_identifier in the body
         with self.app.test_request_context(headers={'Authorization': 'Bearer valid-api-key'}):
@@ -98,7 +109,7 @@ class TestAuthServiceVerify:
     def test_verify_fails_with_invalid_api_key(self):
         """verify() should fail with 402 if the API key is invalid or inactive."""
         self.mock_profile_service.get_current_session_info.return_value = {}
-        self.mock_profile_service.get_active_api_key_entry.return_value = None
+        self.mock_api_key_service.get_active_api_key_entry.return_value = None
 
         with self.app.test_request_context(headers={'Authorization': 'Bearer invalid-key'}):
             result = self.service.verify()
@@ -120,6 +131,62 @@ class TestAuthServiceVerify:
         # FIX: The service returns 401 for missing credentials, not 402.
         assert result['status_code'] == 401
 
+    def test_verify_for_company_returns_success_when_company_matches(self):
+        self.mock_profile_service.get_current_session_info.return_value = {}
+        self.mock_api_key_service.get_active_api_key_entry.return_value = self.mock_api_key_entry
+
+        with self.app.test_request_context(
+            headers={'Authorization': 'Bearer valid-api-key'},
+            json={'user_identifier': 'api-user-456'}
+        ):
+            result = self.service.verify_for_company("apico")
+
+        assert result['success'] is True
+        assert result['company_short_name'] == "apico"
+        assert result['user_identifier'] == "api-user-456"
+
+    def test_verify_for_company_reads_session_for_requested_company(self):
+        session_info = {
+            "user_identifier": "user_session_123",
+            "company_short_name": "apico",
+            "profile": {"user_role": "admin"}
+        }
+        self.mock_profile_service.get_current_session_info.return_value = session_info
+
+        with self.app.test_request_context():
+            result = self.service.verify_for_company("apico")
+
+        assert result['success'] is True
+        assert result['company_short_name'] == "apico"
+        self.mock_profile_service.get_current_session_info.assert_called_with(company_short_name="apico")
+
+    def test_verify_for_company_returns_403_when_company_mismatches(self):
+        self.mock_profile_service.get_current_session_info.return_value = {}
+        self.mock_api_key_service.get_active_api_key_entry.return_value = self.mock_api_key_entry
+
+        with self.app.test_request_context(
+            headers={'Authorization': 'Bearer valid-api-key'},
+            json={'user_identifier': 'api-user-456'}
+        ):
+            result = self.service.verify_for_company("other-company")
+
+        assert result == {
+            "success": False,
+            "error_message": "Forbidden",
+            "status_code": 403,
+        }
+
+    def test_verify_for_company_propagates_verify_errors(self):
+        self.mock_profile_service.get_current_session_info.return_value = {}
+        self.mock_api_key_service.get_active_api_key_entry.return_value = None
+
+        with self.app.test_request_context(headers={'Authorization': 'Bearer invalid-key'}):
+            result = self.service.verify_for_company("apico")
+
+        assert result['success'] is False
+        assert result['error_message'] == 'translated:errors.auth.invalid_api_key'
+        assert result['status_code'] == 402
+
 
 class TestAuthServiceLoginFlows:
     """
@@ -130,8 +197,10 @@ class TestAuthServiceLoginFlows:
     def setup_method(self, monkeypatch):
         """Set up a mocked environment and patch the log_access method."""
         self.mock_profile_service = MagicMock(spec=ProfileService)
+        self.mock_api_key_service = MagicMock(spec=ApiKeyService)
         self.mock_jwt_service = MagicMock(spec=JWTService)
         self.mock_db_manager = MagicMock(spec=DatabaseManager, scoped_session=MagicMock())
+        self.mock_google_auth_client = MagicMock()
         self.mock_i18n_service = MagicMock(spec=I18nService)
 
         self.mock_session = MagicMock()
@@ -139,8 +208,10 @@ class TestAuthServiceLoginFlows:
 
         self.service = AuthService(
             profile_service=self.mock_profile_service,
+            api_key_service=self.mock_api_key_service,
             jwt_service=self.mock_jwt_service,
             db_manager=self.mock_db_manager,
+            google_auth_client=self.mock_google_auth_client,
             i18n_service=self.mock_i18n_service
         )
         self.app = Flask(__name__)
@@ -237,6 +308,95 @@ class TestAuthServiceLoginFlows:
             user_identifier=self.user_identifier
         )
 
+    def test_login_google_user_success(self):
+        self.mock_google_auth_client.exchange_code_for_identity.return_value = GoogleIdentity(
+            subject='sub-123',
+            email=self.email,
+            email_verified=True,
+            given_name='Test',
+            family_name='User',
+        )
+        self.mock_profile_service.login_with_google.return_value = {
+            'success': True,
+            'user_identifier': self.user_identifier,
+        }
+
+        with self.app.test_request_context():
+            result = self.service.login_google_user(
+                company_short_name=self.company_short_name,
+                code='auth-code',
+                state='oauth-state',
+                nonce='oauth-nonce',
+                redirect_uri='https://app.test/acme/login/google/callback',
+            )
+
+        assert result['success'] is True
+        self.mock_profile_service.login_with_google.assert_called_once()
+        self.mock_log_access.assert_called_once_with(
+            company_short_name=self.company_short_name,
+            auth_type='google',
+            outcome='success',
+            user_identifier=self.user_identifier
+        )
+
+    def test_login_google_user_handles_google_auth_error(self):
+        self.mock_google_auth_client.exchange_code_for_identity.side_effect = GoogleAuthError(
+            reason_code='GOOGLE_NONCE_MISMATCH',
+            message_key='errors.auth.google_login_failed'
+        )
+
+        with self.app.test_request_context():
+            result = self.service.login_google_user(
+                company_short_name=self.company_short_name,
+                code='auth-code',
+                state='oauth-state',
+                nonce='oauth-nonce',
+                redirect_uri='https://app.test/acme/login/google/callback',
+            )
+
+        assert result == {
+            'success': False,
+            'reason_code': 'GOOGLE_NONCE_MISMATCH',
+            'message': 'translated:errors.auth.google_login_failed',
+        }
+        self.mock_profile_service.login_with_google.assert_not_called()
+        self.mock_log_access.assert_called_once_with(
+            company_short_name=self.company_short_name,
+            auth_type='google',
+            outcome='failure',
+            reason_code='GOOGLE_NONCE_MISMATCH',
+        )
+
+    def test_login_google_user_logs_profile_service_failure(self):
+        self.mock_google_auth_client.exchange_code_for_identity.return_value = GoogleIdentity(
+            subject='sub-123',
+            email=self.email,
+            email_verified=True,
+        )
+        self.mock_profile_service.login_with_google.return_value = {
+            'success': False,
+            'message': 'blocked',
+            'reason_code': 'SIGNUP_NOT_ALLOWED',
+        }
+
+        with self.app.test_request_context():
+            result = self.service.login_google_user(
+                company_short_name=self.company_short_name,
+                code='auth-code',
+                state='oauth-state',
+                nonce='oauth-nonce',
+                redirect_uri='https://app.test/acme/login/google/callback',
+            )
+
+        assert result['success'] is False
+        self.mock_log_access.assert_called_once_with(
+            company_short_name=self.company_short_name,
+            auth_type='google',
+            outcome='failure',
+            reason_code='SIGNUP_NOT_ALLOWED',
+            user_identifier=self.email
+        )
+
 class TestAuthServiceLogAccess:
     """
     Tests the log_access() method directly to ensure it correctly
@@ -247,7 +407,9 @@ class TestAuthServiceLogAccess:
     def setup_method(self):
         """Set up mocks for log_access() tests."""
         self.mock_profile_service = MagicMock(spec=ProfileService)
+        self.mock_api_key_service = MagicMock(spec=ApiKeyService)
         self.mock_jwt_service = MagicMock(spec=JWTService)
+        self.mock_google_auth_client = MagicMock()
 
         # Use create_autospec to create a mock that correctly reflects
         # an INSTANCE of DatabaseManager, including attributes created in __init__.
@@ -263,8 +425,10 @@ class TestAuthServiceLogAccess:
 
         self.service = AuthService(
             profile_service=self.mock_profile_service,
+            api_key_service=self.mock_api_key_service,
             jwt_service=self.mock_jwt_service,
             db_manager=self.mock_db_manager,
+            google_auth_client=self.mock_google_auth_client,
             i18n_service=self.mock_i18n_service
         )
         self.app = Flask(__name__)

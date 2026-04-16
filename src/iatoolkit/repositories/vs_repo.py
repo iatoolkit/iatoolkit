@@ -5,7 +5,7 @@
 
 import logging
 import re
-from typing import Dict
+from typing import Dict, List
 
 from sqlalchemy import text
 from injector import inject
@@ -83,7 +83,7 @@ class VSRepo:
               query_text: str,
               n_results=5,
               metadata_filter=None,
-              collection_id: int = None
+              collection_ids: List[int] | None = None,
               ) -> list[Dict]:
         """
         search documents similar to the query for a company
@@ -135,10 +135,19 @@ class VSRepo:
                 "n_results": n_results
             }
 
-            # Filter by Collection ID
-            if collection_id:
+            normalized_collection_ids = [collection_id for collection_id in (collection_ids or []) if collection_id]
+            if len(normalized_collection_ids) == 1:
                 sql_query_parts.append(" AND iat_documents.collection_type_id = :collection_id")
-                params['collection_id'] = collection_id
+                params["collection_id"] = normalized_collection_ids[0]
+            elif normalized_collection_ids:
+                collection_placeholders = []
+                for index, collection_id in enumerate(normalized_collection_ids):
+                    param_name = f"collection_id_{index}"
+                    collection_placeholders.append(f":{param_name}")
+                    params[param_name] = collection_id
+                sql_query_parts.append(
+                    f" AND iat_documents.collection_type_id IN ({', '.join(collection_placeholders)})"
+                )
 
             metadata_sql, metadata_params = self._build_metadata_filter_sql(
                 metadata_filter=metadata_filter,
@@ -195,6 +204,10 @@ class VSRepo:
             logging.error(f"Error en la consulta de documentos: {str(e)}")
             logging.error(f"Failed SQL: {sql_query}")
             logging.error(f"Failed params: {params}")
+            try:
+                self.session.rollback()
+            except Exception as rollback_error:
+                logging.warning(f"VSRepo.query rollback failed: {rollback_error}")
             raise IAToolkitException(IAToolkitException.ErrorType.VECTOR_STORE_ERROR,
                                f"Error en la consulta: {str(e)}")
         finally:
@@ -331,6 +344,10 @@ class VSRepo:
 
             return image_results
         except Exception as e:
+            try:
+                self.session.rollback()
+            except Exception as rollback_error:
+                logging.warning(f"VSRepo._query_images_by_vector rollback failed: {rollback_error}")
             raise e
 
     def _build_metadata_filter_sql(self,
