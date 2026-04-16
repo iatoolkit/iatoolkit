@@ -52,6 +52,19 @@ Understand IAToolkit's internal architecture and learn how to extend the framewo
 - Contributing guidelines
 
 ---
+
+### For QA & Enterprise Evaluators
+
+**[Benchmark Testing Guide](./benchmark_testing.md)**
+Evaluate prompts and models against your own proprietary datasets — entirely within your infrastructure.
+
+*What you'll learn:*
+- Required dataset format (BYOD — Bring Your Own Data)
+- Running `flask run-benchmark` from the CLI
+- Understanding the results output file
+- Security best practices for keeping data private
+
+---
 ### For DevOps & Administrators
 
 **[Deployment Guide](./deployment_guide.md)**
@@ -77,6 +90,8 @@ The IAToolkit database is documented here: **[Database Model](./database_guide.m
 Want to contribute or extend? Check out the **[Programming Guide](./programming_guide.md)**.
 
 Ready to go to production? Follow the **[Deployment Guide](./deployment_guide.md)**.
+
+Evaluating quality with proprietary data? See the **[Benchmark Testing Guide](./benchmark_testing.md)**.
 
 ---
 ### Deep Architecture & Implementation Guides
