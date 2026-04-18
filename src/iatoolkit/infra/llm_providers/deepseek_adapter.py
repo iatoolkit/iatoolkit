@@ -41,6 +41,7 @@ class DeepseekAdapter:
         tool_choice = kwargs.get("tool_choice", "auto")
         context_history = kwargs.get("context_history") or []
         images = kwargs.get("images") or []
+        text = kwargs.get("text") or {}
 
         if images:
             logging.warning(
@@ -91,6 +92,8 @@ class DeepseekAdapter:
                 call_kwargs["tools"] = tools_payload
             if tool_choice:
                 call_kwargs["tool_choice"] = tool_choice
+            if isinstance(text, dict) and isinstance(text.get("response_format"), dict):
+                call_kwargs["response_format"] = text["response_format"]
 
             logging.debug(f"[DeepseekAdapter] Calling DeepSeek chat.completions API...: {json.dumps(messages, indent=2)}")
             response = self.client.chat.completions.create(**call_kwargs)

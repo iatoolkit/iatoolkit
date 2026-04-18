@@ -151,6 +151,18 @@ class TestDeepseekAdapter:
         call_kwargs = self.mock_deepseek_client.chat.completions.create.call_args.kwargs
         assert call_kwargs["tool_choice"] == "required"
 
+    def test_create_response_passes_response_format_when_json_output_is_requested(self):
+        self.mock_deepseek_client.chat.completions.create.return_value = self._create_mock_response(content="{}")
+
+        self.adapter.create_response(
+            model="deepseek-chat",
+            input=[{"role": "user", "content": "Return json"}],
+            text={"response_format": {"type": "json_object"}},
+        )
+
+        call_kwargs = self.mock_deepseek_client.chat.completions.create.call_args.kwargs
+        assert call_kwargs["response_format"] == {"type": "json_object"}
+
     def test_build_messages_from_input_maps_function_call_output_to_assistant(self):
         """
         function_call_output items must be converted into assistant messages containing

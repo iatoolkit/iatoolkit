@@ -802,6 +802,55 @@ class TestQueryService:
         assert invoke_kwargs["response_contract"]["schema_mode"] == "strict"
         assert invoke_kwargs["response_contract"]["response_mode"] == "structured_only"
 
+    def test_llm_query_passes_deepseek_json_mode_and_reinforces_required_nested_keys(self):
+        self.model_registry.get_provider.return_value = "deepseek"
+        self.mock_tool_service.get_tools_for_llm.return_value = []
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt content", "question", [])
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "paper_prompt",
+            "schema": {
+                "type": "object",
+                "required": ["multiple_comparison_correction", "evidence"],
+                "properties": {
+                    "multiple_comparison_correction": {
+                        "type": ["string", "null"],
+                    },
+                    "evidence": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["multiple_comparison_correction"],
+                        "properties": {
+                            "multiple_comparison_correction": {
+                                "type": ["string", "null"],
+                            },
+                        },
+                    },
+                },
+            },
+            "schema_mode": "strict",
+            "response_mode": "structured_only",
+        }
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="paper_prompt",
+            model="deepseek-chat"
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["text"]["response_format"]["type"] == "json_object"
+        assert "OUTPUT CONTRACT (MANDATORY)" in invoke_kwargs["context"]
+        assert "Every required key must be present exactly once." in invoke_kwargs["context"]
+        assert "evidence.multiple_comparison_correction" in invoke_kwargs["context"]
+
     def test_llm_query_forces_memory_search_for_explicit_memory_intent(self):
         self.mock_tool_service.get_tools_for_llm.return_value = [
             {"type": "function", "name": "iat_memory_search", "description": "memory", "parameters": {}, "strict": True},

@@ -342,6 +342,16 @@ class QueryService:
                 "response_schema": schema,
             }
 
+        if provider == "deepseek":
+            # DeepSeek supports JSON mode, but not strict JSON Schema enforcement.
+            # We still append the schema contract to the prompt so nested required keys
+            # are explicit for the model.
+            return {
+                "response_format": {
+                    "type": "json_object",
+                }
+            }
+
         return {}
 
     def _append_structured_schema_instruction(self, user_turn_prompt: str, contract: dict) -> str:
@@ -350,15 +360,53 @@ class QueryService:
             return user_turn_prompt
 
         schema_json = json.dumps(schema, ensure_ascii=False)
+        required_paths = self._collect_required_schema_paths(schema)
+        required_paths_block = ""
+        if required_paths:
+            required_paths_block = (
+                "Required keys that must never be omitted"
+                " (use null when the schema allows null): "
+                f"{', '.join(required_paths)}.\n"
+            )
         return (
             f"{user_turn_prompt}\n\n"
             "### OUTPUT CONTRACT (MANDATORY)\n"
             "Return ONLY one valid JSON object matching this schema.\n"
             "Do not include markdown fences, explanations, or extra text.\n"
             "Do NOT use wrapper keys like `answer` or `aditional_data`.\n"
+            "Every required key must be present exactly once.\n"
+            "If a required field is unknown and the schema allows null, return null instead of omitting the key.\n"
             "Ignore any previous output-format instruction that conflicts with this contract.\n"
+            f"{required_paths_block}"
             f"Schema: {schema_json}\n"
         )
+
+    def _collect_required_schema_paths(self, schema: dict, prefix: str = "") -> list[str]:
+        if not isinstance(schema, dict):
+            return []
+
+        schema_type = schema.get("type")
+        if isinstance(schema_type, list) and "object" not in schema_type:
+            return []
+        if isinstance(schema_type, str) and schema_type != "object":
+            return []
+
+        properties = schema.get("properties")
+        required = schema.get("required")
+        if not isinstance(properties, dict) or not isinstance(required, list):
+            return []
+
+        paths: list[str] = []
+        for field in required:
+            if not isinstance(field, str):
+                continue
+            child_schema = properties.get(field)
+            path = f"{prefix}.{field}" if prefix else field
+            paths.append(path)
+            if isinstance(child_schema, dict):
+                paths.extend(self._collect_required_schema_paths(child_schema, prefix=path))
+
+        return paths
 
     def _ensure_valid_history(self, company,
                               user_identifier: str,
@@ -640,7 +688,7 @@ class QueryService:
             )
 
             if prompt_output_contract.get("schema") and (
-                not output_schema or provider == "gemini"
+                not output_schema or provider in ("gemini", "deepseek")
             ):
                 user_turn_prompt = self._append_structured_schema_instruction(
                     user_turn_prompt=user_turn_prompt,
