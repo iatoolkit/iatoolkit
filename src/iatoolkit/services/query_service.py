@@ -770,6 +770,19 @@ class QueryService:
                     policy=effective_attachment_policy,
                 )
 
+            logging.info(
+                "Attachment plan task=%s prompt='%s' provider=%s policy=%s total_files=%s files_for_context=%s native_attachments=%s native_names=%s context_names=%s",
+                task_id if task_id is not None else "-",
+                prompt_name or "-",
+                provider,
+                attachment_plan.get("policy", {}),
+                attachment_plan.get("stats", {}).get("total_files"),
+                len(attachment_plan.get("files_for_context", []) or []),
+                len(attachment_plan.get("native_attachments", []) or []),
+                [str(item.get("name") or item.get("filename") or "").strip() for item in (attachment_plan.get("native_attachments", []) or [])],
+                [str(item.get("filename") or item.get("name") or "").strip() for item in (attachment_plan.get("files_for_context", []) or [])],
+            )
+
             if attachment_plan.get("errors"):
                 attachment_errors = "; ".join(attachment_plan["errors"])
                 logging.warning(
