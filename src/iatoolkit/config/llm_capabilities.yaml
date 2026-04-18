@@ -13,8 +13,8 @@ openai:
     - text/xml
   preferred_native_mime_types:
     - application/pdf
-  max_file_size_mb: 20
-  max_files_per_request: 10
+  max_file_size_mb: 50
+  max_files_per_request: 20
 
 gemini:
   supports_native_files: true
