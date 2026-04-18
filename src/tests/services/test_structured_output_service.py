@@ -52,3 +52,60 @@ def test_evaluate_output_invalid_against_schema():
 
     assert result["schema_valid"] is False
     assert result["errors"]
+
+
+def test_evaluate_output_normalizes_string_enum_variants():
+    schema = StructuredOutputService.normalize_schema(
+        {
+            "type": "object",
+            "required": ["primary_statistical_test"],
+            "properties": {
+                "primary_statistical_test": {
+                    "type": ["string", "null"],
+                    "enum": [
+                        "t_test",
+                        "anova",
+                        "linear_regression",
+                        "other",
+                        None,
+                    ],
+                },
+            },
+        }
+    )
+
+    result = StructuredOutputService.evaluate_output(
+        raw_output='{"primary_statistical_test": "t-test"}',
+        schema=schema,
+    )
+
+    assert result["schema_valid"] is True
+    assert result["structured_output"]["primary_statistical_test"] == "t_test"
+
+
+def test_evaluate_output_normalizes_string_null_to_null_when_allowed():
+    schema = StructuredOutputService.normalize_schema(
+        {
+            "type": "object",
+            "required": ["primary_statistical_test"],
+            "properties": {
+                "primary_statistical_test": {
+                    "type": ["string", "null"],
+                    "enum": [
+                        "t_test",
+                        "anova",
+                        "other",
+                        None,
+                    ],
+                },
+            },
+        }
+    )
+
+    result = StructuredOutputService.evaluate_output(
+        raw_output='{"primary_statistical_test": "null"}',
+        schema=schema,
+    )
+
+    assert result["schema_valid"] is True
+    assert result["structured_output"]["primary_statistical_test"] is None

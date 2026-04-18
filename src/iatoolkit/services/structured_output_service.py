@@ -145,6 +145,7 @@ class StructuredOutputService:
                 "errors": [parse_error],
             }
 
+        candidate = cls.normalize_instance(candidate, schema)
         errors = cls.validate_instance(candidate, schema, path="$")
         return {
             "schema_present": True,
@@ -224,7 +225,7 @@ class StructuredOutputService:
 
         enum_values = schema.get("enum")
         if isinstance(enum_values, list) and enum_values and instance not in enum_values:
-            errors.append(f"{path}: value is not in enum set {enum_values}.")
+            errors.append(f"{path}: value {instance!r} is not in enum set {enum_values}.")
 
         if cls._is_type(schema_type, "string"):
             fmt = str(schema.get("format") or "").lower()
@@ -267,6 +268,53 @@ class StructuredOutputService:
                     errors.extend(cls.validate_instance(item, item_schema, path=f"{path}[{index}]"))
 
         return errors
+
+    @classmethod
+    def normalize_instance(cls, instance: Any, schema: dict | None) -> Any:
+        if not isinstance(schema, dict):
+            return instance
+
+        if instance is None:
+            return None
+
+        schema_type = schema.get("type")
+        nullable = bool(schema.get("nullable", False)) or cls._allows_null(schema_type)
+
+        if isinstance(instance, str):
+            stripped = instance.strip()
+            if nullable and stripped.lower() in {"null", "none"}:
+                return None
+            instance = stripped
+
+        if cls._is_type(schema_type, "object") and isinstance(instance, dict):
+            properties = schema.get("properties") if isinstance(schema.get("properties"), dict) else {}
+            additional = schema.get("additionalProperties", True)
+            normalized_object: dict[str, Any] = {}
+
+            for key, value in instance.items():
+                child_schema = properties.get(key)
+                if isinstance(child_schema, dict):
+                    normalized_object[key] = cls.normalize_instance(value, child_schema)
+                elif isinstance(additional, dict):
+                    normalized_object[key] = cls.normalize_instance(value, additional)
+                else:
+                    normalized_object[key] = value.strip() if isinstance(value, str) else value
+
+            return normalized_object
+
+        if cls._is_type(schema_type, "array") and isinstance(instance, list):
+            item_schema = schema.get("items") if isinstance(schema.get("items"), dict) else None
+            if item_schema is None:
+                return [item.strip() if isinstance(item, str) else item for item in instance]
+            return [cls.normalize_instance(item, item_schema) for item in instance]
+
+        enum_values = schema.get("enum")
+        if isinstance(instance, str) and isinstance(enum_values, list) and enum_values:
+            normalized_enum = cls._normalize_string_enum_value(instance, enum_values)
+            if normalized_enum is not None:
+                return normalized_enum
+
+        return instance
 
     @classmethod
     def render_structured_output_as_html(cls, value: Any) -> str:
@@ -490,3 +538,34 @@ class StructuredOutputService:
         if not isinstance(value, str):
             return False
         return bool(re.match(r"^\d{4}-\d{2}-\d{2}$", value.strip()))
+
+    @classmethod
+    def _normalize_string_enum_value(cls, instance: str, enum_values: list[Any]) -> Any | None:
+        string_values = [item for item in enum_values if isinstance(item, str)]
+        if not string_values:
+            return None
+
+        if instance in string_values:
+            return instance
+
+        lowered = instance.lower()
+        lowered_matches = [item for item in string_values if item.lower() == lowered]
+        if len(lowered_matches) == 1:
+            return lowered_matches[0]
+
+        canonical_instance = cls._canonicalize_enum_token(instance)
+        canonical_matches = [
+            item for item in string_values
+            if cls._canonicalize_enum_token(item) == canonical_instance
+        ]
+        if len(canonical_matches) == 1:
+            return canonical_matches[0]
+
+        return None
+
+    @staticmethod
+    def _canonicalize_enum_token(value: str) -> str:
+        lowered = value.strip().lower()
+        lowered = re.sub(r"[^a-z0-9]+", "_", lowered)
+        lowered = re.sub(r"_+", "_", lowered)
+        return lowered.strip("_")
