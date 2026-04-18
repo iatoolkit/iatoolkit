@@ -337,6 +337,10 @@ class GeminiAdapter:
                         else:
                             clean_props[prop_name] = prop_def
                     clean_params[key] = clean_props
+                elif key == "enum" and isinstance(value, list):
+                    clean_enum = self._normalize_enum_field(value)
+                    if clean_enum:
+                        clean_params[key] = clean_enum
                 elif key == "items" and isinstance(value, dict):
                     # Limpiar recursivamente los items de array
                     clean_params[key] = self._clean_openai_specific_fields(value)
@@ -352,6 +356,35 @@ class GeminiAdapter:
                 logging.debug(f"Campo '{key}' removido (no soportado por Gemini)")
 
         return clean_params
+
+    def _normalize_enum_field(self, value: List[Any]) -> List[str]:
+        """
+        Gemini SDK modela Schema.enum como list[str].
+
+        Reglas:
+        - eliminar null/None del enum y dejar que `nullable` controle ese caso
+        - convertir valores primitivos a string
+        - deduplicar preservando el orden
+        """
+        normalized: List[str] = []
+        seen: set[str] = set()
+
+        for item in value:
+            if item is None:
+                continue
+
+            if isinstance(item, bool):
+                item_str = "true" if item else "false"
+            else:
+                item_str = str(item)
+
+            if item_str in seen:
+                continue
+
+            seen.add(item_str)
+            normalized.append(item_str)
+
+        return normalized
 
     def _normalize_type_field(self, value: Any) -> Dict:
         """

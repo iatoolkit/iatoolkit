@@ -449,3 +449,33 @@ def test_prepare_gemini_tools_removes_additional_properties():
 
     assert "additionalProperties" not in clean_schema
     assert "additionalProperties" not in clean_schema["properties"]["data"]["items"]
+
+
+def test_prepare_response_schema_removes_null_from_enum_and_keeps_nullable():
+    adapter = GeminiAdapter(gemini_client=MagicMock())
+    raw_schema = {
+        "type": "object",
+        "properties": {
+            "disorder": {
+                "type": ["string", "null"],
+                "enum": ["schizophrenia", "bipolar", None],
+            },
+            "brain_region_count": {
+                "type": ["integer", "null"],
+                "enum": [68, 82, None],
+            },
+        },
+    }
+
+    clean_schema = adapter._prepare_response_schema(raw_schema)
+
+    disorder = clean_schema["properties"]["disorder"]
+    brain_region_count = clean_schema["properties"]["brain_region_count"]
+
+    assert disorder["type"] == "string"
+    assert disorder["nullable"] is True
+    assert disorder["enum"] == ["schizophrenia", "bipolar"]
+
+    assert brain_region_count["type"] == "integer"
+    assert brain_region_count["nullable"] is True
+    assert brain_region_count["enum"] == ["68", "82"]
