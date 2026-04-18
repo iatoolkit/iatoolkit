@@ -88,7 +88,12 @@ class TestUserSessionContextService(unittest.TestCase):
     def test_clear_llm_history(self):
         """Prueba que se eliminan solo los campos del historial del LLM."""
         self.service.clear_llm_history(self.company_short_name, self.user_identifier)
-        self.mock_redis_manager.hdel.assert_called_once_with(self.session_key, 'last_response_id', 'context_history')
+        self.mock_redis_manager.hdel.assert_called_once_with(
+            self.session_key,
+            'last_response_id',
+            'initial_response_id',
+            'context_history',
+        )
 
     def test_clear_all_context_also_clears_selected_system_prompt_keys(self):
         self.service.clear_all_context(self.company_short_name, self.user_identifier)
@@ -96,6 +101,7 @@ class TestUserSessionContextService(unittest.TestCase):
         self.mock_redis_manager.hdel.assert_any_call(self.session_key, 'context_version')
         self.mock_redis_manager.hdel.assert_any_call(self.session_key, 'context_history')
         self.mock_redis_manager.hdel.assert_any_call(self.session_key, 'last_response_id')
+        self.mock_redis_manager.hdel.assert_any_call(self.session_key, 'initial_response_id')
         self.mock_redis_manager.hdel.assert_any_call(self.session_key, 'selected_system_prompt_keys')
 
     def test_save_prepared_context(self):

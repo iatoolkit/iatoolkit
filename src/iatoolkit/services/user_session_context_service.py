@@ -32,13 +32,14 @@ class UserSessionContextService:
             RedisSessionManager.hdel(session_key, "context_version")
             RedisSessionManager.hdel(session_key, "context_history")
             RedisSessionManager.hdel(session_key, "last_response_id")
+            RedisSessionManager.hdel(session_key, "initial_response_id")
             RedisSessionManager.hdel(session_key, "selected_system_prompt_keys")
 
     def clear_llm_history(self, company_short_name: str, user_identifier: str, model: str = None):
         """Clears only LLM history fields (last_response_id and context_history)."""
         session_key = self._get_session_key(company_short_name, user_identifier, model=model)
         if session_key:
-            RedisSessionManager.hdel(session_key, "last_response_id", "context_history")
+            RedisSessionManager.hdel(session_key, "last_response_id", "initial_response_id", "context_history")
 
     def get_last_response_id(self, company_short_name: str, user_identifier: str, model: str = None) -> Optional[str]:
         """Returns the last LLM response ID for this user/model combination."""
