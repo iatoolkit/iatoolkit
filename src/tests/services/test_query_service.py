@@ -255,6 +255,53 @@ class TestQueryService:
         # Verificar actualización de historia
         self.mock_history_manager.update_history.assert_called_once()
 
+    def test_llm_query_retries_when_server_side_ignore_history_uses_stale_initial_response_id(self):
+        self.model_registry.get_history_type.return_value = "server_side"
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "q", [])
+
+        state = {"populate_calls": 0}
+
+        def populate_side_effect(handle, prompt, ignore):
+            state["populate_calls"] += 1
+            handle.request_params = {
+                "previous_response_id": "stale-init-id" if state["populate_calls"] == 1 else "fresh-init-id",
+                "context_history": None,
+            }
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.side_effect = [
+            RuntimeError(
+                "Error calling LLM API: Error calling OpenAI API: Error code: 400 - "
+                "{'error': {'message': \"Previous response with id 'resp_123' not found.\", "
+                "'type': 'invalid_request_error', 'param': 'previous_response_id', "
+                "'code': 'previous_response_not_found'}}"
+            ),
+            {"valid_response": True, "answer": "ok"},
+        ]
+
+        with patch.object(self.service, "init_context", return_value={"response_id": "fresh-init-id"}) as init_mock:
+            result = self.service.llm_query(
+                company_short_name=MOCK_COMPANY_SHORT_NAME,
+                user_identifier=MOCK_LOCAL_USER_ID,
+                question="Hi",
+                model="gpt-test",
+                ignore_history=True,
+            )
+
+        assert result["valid_response"] is True
+        assert self.mock_llm_client.invoke.call_count == 2
+        first_invoke = self.mock_llm_client.invoke.call_args_list[0].kwargs
+        second_invoke = self.mock_llm_client.invoke.call_args_list[1].kwargs
+        assert first_invoke["previous_response_id"] == "stale-init-id"
+        assert second_invoke["previous_response_id"] == "fresh-init-id"
+        init_mock.assert_called_once_with(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            model="gpt-test",
+        )
+        assert self.mock_history_manager.update_history.call_count == 1
+
     def test_llm_query_sends_native_attachments_when_policy_requires_it(self):
         self.mock_attachment_policy_service.build_attachment_plan.side_effect = None
         self.mock_context_builder.get_prompt_output_contract.return_value = {

@@ -36,6 +36,10 @@ class HistoryHandle:
 
 class QueryService:
     _tool_selector_hook: Callable | None = None
+    _PREVIOUS_RESPONSE_NOT_FOUND_MARKERS = (
+        "previous_response_not_found",
+        "previous response with id",
+    )
 
     @inject
     def __init__(self,
@@ -459,6 +463,108 @@ class QueryService:
 
         return handle, None
 
+    @classmethod
+    def _is_previous_response_not_found_error(cls, error: Exception) -> bool:
+        error_text = str(error or "").strip().lower()
+        if not error_text:
+            return False
+        return any(marker in error_text for marker in cls._PREVIOUS_RESPONSE_NOT_FOUND_MARKERS)
+
+    def _invoke_with_history_recovery(self,
+                                      *,
+                                      company,
+                                      company_short_name: str,
+                                      user_identifier: str,
+                                      effective_model: str,
+                                      task_id: Optional[int],
+                                      effective_question: str,
+                                      user_turn_prompt: str,
+                                      tools: list[dict],
+                                      tool_choice_override: str | None,
+                                      output_schema: dict,
+                                      images: list,
+                                      attachment_plan: dict,
+                                      execution_metadata: dict,
+                                      prompt_output_contract: dict,
+                                      history_handle: HistoryHandle,
+                                      ignore_history: bool) -> tuple[dict, HistoryHandle]:
+        previous_response_id = history_handle.request_params.get('previous_response_id')
+        context_history = history_handle.request_params.get('context_history')
+
+        try:
+            response = self.llm_client.invoke(
+                company=company,
+                user_identifier=user_identifier,
+                model=effective_model,
+                task_id=task_id,
+                previous_response_id=previous_response_id,
+                context_history=context_history,
+                question=effective_question,
+                context=user_turn_prompt,
+                tools=tools,
+                tool_choice_override=tool_choice_override,
+                text=output_schema,
+                images=images,
+                attachments=attachment_plan.get("native_attachments", []),
+                execution_metadata=execution_metadata,
+                response_contract=prompt_output_contract if prompt_output_contract.get("schema") else None,
+            )
+            return response, history_handle
+        except Exception as invoke_error:
+            should_retry = (
+                ignore_history
+                and history_handle.type == HistoryManagerService.TYPE_SERVER_SIDE
+                and bool(previous_response_id)
+                and self._is_previous_response_not_found_error(invoke_error)
+            )
+            if not should_retry:
+                raise
+
+            logging.warning(
+                "Stale initial_response_id detected for %s/%s model=%s. Rebuilding context and retrying once.",
+                company_short_name,
+                user_identifier,
+                effective_model,
+            )
+            self.init_context(
+                company_short_name=company_short_name,
+                user_identifier=user_identifier,
+                model=effective_model,
+            )
+
+            retry_history_handle, error_response = self._ensure_valid_history(
+                company=company,
+                user_identifier=user_identifier,
+                effective_model=effective_model,
+                question=effective_question,
+                user_turn_prompt=user_turn_prompt,
+                ignore_history=ignore_history,
+            )
+            if error_response:
+                raise RuntimeError(error_response.get("error_message") or error_response)
+
+            retry_previous_response_id = retry_history_handle.request_params.get('previous_response_id')
+            retry_context_history = retry_history_handle.request_params.get('context_history')
+
+            response = self.llm_client.invoke(
+                company=company,
+                user_identifier=user_identifier,
+                model=effective_model,
+                task_id=task_id,
+                previous_response_id=retry_previous_response_id,
+                context_history=retry_context_history,
+                question=effective_question,
+                context=user_turn_prompt,
+                tools=tools,
+                tool_choice_override=tool_choice_override,
+                text=output_schema,
+                images=images,
+                attachments=attachment_plan.get("native_attachments", []),
+                execution_metadata=execution_metadata,
+                response_contract=prompt_output_contract if prompt_output_contract.get("schema") else None,
+            )
+            return response, retry_history_handle
+
     def init_context(self, company_short_name: str,
                      user_identifier: str,
                      model: str = None) -> dict:
@@ -792,28 +898,23 @@ class QueryService:
                 "company_defaults": self._resolve_company_attachment_defaults(company_short_name, prompt_name=prompt_name),
             }
 
-            # Safely extract parameters for invoke using the handle
-            # The handle is guaranteed to have request_params populated if no error returned
-            previous_response_id = history_handle.request_params.get('previous_response_id')
-            context_history = history_handle.request_params.get('context_history')
-
-            # Now send the instructions to the llm
-            response = self.llm_client.invoke(
+            response, history_handle = self._invoke_with_history_recovery(
                 company=company,
+                company_short_name=company_short_name,
                 user_identifier=user_identifier,
-                model=effective_model,
+                effective_model=effective_model,
                 task_id=task_id,
-                previous_response_id=previous_response_id,
-                context_history=context_history,
-                question=effective_question,
-                context=user_turn_prompt,
+                effective_question=effective_question,
+                user_turn_prompt=user_turn_prompt,
                 tools=tools,
                 tool_choice_override=tool_choice_override,
-                text=output_schema,
+                output_schema=output_schema,
                 images=images,
-                attachments=attachment_plan.get("native_attachments", []),
+                attachment_plan=attachment_plan,
                 execution_metadata=execution_metadata,
-                response_contract=prompt_output_contract if prompt_output_contract.get("schema") else None,
+                prompt_output_contract=prompt_output_contract,
+                history_handle=history_handle,
+                ignore_history=ignore_history,
             )
 
             if not response.get('valid_response'):
