@@ -44,7 +44,12 @@ class TestGoogleDriveConnector(unittest.TestCase):
             self.service_account_path,
             scopes=["https://www.googleapis.com/auth/drive"]
         )
-        self.mock_build.assert_called_once_with('drive', 'v3', credentials=self.mock_credentials.return_value)
+        self.mock_build.assert_called_once_with(
+            'drive',
+            'v3',
+            credentials=self.mock_credentials.return_value,
+            cache_discovery=False,
+        )
         self.assertEqual(self.connector.drive_service, self.mock_build.return_value)
 
     def test_authenticate_when_service_account_info_is_provided(self):
@@ -57,7 +62,12 @@ class TestGoogleDriveConnector(unittest.TestCase):
             {"client_email": "svc@example.com"},
             scopes=["https://www.googleapis.com/auth/drive"]
         )
-        self.mock_build.assert_called_with('drive', 'v3', credentials=self.mock_credentials_info.return_value)
+        self.mock_build.assert_called_with(
+            'drive',
+            'v3',
+            credentials=self.mock_credentials_info.return_value,
+            cache_discovery=False,
+        )
         self.assertEqual(connector.drive_service, self.mock_build.return_value)
 
     def test_list_files_empty(self):

@@ -50,6 +50,14 @@ deepseek:
   max_file_size_mb: 0
   max_files_per_request: 0
 
+openai_compatible:
+  supports_native_files: false
+  supports_native_images: false
+  supported_mime_types: []
+  preferred_native_mime_types: []
+  max_file_size_mb: 0
+  max_files_per_request: 0
+
 unknown:
   supports_native_files: false
   supports_native_images: false

@@ -194,12 +194,15 @@ class QueryService:
                 effective_model = llm_config['model']
         return effective_model
 
-    def _get_history_type(self, model: str) -> str:
+    def _get_history_type(self, company_short_name: str, model: str) -> str:
+        provider = self._get_provider(company_short_name, model)
+        if provider in ("openai", "xai"):
+            return HistoryManagerService.TYPE_SERVER_SIDE
+
         history_type_str = self.model_registry.get_history_type(model)
         if history_type_str == "server_side":
             return HistoryManagerService.TYPE_SERVER_SIDE
-        else:
-            return HistoryManagerService.TYPE_CLIENT_SIDE
+        return HistoryManagerService.TYPE_CLIENT_SIDE
 
     def _normalize_selected_system_prompt_keys(self, keys) -> list[str]:
         if not isinstance(keys, list):
@@ -212,7 +215,16 @@ class QueryService:
                     normalized.append(candidate)
         return normalized
 
-    def _get_provider(self, model: str) -> str:
+    def _get_provider(self, company_short_name: str, model: str) -> str:
+        try:
+            model_config = self.configuration_service.get_llm_model_config(company_short_name, model) or {}
+        except Exception:
+            model_config = {}
+
+        configured_provider = str(model_config.get("provider") or "").strip().lower()
+        if configured_provider:
+            return configured_provider
+
         get_provider_fn = getattr(self.model_registry, "get_provider", None)
         if not callable(get_provider_fn):
             return "unknown"
@@ -247,7 +259,7 @@ class QueryService:
             contract["attachment_fallback"] = (
                 str(raw_attachment_fallback).strip().lower() if raw_attachment_fallback is not None else None
             )
-            contract["provider"] = self._get_provider(contract.get("model") or "")
+            contract["provider"] = self._get_provider(company.short_name, contract.get("llm_model") or "")
             return contract
         except Exception as e:
             logging.debug(
@@ -322,12 +334,12 @@ class QueryService:
             candidate = "prompt_output_schema"
         return candidate[:64]
 
-    def _build_output_text_schema_payload(self, model: str, contract: dict) -> dict:
+    def _build_output_text_schema_payload(self, company_short_name: str, model: str, contract: dict) -> dict:
         schema = contract.get("schema") if isinstance(contract, dict) else None
         if not isinstance(schema, dict):
             return {}
 
-        provider = self._get_provider(model)
+        provider = self._get_provider(company_short_name, model)
         schema_mode = str(contract.get("schema_mode") or "best_effort").strip().lower()
         if provider in ("openai", "xai"):
             return {
@@ -346,7 +358,7 @@ class QueryService:
                 "response_schema": schema,
             }
 
-        if provider == "deepseek":
+        if provider in ("deepseek", "openai_compatible"):
             # DeepSeek supports JSON mode, but not strict JSON Schema enforcement.
             # We still append the schema contract to the prompt so nested required keys
             # are explicit for the model.
@@ -423,7 +435,7 @@ class QueryService:
             Manages the history strategy and rebuilds context if necessary.
             Returns: (HistoryHandle, error_response)
         """
-        history_type = self._get_history_type(effective_model)
+        history_type = self._get_history_type(company.short_name, effective_model)
 
         # Initialize the handle with base context info
         handle = HistoryHandle(
@@ -692,7 +704,7 @@ class QueryService:
                 f"sending context to LLM model {effective_model} for: {company_short_name}/{user_identifier}...")
 
             # --- Use Strategy Pattern for History/Context Initialization ---
-            history_type = self._get_history_type(effective_model)
+            history_type = self._get_history_type(company_short_name, effective_model)
             response_data = self.history_manager.initialize_context(
                 company_short_name, user_identifier, history_type, prepared_context, company, effective_model
             )
@@ -738,10 +750,14 @@ class QueryService:
             # output contract
             prompt_output_contract = self._resolve_prompt_output_contract(company, prompt_name)
             effective_model = self._resolve_model(company_short_name, model, prompt_output_contract)
-            output_schema = self._build_output_text_schema_payload(effective_model, prompt_output_contract)
+            output_schema = self._build_output_text_schema_payload(
+                company_short_name,
+                effective_model,
+                prompt_output_contract,
+            )
 
             # attachment policy
-            provider = self._get_provider(effective_model)
+            provider = self._get_provider(company_short_name, effective_model)
             effective_attachment_policy = self._resolve_effective_attachment_policy(
                 company_short_name=company_short_name,
                 prompt_output_contract=prompt_output_contract,
@@ -770,7 +786,7 @@ class QueryService:
                     policy=effective_attachment_policy,
                 )
 
-            logging.info(
+            logging.debug(
                 "Attachment plan task=%s prompt='%s' provider=%s policy=%s total_files=%s files_for_context=%s native_attachments=%s native_names=%s context_names=%s",
                 task_id if task_id is not None else "-",
                 prompt_name or "-",

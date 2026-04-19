@@ -43,6 +43,15 @@ class ConfigurationService:
         if company_short_name not in self._loaded_configs:
             self._loaded_configs[company_short_name] = self._load_and_merge_configs(company_short_name)
 
+    @staticmethod
+    def _normalize_model_entry(model_entry) -> dict:
+        if isinstance(model_entry, dict):
+            return dict(model_entry)
+        model_id = str(model_entry or "").strip()
+        if not model_id:
+            return {}
+        return {"id": model_id}
+
     def load_configuration(self, company_short_name: str):
         """
         Main entry point for configuring a company instance.
@@ -326,6 +335,14 @@ class ConfigurationService:
                 add_error("llm", "Missing required key: 'model'")
             if not config.get("llm", {}).get("provider_api_keys"):
                 add_error("llm", "Missing required key: 'provider_api_keys'")
+            supported_llm_providers = {
+                "openai",
+                "gemini",
+                "deepseek",
+                "xai",
+                "anthropic",
+                "openai_compatible",
+            }
             llm_defaults_mode = str(config.get("llm", {}).get("default_attachment_mode", "extracted_only")).strip().lower()
             llm_defaults_fallback = str(config.get("llm", {}).get("default_attachment_fallback", "extract")).strip().lower()
             allowed_attachment_modes = {"extracted_only", "native_only", "native_plus_extracted"}
@@ -340,6 +357,51 @@ class ConfigurationService:
                     "llm.default_attachment_fallback",
                     f"Unsupported value '{llm_defaults_fallback}'. Must be one of: {sorted(allowed_attachment_fallbacks)}."
                 )
+
+            llm_available_models = config.get("llm", {}).get("available_models") or []
+            openai_compatible_in_use = False
+            for index, model_entry in enumerate(llm_available_models):
+                normalized_model = self._normalize_model_entry(model_entry)
+                provider = str(normalized_model.get("provider") or "").strip().lower()
+                if provider and provider not in supported_llm_providers:
+                    add_error(
+                        f"llm.available_models[{index}].provider",
+                        f"Unsupported provider '{provider}'. Must be one of: {sorted(supported_llm_providers)}."
+                    )
+                if provider == "openai_compatible":
+                    openai_compatible_in_use = True
+
+            providers_cfg = config.get("llm", {}).get("providers")
+            if providers_cfg is not None and not isinstance(providers_cfg, dict):
+                add_error("llm.providers", "Must be a dictionary.")
+            else:
+                providers_cfg = providers_cfg or {}
+
+            if openai_compatible_in_use:
+                provider_cfg = providers_cfg.get("openai_compatible")
+                if not isinstance(provider_cfg, dict):
+                    add_error(
+                        "llm.providers.openai_compatible",
+                        "Provider configuration is required and must be a dictionary.",
+                    )
+                else:
+                    has_base_url = any(
+                        str(provider_cfg.get(key) or "").strip()
+                        for key in ("base_url", "base_url_env", "base_url_secret_ref")
+                    )
+                    if not has_base_url:
+                        add_error(
+                            "llm.providers.openai_compatible",
+                            "One of 'base_url', 'base_url_env', or 'base_url_secret_ref' is required.",
+                        )
+                    raw_base_url = str(provider_cfg.get("base_url") or "").strip()
+                    if raw_base_url:
+                        parsed = urlparse(raw_base_url)
+                        if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+                            add_error(
+                                "llm.providers.openai_compatible.base_url",
+                                "Must be an absolute HTTP or HTTPS URL.",
+                            )
 
         # 3. Embedding Provider
         if isinstance(config.get("embedding_provider"), dict):
@@ -751,6 +813,36 @@ class ConfigurationService:
                 "description": "Modelo por defecto configurado para esta compañía."
             }]
         return default_llm_model, available_llm_models
+
+    def get_llm_model_config(self, company_short_name: str, model_id: str | None) -> dict | None:
+        candidate = str(model_id or "").strip()
+        if not candidate:
+            return None
+
+        default_llm_model, available_llm_models = self.get_llm_configuration(company_short_name)
+        for model_entry in available_llm_models or []:
+            normalized = self._normalize_model_entry(model_entry)
+            if str(normalized.get("id") or "").strip() == candidate:
+                return normalized
+
+        if str(default_llm_model or "").strip() == candidate:
+            return {"id": candidate}
+
+        return None
+
+    def get_llm_provider_config(self, company_short_name: str, provider: str | None) -> dict:
+        candidate = str(provider or "").strip()
+        if not candidate:
+            return {}
+
+        self._ensure_config_loaded(company_short_name)
+        llm_config = self._loaded_configs[company_short_name].get("llm") or {}
+        providers_cfg = llm_config.get("providers")
+        if not isinstance(providers_cfg, dict):
+            return {}
+
+        provider_cfg = providers_cfg.get(candidate)
+        return dict(provider_cfg) if isinstance(provider_cfg, dict) else {}
 
 
     def _load_and_merge_configs(self, company_short_name: str) -> dict:

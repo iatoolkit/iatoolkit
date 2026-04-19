@@ -7,7 +7,7 @@
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.infra.llm_providers.openai_adapter import OpenAIAdapter
 from iatoolkit.infra.llm_providers.gemini_adapter import GeminiAdapter
-from iatoolkit.infra.llm_providers.deepseek_adapter import DeepseekAdapter
+from iatoolkit.infra.llm_providers.openai_compatible_chat_adapter import OpenAICompatibleChatAdapter
 from iatoolkit.infra.llm_providers.anthropic_adapter import AnthropicAdapter
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.common.util import Utility
@@ -29,7 +29,7 @@ class LLMProxy:
     """
 
     # Class-level cache for low-level clients (per provider + API key)
-    _clients_cache: Dict[Tuple[str, str], Any] = {}
+    _clients_cache: Dict[Tuple[str, str, str], Any] = {}
     _clients_cache_lock = threading.Lock()
 
     # Provider identifiers
@@ -38,6 +38,7 @@ class LLMProxy:
     PROVIDER_DEEPSEEK = "deepseek"
     PROVIDER_XAI = "xai"
     PROVIDER_ANTHROPIC = "anthropic"
+    PROVIDER_OPENAI_COMPATIBLE = "openai_compatible"
 
     @inject
     def __init__(
@@ -56,8 +57,8 @@ class LLMProxy:
         self.model_registry = model_registry
         self.secret_provider = secret_provider
 
-        # adapter cache by (provider, api_key)
-        self.adapters: Dict[Tuple[str, str], Any] = {}
+        # adapter cache by (provider, api_key, base_url)
+        self.adapters: Dict[Tuple[str, str, str], Any] = {}
 
     # -------------------------------------------------------------------------
     # Public API
@@ -75,15 +76,25 @@ class LLMProxy:
             )
 
         # Determine the provider based on the model name
-        provider = self._resolve_provider_from_model(model)
+        provider = self._resolve_provider_for_company_model(
+            company_short_name=company_short_name,
+            model=model,
+        )
+        provider_config = self.configuration_service.get_llm_provider_config(company_short_name, provider) or {}
 
         adapter = self._get_or_create_adapter(
             provider=provider,
             company_short_name=company_short_name,
         )
 
+        request_kwargs = self._apply_provider_request_overrides(
+            provider=provider,
+            provider_config=provider_config,
+            request_kwargs=kwargs,
+        )
+
         # Delegate to the adapter (OpenAI, Gemini, DeepSeek, xAI, Anthropic, etc.)
-        return adapter.create_response(model=model, input=input, **kwargs)
+        return adapter.create_response(model=model, input=input, **request_kwargs)
 
     # -------------------------------------------------------------------------
     # Provider resolution
@@ -112,6 +123,13 @@ class LLMProxy:
             f"Unknown or unsupported model: {model}"
         )
 
+    def _resolve_provider_for_company_model(self, company_short_name: str, model: str) -> str:
+        model_config = self.configuration_service.get_llm_model_config(company_short_name, model) or {}
+        configured_provider = str(model_config.get("provider") or "").strip().lower()
+        if configured_provider:
+            return configured_provider
+        return self._resolve_provider_from_model(model)
+
     # -------------------------------------------------------------------------
     # Adapter management
     # -------------------------------------------------------------------------
@@ -121,16 +139,17 @@ class LLMProxy:
         Return an adapter instance for the given provider.
         If none exists yet, create it using a cached or new low-level client.
         """
-        # Resolve API key first so adapter cache is provider+key scoped
-        api_key = self._get_api_key_from_config(company_short_name, provider)
-        adapter_cache_key = (provider, api_key or "")
+        client_config = self._get_client_config(company_short_name, provider)
+        api_key = client_config["api_key"]
+        base_url = client_config.get("base_url") or ""
+        adapter_cache_key = (provider, api_key or "", base_url)
 
         # If already created for this provider+key, just return it
         if adapter_cache_key in self.adapters and self.adapters[adapter_cache_key] is not None:
             return self.adapters[adapter_cache_key]
 
         # Otherwise, create low-level client from configuration
-        client = self._get_or_create_client(provider, api_key)
+        client = self._get_or_create_client(provider, api_key, base_url=base_url)
 
         # Wrap client with the correct adapter
         if provider == self.PROVIDER_OPENAI:
@@ -138,7 +157,9 @@ class LLMProxy:
         elif provider == self.PROVIDER_GEMINI:
             adapter = GeminiAdapter(client)
         elif provider == self.PROVIDER_DEEPSEEK:
-            adapter = DeepseekAdapter(client)
+            adapter = OpenAICompatibleChatAdapter(client, provider_label="DeepSeek")
+        elif provider == self.PROVIDER_OPENAI_COMPATIBLE:
+            adapter = OpenAICompatibleChatAdapter(client, provider_label="OpenAI-compatible")
         elif provider == self.PROVIDER_ANTHROPIC:
             adapter = AnthropicAdapter(client)
         else:
@@ -150,26 +171,45 @@ class LLMProxy:
         self.adapters[adapter_cache_key] = adapter
         return adapter
 
+    def _apply_provider_request_overrides(
+        self,
+        provider: str,
+        provider_config: Dict[str, Any],
+        request_kwargs: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        effective_kwargs = dict(request_kwargs or {})
+
+        if provider != self.PROVIDER_OPENAI_COMPATIBLE:
+            return effective_kwargs
+
+        if provider_config.get("disable_tools") is True:
+            if effective_kwargs.get("tools"):
+                effective_kwargs["tools"] = []
+            if "tool_choice" in effective_kwargs:
+                effective_kwargs["tool_choice"] = None
+
+        return effective_kwargs
+
     # -------------------------------------------------------------------------
     # Client cache
     # -------------------------------------------------------------------------
 
-    def _get_or_create_client(self, provider: str, api_key: str) -> Any:
+    def _get_or_create_client(self, provider: str, api_key: str, base_url: str = "") -> Any:
         """
         Return a low-level client for the given provider and API key.
         Uses a class-level cache to avoid recreating clients.
         """
-        cache_key = (provider, api_key or "")
+        cache_key = (provider, api_key or "", base_url or "")
 
         with self._clients_cache_lock:
             if cache_key in self._clients_cache:
                 return self._clients_cache[cache_key]
 
-            client = self._create_client_for_provider(provider, api_key)
+            client = self._create_client_for_provider(provider, api_key, base_url=base_url)
             self._clients_cache[cache_key] = client
             return client
 
-    def _create_client_for_provider(self, provider: str, api_key: str) -> Any:
+    def _create_client_for_provider(self, provider: str, api_key: str, base_url: str = "") -> Any:
         """
         Actually create the low-level client for a provider.
         This is the only place where provider-specific client construction lives.
@@ -195,6 +235,17 @@ class LLMProxy:
                 base_url="https://api.deepseek.com",
             )
 
+        if provider == self.PROVIDER_OPENAI_COMPATIBLE:
+            if not base_url:
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.CONFIG_ERROR,
+                    "Provider 'openai_compatible' requires a configured base_url."
+                )
+            return OpenAI(
+                api_key=api_key,
+                base_url=base_url,
+            )
+
         if provider == self.PROVIDER_GEMINI:
             # Example placeholder: you may already have a Gemini client factory elsewhere.
             # Here you could create and configure the Gemini client (e.g. google.generativeai).
@@ -217,6 +268,12 @@ class LLMProxy:
             IAToolkitException.ErrorType.MODEL,
             f"Provider not supported in _create_client_for_provider: {provider}"
         )
+
+    def _get_client_config(self, company_short_name: str, provider: str) -> dict:
+        return {
+            "api_key": self._get_api_key_from_config(company_short_name, provider),
+            "base_url": self._get_base_url_from_config(company_short_name, provider),
+        }
 
     # -------------------------------------------------------------------------
     # Configuration helpers
@@ -272,6 +329,36 @@ class LLMProxy:
             )
 
         return api_key_value
+
+    def _get_base_url_from_config(self, company_short_name: str, provider: str) -> str:
+        if provider != self.PROVIDER_OPENAI_COMPATIBLE:
+            return ""
+
+        provider_config = self.configuration_service.get_llm_provider_config(company_short_name, provider) or {}
+        if not isinstance(provider_config, dict):
+            provider_config = {}
+
+        base_url = str(provider_config.get("base_url") or "").strip()
+        if not base_url:
+            base_url_secret_ref = str(provider_config.get("base_url_secret_ref") or "").strip()
+            if base_url_secret_ref:
+                base_url = str(
+                    resolve_secret(self.secret_provider, company_short_name, base_url_secret_ref, default="") or ""
+                ).strip()
+        if not base_url:
+            base_url_env = str(provider_config.get("base_url_env") or "").strip()
+            if base_url_env:
+                base_url = str(
+                    resolve_secret(self.secret_provider, company_short_name, base_url_env, default="") or ""
+                ).strip()
+
+        if not base_url:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.CONFIG_ERROR,
+                f"Company '{company_short_name}' doesn't have a base_url configured for provider '{provider}'."
+            )
+
+        return base_url
 
     @classmethod
     def clear_low_level_clients_cache(cls):

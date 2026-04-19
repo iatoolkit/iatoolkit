@@ -42,6 +42,8 @@ class TestQueryService:
         self.mock_history_manager = MagicMock(spec=HistoryManagerService)
         self.model_registry = MagicMock(spec=ModelRegistry)
         self.model_registry.get_provider.return_value = "openai"
+        self.model_registry.get_history_type.return_value = "server_side"
+        self.mock_configuration_service.get_llm_model_config.return_value = None
 
         # New dependency mock
         self.mock_context_builder = MagicMock(spec=ContextBuilderService)

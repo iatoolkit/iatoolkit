@@ -10,13 +10,22 @@ llm:
   - id: deepseek-chat
     label: deepseek-chat
     description: Fast and cheap.
+    provider: deepseek
   - id: gemini-3-pro-preview
     label: gemini-3-pro-preview
     description: Fast
+  - id: llama-3.3-70b-instruct
+    label: Llama 3.3 70B Instruct
+    description: Open source model exposed through a dedicated OpenAI-compatible endpoint.
+    provider: openai_compatible
   provider_api_keys:
     openai: OPENAI_API_KEY
     gemini: GEMINI_API_KEY
     deepseek: DEEP_SEEK_API_KEY
+    openai_compatible: OSS_LLM_API_KEY
+  providers:
+    openai_compatible:
+      base_url_env: OSS_LLM_BASE_URL
 data_sources:
   sql:
   - database: sample_db

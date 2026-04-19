@@ -44,7 +44,12 @@ class GoogleDriveConnector(FileConnector):
             )
 
         # Crear el cliente de Google Drive API
-        service = build('drive', 'v3', credentials=credentials)
+        service = build(
+            'drive',
+            'v3',
+            credentials=credentials,
+            cache_discovery=False,
+        )
         return service
 
     def list_files(self) -> List[dict]:

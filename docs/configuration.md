@@ -76,10 +76,20 @@ llm:
     - id: gpt-5.2
       label: GPT-5.2
       description: Fast, recommended for most queries.
+    - id: llama-3.3-70b-instruct
+      label: Llama 3.3 70B Instruct
+      description: Open source model served through a dedicated OpenAI-compatible endpoint.
+      provider: openai_compatible
   provider_api_keys:
     openai: OPENAI_API_KEY
     gemini: GEMINI_API_KEY
     deepseek: DEEP_SEEK_API_KEY
+    openai_compatible: OSS_LLM_API_KEY
+
+  providers:
+    openai_compatible:
+      base_url_env: OSS_LLM_BASE_URL
+      disable_tools: false
 
   # Attachment defaults (applies to prompt and non-prompt llm_query flows)
   default_attachment_mode: extracted_only
@@ -101,7 +111,8 @@ llm:
 
 - `model` (string, required).
 - `provider_api_keys` (object, required): map `provider -> secret_ref`.
-- `available_models` (list, optional): for UI selector (`id`, `label`, `description`).
+- `available_models` (list, optional): for UI selector (`id`, `label`, `description`). Each entry can also declare `provider` to route models whose provider cannot be inferred reliably from the model id.
+- `providers` (object, optional): provider-specific runtime settings. `openai_compatible` currently supports `base_url`, `base_url_env`, or `base_url_secret_ref`. It also supports `disable_tools: true` as a compatibility workaround for endpoints that expose chat completions but do not support automatic tool calling.
 - `default_attachment_mode` (optional, default `extracted_only`):
   - `extracted_only`
   - `native_only`

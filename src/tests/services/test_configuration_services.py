@@ -20,6 +20,13 @@ MOCK_VALID_CONFIG = {
     'locale': 'en_US',
     'llm': {
         'model': 'gpt-5',
+        'available_models': [
+            {
+                'id': 'gpt-5',
+                'label': 'GPT-5',
+                'description': 'Default model',
+            }
+        ],
         'provider_api_keys': {'openai': 'TEST_OPENAI_API_KEY'}
     },
     'embedding_provider': {
@@ -543,6 +550,68 @@ class TestConfigurationService:
 
         errors = self.service.validate_configuration(self.COMPANY_NAME)
         assert any("llm.default_attachment_mode" in e for e in errors)
+
+    def test_validate_configuration_accepts_openai_compatible_provider_metadata(self):
+        valid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        valid_config["llm"]["available_models"].append({
+            "id": "llama-3.3-70b-instruct",
+            "label": "Llama 3.3 70B",
+            "description": "Open source model",
+            "provider": "openai_compatible",
+        })
+        valid_config["llm"]["provider_api_keys"]["openai_compatible"] = "OSS_API_KEY"
+        valid_config["llm"]["providers"] = {
+            "openai_compatible": {
+                "base_url": "https://oss.example.com/v1"
+            }
+        }
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = valid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert errors == []
+
+    def test_validate_configuration_rejects_openai_compatible_without_base_url(self):
+        invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        invalid_config["llm"]["available_models"].append({
+            "id": "llama-3.3-70b-instruct",
+            "label": "Llama 3.3 70B",
+            "description": "Open source model",
+            "provider": "openai_compatible",
+        })
+        invalid_config["llm"]["provider_api_keys"]["openai_compatible"] = "OSS_API_KEY"
+        invalid_config["llm"]["providers"] = {
+            "openai_compatible": {}
+        }
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = invalid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert any("llm.providers.openai_compatible" in e for e in errors)
+
+    def test_get_llm_model_config_returns_provider_metadata(self):
+        self.service._loaded_configs[self.COMPANY_NAME] = copy.deepcopy(MOCK_VALID_CONFIG)
+        self.service._loaded_configs[self.COMPANY_NAME]["llm"]["available_models"].append({
+            "id": "llama-3.3-70b-instruct",
+            "label": "Llama 3.3 70B",
+            "description": "Open source model",
+            "provider": "openai_compatible",
+        })
+        self.service._loaded_configs[self.COMPANY_NAME]["llm"]["providers"] = {
+            "openai_compatible": {
+                "base_url": "https://oss.example.com/v1"
+            }
+        }
+
+        model_config = self.service.get_llm_model_config(self.COMPANY_NAME, "llama-3.3-70b-instruct")
+        provider_config = self.service.get_llm_provider_config(self.COMPANY_NAME, "openai_compatible")
+
+        assert model_config["provider"] == "openai_compatible"
+        assert provider_config["base_url"] == "https://oss.example.com/v1"
 
     def test_validate_configuration_rejects_llm_default_attachment_mode_auto(self):
         invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
