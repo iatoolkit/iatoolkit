@@ -204,6 +204,7 @@ ui:
 
   ops_mobile:
     title: "Ops Mobile"
+    home: "Inicio"
     select_view: "Seleccionar vista"
     rag: "RAG"
     detail: "Detalle"
