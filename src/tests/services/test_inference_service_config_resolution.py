@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import MagicMock
 
+from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.infra.call_service import CallServiceClient
@@ -117,3 +118,96 @@ class TestInferenceServiceConfigResolution:
                 tool_name="text_embeddings",
                 input_data={"mode": "text", "text": "hello"},
             )
+
+    def test_predict_uses_configured_request_timeouts(self):
+        self.mock_config_service.get_configuration.return_value = {
+            "_defaults": {
+                "endpoint_url": "https://hf.endpoint",
+                "api_key_name": "HF_TOKEN",
+            },
+            "text_embeddings": {
+                "model_id": "sentence-transformers/all-MiniLM-L6-v2",
+                "connect_timeout_seconds": 7,
+                "read_timeout_seconds": 45,
+            },
+        }
+        self.mock_call_service.post.return_value = ({"ok": True}, 200)
+        self.mock_secret_provider.get_secret.return_value = "super-secret-token"
+
+        result = self.service.predict(
+            company_short_name="acme",
+            tool_name="text_embeddings",
+            input_data={"mode": "text", "text": "hello"},
+        )
+
+        assert result == {"ok": True}
+        self.mock_call_service.post.assert_called_once_with(
+            "https://hf.endpoint",
+            json_dict={
+                "inputs": {"mode": "text", "text": "hello"},
+                "parameters": {"model_id": "sentence-transformers/all-MiniLM-L6-v2"},
+            },
+            headers={
+                "Authorization": "Bearer super-secret-token",
+                "Content-Type": "application/json",
+            },
+            timeout=(7.0, 45.0),
+        )
+
+    def test_predict_retries_retryable_http_status_until_success(self, monkeypatch):
+        self.mock_config_service.get_configuration.return_value = {
+            "_defaults": {
+                "endpoint_url": "https://hf.endpoint",
+                "api_key_name": "HF_TOKEN",
+            },
+            "text_embeddings": {
+                "model_id": "sentence-transformers/all-MiniLM-L6-v2",
+                "retry_budget_seconds": 30,
+            },
+        }
+        self.mock_secret_provider.get_secret.return_value = "super-secret-token"
+        self.mock_call_service.post.side_effect = [
+            ({"error": "Model loading"}, 503),
+            ({"ok": True}, 200),
+        ]
+        sleep_calls = []
+        monkeypatch.setattr("iatoolkit.services.inference_service.time.sleep", sleep_calls.append)
+
+        result = self.service.predict(
+            company_short_name="acme",
+            tool_name="text_embeddings",
+            input_data={"mode": "text", "text": "hello"},
+        )
+
+        assert result == {"ok": True}
+        assert self.mock_call_service.post.call_count == 2
+        assert sleep_calls == [5.0]
+
+    def test_predict_retries_request_errors_until_success(self, monkeypatch):
+        self.mock_config_service.get_configuration.return_value = {
+            "_defaults": {
+                "endpoint_url": "https://hf.endpoint",
+                "api_key_name": "HF_TOKEN",
+            },
+            "text_embeddings": {
+                "model_id": "sentence-transformers/all-MiniLM-L6-v2",
+                "retry_budget_seconds": 30,
+            },
+        }
+        self.mock_secret_provider.get_secret.return_value = "super-secret-token"
+        self.mock_call_service.post.side_effect = [
+            IAToolkitException(IAToolkitException.ErrorType.REQUEST_ERROR, "connection reset"),
+            ({"ok": True}, 200),
+        ]
+        sleep_calls = []
+        monkeypatch.setattr("iatoolkit.services.inference_service.time.sleep", sleep_calls.append)
+
+        result = self.service.predict(
+            company_short_name="acme",
+            tool_name="text_embeddings",
+            input_data={"mode": "text", "text": "hello"},
+        )
+
+        assert result == {"ok": True}
+        assert self.mock_call_service.post.call_count == 2
+        assert sleep_calls == [5.0]

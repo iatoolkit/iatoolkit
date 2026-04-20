@@ -4,11 +4,13 @@
 
 import logging
 import base64
+import time
 import uuid
 from typing import Optional, Dict, Any
 from injector import inject
 from iatoolkit.common.interfaces.secret_provider import SecretProvider
 from iatoolkit.common.secret_resolver import resolve_secret
+from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.infra.call_service import CallServiceClient
@@ -20,6 +22,12 @@ class InferenceService:
     Service specific for interacting with the custom Hugging Face Inference Endpoint.
     It handles configuration loading per company and manages the HTTP communication.
     """
+
+    DEFAULT_CONNECT_TIMEOUT_SECONDS = 5.0
+    DEFAULT_READ_TIMEOUT_SECONDS = 300.0
+    DEFAULT_RETRY_INITIAL_DELAY_SECONDS = 5.0
+    DEFAULT_RETRY_MAX_DELAY_SECONDS = 30.0
+    RETRYABLE_STATUS_CODES = {408, 429, 502, 503, 504}
 
     @inject
     def __init__(self,
@@ -60,6 +68,8 @@ class InferenceService:
         api_key_ref = config.get('api_key_secret_ref') or config.get('api_key_name', 'HF_TOKEN')
         model_id = config.get('model_id')
         model_parameters = config.get('model_parameters', {})
+        request_timeout = self._resolve_request_timeout(config)
+        retry_budget_seconds = self._resolve_retry_budget_seconds(config)
 
         if not endpoint_url:
             if endpoint_url_env:
@@ -97,6 +107,8 @@ class InferenceService:
             api_key,
             payload,
             suppress_error_logging=suppress_error_logging,
+            timeout=request_timeout,
+            retry_budget_seconds=retry_budget_seconds,
         )
 
         # 5. Post-Processing
@@ -220,38 +232,156 @@ class InferenceService:
 
         return resolved_config
 
+    def _resolve_request_timeout(self, config: dict) -> tuple[float, float]:
+        connect_timeout = self._resolve_float_config(
+            config,
+            "connect_timeout_seconds",
+            self.DEFAULT_CONNECT_TIMEOUT_SECONDS,
+            minimum=0.1,
+        )
+        read_timeout = self._resolve_float_config(
+            config,
+            "read_timeout_seconds",
+            self.DEFAULT_READ_TIMEOUT_SECONDS,
+            minimum=0.1,
+        )
+        return connect_timeout, read_timeout
+
+    def _resolve_retry_budget_seconds(self, config: dict) -> float:
+        return self._resolve_float_config(
+            config,
+            "retry_budget_seconds",
+            0.0,
+            minimum=0.0,
+        )
+
+    @staticmethod
+    def _resolve_float_config(config: dict, key: str, default: float, *, minimum: float) -> float:
+        raw_value = config.get(key, default)
+        if raw_value in (None, ""):
+            return default
+
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError):
+            logging.warning(
+                "Invalid inference config for '%s': expected numeric value, got %r. Using default=%s.",
+                key,
+                raw_value,
+                default,
+            )
+            return default
+
+        if value < minimum:
+            logging.warning(
+                "Invalid inference config for '%s': expected >= %s, got %s. Using default=%s.",
+                key,
+                minimum,
+                value,
+                default,
+            )
+            return default
+
+        return value
+
+    def _next_retry_delay(self, *, delay_seconds: float, deadline: float | None) -> float | None:
+        if deadline is None:
+            return delay_seconds
+
+        remaining_seconds = deadline - time.monotonic()
+        if remaining_seconds <= 0:
+            return None
+
+        return min(delay_seconds, remaining_seconds)
+
+    @staticmethod
+    def _is_retryable_request_exception(exc: Exception) -> bool:
+        return (
+            isinstance(exc, IAToolkitException)
+            and getattr(exc, "error_type", None) == IAToolkitException.ErrorType.REQUEST_ERROR
+        )
+
+    def _log_retry_attempt(
+            self,
+            *,
+            attempt: int,
+            delay_seconds: float,
+            reason: str,
+            suppress_error_logging: bool = False
+    ) -> None:
+        log_fn = logging.debug if suppress_error_logging else logging.warning
+        log_fn(
+            "Inference request retry %s scheduled in %.1fs: %s",
+            attempt,
+            delay_seconds,
+            reason,
+        )
+
     def _call_endpoint(
             self,
             url: str,
             api_key: str,
             payload: dict,
-            suppress_error_logging: bool = False
+            suppress_error_logging: bool = False,
+            timeout: tuple[float, float] = (DEFAULT_CONNECT_TIMEOUT_SECONDS, DEFAULT_READ_TIMEOUT_SECONDS),
+            retry_budget_seconds: float = 0.0,
     ) -> Any:
         """Performs the POST request to the HF Endpoint."""
         headers = {
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
+        deadline = time.monotonic() + retry_budget_seconds if retry_budget_seconds > 0 else None
+        attempt = 1
+        delay_seconds = self.DEFAULT_RETRY_INITIAL_DELAY_SECONDS
 
-        try:
-            resp, status = self.call_service.post(
-                url,
-                json_dict=payload,
-                headers=headers,
-                timeout=(5, 300.0)
-            )
+        while True:
+            try:
+                resp, status = self.call_service.post(
+                    url,
+                    json_dict=payload,
+                    headers=headers,
+                    timeout=timeout
+                )
+            except Exception as exc:
+                next_delay = self._next_retry_delay(delay_seconds=delay_seconds, deadline=deadline)
+                if self._is_retryable_request_exception(exc) and next_delay is not None:
+                    self._log_retry_attempt(
+                        attempt=attempt,
+                        delay_seconds=next_delay,
+                        reason=str(exc),
+                        suppress_error_logging=suppress_error_logging,
+                    )
+                    time.sleep(next_delay)
+                    attempt += 1
+                    delay_seconds = min(delay_seconds * 2, self.DEFAULT_RETRY_MAX_DELAY_SECONDS)
+                    continue
 
-            if status != 200:
-                error_msg = f"Inference Endpoint Error {status}"
-                if isinstance(resp, dict) and 'error' in resp:
-                    error_msg += f": {resp['error']}"
                 if not suppress_error_logging:
-                    logging.error(f"{error_msg} | Payload keys: {list(payload.keys())}")
-                raise ValueError(error_msg)
+                    logging.error(f"Failed to call inference endpoint: {exc}")
+                raise
 
-            return resp
+            if status == 200:
+                return resp
 
-        except Exception as e:
+            error_msg = f"Inference Endpoint Error {status}"
+            if isinstance(resp, dict) and 'error' in resp:
+                error_msg += f": {resp['error']}"
+
+            next_delay = self._next_retry_delay(delay_seconds=delay_seconds, deadline=deadline)
+            if status in self.RETRYABLE_STATUS_CODES and next_delay is not None:
+                self._log_retry_attempt(
+                    attempt=attempt,
+                    delay_seconds=next_delay,
+                    reason=error_msg,
+                    suppress_error_logging=suppress_error_logging,
+                )
+                time.sleep(next_delay)
+                attempt += 1
+                delay_seconds = min(delay_seconds * 2, self.DEFAULT_RETRY_MAX_DELAY_SECONDS)
+                continue
+
             if not suppress_error_logging:
-                logging.error(f"Failed to call inference endpoint: {e}")
-            raise
+                logging.error(f"{error_msg} | Payload keys: {list(payload.keys())}")
+                logging.error(f"Failed to call inference endpoint: {error_msg}")
+            raise ValueError(error_msg)
