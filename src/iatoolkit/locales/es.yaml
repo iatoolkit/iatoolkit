@@ -211,6 +211,7 @@ ui:
     tasks: "Tareas"
     waiting: "esperando"
     in_queue: "en cola"
+    items_remaining: "items restantes"
     running_now: "En curso"
     rag_health: "Estado RAG"
     recent_events: "Eventos recientes"
