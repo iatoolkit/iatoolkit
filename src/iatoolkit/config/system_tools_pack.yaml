@@ -203,7 +203,7 @@ tools:
         - database_key
         - query
   - function_name: iat_document_search
-    description: Búsqueda semántica sobre documentos internos de la empresa para traer contexto adicional cuando haga falta. No usar si el usuario pide trabajar exclusivamente con un archivo ya adjunto en el turno actual.
+    description: Búsqueda semántica sobre documentos internos de la empresa para traer contexto adicional cuando haga falta. No usar si el usuario pide trabajar exclusivamente con un archivo ya adjunto en el turno actual. Usa metadata_filter solo cuando el usuario o el contexto indiquen un filtro de metadata concreto y necesario; si no hace falta, envía null.
     routing:
       force_include_capability: has_kb_collections
     routing_profile:
@@ -217,8 +217,10 @@ tools:
         - Search text chunks in company document collections.
         - Retrieve relevant context from internal documents.
         - Use only when the answer needs extra internal documents beyond the current conversation and current attachments.
+        - Use metadata_filter only when a specific metadata constraint is explicitly needed; otherwise send null.
       examples:
-        - iat_document_search(query="política de devoluciones", collection="Atencion", metadata_filter=[])
+        - iat_document_search(query="política de devoluciones", collection="Atencion", metadata_filter=null)
+        - iat_document_search(query="editoriales de las publicaciones", collection="papers", metadata_filter=null)
         - iat_document_search(query="fecha de vencimiento contrato", collection="Legal", metadata_filter=[{"key":"doc.type","value":"contract"}])
       cost:
         penalty: 0.12
@@ -239,27 +241,31 @@ tools:
                 type: string
           description: "Opcional. Colección o lista de colecciones donde buscar. Usa null, \"\" o [] para buscar en todas."
         metadata_filter:
-          type: array
-          description: "Opcional. Filtros de metadata como lista de pares key/value. Ejemplo: [{'key':'doc.type','value':'invoice'},{'key':'chunk.source_type','value':'table'}]."
-          items:
-            type: object
-            properties:
-              key:
-                type: string
-                description: "Clave del filtro (ej: doc.type, chunk.source_type, image.page)."
-              value:
-                anyOf:
-                  - type: string
-                  - type: number
-                  - type: boolean
-                  - type: "null"
-                description: Valor escalar del filtro.
-            required:
-              - key
-              - value
-            additionalProperties: false
+          anyOf:
+            - type: "null"
+            - type: array
+              items:
+                type: object
+                properties:
+                  key:
+                    type: string
+                    description: "Clave del filtro (ej: doc.type, chunk.source_type, image.page)."
+                  value:
+                    anyOf:
+                      - type: string
+                      - type: number
+                      - type: boolean
+                      - type: "null"
+                    description: Valor escalar del filtro.
+                required:
+                  - key
+                  - value
+                additionalProperties: false
+          description: "Opcional en la práctica. Usa null cuando no necesites filtrar por metadata. No inventes filtros ni envíes [] por defecto. Ejemplo: [{'key':'doc.type','value':'invoice'},{'key':'chunk.source_type','value':'table'}]."
       required:
         - query
+        - collection
+        - metadata_filter
   - function_name: iat_memory_search
     description: Busca páginas relevantes dentro de la Memoria personal del usuario y retorna contexto compilado. Incluye la señal `has_native_files` cuando una memoria tiene archivos fuente que pueden adjuntarse nativamente al modelo. Debe usarse antes de responder preguntas sobre cosas guardadas, notas previas, memoria del usuario, continuidad entre sesiones o "lo que hablamos/guardé antes".
     routing:
