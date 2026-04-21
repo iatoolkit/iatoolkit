@@ -659,6 +659,54 @@ class TestQueryService:
         assert [tool["name"] for tool in invoke_kwargs["tools"]] == ["tool_one", "tool_two"]
         assert invoke_kwargs["execution_metadata"]["tool_router"]["fallback_reason"] == "hook_error"
 
+    def test_llm_query_uses_prompt_explicit_tool_policy_and_skips_router(self):
+        full_tools = [
+            {"type": "function", "name": "iat_sql_query", "description": "sql", "parameters": {}, "strict": True},
+            {"type": "function", "name": "crm_lookup", "description": "crm", "parameters": {}, "strict": True},
+            {"type": "function", "name": "tool_two", "description": "two", "parameters": {}, "strict": True},
+        ]
+        self.mock_tool_service.get_tools_for_llm.return_value = full_tools
+        self.mock_tool_service.get_always_include_tool_names.return_value = ["iat_sql_query"]
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "authors metrics", [])
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "sales_prompt",
+            "schema": None,
+            "schema_mode": "best_effort",
+            "response_mode": "chat_compatible",
+            "tool_policy": {
+                "mode": "explicit",
+                "tool_names": ["crm_lookup", "missing_tool"],
+            },
+        }
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        selector_hook = MagicMock(return_value=[full_tools[2]])
+        QueryService.register_tool_selector_hook(selector_hook)
+
+        result = self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="sales_prompt",
+            question="authors metrics",
+            model='gpt-test'
+        )
+
+        assert result["valid_response"] is True
+        selector_hook.assert_not_called()
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert [tool["name"] for tool in invoke_kwargs["tools"]] == ["iat_sql_query", "crm_lookup"]
+        assert invoke_kwargs["execution_metadata"]["tool_router"]["selection_mode"] == "prompt_explicit"
+        assert invoke_kwargs["execution_metadata"]["tool_router"]["router_skipped"] is True
+        assert invoke_kwargs["execution_metadata"]["tool_router"]["missing_tool_names"] == ["missing_tool"]
+        assert "Enabled Tools For This Request" in invoke_kwargs["context"]
+        assert "Only the tools listed below are enabled for this request." in invoke_kwargs["context"]
+
     def test_llm_query_resolves_selected_system_prompt_keys_from_builder_when_session_cache_is_empty(self):
         self.mock_session_context.get_selected_system_prompt_keys.return_value = []
         self.mock_tool_service.get_tools_for_llm.return_value = [

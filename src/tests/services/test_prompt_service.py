@@ -315,6 +315,48 @@ properties:
             'text_verbosity': 'medium',
         }
 
+    def test_save_prompt_persists_explicit_tool_policy(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_category_by_name.return_value = None
+
+        self.prompt_service.save_prompt(
+            'test_co',
+            'tooling_prompt',
+            {
+                'content': 'Prompt text',
+                'tool_policy': {
+                    'mode': 'explicit',
+                    'tool_names': ['iat_sql_query', 'crm_lookup', 'iat_sql_query'],
+                },
+            },
+        )
+
+        saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
+        assert saved_prompt.tool_policy == {
+            'mode': 'explicit',
+            'tool_names': ['iat_sql_query', 'crm_lookup'],
+        }
+
+    def test_save_prompt_rejects_explicit_tool_policy_without_tools(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_category_by_name.return_value = None
+
+        with pytest.raises(IAToolkitException) as exc_info:
+            self.prompt_service.save_prompt(
+                'test_co',
+                'empty_tooling_prompt',
+                {
+                    'content': 'Prompt text',
+                    'tool_policy': {
+                        'mode': 'explicit',
+                        'tool_names': [],
+                    },
+                },
+            )
+
+        assert exc_info.value.error_type == IAToolkitException.ErrorType.INVALID_PARAMETER
+        assert "tool_policy.tool_names" in str(exc_info.value)
+
     def test_save_prompt_rejects_invalid_reasoning_effort(self):
         self.profile_repo.get_company_by_short_name.return_value = self.mock_company
         self.llm_query_repo.get_category_by_name.return_value = None

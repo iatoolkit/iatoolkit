@@ -558,6 +558,7 @@ class Prompt(Base):
     attachment_fallback = Column(String, nullable=False, default="extract")
     llm_model = Column(String, nullable=True, default=None)
     llm_request_options = Column(JSON_NATIVE, nullable=False, default=dict)
+    tool_policy = Column(JSON_NATIVE, nullable=False, default=dict)
     created_at = Column(DateTime, default=datetime.now)
     def to_dict(self):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}

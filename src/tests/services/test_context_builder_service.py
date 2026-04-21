@@ -213,7 +213,12 @@ required:
             attachment_fallback=None,
             llm_model=None,
             llm_request_options=None,
+            tool_policy=None,
         )
+        self.mock_prompt_service.normalize_tool_policy.return_value = {
+            "mode": "inherit",
+            "tool_names": [],
+        }
 
         contract = self.service.get_prompt_output_contract(self.mock_company, "employee_prompt")
 
@@ -225,6 +230,7 @@ required:
         assert contract["attachment_fallback"] is None
         assert contract["llm_model"] is None
         assert contract["llm_request_options"] == {}
+        assert contract["tool_policy"] == {"mode": "inherit", "tool_names": []}
 
     def test_get_prompt_output_contract_accepts_json_string_schema(self):
         self.mock_prompt_service.get_prompt_definition.return_value = SimpleNamespace(
@@ -238,7 +244,12 @@ required:
             attachment_fallback="fail",
             llm_model="gpt-4.1-mini",
             llm_request_options={"reasoning_effort": "high", "store": False},
+            tool_policy={"mode": "explicit", "tool_names": ["iat_sql_query"]},
         )
+        self.mock_prompt_service.normalize_tool_policy.return_value = {
+            "mode": "explicit",
+            "tool_names": ["iat_sql_query"],
+        }
 
         contract = self.service.get_prompt_output_contract(self.mock_company, "employee_prompt")
 
@@ -251,6 +262,7 @@ required:
         assert contract["attachment_fallback"] == "fail"
         assert contract["llm_model"] == "gpt-4.1-mini"
         assert contract["llm_request_options"] == {"reasoning_effort": "high", "store": False}
+        assert contract["tool_policy"] == {"mode": "explicit", "tool_names": ["iat_sql_query"]}
 
     def test_get_prompt_output_contract_returns_attachment_policy_even_without_schema(self):
         self.mock_prompt_service.get_prompt_definition.return_value = SimpleNamespace(
