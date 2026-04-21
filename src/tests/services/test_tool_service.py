@@ -142,7 +142,21 @@ class TestToolService:
             parameters = tool_def.get("parameters", {})
             properties = parameters.get("properties", {})
             required = parameters.get("required", [])
-            assert sorted(required) == sorted(properties.keys())
+            assert set(required).issubset(set(properties.keys()))
+
+    def test_document_search_tool_only_requires_query(self):
+        document_search_tool = next(
+            tool_def
+            for tool_def in SYSTEM_TOOLS_DEFINITIONS
+            if tool_def.get("function_name") == "iat_document_search"
+        )
+
+        parameters = document_search_tool.get("parameters", {})
+        required = parameters.get("required", [])
+
+        assert required == ["query"]
+        assert "collection" in parameters.get("properties", {})
+        assert "metadata_filter" in parameters.get("properties", {})
 
     def test_register_system_tools_rollback_on_exception(self):
         """

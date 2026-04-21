@@ -1074,6 +1074,56 @@ class TestQueryService:
         assert "evidence.multiple_comparison_correction" in invoke_kwargs["context"]
         assert invoke_kwargs["response_contract"]["provider"] == "deepseek"
 
+    def test_llm_query_passes_openai_compatible_json_mode_and_reinforces_required_nested_keys(self):
+        self.model_registry.get_provider.return_value = "openai_compatible"
+        self.mock_tool_service.get_tools_for_llm.return_value = []
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt content", "question", [])
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "paper_prompt",
+            "schema": {
+                "type": "object",
+                "required": ["doi", "evidence"],
+                "properties": {
+                    "doi": {
+                        "type": ["string", "null"],
+                    },
+                    "evidence": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["doi"],
+                        "properties": {
+                            "doi": {
+                                "type": ["string", "null"],
+                            },
+                        },
+                    },
+                },
+            },
+            "schema_mode": "strict",
+            "response_mode": "structured_only",
+        }
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="paper_prompt",
+            model="meta-llama/Llama-3.1-8B-Instruct"
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["text"]["response_format"]["type"] == "json_object"
+        assert "OUTPUT CONTRACT (MANDATORY)" in invoke_kwargs["context"]
+        assert "Every required key must be present exactly once." in invoke_kwargs["context"]
+        assert "evidence.doi" in invoke_kwargs["context"]
+        assert invoke_kwargs["response_contract"]["provider"] == "openai_compatible"
+
     def test_llm_query_forces_memory_search_for_explicit_memory_intent(self):
         self.mock_tool_service.get_tools_for_llm.return_value = [
             {"type": "function", "name": "iat_memory_search", "description": "memory", "parameters": {}, "strict": True},

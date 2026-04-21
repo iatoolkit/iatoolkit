@@ -264,8 +264,6 @@ tools:
           description: "Opcional en la práctica. Usa null cuando no necesites filtrar por metadata. No inventes filtros ni envíes [] por defecto. Ejemplo: [{'key':'doc.type','value':'invoice'},{'key':'chunk.source_type','value':'table'}]."
       required:
         - query
-        - collection
-        - metadata_filter
   - function_name: iat_memory_search
     description: Busca páginas relevantes dentro de la Memoria personal del usuario y retorna contexto compilado. Incluye la señal `has_native_files` cuando una memoria tiene archivos fuente que pueden adjuntarse nativamente al modelo. Debe usarse antes de responder preguntas sobre cosas guardadas, notas previas, memoria del usuario, continuidad entre sesiones o "lo que hablamos/guardé antes".
     routing:

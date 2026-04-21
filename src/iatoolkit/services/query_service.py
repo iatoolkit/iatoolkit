@@ -888,7 +888,7 @@ class QueryService:
             )
 
             if prompt_output_contract.get("schema") and (
-                not output_schema or provider in ("gemini", "deepseek")
+                not output_schema or provider in ("gemini", "deepseek", "openai_compatible")
             ):
                 user_turn_prompt = self._append_structured_schema_instruction(
                     user_turn_prompt=user_turn_prompt,
