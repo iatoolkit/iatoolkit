@@ -60,7 +60,7 @@
                     <!-- Popup simple para selección de modelo -->
                     <div id="llm-model-popup"
                          class="card shadow-sm llm-model-popup"
-                         style="position: absolute; z-index: 9999; display: none; min-width: 260px;">
+                         style="position: fixed; z-index: 9999; display: none; min-width: 260px;">
                         <div class="card-body py-2">
                             <div class="small mb-1 fw-bold">Modelo de IA</div>
                             <div class="small mb-2 llm-model-subtitle">
@@ -304,8 +304,6 @@
     <script src="{{ url_for('static', filename='js/chat_model_selector.js', _external=True) }}"></script>
     <script src="{{ url_for('static', filename='js/chat_memory_button.js', _external=True) }}"></script>
     <script src="{{ url_for('static', filename='js/chat_main.js', _external=True) }}"></script>
-
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
 
     <script>
 

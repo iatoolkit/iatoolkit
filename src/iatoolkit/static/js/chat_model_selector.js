@@ -178,10 +178,23 @@ window.currentLlmModel = window.currentLlmModel || null;
         } else {
             const rect = btn.getBoundingClientRect();
             popup.style.display = 'block';
+            popup.style.top = '0px';
+            popup.style.left = '0px';
 
-            // Posicionamos justo debajo del botón, alineado a la izquierda
-            popup.style.top = `${rect.bottom + window.scrollY + 4}px`;
-            popup.style.left = `${rect.left + window.scrollX}px`;
+            const popupRect = popup.getBoundingClientRect();
+            const margin = 8;
+            const top = Math.min(
+                rect.bottom + 4,
+                Math.max(margin, window.innerHeight - popupRect.height - margin)
+            );
+            const left = Math.min(
+                rect.left,
+                Math.max(margin, window.innerWidth - popupRect.width - margin)
+            );
+
+            // El popup usa position: fixed para evitar que lo recorten contenedores con overflow hidden.
+            popup.style.top = `${top}px`;
+            popup.style.left = `${left}px`;
         }
     }
 
