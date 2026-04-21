@@ -259,6 +259,18 @@ class QueryService:
             contract["attachment_fallback"] = (
                 str(raw_attachment_fallback).strip().lower() if raw_attachment_fallback is not None else None
             )
+            raw_llm_request_options = contract.get("llm_request_options")
+            normalized_llm_request_options = {}
+            if isinstance(raw_llm_request_options, dict):
+                reasoning_effort = str(raw_llm_request_options.get("reasoning_effort") or "").strip().lower()
+                if reasoning_effort:
+                    normalized_llm_request_options["reasoning_effort"] = reasoning_effort
+                if isinstance(raw_llm_request_options.get("store"), bool):
+                    normalized_llm_request_options["store"] = raw_llm_request_options["store"]
+                text_verbosity = str(raw_llm_request_options.get("text_verbosity") or "").strip().lower()
+                if text_verbosity:
+                    normalized_llm_request_options["text_verbosity"] = text_verbosity
+            contract["llm_request_options"] = normalized_llm_request_options
             contract["provider"] = self._get_provider(company.short_name, contract.get("llm_model") or "")
             return contract
         except Exception as e:
@@ -269,6 +281,52 @@ class QueryService:
                 e,
             )
             return {}
+
+    def _resolve_prompt_request_overrides(
+        self,
+        *,
+        company_short_name: str,
+        effective_model: str,
+        prompt_output_contract: dict | None,
+        ignore_history: bool,
+        tools: list[dict],
+    ) -> tuple[dict, dict | None, bool | None, dict]:
+        provider = self._get_provider(company_short_name, effective_model)
+        prompt_options = dict((prompt_output_contract or {}).get("llm_request_options") or {})
+        metadata = {
+            "provider": provider,
+            "requested": dict(prompt_options or {}),
+            "applied": {},
+        }
+
+        if not prompt_options:
+            return {}, None, None, metadata
+
+        supported_provider = provider in ("openai", "xai")
+        if not supported_provider:
+            metadata["ignored"] = True
+            metadata["reason"] = "provider_unsupported"
+            return {}, None, None, metadata
+
+        text_overrides = {}
+        reasoning_overrides = None
+        store_override = None
+
+        reasoning_effort = str(prompt_options.get("reasoning_effort") or "").strip().lower()
+        if reasoning_effort:
+            reasoning_overrides = {"effort": reasoning_effort}
+            metadata["applied"]["reasoning_effort"] = reasoning_effort
+
+        text_verbosity = str(prompt_options.get("text_verbosity") or "").strip().lower()
+        if text_verbosity:
+            text_overrides["verbosity"] = text_verbosity
+            metadata["applied"]["text_verbosity"] = text_verbosity
+
+        if "store" in prompt_options:
+            store_override = bool(prompt_options.get("store"))
+            metadata["applied"]["store"] = store_override
+
+        return text_overrides, reasoning_overrides, store_override, metadata
 
     @staticmethod
     def _append_memory_search_instruction(prompt: str, should_suggest_memory_search: bool) -> str:
@@ -493,7 +551,9 @@ class QueryService:
                                       user_turn_prompt: str,
                                       tools: list[dict],
                                       tool_choice_override: str | None,
-                                      output_schema: dict,
+                                      text_payload: dict,
+                                      reasoning: dict | None,
+                                      store: bool | None,
                                       images: list,
                                       attachment_plan: dict,
                                       execution_metadata: dict,
@@ -515,9 +575,11 @@ class QueryService:
                 context=user_turn_prompt,
                 tools=tools,
                 tool_choice_override=tool_choice_override,
-                text=output_schema,
+                text=text_payload,
                 images=images,
                 attachments=attachment_plan.get("native_attachments", []),
+                reasoning=reasoning,
+                store=store,
                 execution_metadata=execution_metadata,
                 response_contract=prompt_output_contract if prompt_output_contract.get("schema") else None,
             )
@@ -569,9 +631,11 @@ class QueryService:
                 context=user_turn_prompt,
                 tools=tools,
                 tool_choice_override=tool_choice_override,
-                text=output_schema,
+                text=text_payload,
                 images=images,
                 attachments=attachment_plan.get("native_attachments", []),
+                reasoning=reasoning,
+                store=store,
                 execution_metadata=execution_metadata,
                 response_contract=prompt_output_contract if prompt_output_contract.get("schema") else None,
             )
@@ -902,6 +966,18 @@ class QueryService:
                 tool_router_metrics = dict(tool_router_metrics or {})
                 tool_router_metrics["selected_system_prompt_keys"] = selected_system_prompt_keys
 
+            text_overrides, reasoning_overrides, store_override, request_options_metadata = (
+                self._resolve_prompt_request_overrides(
+                    company_short_name=company_short_name,
+                    effective_model=effective_model,
+                    prompt_output_contract=prompt_output_contract,
+                    ignore_history=ignore_history,
+                    tools=tools,
+                )
+            )
+            text_payload = dict(output_schema or {})
+            text_payload.update(text_overrides or {})
+
             execution_metadata = {"tool_router": tool_router_metrics}
             if memory_lookup_decision.reason:
                 execution_metadata["tool_policy"] = {
@@ -920,6 +996,13 @@ class QueryService:
                     "response_mode": prompt_output_contract.get("response_mode", "chat_compatible"),
                     "provider": provider,
                 }
+            if (
+                request_options_metadata.get("requested")
+                or request_options_metadata.get("applied")
+                or request_options_metadata.get("ignored")
+                or request_options_metadata.get("store_forced_reason")
+            ):
+                execution_metadata["llm_request_options"] = request_options_metadata
             execution_metadata["attachments"] = {
                 "policy": attachment_plan.get("policy", {}),
                 "stats": attachment_plan.get("stats", {}),
@@ -937,7 +1020,9 @@ class QueryService:
                 user_turn_prompt=user_turn_prompt,
                 tools=tools,
                 tool_choice_override=tool_choice_override,
-                output_schema=output_schema,
+                text_payload=text_payload,
+                reasoning=reasoning_overrides,
+                store=store_override,
                 images=images,
                 attachment_plan=attachment_plan,
                 execution_metadata=execution_metadata,

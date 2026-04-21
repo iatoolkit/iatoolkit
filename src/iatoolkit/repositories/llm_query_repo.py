@@ -186,6 +186,7 @@ class LLMQueryRepo:
             )
             prompt.attachment_fallback = new_prompt.attachment_fallback or prompt.attachment_fallback or "extract"
             prompt.llm_model = new_prompt.llm_model
+            prompt.llm_request_options = dict(new_prompt.llm_request_options or {})
         else:
             if not new_prompt.output_schema_mode:
                 new_prompt.output_schema_mode = "best_effort"
@@ -197,6 +198,8 @@ class LLMQueryRepo:
                 new_prompt.attachment_parser_provider = "basic"
             if not new_prompt.attachment_fallback:
                 new_prompt.attachment_fallback = "extract"
+            if new_prompt.llm_request_options is None:
+                new_prompt.llm_request_options = {}
             self.session.add(new_prompt)
             prompt = new_prompt
 

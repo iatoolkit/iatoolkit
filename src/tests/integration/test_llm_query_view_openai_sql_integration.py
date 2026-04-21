@@ -62,10 +62,10 @@ class FakeModelRegistry:
     def get_history_type(self, model):
         return "server_side"
 
-    def resolve_request_params(self, model, text):
+    def resolve_request_params(self, model, text, reasoning=None):
         return {
             "text": text or {},
-            "reasoning": {},
+            "reasoning": reasoning or {},
         }
 
 

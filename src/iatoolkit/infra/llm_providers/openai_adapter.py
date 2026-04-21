@@ -29,7 +29,8 @@ class OpenAIAdapter:
                         reasoning: Optional[Dict] = None,
                         tool_choice: str = "auto",
                         images: Optional[List[Dict]] = None,
-                        attachments: Optional[List[Dict]] = None) -> LLMResponse:
+                        attachments: Optional[List[Dict]] = None,
+                        store: Optional[bool] = None) -> LLMResponse:
         """Llamada a la API de OpenAI y mapeo a estructura común"""
         try:
             # Handle multimodal input if images are present
@@ -54,6 +55,8 @@ class OpenAIAdapter:
                 params['text'] = text
             if reasoning:
                 params['reasoning'] = reasoning
+            if store is not None:
+                params['store'] = store
             tool_choice_payload = self._map_tool_choice(tool_choice, tools or [])
             if tool_choice_payload is not None:
                 params['tool_choice'] = tool_choice_payload

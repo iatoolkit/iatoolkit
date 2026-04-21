@@ -495,6 +495,34 @@ class TestConfigurationService:
         errors = self.service.validate_configuration(self.COMPANY_NAME)
         assert errors == []
 
+    def test_validate_configuration_accepts_prompt_llm_request_options(self):
+        valid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        valid_config["prompts"]["prompt_list"][0]["llm_request_options"] = {
+            "reasoning_effort": "high",
+            "store": False,
+            "text_verbosity": "medium",
+        }
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = valid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert errors == []
+
+    def test_validate_configuration_rejects_invalid_prompt_reasoning_effort(self):
+        invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        invalid_config["prompts"]["prompt_list"][0]["llm_request_options"] = {
+            "reasoning_effort": "ultra",
+        }
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = invalid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert any("reasoning_effort" in e for e in errors)
+
     def test_validate_configuration_rejects_invalid_prompt_attachment_mode(self):
         invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
         invalid_config["prompts"]["prompt_list"][0]["attachment_mode"] = "native_all_the_way"

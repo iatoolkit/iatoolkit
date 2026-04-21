@@ -291,6 +291,49 @@ properties:
         saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
         assert saved_prompt.llm_model == 'gpt-4.1-mini'
 
+    def test_save_prompt_persists_llm_request_options(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_category_by_name.return_value = None
+
+        self.prompt_service.save_prompt(
+            'test_co',
+            'reasoning_prompt',
+            {
+                'content': 'Prompt text',
+                'llm_request_options': {
+                    'reasoning_effort': 'high',
+                    'store': False,
+                    'text_verbosity': 'medium',
+                },
+            },
+        )
+
+        saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
+        assert saved_prompt.llm_request_options == {
+            'reasoning_effort': 'high',
+            'store': False,
+            'text_verbosity': 'medium',
+        }
+
+    def test_save_prompt_rejects_invalid_reasoning_effort(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_category_by_name.return_value = None
+
+        with pytest.raises(IAToolkitException) as exc_info:
+            self.prompt_service.save_prompt(
+                'test_co',
+                'bad_reasoning_prompt',
+                {
+                    'content': 'Prompt text',
+                    'llm_request_options': {
+                        'reasoning_effort': 'ultra',
+                    },
+                },
+            )
+
+        assert exc_info.value.error_type == IAToolkitException.ErrorType.INVALID_PARAMETER
+        assert "Unsupported reasoning_effort" in str(exc_info.value)
+
     def test_save_prompt_rejects_unknown_llm_model(self):
         self.profile_repo.get_company_by_short_name.return_value = self.mock_company
         self.llm_query_repo.get_category_by_name.return_value = None

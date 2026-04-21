@@ -76,6 +76,8 @@ class llmClient:
                context_history: Optional[List[Dict]] = None,
                images: list = None,
                attachments: list = None,
+               reasoning: Optional[Dict[str, Any]] = None,
+               store: Optional[bool] = None,
                task_id: Optional[int] = None,
                execution_metadata: Optional[Dict[str, Any]] = None,
                response_contract: Optional[Dict[str, Any]] = None
@@ -91,9 +93,13 @@ class llmClient:
         force_tool_name = None
 
         # Resolve per-model defaults and apply overrides (without mutating inputs).
-        request_params = self.model_registry.resolve_request_params(model=model, text=text)
+        request_params = self.model_registry.resolve_request_params(
+            model=model,
+            text=text,
+            reasoning=reasoning,
+        )
         text_payload = request_params["text"]
-        reasoning = request_params["reasoning"]
+        reasoning_payload = request_params["reasoning"]
 
         try:
             start_time = time.time()
@@ -121,9 +127,10 @@ class llmClient:
                     tools=tools,
                     tool_choice=tool_choice_override or "auto",
                     text=text_payload,
-                    reasoning=reasoning,
+                    reasoning=reasoning_payload,
                     images=images,
                     attachments=active_attachments,
+                    store=store,
                 )
                 stats = self.get_stats(response)
 
@@ -224,12 +231,13 @@ class llmClient:
                     input=input_messages,
                     previous_response_id=response.id,
                     context_history=context_history,
-                    reasoning=reasoning,
+                    reasoning=reasoning_payload,
                     tool_choice=tool_choice_value,
                     tools=tools,
                     text=text_payload,
                     images=images,
                     attachments=active_attachments,
+                    store=store,
                 )
                 stats_fcall = self.add_stats(stats_fcall, self.get_stats(response))
 
@@ -273,14 +281,13 @@ class llmClient:
             if function_calls:
                 logging.info(f"time within the function calls {f_call_time:.1f} secs.")
 
-            return {
+            result = {
                 'valid_response': decoded_response.get('status', False),
                 'answer': self.format_html(decoded_response.get('answer', '')),
                 'stats': combined_stats,
                 'answer_format': decoded_response.get('answer_format', ''),
                 'error_message': decoded_response.get('error_message', ''),
                 'aditional_data': decoded_response.get('aditional_data', {}),
-                'response_id': response.id,
                 'query_id': query.id,
                 'model': model,
                 'reasoning_content': final_reasoning,
@@ -291,6 +298,9 @@ class llmClient:
                 'schema_mode': decoded_response.get('schema_mode'),
                 'schema_applied': decoded_response.get('schema_applied', False),
             }
+            if getattr(response, 'id', None):
+                result['response_id'] = response.id
+            return result
         except SQLAlchemyError as db_error:
             # rollback
             self.llmquery_repo.session.rollback()

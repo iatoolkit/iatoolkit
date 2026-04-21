@@ -172,6 +172,7 @@ Key fields for **`iat_prompt`**:
 - `category_id`: A foreign key linking the prompt to its category.
 - `custom_fields`: A JSON field defining any extra input fields needed for the prompt.
 - `llm_model`: Optional per-prompt model override. When null, the company default model is used.
+- `llm_request_options`: Optional JSON object for per-prompt request overrides such as `reasoning_effort`, `store`, and future provider-specific knobs.
 
 These tables are used by the `ConfigurationService` during setup and the `PromptManagerService` at runtime to render and manage prompts.
 

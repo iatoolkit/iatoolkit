@@ -808,6 +808,179 @@ class TestQueryService:
         invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
         assert invoke_kwargs["model"] == "gpt-5"
 
+    def test_llm_query_applies_prompt_request_options_for_openai_provider(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = []
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt content", "question", [])
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "sales_prompt",
+            "schema": None,
+            "schema_mode": "best_effort",
+            "response_mode": "chat_compatible",
+            "llm_request_options": {
+                "reasoning_effort": "high",
+                "store": True,
+                "text_verbosity": "high",
+            },
+        }
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="sales_prompt",
+            model="gpt-5",
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["text"] == {"verbosity": "high"}
+        assert invoke_kwargs["reasoning"] == {"effort": "high"}
+        assert invoke_kwargs["store"] is True
+        assert invoke_kwargs["execution_metadata"]["llm_request_options"]["applied"] == {
+            "reasoning_effort": "high",
+            "store": True,
+            "text_verbosity": "high",
+        }
+
+    def test_llm_query_ignores_prompt_request_options_for_unsupported_provider(self):
+        self.mock_configuration_service.get_llm_model_config.return_value = {"provider": "anthropic"}
+        self.mock_tool_service.get_tools_for_llm.return_value = []
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt content", "question", [])
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "sales_prompt",
+            "schema": None,
+            "schema_mode": "best_effort",
+            "response_mode": "chat_compatible",
+            "llm_request_options": {
+                "reasoning_effort": "high",
+                "store": False,
+                "text_verbosity": "high",
+            },
+        }
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="sales_prompt",
+            model="claude-3-7-sonnet",
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["text"] == {}
+        assert invoke_kwargs["reasoning"] is None
+        assert invoke_kwargs["store"] is None
+        assert invoke_kwargs["execution_metadata"]["llm_request_options"]["ignored"] is True
+        assert invoke_kwargs["execution_metadata"]["llm_request_options"]["reason"] == "provider_unsupported"
+
+    def test_llm_query_preserves_store_false_when_history_is_enabled(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = []
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt content", "question", [])
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "sales_prompt",
+            "schema": None,
+            "schema_mode": "best_effort",
+            "response_mode": "chat_compatible",
+            "llm_request_options": {
+                "store": False,
+            },
+        }
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="sales_prompt",
+            model="gpt-5",
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["store"] is False
+        assert "store_forced_reason" not in invoke_kwargs["execution_metadata"]["llm_request_options"]
+
+    def test_llm_query_preserves_store_false_when_tools_are_present(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = [
+            {"type": "function", "name": "tool_one", "description": "one", "parameters": {}, "strict": True},
+        ]
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt content", "question", [])
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "sales_prompt",
+            "schema": None,
+            "schema_mode": "best_effort",
+            "response_mode": "chat_compatible",
+            "llm_request_options": {
+                "store": False,
+            },
+        }
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="sales_prompt",
+            model="gpt-5",
+            ignore_history=True,
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["store"] is False
+        assert "store_forced_reason" not in invoke_kwargs["execution_metadata"]["llm_request_options"]
+
+    def test_llm_query_allows_store_false_when_history_is_ignored_and_no_tools_are_used(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = []
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt content", "question", [])
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "sales_prompt",
+            "schema": None,
+            "schema_mode": "best_effort",
+            "response_mode": "chat_compatible",
+            "llm_request_options": {
+                "store": False,
+            },
+        }
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="sales_prompt",
+            model="gpt-5",
+            ignore_history=True,
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["store"] is False
+        assert "store_forced_reason" not in invoke_kwargs["execution_metadata"]["llm_request_options"]
+
     def test_llm_query_passes_gemini_response_schema_payload_when_prompt_contract_is_configured(self):
         self.model_registry.get_provider.return_value = "gemini"
         self.mock_tool_service.get_tools_for_llm.return_value = []

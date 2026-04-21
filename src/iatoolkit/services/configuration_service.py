@@ -458,6 +458,8 @@ class ConfigurationService:
         allowed_attachment_modes = {"extracted_only", "native_only", "native_plus_extracted"}
         allowed_attachment_parser_providers = {"auto", "docling", "basic"}
         allowed_attachment_fallbacks = {"extract", "fail"}
+        allowed_reasoning_efforts = {"none", "minimal", "low", "medium", "high", "xhigh"}
+        allowed_text_verbosity = {"low", "medium", "high"}
         default_llm_model = str(config.get("llm", {}).get("model") or "").strip()
         allowed_llm_models = set()
         if default_llm_model:
@@ -543,6 +545,41 @@ class ConfigurationService:
                         f"prompts[{i}]",
                         f"Unsupported llm_model '{prompt_llm_model}'. Must be one of: {sorted(allowed_llm_models)}."
                     )
+
+            llm_request_options = prompt.get("llm_request_options")
+            if llm_request_options is not None:
+                if not isinstance(llm_request_options, dict):
+                    add_error(f"prompts[{i}].llm_request_options", "Must be an object.")
+                else:
+                    allowed_option_keys = {"reasoning_effort", "store", "text_verbosity"}
+                    unknown_option_keys = sorted(
+                        key for key in llm_request_options.keys() if key not in allowed_option_keys
+                    )
+                    if unknown_option_keys:
+                        add_error(
+                            f"prompts[{i}].llm_request_options",
+                            f"Unsupported keys: {unknown_option_keys}.",
+                        )
+
+                    reasoning_effort = str(llm_request_options.get("reasoning_effort") or "").strip().lower()
+                    if reasoning_effort and reasoning_effort not in allowed_reasoning_efforts:
+                        add_error(
+                            f"prompts[{i}].llm_request_options.reasoning_effort",
+                            f"Unsupported value '{reasoning_effort}'. Must be one of: {sorted(allowed_reasoning_efforts)}.",
+                        )
+
+                    if "store" in llm_request_options and not isinstance(llm_request_options.get("store"), bool):
+                        add_error(
+                            f"prompts[{i}].llm_request_options.store",
+                            "Must be a boolean.",
+                        )
+
+                    text_verbosity = str(llm_request_options.get("text_verbosity") or "").strip().lower()
+                    if text_verbosity and text_verbosity not in allowed_text_verbosity:
+                        add_error(
+                            f"prompts[{i}].llm_request_options.text_verbosity",
+                            f"Unsupported value '{text_verbosity}'. Must be one of: {sorted(allowed_text_verbosity)}.",
+                        )
 
             output_schema = prompt.get("output_schema")
             if output_schema is not None:

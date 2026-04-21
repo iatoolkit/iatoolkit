@@ -211,6 +211,7 @@ required:
             attachment_parser_provider=None,
             attachment_fallback=None,
             llm_model=None,
+            llm_request_options=None,
         )
 
         contract = self.service.get_prompt_output_contract(self.mock_company, "employee_prompt")
@@ -222,6 +223,7 @@ required:
         assert contract["attachment_parser_provider"] is None
         assert contract["attachment_fallback"] is None
         assert contract["llm_model"] is None
+        assert contract["llm_request_options"] == {}
 
     def test_get_prompt_output_contract_accepts_json_string_schema(self):
         self.mock_prompt_service.get_prompt_definition.return_value = SimpleNamespace(
@@ -234,6 +236,7 @@ required:
             attachment_parser_provider="basic",
             attachment_fallback="fail",
             llm_model="gpt-4.1-mini",
+            llm_request_options={"reasoning_effort": "high", "store": False},
         )
 
         contract = self.service.get_prompt_output_contract(self.mock_company, "employee_prompt")
@@ -246,6 +249,7 @@ required:
         assert contract["attachment_parser_provider"] == "basic"
         assert contract["attachment_fallback"] == "fail"
         assert contract["llm_model"] == "gpt-4.1-mini"
+        assert contract["llm_request_options"] == {"reasoning_effort": "high", "store": False}
 
     def test_get_prompt_output_contract_returns_attachment_policy_even_without_schema(self):
         self.mock_prompt_service.get_prompt_definition.return_value = SimpleNamespace(
@@ -258,6 +262,7 @@ required:
             attachment_parser_provider="docling",
             attachment_fallback="fail",
             llm_model="gpt-4o-mini",
+            llm_request_options={"text_verbosity": "low"},
         )
 
         contract = self.service.get_prompt_output_contract(self.mock_company, "employee_prompt")
@@ -268,3 +273,4 @@ required:
         assert contract["attachment_parser_provider"] == "docling"
         assert contract["attachment_fallback"] == "fail"
         assert contract["llm_model"] == "gpt-4o-mini"
+        assert contract["llm_request_options"] == {"text_verbosity": "low"}

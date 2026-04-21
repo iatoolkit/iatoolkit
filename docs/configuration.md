@@ -334,6 +334,13 @@ prompts:
       # Attachment policy
       attachment_mode: extracted_only
       attachment_fallback: extract
+
+      # Optional request overrides for providers that support them
+      llm_model: gpt-5
+      llm_request_options:
+        reasoning_effort: high
+        store: false
+        text_verbosity: medium
 ```
 
 Legacy shape is also accepted (`prompt_categories` top-level + `prompts` list).
@@ -354,6 +361,11 @@ Per prompt supported keys:
   - `structured_only`
 - `attachment_mode` (optional): `extracted_only`, `native_only`, `native_plus_extracted`, `auto`
 - `attachment_fallback` (optional): `extract`, `fail`
+- `llm_model` (optional): per-prompt model override
+- `llm_request_options` (optional object):
+  - `reasoning_effort`: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`
+  - `store`: boolean
+  - `text_verbosity`: `low`, `medium`, `high`
 
 Important:
 

@@ -22,6 +22,10 @@ class TestLLMClient:
         self.storage_service_mock = MagicMock(spec=StorageService)
         self.mock_proxy = MagicMock()
         self.injector_mock = MagicMock()
+        self.model_registry_mock.resolve_request_params.return_value = {
+            "text": {},
+            "reasoning": {},
+        }
 
         # Mock company
         self.company = Company(id=1, name='Test Company', short_name='test_company')
@@ -77,6 +81,55 @@ class TestLLMClient:
         assert len(result['content_parts']) > 0
 
         self.llmquery_repo.add_query.assert_called_once()
+
+    def test_invoke_passes_reasoning_override_to_model_registry(self):
+        self.mock_proxy.create_response.return_value = self.mock_llm_response
+        self.model_registry_mock.resolve_request_params.return_value = {
+            "text": {"verbosity": "medium"},
+            "reasoning": {"effort": "high"},
+        }
+
+        self.client.invoke(
+            company=self.company,
+            user_identifier='user1',
+            previous_response_id='prev1',
+            model='gpt-5',
+            question='q',
+            context='c',
+            tools=[],
+            text={"verbosity": "medium"},
+            reasoning={"effort": "high"},
+            images=[],
+        )
+
+        self.model_registry_mock.resolve_request_params.assert_called_once_with(
+            model='gpt-5',
+            text={"verbosity": "medium"},
+            reasoning={"effort": "high"},
+        )
+        call_kwargs = self.mock_proxy.create_response.call_args.kwargs
+        assert call_kwargs['reasoning'] == {"effort": "high"}
+        assert call_kwargs['text'] == {"verbosity": "medium"}
+
+    def test_invoke_keeps_response_id_when_store_is_false(self):
+        self.mock_proxy.create_response.return_value = self.mock_llm_response
+
+        result = self.client.invoke(
+            company=self.company,
+            user_identifier='user1',
+            previous_response_id='prev1',
+            model='gpt-5',
+            question='q',
+            context='c',
+            tools=[],
+            text={},
+            images=[],
+            store=False,
+        )
+
+        call_kwargs = self.mock_proxy.create_response.call_args.kwargs
+        assert call_kwargs['store'] is False
+        assert result['response_id'] == 'response_123'
 
     def test_invoke_passes_tool_choice_override_to_initial_llm_call(self):
         self.mock_proxy.create_response.return_value = self.mock_llm_response

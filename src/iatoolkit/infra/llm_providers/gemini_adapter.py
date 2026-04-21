@@ -51,8 +51,10 @@ class GeminiAdapter:
                         tool_choice: str = "auto",
                         images: Optional[List[Dict]] = None,
                         attachments: Optional[List[Dict]] = None,
+                        store: Optional[bool] = None,
                         ) -> LLMResponse:
         try:
+            _ = store
 
             # Separamos las instrucciones del sistema del resto del contenido
             system_instruction, filtered_input = self._extract_system_and_filter_input(

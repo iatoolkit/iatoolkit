@@ -106,6 +106,7 @@ class ContextBuilderService:
             "attachment_parser_provider": getattr(prompt_obj, "attachment_parser_provider", None),
             "attachment_fallback": getattr(prompt_obj, "attachment_fallback", None),
             "llm_model": getattr(prompt_obj, "llm_model", None),
+            "llm_request_options": dict(getattr(prompt_obj, "llm_request_options", None) or {}),
         }
 
     def build_system_context(

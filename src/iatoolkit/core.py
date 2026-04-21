@@ -193,7 +193,7 @@ class IAToolkit:
     def _create_flask_instance(self):
         static_folder = self._get_config_value('STATIC_FOLDER') or self._get_default_static_folder()
         template_folder = self._get_config_value('TEMPLATE_FOLDER') or self._get_default_template_folder()
-        idle_timeout_minutes = int(self._get_config_value('BROWSER_SESSION_IDLE_TIMEOUT_MINUTES', 60))
+        idle_timeout_minutes = int(self._get_config_value('BROWSER_SESSION_IDLE_TIMEOUT_MINUTES', 120))
         flask_env = str(self._get_config_value('FLASK_ENV', '') or '').strip().lower()
 
         session_cookie_secure_default = 'false' if flask_env == 'dev' else 'true'

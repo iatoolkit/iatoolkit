@@ -32,6 +32,15 @@ class PromptService:
     ATTACHMENT_PARSER_PROVIDER_BASIC = "basic"
     ATTACHMENT_FALLBACK_EXTRACT = "extract"
     ATTACHMENT_FALLBACK_FAIL = "fail"
+    REASONING_EFFORT_NONE = "none"
+    REASONING_EFFORT_MINIMAL = "minimal"
+    REASONING_EFFORT_LOW = "low"
+    REASONING_EFFORT_MEDIUM = "medium"
+    REASONING_EFFORT_HIGH = "high"
+    REASONING_EFFORT_XHIGH = "xhigh"
+    TEXT_VERBOSITY_LOW = "low"
+    TEXT_VERBOSITY_MEDIUM = "medium"
+    TEXT_VERBOSITY_HIGH = "high"
 
     @inject
     def __init__(self,
@@ -203,6 +212,100 @@ class PromptService:
             f"Unsupported llm_model '{candidate}'. Allowed values: {sorted(allowed_models)}",
         )
 
+    def _extract_llm_request_options_payload(self, data: dict) -> dict:
+        options_payload = data.get("llm_request_options")
+        has_legacy_options = any(
+            key in data for key in ("reasoning_effort", "store", "text_verbosity")
+        )
+
+        if options_payload is None and not has_legacy_options:
+            return {}
+
+        if options_payload is None:
+            options = {}
+        elif isinstance(options_payload, dict):
+            options = dict(options_payload)
+        else:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "llm_request_options must be an object.",
+            )
+
+        for key in ("reasoning_effort", "store", "text_verbosity"):
+            if key in data:
+                options[key] = data.get(key)
+
+        return options
+
+    def _normalize_llm_request_options(self, llm_request_options: dict | None) -> dict:
+        if llm_request_options is None:
+            return {}
+        if not isinstance(llm_request_options, dict):
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "llm_request_options must be an object.",
+            )
+
+        allowed_keys = {"reasoning_effort", "store", "text_verbosity"}
+        unknown_keys = sorted(
+            key for key in llm_request_options.keys() if key not in allowed_keys
+        )
+        if unknown_keys:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                f"Unsupported llm_request_options keys: {unknown_keys}",
+            )
+
+        normalized_options: dict = {}
+
+        raw_reasoning_effort = llm_request_options.get("reasoning_effort")
+        if raw_reasoning_effort is not None:
+            candidate_reasoning_effort = str(raw_reasoning_effort or "").strip().lower()
+            if candidate_reasoning_effort:
+                allowed_reasoning_efforts = {
+                    self.REASONING_EFFORT_NONE,
+                    self.REASONING_EFFORT_MINIMAL,
+                    self.REASONING_EFFORT_LOW,
+                    self.REASONING_EFFORT_MEDIUM,
+                    self.REASONING_EFFORT_HIGH,
+                    self.REASONING_EFFORT_XHIGH,
+                }
+                if candidate_reasoning_effort not in allowed_reasoning_efforts:
+                    raise IAToolkitException(
+                        IAToolkitException.ErrorType.INVALID_PARAMETER,
+                        "Unsupported reasoning_effort "
+                        f"'{candidate_reasoning_effort}'. Must be one of: {sorted(allowed_reasoning_efforts)}",
+                    )
+                normalized_options["reasoning_effort"] = candidate_reasoning_effort
+
+        raw_store = llm_request_options.get("store")
+        if raw_store is not None:
+            if not isinstance(raw_store, bool):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "llm_request_options.store must be a boolean.",
+                )
+            normalized_options["store"] = raw_store
+
+        raw_text_verbosity = llm_request_options.get("text_verbosity")
+        if raw_text_verbosity is not None:
+            candidate_text_verbosity = str(raw_text_verbosity or "").strip().lower()
+            if candidate_text_verbosity:
+                allowed_text_verbosity = {
+                    self.TEXT_VERBOSITY_LOW,
+                    self.TEXT_VERBOSITY_MEDIUM,
+                    self.TEXT_VERBOSITY_HIGH,
+                }
+                if candidate_text_verbosity not in allowed_text_verbosity:
+                    raise IAToolkitException(
+                        IAToolkitException.ErrorType.INVALID_PARAMETER,
+                        "Unsupported text_verbosity "
+                        f"'{candidate_text_verbosity}'. Must be one of: {sorted(allowed_text_verbosity)}",
+                    )
+                normalized_options["text_verbosity"] = candidate_text_verbosity
+
+        return normalized_options
+
     def get_prompts(self, company_short_name: str, include_all: bool = False) -> dict:
         try:
             # validate company
@@ -263,6 +366,7 @@ class PromptService:
                             'attachment_parser_provider': getattr(p, 'attachment_parser_provider', None),
                             'attachment_fallback': p.attachment_fallback,
                             'llm_model': getattr(p, 'llm_model', None),
+                            'llm_request_options': dict(getattr(p, 'llm_request_options', None) or {}),
                         }
                         for p in prompts
                     ]
@@ -341,6 +445,9 @@ class PromptService:
 
         output_schema, output_schema_yaml = self._extract_output_schema_payload(data)
         company_default_policy = self._get_company_default_attachment_policy(company_short_name)
+        llm_request_options = self._normalize_llm_request_options(
+            self._extract_llm_request_options_payload(data)
+        )
 
         # 2. update the prompt in the database
         new_prompt = Prompt(
@@ -367,6 +474,7 @@ class PromptService:
                 data.get("attachment_fallback", company_default_policy["attachment_fallback"])
             ),
             llm_model=self._normalize_llm_model(company_short_name, data.get("llm_model")),
+            llm_request_options=llm_request_options,
         )
         self.llm_query_repo.create_or_update_prompt(new_prompt)
 
@@ -529,6 +637,9 @@ class PromptService:
                         prompt_data.get("attachment_fallback", company_default_policy["attachment_fallback"])
                     ),
                     llm_model=self._normalize_llm_model(company_short_name, prompt_data.get("llm_model")),
+                    llm_request_options=self._normalize_llm_request_options(
+                        self._extract_llm_request_options_payload(prompt_data)
+                    ),
                 )
 
                 self.llm_query_repo.create_or_update_prompt(new_prompt)

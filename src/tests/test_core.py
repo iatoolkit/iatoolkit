@@ -167,7 +167,7 @@ class TestIAToolkit(unittest.TestCase):
 
         toolkit._create_flask_instance()
 
-        self.assertEqual(toolkit.app.config['PERMANENT_SESSION_LIFETIME'], timedelta(minutes=60))
+        self.assertEqual(toolkit.app.config['PERMANENT_SESSION_LIFETIME'], timedelta(minutes=120))
         self.assertTrue(toolkit.app.config['SESSION_REFRESH_EACH_REQUEST'])
 
     @patch('iatoolkit.cli_commands.register_core_commands')

@@ -196,7 +196,8 @@ class TestOpenAIAdapter:
             previous_response_id='prev_123',
             tool_choice='none',
             text={'some': 'text'},
-            reasoning={'some': 'reasoning'}
+            reasoning={'some': 'reasoning'},
+            store=False,
         )
 
         # Assert
@@ -205,6 +206,7 @@ class TestOpenAIAdapter:
         assert call_kwargs['tool_choice'] == 'none'
         assert call_kwargs['text'] == {'some': 'text'}
         assert call_kwargs['reasoning'] == {'some': 'reasoning'}
+        assert call_kwargs['store'] is False
 
     def test_create_response_maps_specific_function_tool_choice(self):
         mock_response = MagicMock()
