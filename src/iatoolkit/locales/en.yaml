@@ -32,6 +32,8 @@ ui:
     latency_p95: "Latency (Avg)"
     error_rate: "Error Rate (1h)"
     queue: "Pending Tasks"
+    running: "Running"
+    waiting: "Waiting"
     tab_chats: "Live Chats"
     tab_agents: "Agents"
     tab_logs: "Access Logs"

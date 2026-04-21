@@ -33,6 +33,8 @@ ui:
     latency_p95: "Latencia (Prom)"
     error_rate: "Tasa Error (1h)"
     queue: "Tareas Pendientes"
+    running: "En ejecución"
+    waiting: "Esperando"
     tab_chats: "Chats en Vivo"
     tab_agents: "Agentes"
     tab_logs: "Logs de Acceso"
