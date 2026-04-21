@@ -2,6 +2,7 @@
 
 import pytest
 from unittest.mock import patch, MagicMock
+from sqlalchemy.orm.exc import DetachedInstanceError
 from iatoolkit.services.llm_client_service import llmClient
 from iatoolkit.services.storage_service import StorageService
 from iatoolkit.common.model_registry import ModelRegistry
@@ -369,6 +370,33 @@ class TestLLMClient:
         assert log_arg.valid_response is False
         assert "API Communication Error" in log_arg.output
 
+    def test_invoke_logs_error_with_captured_company_id_when_company_becomes_detached(self):
+        class FlakyCompany:
+            short_name = "test_company"
+            name = "Test Company"
+
+            def __init__(self):
+                self._reads = 0
+
+            @property
+            def id(self):
+                self._reads += 1
+                if self._reads == 1:
+                    return 77
+                raise DetachedInstanceError("detached")
+
+        flaky_company = FlakyCompany()
+        self.mock_proxy.create_response.side_effect = Exception("API Communication Error")
+
+        with pytest.raises(IAToolkitException, match="Error calling LLM API"):
+            self.client.invoke(
+                company=flaky_company, user_identifier='user1', previous_response_id='prev1',
+                model='gpt-5', question='q', context='c', tools=[], text={}, images=[]
+            )
+
+        log_arg = self.llmquery_repo.add_query.call_args[0][0]
+        assert log_arg.company_id == 77
+
     def test_set_company_context_success(self):
         """Test de la configuración exitosa del contexto de la empresa."""
         context_response = LLMResponse('ctx1', 'gpt-4o', 'completed', 'OK', [], Usage(10, 2, 12))
@@ -533,6 +561,76 @@ class TestLLMClient:
         assert result["schema_applied"] is True
         assert result["schema_valid"] is True
         assert result["structured_output"]["sales_2025"][0]["country"] == "Chile"
+
+    def test_apply_response_contract_prunes_additional_properties_for_openai_compatible(self):
+        decoded = {
+            "status": True,
+            "output_text": '{"paper_title":"Study title","authors":["A. One"],"publication_date":"2021","diseases_studied":["depression"],"patient_count":10,"mri_types":["structural_mri"],"brain_atlases":[],"other":"noise"}',
+            "answer": "",
+            "aditional_data": {},
+            "answer_format": "plaintext",
+            "error_message": "",
+        }
+        contract = {
+            "schema": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "paper_title",
+                    "authors",
+                    "publication_date",
+                    "diseases_studied",
+                    "patient_count",
+                    "mri_types",
+                    "brain_atlases",
+                ],
+                "properties": {
+                    "paper_title": {"type": ["string", "null"]},
+                    "authors": {"type": "array", "items": {"type": "string"}},
+                    "publication_date": {"type": ["string", "null"]},
+                    "diseases_studied": {"type": "array", "items": {"type": "string"}},
+                    "patient_count": {"type": ["integer", "null"]},
+                    "mri_types": {"type": "array", "items": {"type": "string"}},
+                    "brain_atlases": {"type": "array", "items": {"type": "string"}},
+                },
+            },
+            "schema_mode": "strict",
+            "response_mode": "structured_only",
+            "provider": "openai_compatible",
+        }
+
+        result = self.client._apply_response_contract(decoded, contract)
+
+        assert result["schema_applied"] is True
+        assert result["schema_valid"] is True
+        assert result["structured_output"]["paper_title"] == "Study title"
+        assert "other" not in result["structured_output"]
+
+    def test_apply_response_contract_keeps_strict_failure_for_native_schema_providers(self):
+        decoded = {
+            "status": True,
+            "output_text": '{"paper_title":"Study title","other":"noise"}',
+            "answer": "",
+            "aditional_data": {},
+            "answer_format": "plaintext",
+            "error_message": "",
+        }
+        contract = {
+            "schema": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["paper_title"],
+                "properties": {
+                    "paper_title": {"type": ["string", "null"]},
+                },
+            },
+            "schema_mode": "strict",
+            "response_mode": "structured_only",
+            "provider": "openai",
+        }
+
+        with pytest.raises(IAToolkitException):
+            self.client._apply_response_contract(decoded, contract)
 
     def test_apply_response_contract_uses_legacy_aditional_data_when_no_contract(self):
         decoded = {

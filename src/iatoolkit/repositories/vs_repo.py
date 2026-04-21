@@ -3,6 +3,7 @@
 #
 # IAToolkit is open source software.
 
+import json
 import logging
 import re
 from typing import Dict, List
@@ -388,6 +389,18 @@ class VSRepo:
     def _normalize_metadata_filter_input(metadata_filter):
         if metadata_filter is None:
             return None
+
+        if isinstance(metadata_filter, str):
+            candidate = metadata_filter.strip()
+            if not candidate or candidate.lower() in {"null", "none"}:
+                return None
+            try:
+                decoded = json.loads(candidate)
+            except Exception as exc:
+                raise ValueError(
+                    "metadata_filter string must be empty/null or valid JSON representing a dictionary or a list of {key, value}"
+                ) from exc
+            return VSRepo._normalize_metadata_filter_input(decoded)
 
         if isinstance(metadata_filter, dict):
             return metadata_filter

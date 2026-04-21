@@ -217,6 +217,35 @@ class TestVSRepo:
         assert params["mf_text_1_key_0"] == "source_type"
         assert params["mf_text_1_value"] == "table"
 
+    def test_query_accepts_metadata_filter_as_json_string(self):
+        mock_company = Company(id=self.MOCK_COMPANY_ID, short_name=self.MOCK_COMPANY_SHORT_NAME)
+        self.mock_session.query.return_value.filter.return_value.one_or_none.return_value = mock_company
+        self.mock_session.execute.return_value.fetchall.return_value = []
+
+        self.vs_repo.query(
+            company_short_name=self.MOCK_COMPANY_SHORT_NAME,
+            query_text="test query",
+            metadata_filter='[{"key":"doc.category","value":"finance"}]',
+        )
+
+        params = self.mock_session.execute.call_args[0][1]
+        assert params["mf_text_0_key_0"] == "category"
+        assert params["mf_text_0_value"] == "finance"
+
+    def test_query_treats_empty_string_metadata_filter_as_none(self):
+        mock_company = Company(id=self.MOCK_COMPANY_ID, short_name=self.MOCK_COMPANY_SHORT_NAME)
+        self.mock_session.query.return_value.filter.return_value.one_or_none.return_value = mock_company
+        self.mock_session.execute.return_value.fetchall.return_value = []
+
+        self.vs_repo.query(
+            company_short_name=self.MOCK_COMPANY_SHORT_NAME,
+            query_text="test query",
+            metadata_filter="  ",
+        )
+
+        sql = str(self.mock_session.execute.call_args[0][0])
+        assert "mf_text_" not in sql
+
     # --- Image Tests (Repository Layer) ---
 
     def test_add_image_success(self):

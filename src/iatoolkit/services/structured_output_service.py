@@ -127,6 +127,8 @@ class StructuredOutputService:
         cls,
         raw_output: Any,
         schema: dict | None,
+        *,
+        drop_additional_properties: bool = False,
     ) -> dict:
         if not schema:
             return {
@@ -145,7 +147,11 @@ class StructuredOutputService:
                 "errors": [parse_error],
             }
 
-        candidate = cls.normalize_instance(candidate, schema)
+        candidate = cls.normalize_instance(
+            candidate,
+            schema,
+            drop_additional_properties=drop_additional_properties,
+        )
         errors = cls.validate_instance(candidate, schema, path="$")
         return {
             "schema_present": True,
@@ -270,7 +276,13 @@ class StructuredOutputService:
         return errors
 
     @classmethod
-    def normalize_instance(cls, instance: Any, schema: dict | None) -> Any:
+    def normalize_instance(
+        cls,
+        instance: Any,
+        schema: dict | None,
+        *,
+        drop_additional_properties: bool = False,
+    ) -> Any:
         if not isinstance(schema, dict):
             return instance
 
@@ -294,9 +306,19 @@ class StructuredOutputService:
             for key, value in instance.items():
                 child_schema = properties.get(key)
                 if isinstance(child_schema, dict):
-                    normalized_object[key] = cls.normalize_instance(value, child_schema)
+                    normalized_object[key] = cls.normalize_instance(
+                        value,
+                        child_schema,
+                        drop_additional_properties=drop_additional_properties,
+                    )
                 elif isinstance(additional, dict):
-                    normalized_object[key] = cls.normalize_instance(value, additional)
+                    normalized_object[key] = cls.normalize_instance(
+                        value,
+                        additional,
+                        drop_additional_properties=drop_additional_properties,
+                    )
+                elif additional is False and drop_additional_properties:
+                    continue
                 else:
                     normalized_object[key] = value.strip() if isinstance(value, str) else value
 
@@ -306,7 +328,14 @@ class StructuredOutputService:
             item_schema = schema.get("items") if isinstance(schema.get("items"), dict) else None
             if item_schema is None:
                 return [item.strip() if isinstance(item, str) else item for item in instance]
-            return [cls.normalize_instance(item, item_schema) for item in instance]
+            return [
+                cls.normalize_instance(
+                    item,
+                    item_schema,
+                    drop_additional_properties=drop_additional_properties,
+                )
+                for item in instance
+            ]
 
         enum_values = schema.get("enum")
         if isinstance(instance, str) and isinstance(enum_values, list) and enum_values:

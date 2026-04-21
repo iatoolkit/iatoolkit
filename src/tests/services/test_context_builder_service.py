@@ -68,6 +68,7 @@ class TestContextBuilderService:
         # Assert
         assert "DB Schema Context" in context
         assert "Available Document Collections" in context
+        assert "Use `iat_document_search` when internal company documents may help answer the user." in context
         assert "### Personal Memory" in context
         assert "has_native_files=true" in context
         assert "- legal: Contracts and annexes" in context

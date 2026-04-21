@@ -91,6 +91,7 @@ class llmClient:
         response = None
         sql_retry_count = 0
         force_tool_name = None
+        company_id = getattr(company, "id", None)
 
         # Resolve per-model defaults and apply overrides (without mutating inputs).
         request_params = self.model_registry.resolve_request_params(
@@ -266,7 +267,7 @@ class llmClient:
 
             # save the query and response
             query = LLMQuery(user_identifier=user_identifier,
-                             company_id=company.id,
+                             company_id=company_id,
                              task_id=task_id,
                              query=question,
                              output=decoded_response.get('answer', ''),
@@ -314,7 +315,7 @@ class llmClient:
 
             # log the error in the llm_query table
             query = LLMQuery(user_identifier=user_identifier,
-                             company_id=company.id,
+                             company_id=company_id,
                              task_id=task_id,
                              query=question,
                              output=error_message,
@@ -558,6 +559,8 @@ class llmClient:
 
         schema_mode = str(response_contract.get("schema_mode") or "best_effort").strip().lower()
         response_mode = str(response_contract.get("response_mode") or "chat_compatible").strip().lower()
+        provider = str(response_contract.get("provider") or "").strip().lower()
+        allow_additional_property_repair = provider in {"deepseek", "openai_compatible"}
         candidates: list[Any] = []
         seen: set[str] = set()
 
@@ -588,10 +591,45 @@ class llmClient:
             StructuredOutputService.evaluate_output(raw_output=candidate, schema=schema)
             for candidate in candidates
         ]
+        repaired_evaluations = []
+        if allow_additional_property_repair:
+            repaired_evaluations = [
+                StructuredOutputService.evaluate_output(
+                    raw_output=candidate,
+                    schema=schema,
+                    drop_additional_properties=True,
+                )
+                for candidate in candidates
+            ]
+
+        fallback_evaluations = [
+            StructuredOutputService.evaluate_output(
+                raw_output=decoded_response.get("output_text"),
+                schema=schema,
+            )
+        ]
+        if allow_additional_property_repair:
+            fallback_evaluations.append(
+                StructuredOutputService.evaluate_output(
+                    raw_output=decoded_response.get("output_text"),
+                    schema=schema,
+                    drop_additional_properties=True,
+                )
+            )
 
         evaluation = next(
-            (item for item in evaluations if item.get("schema_valid")),
-            evaluations[0] if evaluations else StructuredOutputService.evaluate_output(raw_output=decoded_response.get("output_text"), schema=schema)
+            (
+                item
+                for item in (evaluations + repaired_evaluations + fallback_evaluations)
+                if item.get("schema_valid")
+            ),
+            (
+                evaluations[0]
+                if evaluations
+                else repaired_evaluations[0]
+                if repaired_evaluations
+                else fallback_evaluations[0]
+            ),
         )
 
         decoded_response["schema_applied"] = bool(evaluation.get("schema_present"))

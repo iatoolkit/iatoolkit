@@ -32,7 +32,6 @@ class PromptService:
     ATTACHMENT_PARSER_PROVIDER_BASIC = "basic"
     ATTACHMENT_FALLBACK_EXTRACT = "extract"
     ATTACHMENT_FALLBACK_FAIL = "fail"
-    REASONING_EFFORT_NONE = "none"
     REASONING_EFFORT_MINIMAL = "minimal"
     REASONING_EFFORT_LOW = "low"
     REASONING_EFFORT_MEDIUM = "medium"
@@ -263,7 +262,6 @@ class PromptService:
             candidate_reasoning_effort = str(raw_reasoning_effort or "").strip().lower()
             if candidate_reasoning_effort:
                 allowed_reasoning_efforts = {
-                    self.REASONING_EFFORT_NONE,
                     self.REASONING_EFFORT_MINIMAL,
                     self.REASONING_EFFORT_LOW,
                     self.REASONING_EFFORT_MEDIUM,

@@ -363,7 +363,7 @@ Per prompt supported keys:
 - `attachment_fallback` (optional): `extract`, `fail`
 - `llm_model` (optional): per-prompt model override
 - `llm_request_options` (optional object):
-  - `reasoning_effort`: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`
+  - `reasoning_effort`: `minimal`, `low`, `medium`, `high`, `xhigh`
   - `store`: boolean
   - `text_verbosity`: `low`, `medium`, `high`
 

@@ -109,3 +109,25 @@ def test_evaluate_output_normalizes_string_null_to_null_when_allowed():
 
     assert result["schema_valid"] is True
     assert result["structured_output"]["primary_statistical_test"] is None
+
+
+def test_evaluate_output_can_drop_additional_properties_when_requested():
+    schema = StructuredOutputService.normalize_schema(
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["paper_title"],
+            "properties": {
+                "paper_title": {"type": ["string", "null"]},
+            },
+        }
+    )
+
+    result = StructuredOutputService.evaluate_output(
+        raw_output='{"paper_title":"Study title","other":"noise"}',
+        schema=schema,
+        drop_additional_properties=True,
+    )
+
+    assert result["schema_valid"] is True
+    assert result["structured_output"] == {"paper_title": "Study title"}

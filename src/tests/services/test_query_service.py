@@ -1072,6 +1072,7 @@ class TestQueryService:
         assert "OUTPUT CONTRACT (MANDATORY)" in invoke_kwargs["context"]
         assert "Every required key must be present exactly once." in invoke_kwargs["context"]
         assert "evidence.multiple_comparison_correction" in invoke_kwargs["context"]
+        assert invoke_kwargs["response_contract"]["provider"] == "deepseek"
 
     def test_llm_query_forces_memory_search_for_explicit_memory_intent(self):
         self.mock_tool_service.get_tools_for_llm.return_value = [

@@ -458,7 +458,7 @@ class ConfigurationService:
         allowed_attachment_modes = {"extracted_only", "native_only", "native_plus_extracted"}
         allowed_attachment_parser_providers = {"auto", "docling", "basic"}
         allowed_attachment_fallbacks = {"extract", "fail"}
-        allowed_reasoning_efforts = {"none", "minimal", "low", "medium", "high", "xhigh"}
+        allowed_reasoning_efforts = {"minimal", "low", "medium", "high", "xhigh"}
         allowed_text_verbosity = {"low", "medium", "high"}
         default_llm_model = str(config.get("llm", {}).get("model") or "").strip()
         allowed_llm_models = set()

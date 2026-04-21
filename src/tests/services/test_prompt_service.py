@@ -334,6 +334,25 @@ properties:
         assert exc_info.value.error_type == IAToolkitException.ErrorType.INVALID_PARAMETER
         assert "Unsupported reasoning_effort" in str(exc_info.value)
 
+    def test_save_prompt_rejects_reasoning_effort_none(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_category_by_name.return_value = None
+
+        with pytest.raises(IAToolkitException) as exc_info:
+            self.prompt_service.save_prompt(
+                'test_co',
+                'legacy_reasoning_prompt',
+                {
+                    'content': 'Prompt text',
+                    'llm_request_options': {
+                        'reasoning_effort': 'none',
+                    },
+                },
+            )
+
+        assert exc_info.value.error_type == IAToolkitException.ErrorType.INVALID_PARAMETER
+        assert "Unsupported reasoning_effort" in str(exc_info.value)
+
     def test_save_prompt_rejects_unknown_llm_model(self):
         self.profile_repo.get_company_by_short_name.return_value = self.mock_company
         self.llm_query_repo.get_category_by_name.return_value = None

@@ -203,7 +203,7 @@ tools:
         - database_key
         - query
   - function_name: iat_document_search
-    description: Búsqueda semantica sobre los documentos que forman una colección
+    description: Búsqueda semántica sobre documentos internos de la empresa para traer contexto adicional cuando haga falta. No usar si el usuario pide trabajar exclusivamente con un archivo ya adjunto en el turno actual.
     routing:
       force_include_capability: has_kb_collections
     routing_profile:
@@ -216,6 +216,7 @@ tools:
       intents:
         - Search text chunks in company document collections.
         - Retrieve relevant context from internal documents.
+        - Use only when the answer needs extra internal documents beyond the current conversation and current attachments.
       examples:
         - iat_document_search(query="política de devoluciones", collection="Atencion", metadata_filter=[])
         - iat_document_search(query="fecha de vencimiento contrato", collection="Legal", metadata_filter=[{"key":"doc.type","value":"contract"}])
@@ -228,7 +229,7 @@ tools:
       properties:
         query:
           type: string
-          description: Texto o pregunta a buscar en los documentos.
+          description: Texto o pregunta a buscar en documentos internos adicionales. No usar para releer un archivo que ya fue adjuntado al turno actual.
         collection:
           anyOf:
             - type: string
@@ -259,8 +260,6 @@ tools:
             additionalProperties: false
       required:
         - query
-        - collection
-        - metadata_filter
   - function_name: iat_memory_search
     description: Busca páginas relevantes dentro de la Memoria personal del usuario y retorna contexto compilado. Incluye la señal `has_native_files` cuando una memoria tiene archivos fuente que pueden adjuntarse nativamente al modelo. Debe usarse antes de responder preguntas sobre cosas guardadas, notas previas, memoria del usuario, continuidad entre sesiones o "lo que hablamos/guardé antes".
     routing:

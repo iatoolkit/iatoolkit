@@ -263,7 +263,7 @@ class QueryService:
             normalized_llm_request_options = {}
             if isinstance(raw_llm_request_options, dict):
                 reasoning_effort = str(raw_llm_request_options.get("reasoning_effort") or "").strip().lower()
-                if reasoning_effort:
+                if reasoning_effort in {"minimal", "low", "medium", "high", "xhigh"}:
                     normalized_llm_request_options["reasoning_effort"] = reasoning_effort
                 if isinstance(raw_llm_request_options.get("store"), bool):
                     normalized_llm_request_options["store"] = raw_llm_request_options["store"]
@@ -313,7 +313,7 @@ class QueryService:
         store_override = None
 
         reasoning_effort = str(prompt_options.get("reasoning_effort") or "").strip().lower()
-        if reasoning_effort:
+        if reasoning_effort in {"minimal", "low", "medium", "high", "xhigh"}:
             reasoning_overrides = {"effort": reasoning_effort}
             metadata["applied"]["reasoning_effort"] = reasoning_effort
 
@@ -822,6 +822,7 @@ class QueryService:
 
             # attachment policy
             provider = self._get_provider(company_short_name, effective_model)
+            prompt_output_contract["provider"] = provider
             effective_attachment_policy = self._resolve_effective_attachment_policy(
                 company_short_name=company_short_name,
                 prompt_output_contract=prompt_output_contract,
