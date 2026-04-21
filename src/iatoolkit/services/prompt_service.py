@@ -40,6 +40,8 @@ class PromptService:
     TEXT_VERBOSITY_LOW = "low"
     TEXT_VERBOSITY_MEDIUM = "medium"
     TEXT_VERBOSITY_HIGH = "high"
+    TOOL_POLICY_MODE_INHERIT = "inherit"
+    TOOL_POLICY_MODE_EXPLICIT = "explicit"
 
     @inject
     def __init__(self,
@@ -91,6 +93,77 @@ class PromptService:
         if candidate in allowed:
             return candidate
         return self.OUTPUT_RESPONSE_MODE_CHAT
+
+    def _normalize_tool_policy(self, tool_policy: dict | None) -> dict:
+        if tool_policy is None:
+            return {
+                "mode": self.TOOL_POLICY_MODE_INHERIT,
+                "tool_names": [],
+            }
+
+        if not isinstance(tool_policy, dict):
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "tool_policy must be an object.",
+            )
+
+        allowed_keys = {"mode", "tool_names"}
+        unknown_keys = sorted(key for key in tool_policy.keys() if key not in allowed_keys)
+        if unknown_keys:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                f"Unsupported tool_policy keys: {unknown_keys}",
+            )
+
+        mode = str(tool_policy.get("mode") or self.TOOL_POLICY_MODE_INHERIT).strip().lower()
+        if mode not in {self.TOOL_POLICY_MODE_INHERIT, self.TOOL_POLICY_MODE_EXPLICIT}:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "Unsupported tool_policy.mode "
+                f"'{mode}'. Must be one of: {[self.TOOL_POLICY_MODE_EXPLICIT, self.TOOL_POLICY_MODE_INHERIT]}",
+            )
+
+        raw_tool_names = tool_policy.get("tool_names", [])
+        if raw_tool_names is None:
+            raw_tool_names = []
+        if not isinstance(raw_tool_names, list):
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "tool_policy.tool_names must be a list.",
+            )
+
+        normalized_tool_names: list[str] = []
+        for index, item in enumerate(raw_tool_names):
+            if not isinstance(item, str):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    f"tool_policy.tool_names[{index}] must be a string.",
+                )
+            candidate = item.strip()
+            if not candidate:
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    f"tool_policy.tool_names[{index}] cannot be empty.",
+                )
+            if candidate not in normalized_tool_names:
+                normalized_tool_names.append(candidate)
+
+        if mode == self.TOOL_POLICY_MODE_EXPLICIT and not normalized_tool_names:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "tool_policy.tool_names must include at least one tool when mode='explicit'.",
+            )
+
+        if mode == self.TOOL_POLICY_MODE_INHERIT:
+            normalized_tool_names = []
+
+        return {
+            "mode": mode,
+            "tool_names": normalized_tool_names,
+        }
+
+    def normalize_tool_policy(self, tool_policy: dict | None) -> dict:
+        return self._normalize_tool_policy(tool_policy)
 
     def _extract_output_schema_payload(self, data: dict) -> tuple[dict | None, str | None]:
         yaml_value = data.get("output_schema_yaml")
@@ -365,6 +438,7 @@ class PromptService:
                             'attachment_fallback': p.attachment_fallback,
                             'llm_model': getattr(p, 'llm_model', None),
                             'llm_request_options': dict(getattr(p, 'llm_request_options', None) or {}),
+                            'tool_policy': dict(getattr(p, 'tool_policy', None) or {}),
                         }
                         for p in prompts
                     ]
@@ -446,6 +520,7 @@ class PromptService:
         llm_request_options = self._normalize_llm_request_options(
             self._extract_llm_request_options_payload(data)
         )
+        tool_policy = self._normalize_tool_policy(data.get("tool_policy"))
 
         # 2. update the prompt in the database
         new_prompt = Prompt(
@@ -473,6 +548,7 @@ class PromptService:
             ),
             llm_model=self._normalize_llm_model(company_short_name, data.get("llm_model")),
             llm_request_options=llm_request_options,
+            tool_policy=tool_policy,
         )
         self.llm_query_repo.create_or_update_prompt(new_prompt)
 
@@ -638,6 +714,7 @@ class PromptService:
                     llm_request_options=self._normalize_llm_request_options(
                         self._extract_llm_request_options_payload(prompt_data)
                     ),
+                    tool_policy=self._normalize_tool_policy(prompt_data.get("tool_policy")),
                 )
 
                 self.llm_query_repo.create_or_update_prompt(new_prompt)

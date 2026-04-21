@@ -581,6 +581,51 @@ class ConfigurationService:
                             f"Unsupported value '{text_verbosity}'. Must be one of: {sorted(allowed_text_verbosity)}.",
                         )
 
+            tool_policy = prompt.get("tool_policy")
+            if tool_policy is not None:
+                if not isinstance(tool_policy, dict):
+                    add_error(f"prompts[{i}].tool_policy", "Must be an object.")
+                else:
+                    allowed_tool_policy_keys = {"mode", "tool_names"}
+                    unknown_tool_policy_keys = sorted(
+                        key for key in tool_policy.keys() if key not in allowed_tool_policy_keys
+                    )
+                    if unknown_tool_policy_keys:
+                        add_error(
+                            f"prompts[{i}].tool_policy",
+                            f"Unsupported keys: {unknown_tool_policy_keys}.",
+                        )
+
+                    tool_policy_mode = str(tool_policy.get("mode") or "inherit").strip().lower()
+                    if tool_policy_mode not in {"inherit", "explicit"}:
+                        add_error(
+                            f"prompts[{i}].tool_policy.mode",
+                            "Unsupported value "
+                            f"'{tool_policy_mode}'. Must be one of: {sorted(['explicit', 'inherit'])}.",
+                        )
+
+                    tool_names = tool_policy.get("tool_names", [])
+                    if tool_names is None:
+                        tool_names = []
+                    if not isinstance(tool_names, list):
+                        add_error(f"prompts[{i}].tool_policy.tool_names", "Must be a list.")
+                    else:
+                        normalized_tool_names = []
+                        for tool_name_index, tool_name in enumerate(tool_names):
+                            if not isinstance(tool_name, str) or not tool_name.strip():
+                                add_error(
+                                    f"prompts[{i}].tool_policy.tool_names[{tool_name_index}]",
+                                    "Must be a non-empty string.",
+                                )
+                            else:
+                                normalized_tool_names.append(tool_name.strip())
+
+                        if tool_policy_mode == "explicit" and not normalized_tool_names:
+                            add_error(
+                                f"prompts[{i}].tool_policy.tool_names",
+                                "Must include at least one tool when mode='explicit'.",
+                            )
+
             output_schema = prompt.get("output_schema")
             if output_schema is not None:
                 if not isinstance(output_schema, dict):

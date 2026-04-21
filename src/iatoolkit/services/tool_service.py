@@ -24,6 +24,7 @@ from iatoolkit.services.visual_tool_service import VisualToolService
 from iatoolkit.services.system_tools import (
     SYSTEM_TOOLS_DEFINITIONS,
     get_system_tools_catalog_source,
+    get_system_tool_force_include_capabilities,
 )
 from iatoolkit import current_iatoolkit
 
@@ -89,6 +90,7 @@ class ToolService:
         self.visual_kb_service = visual_kb_service
         self.visual_tool_service = visual_tool_service
         self._web_search_service = web_search_service
+        self.system_tool_force_include_capabilities = get_system_tool_force_include_capabilities()
 
         # execution mapper for system tools
         self.system_handlers = {
@@ -1049,6 +1051,45 @@ class ToolService:
             tools.append(ai_tool)
 
         return tools
+
+    def get_always_include_tool_names(self, company_short_name: str, tools: list[dict]) -> list[str]:
+        capabilities = self._resolve_runtime_tool_capabilities(company_short_name)
+        selected_names: list[str] = []
+
+        for tool in tools or []:
+            if not isinstance(tool, dict):
+                continue
+            tool_name = str(tool.get("name") or "").strip()
+            if not tool_name:
+                continue
+            required_capability = self.system_tool_force_include_capabilities.get(tool_name)
+            if not required_capability:
+                continue
+            if not capabilities.get(required_capability):
+                continue
+            if tool_name not in selected_names:
+                selected_names.append(tool_name)
+
+        return selected_names
+
+    def _resolve_runtime_tool_capabilities(self, company_short_name: str) -> dict[str, bool]:
+        has_sql_sources = False
+        has_kb_collections = False
+
+        try:
+            has_sql_sources = bool(self.sql_service.get_db_names(company_short_name))
+        except Exception as exc:
+            logging.warning("Failed to resolve SQL tool capability for %s: %s", company_short_name, exc)
+
+        try:
+            has_kb_collections = bool(self.knowledge_base_service.get_collection_names(company_short_name))
+        except Exception as exc:
+            logging.warning("Failed to resolve KB tool capability for %s: %s", company_short_name, exc)
+
+        return {
+            "has_sql_sources": has_sql_sources,
+            "has_kb_collections": has_kb_collections,
+        }
 
 
     def get_system_handler(self, function_name: str):

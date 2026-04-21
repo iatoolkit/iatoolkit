@@ -271,6 +271,7 @@ class QueryService:
                 if text_verbosity:
                     normalized_llm_request_options["text_verbosity"] = text_verbosity
             contract["llm_request_options"] = normalized_llm_request_options
+            contract["tool_policy"] = self._normalize_prompt_tool_policy(contract.get("tool_policy"))
             contract["provider"] = self._get_provider(company.short_name, contract.get("llm_model") or "")
             return contract
         except Exception as e:
@@ -281,6 +282,110 @@ class QueryService:
                 e,
             )
             return {}
+
+    @staticmethod
+    def _normalize_prompt_tool_policy(tool_policy: dict | None) -> dict:
+        if not isinstance(tool_policy, dict):
+            return {"mode": "inherit", "tool_names": []}
+
+        mode = str(tool_policy.get("mode") or "inherit").strip().lower()
+        if mode not in {"inherit", "explicit"}:
+            mode = "inherit"
+
+        raw_tool_names = tool_policy.get("tool_names", [])
+        if not isinstance(raw_tool_names, list):
+            raw_tool_names = []
+
+        normalized_tool_names: list[str] = []
+        for item in raw_tool_names:
+            if not isinstance(item, str):
+                continue
+            candidate = item.strip()
+            if candidate and candidate not in normalized_tool_names:
+                normalized_tool_names.append(candidate)
+
+        if mode == "inherit":
+            normalized_tool_names = []
+
+        return {
+            "mode": mode,
+            "tool_names": normalized_tool_names,
+        }
+
+    def _apply_prompt_tool_policy(
+        self,
+        *,
+        company_short_name: str,
+        prompt_output_contract: dict | None,
+        tools: list[dict],
+    ) -> tuple[list[dict], dict | None]:
+        policy = self._normalize_prompt_tool_policy((prompt_output_contract or {}).get("tool_policy"))
+        if policy["mode"] != "explicit":
+            return tools, None
+
+        configured_tool_names = policy.get("tool_names") or []
+        configured_tool_name_set = set(configured_tool_names)
+        forced_tool_names = self.tool_service.get_always_include_tool_names(company_short_name, tools)
+        forced_tool_name_set = set(forced_tool_names)
+
+        selected_tools: list[dict] = []
+        matched_tool_names: list[str] = []
+        for tool in tools or []:
+            if not isinstance(tool, dict):
+                continue
+            tool_name = str(tool.get("name") or "").strip()
+            if not tool_name:
+                continue
+            if tool_name not in configured_tool_name_set and tool_name not in forced_tool_name_set:
+                continue
+            selected_tools.append(tool)
+            if tool_name in configured_tool_name_set and tool_name not in matched_tool_names:
+                matched_tool_names.append(tool_name)
+
+        missing_tool_names = [
+            tool_name for tool_name in configured_tool_names
+            if tool_name not in matched_tool_names
+        ]
+        metrics = {
+            "candidate_count": len(tools) if isinstance(tools, list) else 0,
+            "selected_count": len(selected_tools),
+            "selection_mode": "prompt_explicit",
+            "fallback_reason": None,
+            "selector_latency_ms": 0,
+            "router_skipped": True,
+            "configured_tool_names": configured_tool_names,
+            "matched_tool_names": matched_tool_names,
+            "missing_tool_names": missing_tool_names,
+            "forced_tool_names": forced_tool_names,
+        }
+        return selected_tools, metrics
+
+    @staticmethod
+    def _append_effective_tools_instruction(user_turn_prompt: str, tools: list[dict], *, explicit_only: bool = False) -> str:
+        if not explicit_only:
+            return user_turn_prompt
+
+        lines = [
+            "### Enabled Tools For This Request",
+            "Only the tools listed below are enabled for this request. Ignore any other tools mentioned elsewhere.",
+        ]
+
+        if not tools:
+            lines.append("- No tools are enabled for this request.")
+        else:
+            for tool in tools:
+                if not isinstance(tool, dict):
+                    continue
+                tool_name = str(tool.get("name") or "").strip()
+                if not tool_name:
+                    continue
+                description = str(tool.get("description") or "").strip()
+                if description:
+                    lines.append(f"- {tool_name}: {description}")
+                else:
+                    lines.append(f"- {tool_name}")
+
+        return f"{user_turn_prompt}\n\n" + "\n".join(lines)
 
     def _resolve_prompt_request_overrides(
         self,
@@ -909,14 +1014,25 @@ class QueryService:
 
             # get the tools availables for this company
             tools = self.tool_service.get_tools_for_llm(company)
-
-            tools, tool_router_metrics = self._select_tools_for_llm_with_metrics(
+            tools, tool_router_metrics = self._apply_prompt_tool_policy(
                 company_short_name=company_short_name,
-                company=company,
-                user_identifier=user_identifier,
-                question=effective_question,
+                prompt_output_contract=prompt_output_contract,
                 tools=tools,
             )
+            if tool_router_metrics is None:
+                tools, tool_router_metrics = self._select_tools_for_llm_with_metrics(
+                    company_short_name=company_short_name,
+                    company=company,
+                    user_identifier=user_identifier,
+                    question=effective_question,
+                    tools=tools,
+                )
+            else:
+                user_turn_prompt = self._append_effective_tools_instruction(
+                    user_turn_prompt,
+                    tools,
+                    explicit_only=True,
+                )
             memory_lookup_decision = self.memory_lookup_policy_service.resolve(
                 question=effective_question,
                 tools=tools,

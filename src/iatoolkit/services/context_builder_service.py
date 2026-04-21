@@ -107,6 +107,9 @@ class ContextBuilderService:
             "attachment_fallback": getattr(prompt_obj, "attachment_fallback", None),
             "llm_model": getattr(prompt_obj, "llm_model", None),
             "llm_request_options": dict(getattr(prompt_obj, "llm_request_options", None) or {}),
+            "tool_policy": self.prompt_service.normalize_tool_policy(
+                getattr(prompt_obj, "tool_policy", None)
+            ),
         }
 
     def build_system_context(
