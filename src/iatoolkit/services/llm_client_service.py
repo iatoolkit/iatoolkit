@@ -80,6 +80,7 @@ class llmClient:
                store: Optional[bool] = None,
                task_id: Optional[int] = None,
                execution_metadata: Optional[Dict[str, Any]] = None,
+               request_metadata: Optional[Dict[str, str]] = None,
                response_contract: Optional[Dict[str, Any]] = None
                ) -> dict:
 
@@ -132,6 +133,7 @@ class llmClient:
                     images=images,
                     attachments=active_attachments,
                     store=store,
+                    metadata=request_metadata,
                 )
                 stats = self.get_stats(response)
 
@@ -239,6 +241,7 @@ class llmClient:
                     images=images,
                     attachments=active_attachments,
                     store=store,
+                    metadata=request_metadata,
                 )
                 stats_fcall = self.add_stats(stats_fcall, self.get_stats(response))
 

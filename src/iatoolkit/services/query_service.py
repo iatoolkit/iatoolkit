@@ -270,6 +270,12 @@ class QueryService:
                 text_verbosity = str(raw_llm_request_options.get("text_verbosity") or "").strip().lower()
                 if text_verbosity:
                     normalized_llm_request_options["text_verbosity"] = text_verbosity
+                prompt_version = str(raw_llm_request_options.get("prompt_version") or "").strip()
+                if prompt_version:
+                    normalized_llm_request_options["prompt_version"] = prompt_version
+                prompt_variant = str(raw_llm_request_options.get("prompt_variant") or "").strip()
+                if prompt_variant:
+                    normalized_llm_request_options["prompt_variant"] = prompt_variant
             contract["llm_request_options"] = normalized_llm_request_options
             contract["tool_policy"] = self._normalize_prompt_tool_policy(contract.get("tool_policy"))
             contract["provider"] = self._get_provider(company.short_name, contract.get("llm_model") or "")
@@ -398,13 +404,17 @@ class QueryService:
     ) -> tuple[dict, dict | None, bool | None, dict]:
         provider = self._get_provider(company_short_name, effective_model)
         prompt_options = dict((prompt_output_contract or {}).get("llm_request_options") or {})
+        request_option_keys = {"reasoning_effort", "store", "text_verbosity"}
+        request_options = {
+            key: value for key, value in prompt_options.items() if key in request_option_keys
+        }
         metadata = {
             "provider": provider,
-            "requested": dict(prompt_options or {}),
+            "requested": dict(request_options or {}),
             "applied": {},
         }
 
-        if not prompt_options:
+        if not request_options:
             return {}, None, None, metadata
 
         supported_provider = provider in ("openai", "xai")
@@ -417,21 +427,37 @@ class QueryService:
         reasoning_overrides = None
         store_override = None
 
-        reasoning_effort = str(prompt_options.get("reasoning_effort") or "").strip().lower()
+        reasoning_effort = str(request_options.get("reasoning_effort") or "").strip().lower()
         if reasoning_effort in {"minimal", "low", "medium", "high", "xhigh"}:
             reasoning_overrides = {"effort": reasoning_effort}
             metadata["applied"]["reasoning_effort"] = reasoning_effort
 
-        text_verbosity = str(prompt_options.get("text_verbosity") or "").strip().lower()
+        text_verbosity = str(request_options.get("text_verbosity") or "").strip().lower()
         if text_verbosity:
             text_overrides["verbosity"] = text_verbosity
             metadata["applied"]["text_verbosity"] = text_verbosity
 
-        if "store" in prompt_options:
-            store_override = bool(prompt_options.get("store"))
+        if "store" in request_options:
+            store_override = bool(request_options.get("store"))
             metadata["applied"]["store"] = store_override
 
         return text_overrides, reasoning_overrides, store_override, metadata
+
+    @staticmethod
+    def _resolve_prompt_request_metadata(prompt_output_contract: dict | None) -> dict[str, str] | None:
+        prompt_name = str((prompt_output_contract or {}).get("prompt_name") or "").strip()
+        if not prompt_name:
+            return None
+
+        prompt_options = dict((prompt_output_contract or {}).get("llm_request_options") or {})
+        prompt_version = str(prompt_options.get("prompt_version") or "1").strip() or "1"
+        prompt_variant = str(prompt_options.get("prompt_variant") or "default").strip() or "default"
+
+        return {
+            "prompt_name": prompt_name[:512],
+            "prompt_version": prompt_version[:512],
+            "prompt_variant": prompt_variant[:512],
+        }
 
     @staticmethod
     def _append_memory_search_instruction(prompt: str, should_suggest_memory_search: bool) -> str:
@@ -662,6 +688,7 @@ class QueryService:
                                       images: list,
                                       attachment_plan: dict,
                                       execution_metadata: dict,
+                                      request_metadata: dict | None,
                                       prompt_output_contract: dict,
                                       history_handle: HistoryHandle,
                                       ignore_history: bool) -> tuple[dict, HistoryHandle]:
@@ -686,6 +713,7 @@ class QueryService:
                 reasoning=reasoning,
                 store=store,
                 execution_metadata=execution_metadata,
+                request_metadata=request_metadata,
                 response_contract=prompt_output_contract if prompt_output_contract.get("schema") else None,
             )
             return response, history_handle
@@ -742,6 +770,7 @@ class QueryService:
                 reasoning=reasoning,
                 store=store,
                 execution_metadata=execution_metadata,
+                request_metadata=request_metadata,
                 response_contract=prompt_output_contract if prompt_output_contract.get("schema") else None,
             )
             return response, retry_history_handle
@@ -1094,6 +1123,7 @@ class QueryService:
             )
             text_payload = dict(output_schema or {})
             text_payload.update(text_overrides or {})
+            request_metadata = self._resolve_prompt_request_metadata(prompt_output_contract)
 
             execution_metadata = {"tool_router": tool_router_metrics}
             if memory_lookup_decision.reason:
@@ -1120,6 +1150,8 @@ class QueryService:
                 or request_options_metadata.get("store_forced_reason")
             ):
                 execution_metadata["llm_request_options"] = request_options_metadata
+            if request_metadata:
+                execution_metadata["request_metadata"] = request_metadata
             execution_metadata["attachments"] = {
                 "policy": attachment_plan.get("policy", {}),
                 "stats": attachment_plan.get("stats", {}),
@@ -1143,6 +1175,7 @@ class QueryService:
                 images=images,
                 attachment_plan=attachment_plan,
                 execution_metadata=execution_metadata,
+                request_metadata=request_metadata,
                 prompt_output_contract=prompt_output_contract,
                 history_handle=history_handle,
                 ignore_history=ignore_history,

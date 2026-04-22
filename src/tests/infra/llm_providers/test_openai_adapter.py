@@ -198,6 +198,7 @@ class TestOpenAIAdapter:
             text={'some': 'text'},
             reasoning={'some': 'reasoning'},
             store=False,
+            metadata={'prompt_name': 'sales_prompt', 'prompt_version': '2', 'prompt_variant': 'baseline'},
         )
 
         # Assert
@@ -207,6 +208,11 @@ class TestOpenAIAdapter:
         assert call_kwargs['text'] == {'some': 'text'}
         assert call_kwargs['reasoning'] == {'some': 'reasoning'}
         assert call_kwargs['store'] is False
+        assert call_kwargs['metadata'] == {
+            'prompt_name': 'sales_prompt',
+            'prompt_version': '2',
+            'prompt_variant': 'baseline',
+        }
 
     def test_create_response_maps_specific_function_tool_choice(self):
         mock_response = MagicMock()

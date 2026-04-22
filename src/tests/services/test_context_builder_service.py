@@ -243,7 +243,12 @@ required:
             attachment_parser_provider="basic",
             attachment_fallback="fail",
             llm_model="gpt-4.1-mini",
-            llm_request_options={"reasoning_effort": "high", "store": False},
+            llm_request_options={
+                "reasoning_effort": "high",
+                "store": False,
+                "prompt_version": "2",
+                "prompt_variant": "baseline",
+            },
             tool_policy={"mode": "explicit", "tool_names": ["iat_sql_query"]},
         )
         self.mock_prompt_service.normalize_tool_policy.return_value = {
@@ -261,7 +266,12 @@ required:
         assert contract["attachment_parser_provider"] == "basic"
         assert contract["attachment_fallback"] == "fail"
         assert contract["llm_model"] == "gpt-4.1-mini"
-        assert contract["llm_request_options"] == {"reasoning_effort": "high", "store": False}
+        assert contract["llm_request_options"] == {
+            "reasoning_effort": "high",
+            "store": False,
+            "prompt_version": "2",
+            "prompt_variant": "baseline",
+        }
         assert contract["tool_policy"] == {"mode": "explicit", "tool_names": ["iat_sql_query"]}
 
     def test_get_prompt_output_contract_returns_attachment_policy_even_without_schema(self):

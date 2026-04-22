@@ -32,7 +32,8 @@ class AnthropicAdapter:
                         tool_choice: str = "auto",
                         images: Optional[List[Dict]] = None,
                         attachments: Optional[List[Dict]] = None,
-                        store: Optional[bool] = None) -> LLMResponse:
+                        store: Optional[bool] = None,
+                        metadata: Optional[Dict[str, str]] = None) -> LLMResponse:
         """
         Calls Anthropic Messages API and maps the response to common LLMResponse.
 
@@ -44,6 +45,7 @@ class AnthropicAdapter:
         _ = reasoning
         _ = attachments
         _ = store
+        _ = metadata
 
         try:
             full_input = (context_history or []) + input

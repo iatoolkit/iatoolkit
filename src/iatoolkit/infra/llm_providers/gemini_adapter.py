@@ -52,9 +52,11 @@ class GeminiAdapter:
                         images: Optional[List[Dict]] = None,
                         attachments: Optional[List[Dict]] = None,
                         store: Optional[bool] = None,
+                        metadata: Optional[Dict[str, str]] = None,
                         ) -> LLMResponse:
         try:
             _ = store
+            _ = metadata
 
             # Separamos las instrucciones del sistema del resto del contenido
             system_instruction, filtered_input = self._extract_system_and_filter_input(

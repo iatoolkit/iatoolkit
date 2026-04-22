@@ -895,6 +895,78 @@ class TestQueryService:
             "text_verbosity": "high",
         }
 
+    def test_llm_query_passes_prompt_tracking_metadata(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = []
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt content", "question", [])
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "sales_prompt",
+            "schema": None,
+            "schema_mode": "best_effort",
+            "response_mode": "chat_compatible",
+            "llm_request_options": {
+                "prompt_version": "4",
+                "prompt_variant": "fewshot",
+            },
+        }
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="sales_prompt",
+            model="gpt-5",
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["request_metadata"] == {
+            "prompt_name": "sales_prompt",
+            "prompt_version": "4",
+            "prompt_variant": "fewshot",
+        }
+        assert invoke_kwargs["execution_metadata"]["request_metadata"] == {
+            "prompt_name": "sales_prompt",
+            "prompt_version": "4",
+            "prompt_variant": "fewshot",
+        }
+
+    def test_llm_query_uses_default_prompt_tracking_metadata(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = []
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt content", "question", [])
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "sales_prompt",
+            "schema": None,
+            "schema_mode": "best_effort",
+            "response_mode": "chat_compatible",
+            "llm_request_options": {},
+        }
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="sales_prompt",
+            model="gpt-5",
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["request_metadata"] == {
+            "prompt_name": "sales_prompt",
+            "prompt_version": "1",
+            "prompt_variant": "default",
+        }
+
     def test_llm_query_ignores_prompt_request_options_for_unsupported_provider(self):
         self.mock_configuration_service.get_llm_model_config.return_value = {"provider": "anthropic"}
         self.mock_tool_service.get_tools_for_llm.return_value = []

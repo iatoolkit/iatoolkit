@@ -312,7 +312,13 @@ class PromptService:
                 "llm_request_options must be an object.",
             )
 
-        allowed_keys = {"reasoning_effort", "store", "text_verbosity"}
+        allowed_keys = {
+            "reasoning_effort",
+            "store",
+            "text_verbosity",
+            "prompt_version",
+            "prompt_variant",
+        }
         unknown_keys = sorted(
             key for key in llm_request_options.keys() if key not in allowed_keys
         )
@@ -368,6 +374,26 @@ class PromptService:
                         f"'{candidate_text_verbosity}'. Must be one of: {sorted(allowed_text_verbosity)}",
                     )
                 normalized_options["text_verbosity"] = candidate_text_verbosity
+
+        raw_prompt_version = llm_request_options.get("prompt_version")
+        if raw_prompt_version is not None:
+            candidate_prompt_version = str(raw_prompt_version or "").strip()
+            if not candidate_prompt_version:
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "llm_request_options.prompt_version must be a non-empty string.",
+                )
+            normalized_options["prompt_version"] = candidate_prompt_version
+
+        raw_prompt_variant = llm_request_options.get("prompt_variant")
+        if raw_prompt_variant is not None:
+            candidate_prompt_variant = str(raw_prompt_variant or "").strip()
+            if not candidate_prompt_variant:
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "llm_request_options.prompt_variant must be a non-empty string.",
+                )
+            normalized_options["prompt_variant"] = candidate_prompt_variant
 
         return normalized_options
 

@@ -304,6 +304,8 @@ properties:
                     'reasoning_effort': 'high',
                     'store': False,
                     'text_verbosity': 'medium',
+                    'prompt_version': '2',
+                    'prompt_variant': 'baseline',
                 },
             },
         )
@@ -313,6 +315,8 @@ properties:
             'reasoning_effort': 'high',
             'store': False,
             'text_verbosity': 'medium',
+            'prompt_version': '2',
+            'prompt_variant': 'baseline',
         }
 
     def test_save_prompt_persists_explicit_tool_policy(self):

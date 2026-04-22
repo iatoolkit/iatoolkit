@@ -501,6 +501,8 @@ class TestConfigurationService:
             "reasoning_effort": "high",
             "store": False,
             "text_verbosity": "medium",
+            "prompt_version": "2",
+            "prompt_variant": "baseline",
         }
 
         self.mock_asset_repo.exists.return_value = True

@@ -112,6 +112,33 @@ class TestLLMClient:
         assert call_kwargs['reasoning'] == {"effort": "high"}
         assert call_kwargs['text'] == {"verbosity": "medium"}
 
+    def test_invoke_passes_request_metadata_to_proxy(self):
+        self.mock_proxy.create_response.return_value = self.mock_llm_response
+
+        self.client.invoke(
+            company=self.company,
+            user_identifier='user1',
+            previous_response_id='prev1',
+            model='gpt-5',
+            question='q',
+            context='c',
+            tools=[],
+            text={},
+            images=[],
+            request_metadata={
+                "prompt_name": "sales_prompt",
+                "prompt_version": "3",
+                "prompt_variant": "control",
+            },
+        )
+
+        call_kwargs = self.mock_proxy.create_response.call_args.kwargs
+        assert call_kwargs["metadata"] == {
+            "prompt_name": "sales_prompt",
+            "prompt_version": "3",
+            "prompt_variant": "control",
+        }
+
     def test_invoke_keeps_response_id_when_store_is_false(self):
         self.mock_proxy.create_response.return_value = self.mock_llm_response
 

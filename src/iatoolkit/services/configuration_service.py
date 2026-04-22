@@ -551,7 +551,13 @@ class ConfigurationService:
                 if not isinstance(llm_request_options, dict):
                     add_error(f"prompts[{i}].llm_request_options", "Must be an object.")
                 else:
-                    allowed_option_keys = {"reasoning_effort", "store", "text_verbosity"}
+                    allowed_option_keys = {
+                        "reasoning_effort",
+                        "store",
+                        "text_verbosity",
+                        "prompt_version",
+                        "prompt_variant",
+                    }
                     unknown_option_keys = sorted(
                         key for key in llm_request_options.keys() if key not in allowed_option_keys
                     )
@@ -580,6 +586,22 @@ class ConfigurationService:
                             f"prompts[{i}].llm_request_options.text_verbosity",
                             f"Unsupported value '{text_verbosity}'. Must be one of: {sorted(allowed_text_verbosity)}.",
                         )
+
+                    if "prompt_version" in llm_request_options:
+                        prompt_version = str(llm_request_options.get("prompt_version") or "").strip()
+                        if not prompt_version:
+                            add_error(
+                                f"prompts[{i}].llm_request_options.prompt_version",
+                                "Must be a non-empty string.",
+                            )
+
+                    if "prompt_variant" in llm_request_options:
+                        prompt_variant = str(llm_request_options.get("prompt_variant") or "").strip()
+                        if not prompt_variant:
+                            add_error(
+                                f"prompts[{i}].llm_request_options.prompt_variant",
+                                "Must be a non-empty string.",
+                            )
 
             tool_policy = prompt.get("tool_policy")
             if tool_policy is not None:
