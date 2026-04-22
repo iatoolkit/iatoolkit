@@ -120,6 +120,10 @@ class llmClient:
                     "content": context
                 }]
 
+                initial_tool_choice = tool_choice_override or "auto"
+                if not tools:
+                    initial_tool_choice = None
+
                 response = self.llm_proxy.create_response(
                     company_short_name=company.short_name,
                     model=model,
@@ -127,7 +131,7 @@ class llmClient:
                     previous_response_id=previous_response_id,
                     context_history=context_history,
                     tools=tools,
-                    tool_choice=tool_choice_override or "auto",
+                    tool_choice=initial_tool_choice,
                     text=text_payload,
                     reasoning=reasoning_payload,
                     images=images,

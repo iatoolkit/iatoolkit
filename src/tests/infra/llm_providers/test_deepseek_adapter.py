@@ -141,15 +141,31 @@ class TestDeepseekAdapter:
         When tool_choice is "required", it must be passed to the API call.
         """
         self.mock_deepseek_client.chat.completions.create.return_value = self._create_mock_response()
+        tools = [{"type": "function", "function": {"name": "search_web"}}]
 
         self.adapter.create_response(
             model="deepseek-chat",
             input=[],
+            tools=tools,
             tool_choice="required",
         )
 
         call_kwargs = self.mock_deepseek_client.chat.completions.create.call_args.kwargs
+        assert call_kwargs["tools"] is not None
         assert call_kwargs["tool_choice"] == "required"
+
+    def test_create_response_without_tools_does_not_pass_tool_choice(self):
+        self.mock_deepseek_client.chat.completions.create.return_value = self._create_mock_response()
+
+        self.adapter.create_response(
+            model="deepseek-chat",
+            input=[{"role": "user", "content": "Hello"}],
+            tool_choice="auto",
+        )
+
+        call_kwargs = self.mock_deepseek_client.chat.completions.create.call_args.kwargs
+        assert "tools" not in call_kwargs
+        assert "tool_choice" not in call_kwargs
 
     def test_create_response_passes_response_format_when_json_output_is_requested(self):
         self.mock_deepseek_client.chat.completions.create.return_value = self._create_mock_response(content="{}")

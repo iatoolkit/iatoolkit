@@ -178,6 +178,25 @@ class TestLLMClient:
         call_kwargs = self.mock_proxy.create_response.call_args.kwargs
         assert call_kwargs['tool_choice'] == 'iat_memory_search'
 
+    def test_invoke_without_tools_does_not_send_tool_choice(self):
+        self.mock_proxy.create_response.return_value = self.mock_llm_response
+
+        self.client.invoke(
+            company=self.company,
+            user_identifier='user1',
+            previous_response_id='prev1',
+            model='gpt-5',
+            question='q',
+            context='c',
+            tools=[],
+            text={},
+            images=[],
+        )
+
+        call_kwargs = self.mock_proxy.create_response.call_args.kwargs
+        assert call_kwargs['tools'] == []
+        assert call_kwargs['tool_choice'] is None
+
     def test_invoke_processes_generated_images(self):
         """Test que verifica que las imágenes generadas se suben al storage y se actualiza la respuesta."""
         # 1. Configurar respuesta del LLM con una imagen en Base64

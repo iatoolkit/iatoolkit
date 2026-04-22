@@ -60,6 +60,8 @@ class OpenAICompatibleChatAdapter:
             )
 
             tools_payload = self._build_tools_payload(tools)
+            if not tools_payload:
+                tool_choice = None
 
             if has_function_outputs and tool_choice == "auto":
                 logging.debug(
