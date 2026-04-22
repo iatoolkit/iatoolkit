@@ -46,6 +46,13 @@ ui:
     tool_router_top_n: "Top N"
     tool_router_min_confidence: "Confianza mínima"
     tool_router_rebuild_profiles: "Reconstruir perfiles"
+    task_reconciliation_eyebrow: "Conciliación de Tareas"
+    task_reconciliation_title: "Señales automáticas de recuperación (24h)"
+    task_reconciliation_note: "Derivado de la conciliación del worker"
+    task_reconciliation_total: "Conciliadas"
+    task_reconciliation_requeued: "Reencoladas"
+    task_reconciliation_normalized: "Normalizadas"
+    task_reconciliation_failed: "Recuperadas como fallidas"
 
     inspector:
       title: "Inspector de Interacción"

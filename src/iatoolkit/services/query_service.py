@@ -330,6 +330,22 @@ class QueryService:
             return tools, None
 
         configured_tool_names = policy.get("tool_names") or []
+        if not configured_tool_names:
+            metrics = {
+                "candidate_count": len(tools) if isinstance(tools, list) else 0,
+                "selected_count": 0,
+                "selection_mode": "prompt_explicit",
+                "fallback_reason": None,
+                "selector_latency_ms": 0,
+                "router_skipped": True,
+                "configured_tool_names": [],
+                "matched_tool_names": [],
+                "missing_tool_names": [],
+                "forced_tool_names": [],
+                "hard_disable_tools": True,
+            }
+            return [], metrics
+
         configured_tool_name_set = set(configured_tool_names)
         forced_tool_names = self.tool_service.get_always_include_tool_names(company_short_name, tools)
         forced_tool_name_set = set(forced_tool_names)
