@@ -537,7 +537,7 @@ class TestConfigurationService:
         errors = self.service.validate_configuration(self.COMPANY_NAME)
         assert any("reasoning_effort" in e for e in errors)
 
-    def test_validate_configuration_rejects_explicit_tool_policy_without_tools(self):
+    def test_validate_configuration_allows_explicit_tool_policy_without_tools(self):
         invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
         invalid_config["prompts"]["prompt_list"][0]["tool_policy"] = {
             "mode": "explicit",
@@ -549,7 +549,7 @@ class TestConfigurationService:
         self.mock_utility.load_yaml_from_string.return_value = invalid_config
 
         errors = self.service.validate_configuration(self.COMPANY_NAME)
-        assert any("tool_policy.tool_names" in e for e in errors)
+        assert not any("tool_policy.tool_names" in e for e in errors)
 
     def test_validate_configuration_rejects_invalid_prompt_attachment_mode(self):
         invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)

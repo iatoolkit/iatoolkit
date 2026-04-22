@@ -620,12 +620,6 @@ class ConfigurationService:
                             else:
                                 normalized_tool_names.append(tool_name.strip())
 
-                        if tool_policy_mode == "explicit" and not normalized_tool_names:
-                            add_error(
-                                f"prompts[{i}].tool_policy.tool_names",
-                                "Must include at least one tool when mode='explicit'.",
-                            )
-
             output_schema = prompt.get("output_schema")
             if output_schema is not None:
                 if not isinstance(output_schema, dict):

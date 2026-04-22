@@ -148,12 +148,6 @@ class PromptService:
             if candidate not in normalized_tool_names:
                 normalized_tool_names.append(candidate)
 
-        if mode == self.TOOL_POLICY_MODE_EXPLICIT and not normalized_tool_names:
-            raise IAToolkitException(
-                IAToolkitException.ErrorType.INVALID_PARAMETER,
-                "tool_policy.tool_names must include at least one tool when mode='explicit'.",
-            )
-
         if mode == self.TOOL_POLICY_MODE_INHERIT:
             normalized_tool_names = []
 
