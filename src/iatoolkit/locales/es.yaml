@@ -46,6 +46,11 @@ ui:
     tool_router_top_n: "Top N"
     tool_router_min_confidence: "Confianza mínima"
     tool_router_rebuild_profiles: "Reconstruir perfiles"
+    task_reconciliation_eyebrow: "Conciliación de Tareas"
+    task_reconciliation_total: "Conciliadas"
+    task_reconciliation_requeued: "Reencoladas"
+    task_reconciliation_normalized: "Normalizadas"
+    task_reconciliation_failed: "Recuperadas como fallidas"
 
     inspector:
       title: "Inspector de Interacción"
@@ -387,6 +392,8 @@ ui:
     sources: "Fuentes"
     profiles: "Perfiles de procesamiento"
     runs: "Ejecuciones"
+    active_tasks: "Tareas activas"
+    current_task: "Tarea actual"
     sources_title: "Fuentes del pipeline"
     sources_description: "Conecta carpetas o buckets y define cómo se procesa cada fuente."
     profiles_title: "Perfiles de procesamiento"

@@ -45,6 +45,11 @@ ui:
     tool_router_top_n: "Top N"
     tool_router_min_confidence: "Min confidence"
     tool_router_rebuild_profiles: "Rebuild Profiles"
+    task_reconciliation_eyebrow: "Task Reconciliation"
+    task_reconciliation_total: "Reconciled"
+    task_reconciliation_requeued: "Requeued"
+    task_reconciliation_normalized: "Normalized"
+    task_reconciliation_failed: "Recovered As Failed"
 
     inspector:
       title: "Interaction Inspector"
@@ -386,6 +391,8 @@ ui:
     sources: "Sources"
     profiles: "Processing Profiles"
     runs: "Runs"
+    active_tasks: "Active Tasks"
+    current_task: "Current Task"
     sources_title: "Pipeline Sources"
     sources_description: "Connect folders or buckets and choose how each source should be processed."
     profiles_title: "Processing Profiles"
