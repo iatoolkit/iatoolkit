@@ -204,6 +204,8 @@ class IAToolkit:
         session_cookie_samesite = str(
             self._get_config_value('SESSION_COOKIE_SAMESITE', session_cookie_samesite_default)
         ).strip()
+        session_cookie_name = str(self._get_config_value('SESSION_COOKIE_NAME', 'session')).strip() or 'session'
+        session_key_prefix = str(self._get_config_value('SESSION_KEY_PREFIX', 'session:')).strip() or 'session:'
 
         self.app = Flask(__name__,
                          static_folder=static_folder,
@@ -212,8 +214,10 @@ class IAToolkit:
         self.app.config.update({
             'VERSION': self.version,
             'SECRET_KEY': self._get_config_value('FLASK_SECRET_KEY', 'iatoolkit-default-secret'),
+            'SESSION_COOKIE_NAME': session_cookie_name,
             'SESSION_COOKIE_SAMESITE': session_cookie_samesite,
             'SESSION_COOKIE_SECURE': session_cookie_secure,
+            'SESSION_KEY_PREFIX': session_key_prefix,
             'SESSION_PERMANENT': False,
             'PERMANENT_SESSION_LIFETIME': timedelta(minutes=idle_timeout_minutes),
             'SESSION_REFRESH_EACH_REQUEST': True,

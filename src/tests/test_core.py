@@ -170,6 +170,17 @@ class TestIAToolkit(unittest.TestCase):
         self.assertEqual(toolkit.app.config['PERMANENT_SESSION_LIFETIME'], timedelta(minutes=120))
         self.assertTrue(toolkit.app.config['SESSION_REFRESH_EACH_REQUEST'])
 
+    def test_create_flask_instance_accepts_custom_session_cookie_settings(self):
+        toolkit = IAToolkit({
+            'SESSION_COOKIE_NAME': 'iatoolkit_enterprise_session',
+            'SESSION_KEY_PREFIX': 'iatoolkit_enterprise_session:',
+        })
+
+        toolkit._create_flask_instance()
+
+        self.assertEqual(toolkit.app.config['SESSION_COOKIE_NAME'], 'iatoolkit_enterprise_session')
+        self.assertEqual(toolkit.app.config['SESSION_KEY_PREFIX'], 'iatoolkit_enterprise_session:')
+
     @patch('iatoolkit.cli_commands.register_core_commands')
     @patch('iatoolkit.company_registry.get_company_registry')
     def test_setup_cli_commands(self, mock_get_registry, mock_register_core):
