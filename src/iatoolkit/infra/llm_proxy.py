@@ -16,7 +16,7 @@ from iatoolkit.common.model_registry import ModelRegistry
 from iatoolkit.common.interfaces.secret_provider import SecretProvider
 from iatoolkit.common.secret_resolver import resolve_secret
 
-from openai import OpenAI         # For OpenAI and xAI (OpenAI-compatible)
+from openai import OpenAI, Timeout         # For OpenAI and xAI (OpenAI-compatible)
 
 from typing import Dict, List, Any, Tuple
 import threading
@@ -29,7 +29,7 @@ class LLMProxy:
     """
 
     # Class-level cache for low-level clients (per provider + API key)
-    _clients_cache: Dict[Tuple[str, str, str], Any] = {}
+    _clients_cache: Dict[Tuple[Any, ...], Any] = {}
     _clients_cache_lock = threading.Lock()
 
     # Provider identifiers
@@ -39,6 +39,9 @@ class LLMProxy:
     PROVIDER_XAI = "xai"
     PROVIDER_ANTHROPIC = "anthropic"
     PROVIDER_OPENAI_COMPATIBLE = "openai_compatible"
+    DEFAULT_CONNECT_TIMEOUT_SECONDS = 10.0
+    DEFAULT_READ_TIMEOUT_SECONDS = 300.0
+    DEFAULT_MAX_RETRIES = 0
 
     @inject
     def __init__(
@@ -58,7 +61,7 @@ class LLMProxy:
         self.secret_provider = secret_provider
 
         # adapter cache by (provider, api_key, base_url)
-        self.adapters: Dict[Tuple[str, str, str], Any] = {}
+        self.adapters: Dict[Tuple[Any, ...], Any] = {}
 
     # -------------------------------------------------------------------------
     # Public API
@@ -142,14 +145,31 @@ class LLMProxy:
         client_config = self._get_client_config(company_short_name, provider)
         api_key = client_config["api_key"]
         base_url = client_config.get("base_url") or ""
-        adapter_cache_key = (provider, api_key or "", base_url)
+        connect_timeout_seconds = client_config["connect_timeout_seconds"]
+        read_timeout_seconds = client_config["read_timeout_seconds"]
+        max_retries = client_config["max_retries"]
+        adapter_cache_key = (
+            provider,
+            api_key or "",
+            base_url,
+            connect_timeout_seconds,
+            read_timeout_seconds,
+            max_retries,
+        )
 
         # If already created for this provider+key, just return it
         if adapter_cache_key in self.adapters and self.adapters[adapter_cache_key] is not None:
             return self.adapters[adapter_cache_key]
 
         # Otherwise, create low-level client from configuration
-        client = self._get_or_create_client(provider, api_key, base_url=base_url)
+        client = self._get_or_create_client(
+            provider,
+            api_key,
+            base_url=base_url,
+            connect_timeout_seconds=connect_timeout_seconds,
+            read_timeout_seconds=read_timeout_seconds,
+            max_retries=max_retries,
+        )
 
         # Wrap client with the correct adapter
         if provider == self.PROVIDER_OPENAI:
@@ -194,35 +214,90 @@ class LLMProxy:
     # Client cache
     # -------------------------------------------------------------------------
 
-    def _get_or_create_client(self, provider: str, api_key: str, base_url: str = "") -> Any:
+    def _get_or_create_client(
+        self,
+        provider: str,
+        api_key: str,
+        base_url: str = "",
+        *,
+        connect_timeout_seconds: float | None = None,
+        read_timeout_seconds: float | None = None,
+        max_retries: int | None = None,
+    ) -> Any:
         """
         Return a low-level client for the given provider and API key.
         Uses a class-level cache to avoid recreating clients.
         """
-        cache_key = (provider, api_key or "", base_url or "")
+        connect_timeout_seconds = self._normalize_positive_float(
+            connect_timeout_seconds,
+            self.DEFAULT_CONNECT_TIMEOUT_SECONDS,
+        )
+        read_timeout_seconds = self._normalize_positive_float(
+            read_timeout_seconds,
+            self.DEFAULT_READ_TIMEOUT_SECONDS,
+        )
+        max_retries = self._normalize_non_negative_int(
+            max_retries,
+            self.DEFAULT_MAX_RETRIES,
+        )
+        cache_key = (
+            provider,
+            api_key or "",
+            base_url or "",
+            connect_timeout_seconds,
+            read_timeout_seconds,
+            max_retries,
+        )
 
         with self._clients_cache_lock:
             if cache_key in self._clients_cache:
                 return self._clients_cache[cache_key]
 
-            client = self._create_client_for_provider(provider, api_key, base_url=base_url)
+            client = self._create_client_for_provider(
+                provider,
+                api_key,
+                base_url=base_url,
+                connect_timeout_seconds=connect_timeout_seconds,
+                read_timeout_seconds=read_timeout_seconds,
+                max_retries=max_retries,
+            )
             self._clients_cache[cache_key] = client
             return client
 
-    def _create_client_for_provider(self, provider: str, api_key: str, base_url: str = "") -> Any:
+    def _create_client_for_provider(
+        self,
+        provider: str,
+        api_key: str,
+        base_url: str = "",
+        *,
+        connect_timeout_seconds: float | None = None,
+        read_timeout_seconds: float | None = None,
+        max_retries: int | None = None,
+    ) -> Any:
         """
         Actually create the low-level client for a provider.
         This is the only place where provider-specific client construction lives.
         """
+        timeout = self._build_openai_timeout(
+            connect_timeout_seconds=connect_timeout_seconds,
+            read_timeout_seconds=read_timeout_seconds,
+        )
+        max_retries = self._normalize_non_negative_int(
+            max_retries,
+            self.DEFAULT_MAX_RETRIES,
+        )
+
         if provider == self.PROVIDER_OPENAI:
             # Standard OpenAI client for GPT models
-            return OpenAI(api_key=api_key)
+            return OpenAI(api_key=api_key, timeout=timeout, max_retries=max_retries)
 
         if provider == self.PROVIDER_XAI:
             # xAI Grok is OpenAI-compatible; we can use the OpenAI client with a different base_url.
             return OpenAI(
                 api_key=api_key,
                 base_url="https://api.x.ai/v1",
+                timeout=timeout,
+                max_retries=max_retries,
             )
 
         if provider == self.PROVIDER_DEEPSEEK:
@@ -233,6 +308,8 @@ class LLMProxy:
             return OpenAI(
                 api_key=api_key,
                 base_url="https://api.deepseek.com",
+                timeout=timeout,
+                max_retries=max_retries,
             )
 
         if provider == self.PROVIDER_OPENAI_COMPATIBLE:
@@ -244,6 +321,8 @@ class LLMProxy:
             return OpenAI(
                 api_key=api_key,
                 base_url=base_url,
+                timeout=timeout,
+                max_retries=max_retries,
             )
 
         if provider == self.PROVIDER_GEMINI:
@@ -270,10 +349,99 @@ class LLMProxy:
         )
 
     def _get_client_config(self, company_short_name: str, provider: str) -> dict:
+        provider_config = self.configuration_service.get_llm_provider_config(company_short_name, provider) or {}
         return {
             "api_key": self._get_api_key_from_config(company_short_name, provider),
             "base_url": self._get_base_url_from_config(company_short_name, provider),
+            "connect_timeout_seconds": self._resolve_provider_float(
+                provider_config,
+                ("connect_timeout_seconds",),
+                self.DEFAULT_CONNECT_TIMEOUT_SECONDS,
+                minimum=0.1,
+            ),
+            "read_timeout_seconds": self._resolve_provider_float(
+                provider_config,
+                ("read_timeout_seconds", "request_timeout_seconds", "timeout_seconds"),
+                self.DEFAULT_READ_TIMEOUT_SECONDS,
+                minimum=0.1,
+            ),
+            "max_retries": self._resolve_provider_int(
+                provider_config,
+                ("max_retries",),
+                self.DEFAULT_MAX_RETRIES,
+                minimum=0,
+            ),
         }
+
+    @classmethod
+    def _build_openai_timeout(
+        cls,
+        *,
+        connect_timeout_seconds: float | None,
+        read_timeout_seconds: float | None,
+    ) -> Timeout:
+        connect_timeout_seconds = cls._normalize_positive_float(
+            connect_timeout_seconds,
+            cls.DEFAULT_CONNECT_TIMEOUT_SECONDS,
+        )
+        read_timeout_seconds = cls._normalize_positive_float(
+            read_timeout_seconds,
+            cls.DEFAULT_READ_TIMEOUT_SECONDS,
+        )
+        return Timeout(
+            connect=connect_timeout_seconds,
+            read=read_timeout_seconds,
+            write=read_timeout_seconds,
+            pool=read_timeout_seconds,
+        )
+
+    @classmethod
+    def _resolve_provider_float(
+        cls,
+        provider_config: Dict[str, Any],
+        keys: tuple[str, ...],
+        default: float,
+        *,
+        minimum: float,
+    ) -> float:
+        for key in keys:
+            if key in provider_config:
+                return cls._normalize_positive_float(provider_config.get(key), default, minimum=minimum)
+        return cls._normalize_positive_float(default, default, minimum=minimum)
+
+    @classmethod
+    def _resolve_provider_int(
+        cls,
+        provider_config: Dict[str, Any],
+        keys: tuple[str, ...],
+        default: int,
+        *,
+        minimum: int,
+    ) -> int:
+        for key in keys:
+            if key in provider_config:
+                return cls._normalize_non_negative_int(provider_config.get(key), default, minimum=minimum)
+        return cls._normalize_non_negative_int(default, default, minimum=minimum)
+
+    @staticmethod
+    def _normalize_positive_float(value, default: float, *, minimum: float = 0.1) -> float:
+        try:
+            parsed = float(value)
+            if parsed >= minimum:
+                return parsed
+        except (TypeError, ValueError):
+            pass
+        return float(default)
+
+    @staticmethod
+    def _normalize_non_negative_int(value, default: int, *, minimum: int = 0) -> int:
+        try:
+            parsed = int(value)
+            if parsed >= minimum:
+                return parsed
+        except (TypeError, ValueError):
+            pass
+        return int(default)
 
     # -------------------------------------------------------------------------
     # Configuration helpers

@@ -1,6 +1,6 @@
 import os
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, ANY
 
 from iatoolkit.infra.llm_proxy import LLMProxy
 from iatoolkit.common.exceptions import IAToolkitException
@@ -98,7 +98,10 @@ class TestLLMProxy:
             client1 = self.proxy._get_or_create_client(LLMProxy.PROVIDER_OPENAI, api_key)
             client2 = self.proxy._get_or_create_client(LLMProxy.PROVIDER_OPENAI, api_key)
 
-        self.mock_openai_class.assert_called_once_with(api_key="val")
+        self.mock_openai_class.assert_called_once_with(api_key="val", timeout=ANY, max_retries=0)
+        timeout = self.mock_openai_class.call_args.kwargs["timeout"]
+        assert timeout.connect == 10.0
+        assert timeout.read == 300.0
         assert client1 is client2
 
     def test_routing_to_correct_adapter(self):
@@ -207,7 +210,30 @@ class TestLLMProxy:
         self.mock_openai_class.assert_called_once_with(
             api_key="dummy",
             base_url="https://oss.example.com/v1",
+            timeout=ANY,
+            max_retries=0,
         )
+        timeout = self.mock_openai_class.call_args.kwargs["timeout"]
+        assert timeout.connect == 10.0
+        assert timeout.read == 300.0
+
+    def test_client_uses_provider_timeout_and_retry_config(self):
+        self.config_service_mock.get_configuration.return_value = {"api-key": "KEY"}
+        self.config_service_mock.get_llm_provider_config.return_value = {
+            "connect_timeout_seconds": 7,
+            "read_timeout_seconds": 123,
+            "max_retries": 1,
+        }
+
+        with patch.dict(os.environ, {"KEY": "val"}, clear=True):
+            self.proxy._get_or_create_adapter(LLMProxy.PROVIDER_OPENAI, self.company_short_name)
+
+        self.mock_openai_class.assert_called_once_with(api_key="val", timeout=ANY, max_retries=1)
+        timeout = self.mock_openai_class.call_args.kwargs["timeout"]
+        assert timeout.connect == 7.0
+        assert timeout.read == 123.0
+        assert timeout.write == 123.0
+        assert timeout.pool == 123.0
 
     def test_adapter_cache_uses_provider_and_api_key(self):
         """
