@@ -35,6 +35,11 @@ class PromptType(str, enum.Enum):
     AGENT = "agent"
 
 
+class PromptResourceType(str, enum.Enum):
+    SQL_SOURCE = "sql_source"
+    RAG_COLLECTION = "rag_collection"
+
+
 class MemoryItemType(str, enum.Enum):
     CHAT_USER_MESSAGE = "chat_user_message"
     CHAT_ASSISTANT_MESSAGE = "chat_assistant_message"
@@ -565,6 +570,45 @@ class Prompt(Base):
 
     company = relationship("Company", back_populates="prompts")
     category = relationship("PromptCategory", back_populates="prompts")
+    resource_bindings = relationship(
+        "PromptResourceBinding",
+        back_populates="prompt",
+        cascade="all, delete-orphan",
+        order_by="PromptResourceBinding.binding_order",
+    )
+
+
+class PromptResourceBinding(Base):
+    __tablename__ = "iat_prompt_resource_bindings"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    prompt_id = Column(
+        Integer,
+        ForeignKey(f"{ORM_SCHEMA}.iat_prompt.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    resource_type = Column(String(32), nullable=False, index=True)
+    resource_key = Column(String(255), nullable=False)
+    binding_order = Column(Integer, nullable=False, default=0)
+    metadata_json = Column(JSON_NATIVE, nullable=False, default=dict)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    updated_by = Column(String(100), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "prompt_id",
+            "resource_type",
+            "resource_key",
+            name="uix_prompt_resource_binding_prompt_type_key",
+        ),
+    )
+
+    prompt = relationship("Prompt", back_populates="resource_bindings")
+
+    def to_dict(self):
+        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
 
 
 class SqlSource(Base):

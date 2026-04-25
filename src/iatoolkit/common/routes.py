@@ -22,6 +22,7 @@ def register_views(app):
     from iatoolkit.views.load_document_api_view import LoadDocumentApiView
     from iatoolkit.views.user_feedback_api_view import UserFeedbackApiView
     from iatoolkit.views.prompt_api_view import PromptApiView
+    from iatoolkit.views.prompt_resource_api_view import PromptResourceApiView
     from iatoolkit.views.history_api_view import HistoryApiView
     from iatoolkit.views.help_content_api_view import HelpContentApiView
     from iatoolkit.views.profile_api_view import UserLanguageApiView
@@ -121,6 +122,12 @@ def register_views(app):
     app.add_url_rule('/<company_short_name>/api/prompts/<prompt_name>',
                      view_func=prompt_view,
                      methods=['GET', 'POST','PUT', 'DELETE'])
+
+    app.add_url_rule(
+        '/<string:company_short_name>/api/admin/prompts/<string:prompt_name>/resources',
+        view_func=PromptResourceApiView.as_view('prompt_resources_api'),
+        methods=['GET', 'PUT'],
+    )
     # toolbar buttons
     app.add_url_rule('/<company_short_name>/api/feedback', view_func=UserFeedbackApiView.as_view('feedback'))
     app.add_url_rule('/<company_short_name>/api/history', view_func=HistoryApiView.as_view('history'))
