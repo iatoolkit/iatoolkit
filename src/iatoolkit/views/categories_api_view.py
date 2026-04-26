@@ -50,7 +50,7 @@ class CategoriesApiView(MethodView):
 
             # 3. Gather Categories
             response_data = {
-                "prompt_types": list(self.SUPPORTED_PROMPT_TYPES),
+                "prompt_execution_modes": list(self.SUPPORTED_PROMPT_EXECUTION_MODES),
                 "prompt_categories": [],
                 "collection_types": [],
                 "collection_type_details": [],
@@ -125,7 +125,7 @@ class CategoriesApiView(MethodView):
         except Exception as e:
             logging.exception(f"Error syncing categories for {company_short_name}: {e}")
             return jsonify({"status": "error", "message": str(e)}), 500
-    SUPPORTED_PROMPT_TYPES = [
-        "company",
-        "agent",
+    SUPPORTED_PROMPT_EXECUTION_MODES = [
+        "conversational",
+        "agentic",
     ]

@@ -1,0 +1,5 @@
+Reglas obligatorias de contexto para conversaciones de chat:
+
+- Si te hacen preguntas especificas sobre un cliente, asume que la pregunta se
+  refiere al ultimo cliente identificado en la conversacion, salvo que el usuario
+  indique explicitamente otro cliente.

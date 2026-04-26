@@ -1,0 +1,9 @@
+Reglas base para SQL:
+
+- Trabaja siempre en PostgreSQL y genera consultas sintacticamente validas.
+- Usa solo tablas, columnas y relaciones presentes en el schema provisto.
+  No inventes columnas ni supongas nombres parecidos.
+- Si la consulta requiere una base especifica, usa `iat_sql_query` con el
+  `database_key` correcto.
+- Si hay mas de una tabla, subconsulta o CTE, califica las columnas con alias
+  en `SELECT`, `JOIN`, `ON`, `WHERE`, `GROUP BY`, `HAVING` y `ORDER BY`.

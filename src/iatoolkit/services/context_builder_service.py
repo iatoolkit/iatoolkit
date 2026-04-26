@@ -18,10 +18,16 @@ from iatoolkit.services.company_context_service import CompanyContextService
 from iatoolkit.services.prompt_service import PromptService
 from iatoolkit.services.structured_output_service import StructuredOutputService
 from iatoolkit.common.util import Utility
-from iatoolkit.repositories.models import Company
+from iatoolkit.repositories.models import Company, PromptResourceType
 
 
 class ContextBuilderService:
+    SQL_TOOL_NAME = "iat_sql_query"
+    DOCUMENT_SEARCH_TOOL_NAME = "iat_document_search"
+    MEMORY_TOOL_NAMES = {"iat_memory_search", "iat_memory_get_page"}
+    FILE_GENERATION_TOOL_NAMES = {"iat_generate_excel", "iat_generate_pdf"}
+    EMAIL_TOOL_NAME = "iat_send_email"
+
     """
     Service responsible for constructing the text contexts and prompts used by the LLM.
     It encapsulates logic for:
@@ -53,10 +59,15 @@ class ContextBuilderService:
         if not company:
             return []
 
+        available_tools = self.tool_service.get_tools_for_llm(company)
+
         payload = self.prompt_service.get_system_prompt_payload(
             company_id=company.id,
             company_short_name=company.short_name,
             query_text=query_text,
+            capabilities_override=self._resolve_system_prompt_capabilities(available_tools),
+            execution_mode="chat",
+            response_mode="chat_compatible",
         )
         selected_keys = payload.get("selected_keys")
         if not isinstance(selected_keys, list):
@@ -96,8 +107,31 @@ class ContextBuilderService:
             except Exception:
                 schema = None
 
+        raw_execution_mode = str(getattr(prompt_obj, "execution_mode", "") or "").strip().lower()
+        execution_mode = raw_execution_mode if raw_execution_mode in {"conversational", "agentic"} else "conversational"
+        raw_visible_in_chat = getattr(prompt_obj, "visible_in_chat", None)
+        if isinstance(raw_visible_in_chat, bool):
+            visible_in_chat = raw_visible_in_chat
+        else:
+            visible_in_chat = True
+
+        resource_bindings: list[dict] = []
+        for binding in getattr(prompt_obj, "resource_bindings", []) or []:
+            resource_type = str(getattr(binding, "resource_type", "") or "").strip().lower()
+            resource_key = str(getattr(binding, "resource_key", "") or "").strip()
+            if not resource_type or not resource_key:
+                continue
+            resource_bindings.append({
+                "resource_type": resource_type,
+                "resource_key": resource_key,
+                "binding_order": int(getattr(binding, "binding_order", 0) or 0),
+                "metadata_json": dict(getattr(binding, "metadata_json", None) or {}),
+            })
+
         return {
             "prompt_name": prompt_obj.name,
+            "visible_in_chat": visible_in_chat,
+            "execution_mode": execution_mode,
             "schema": schema,
             "schema_yaml": prompt_obj.output_schema_yaml,
             "schema_mode": prompt_obj.output_schema_mode or "best_effort",
@@ -110,6 +144,7 @@ class ContextBuilderService:
             "tool_policy": self.prompt_service.normalize_tool_policy(
                 getattr(prompt_obj, "tool_policy", None)
             ),
+            "resource_bindings": resource_bindings,
         }
 
     def build_system_context(
@@ -129,12 +164,16 @@ class ContextBuilderService:
 
         # 1. Get user profile
         user_profile = self.profile_service.get_profile_by_identifier(company_short_name, user_identifier)
+        available_tools = self.tool_service.get_tools_for_llm(company)
 
         # 2. Render the base system prompt (iatoolkit standard)
         system_prompt_payload = self.prompt_service.get_system_prompt_payload(
             company_id=company.id,
             company_short_name=company.short_name,
             query_text=query_text,
+            capabilities_override=self._resolve_system_prompt_capabilities(available_tools),
+            execution_mode="chat",
+            response_mode="chat_compatible",
         )
         system_prompt_template = system_prompt_payload.get("content", "")
         selected_system_prompt_keys = system_prompt_payload.get("selected_keys")
@@ -145,7 +184,7 @@ class ContextBuilderService:
             question=None,
             client_data=user_profile,
             company=company,
-            service_list=self.tool_service.get_tools_for_llm(company)
+            service_list=available_tools,
         )
 
         # 3. Get company specific context (DB Schemas, Docs, etc.)
@@ -162,7 +201,127 @@ class ContextBuilderService:
 
         return final_system_context, user_profile, selected_system_prompt_keys
 
-    def _build_collection_context(self, company_short_name: str) -> str:
+    @staticmethod
+    def _extract_resource_keys(resource_bindings: list[dict] | None, resource_type: str) -> list[str]:
+        selected_keys: list[str] = []
+        for binding in resource_bindings or []:
+            if not isinstance(binding, dict):
+                continue
+            binding_type = str(binding.get("resource_type") or "").strip().lower()
+            resource_key = str(binding.get("resource_key") or "").strip()
+            if binding_type != resource_type or not resource_key or resource_key in selected_keys:
+                continue
+            selected_keys.append(resource_key)
+        return selected_keys
+
+    def _resolve_system_prompt_capabilities(self, tools: list[dict] | None) -> set[str]:
+        tool_names = {
+            str(tool.get("name") or "").strip()
+            for tool in (tools or [])
+            if isinstance(tool, dict) and str(tool.get("name") or "").strip()
+        }
+
+        capabilities: set[str] = set()
+        if self.SQL_TOOL_NAME in tool_names:
+            capabilities.add("can_query_sql")
+        if any(tool_name in self.FILE_GENERATION_TOOL_NAMES for tool_name in tool_names):
+            capabilities.add("can_generate_files")
+        if self.EMAIL_TOOL_NAME in tool_names:
+            capabilities.add("can_send_email")
+
+        return capabilities
+
+    def build_agent_system_context(
+        self,
+        company_short_name: str,
+        user_identifier: str,
+        prompt_name: str | None,
+        *,
+        enabled_tools: list[dict] | None = None,
+        prompt_output_contract: dict | None = None,
+        query_text: str | None = None,
+    ) -> Tuple[Optional[str], Optional[dict], list[str]]:
+        company = self.profile_repo.get_company_by_short_name(company_short_name)
+        if not company:
+            return None, None, []
+
+        user_profile = self.profile_service.get_profile_by_identifier(company_short_name, user_identifier)
+        resolved_contract = (
+            dict(prompt_output_contract or {})
+            if isinstance(prompt_output_contract, dict) else
+            self.get_prompt_output_contract(company, prompt_name)
+        )
+        enabled_tools = [tool for tool in (enabled_tools or []) if isinstance(tool, dict)]
+        enabled_tool_names = {
+            str(tool.get("name") or "").strip()
+            for tool in enabled_tools
+            if str(tool.get("name") or "").strip()
+        }
+        resource_bindings = resolved_contract.get("resource_bindings")
+        if not isinstance(resource_bindings, list):
+            resource_bindings = []
+
+        sql_sources = self._extract_resource_keys(
+            resource_bindings,
+            PromptResourceType.SQL_SOURCE.value,
+        )
+        rag_collections = self._extract_resource_keys(
+            resource_bindings,
+            PromptResourceType.RAG_COLLECTION.value,
+        )
+
+        capabilities_override = self._resolve_system_prompt_capabilities(enabled_tools)
+        if self.SQL_TOOL_NAME in enabled_tool_names and not sql_sources:
+            capabilities_override.discard("can_query_sql")
+
+        system_prompt_payload = self.prompt_service.get_system_prompt_payload(
+            company_id=company.id,
+            company_short_name=company.short_name,
+            query_text=query_text,
+            capabilities_override=capabilities_override,
+            execution_mode="agent",
+            response_mode=str(resolved_contract.get("response_mode") or "chat_compatible").strip().lower() or "chat_compatible",
+        )
+        system_prompt_template = system_prompt_payload.get("content", "")
+        selected_system_prompt_keys = system_prompt_payload.get("selected_keys")
+        if not isinstance(selected_system_prompt_keys, list):
+            selected_system_prompt_keys = []
+
+        rendered_system_prompt = self.util.render_prompt_from_string(
+            template_string=system_prompt_template,
+            question=None,
+            client_data=user_profile,
+            company=company,
+            service_list=enabled_tools,
+        )
+
+        sql_context = ""
+        if self.SQL_TOOL_NAME in enabled_tool_names and sql_sources:
+            sql_context = self.company_context_service.get_sql_context(
+                company_short_name,
+                allowed_databases=sql_sources,
+            )
+
+        collection_context = ""
+        if self.DOCUMENT_SEARCH_TOOL_NAME in enabled_tool_names and rag_collections:
+            collection_context = self._build_collection_context(
+                company_short_name,
+                collection_names=rag_collections,
+            )
+
+        memory_context = ""
+        if any(tool_name in self.MEMORY_TOOL_NAMES for tool_name in enabled_tool_names):
+            memory_context = self._build_memory_context()
+
+        final_system_context = "\n".join(
+            section
+            for section in (sql_context, collection_context, memory_context, rendered_system_prompt)
+            if section
+        )
+
+        return final_system_context, user_profile, selected_system_prompt_keys
+
+    def _build_collection_context(self, company_short_name: str, collection_names: list[str] | None = None) -> str:
         try:
             descriptors = self.knowledge_base_service.get_collection_descriptors(company_short_name)
         except Exception as exc:
@@ -172,19 +331,32 @@ class ContextBuilderService:
         if not isinstance(descriptors, list) or not descriptors:
             return ""
 
+        selected_collection_names = {
+            str(name or "").strip()
+            for name in (collection_names or [])
+            if str(name or "").strip()
+        }
+        selected_entries: list[tuple[str, str]] = []
+        for entry in descriptors:
+            if not isinstance(entry, dict):
+                continue
+            name = str(entry.get("name") or "").strip()
+            if not name:
+                continue
+            if selected_collection_names and name not in selected_collection_names:
+                continue
+            selected_entries.append((name, str(entry.get("description") or "").strip()))
+
+        if not selected_entries:
+            return ""
+
         lines = [
             "### Available Document Collections",
             "Use `iat_document_search` when internal company documents may help answer the user.",
             "Available collections:",
         ]
 
-        for entry in descriptors[:20]:
-            if not isinstance(entry, dict):
-                continue
-            name = str(entry.get("name") or "").strip()
-            if not name:
-                continue
-            description = str(entry.get("description") or "").strip()
+        for name, description in selected_entries[:20]:
             if description:
                 lines.append(f"- {name}: {description}")
             else:

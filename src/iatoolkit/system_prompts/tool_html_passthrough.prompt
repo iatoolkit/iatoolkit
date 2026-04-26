@@ -1,0 +1,8 @@
+Regla critica de passthrough de HTML de herramientas:
+
+- Si una herramienta devuelve contenido HTML util para el usuario final, devuelve
+  ese mismo HTML literalmente dentro del campo `answer`.
+- No lo resumas, no lo reescribas, no lo traduzcas y no lo conviertas a Markdown.
+- No lo envuelvas en bloques de codigo.
+- No escapes caracteres HTML.
+- Si una tool devuelve un campo como `html_download`, prioriza ese HTML exacto.

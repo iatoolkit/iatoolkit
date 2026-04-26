@@ -452,7 +452,7 @@ class ConfigurationService:
         prompt_list, categories_config = self._get_prompt_config(config)
 
         category_set = set(categories_config)
-        allowed_prompt_types = {"company", "agent"}
+        allowed_execution_modes = {"conversational", "agentic"}
         allowed_output_schema_modes = {"best_effort", "strict"}
         allowed_output_response_modes = {"chat_compatible", "structured_only"}
         allowed_attachment_modes = {"extracted_only", "native_only", "native_plus_extracted"}
@@ -485,18 +485,21 @@ class ConfigurationService:
                     add_error(f"prompts[{i}]", "Missing required key: 'description'")
 
             prompt_cat = prompt.get("category")
-            prompt_type = prompt.get("prompt_type", 'company').lower()
-            if prompt_type not in allowed_prompt_types:
+            execution_mode = str(prompt.get("execution_mode", "") or "").strip().lower()
+            if execution_mode and execution_mode not in allowed_execution_modes:
                 add_error(
                     f"prompts[{i}]",
-                    f"Unsupported prompt_type '{prompt_type}'. Must be one of: {sorted(allowed_prompt_types)}."
+                    f"Unsupported execution_mode '{execution_mode}'. Must be one of: {sorted(allowed_execution_modes)}."
                 )
                 continue
-            if prompt_type == 'company':
-                if not prompt_cat:
-                    add_error(f"prompts[{i}]", "Missing required key: 'category'")
-                elif prompt_cat not in category_set:
-                    add_error(f"prompts[{i}]", f"Category '{prompt_cat}' is not defined in 'prompt_categories'.")
+
+            visible_in_chat = prompt.get("visible_in_chat")
+            if visible_in_chat is not None and not isinstance(visible_in_chat, bool):
+                add_error(f"prompts[{i}].visible_in_chat", "Must be a boolean.")
+                continue
+
+            if prompt_cat and prompt_cat not in category_set:
+                add_error(f"prompts[{i}]", f"Category '{prompt_cat}' is not defined in 'prompt_categories'.")
 
             schema_mode = str(prompt.get("output_schema_mode", "best_effort")).strip().lower()
             if schema_mode not in allowed_output_schema_modes:

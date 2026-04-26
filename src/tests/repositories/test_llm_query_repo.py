@@ -5,7 +5,7 @@
 
 from iatoolkit.repositories.database_manager import DatabaseManager
 from iatoolkit.repositories.models import (LLMQuery, Tool, Company,
-                                           Prompt, PromptCategory, PromptType)
+                                           Prompt, PromptCategory, PromptExecutionMode)
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from datetime import datetime, timedelta
 
@@ -211,7 +211,8 @@ class TestLLMQueryRepo:
             filename='file.prompt',
             active=True,
             order=5,
-            prompt_type=PromptType.COMPANY.value,
+            visible_in_chat=True,
+            execution_mode=PromptExecutionMode.CONVERSATIONAL.value,
             custom_fields=[{'label': 'lbl'}]
         )
         result = self.repo.create_or_update_prompt(new_prompt=new_prompt)
@@ -222,7 +223,8 @@ class TestLLMQueryRepo:
         assert result.description == "an intelligent prompt"
         assert result.active is True
         assert result.order == 5
-        assert result.prompt_type == PromptType.COMPANY.value
+        assert result.visible_in_chat is True
+        assert result.execution_mode == PromptExecutionMode.CONVERSATIONAL.value
         assert result.custom_fields == [{'label': 'lbl'}]
 
     def test_create_or_update_prompt_updates_existing(self):
@@ -239,7 +241,8 @@ class TestLLMQueryRepo:
             description="New Desc",
             filename="new.txt",
             order=10,
-            prompt_type=PromptType.AGENT.value,
+            visible_in_chat=False,
+            execution_mode=PromptExecutionMode.AGENTIC.value,
             custom_fields=[{'key': 'val'}]
         )
 
@@ -252,7 +255,8 @@ class TestLLMQueryRepo:
         assert result.description == "New Desc"
         assert result.filename == "new.txt"
         assert result.order == 10
-        assert result.prompt_type == PromptType.AGENT.value
+        assert result.visible_in_chat is False
+        assert result.execution_mode == PromptExecutionMode.AGENTIC.value
         assert result.custom_fields == [{'key': 'val'}]
 
     def test_create_prompt_category(self):
@@ -453,9 +457,9 @@ class TestLLMQueryRepo:
         """Test get_prompts returns all prompts for a company."""
         # Create active and inactive prompts for the same company
         prompt1 = Prompt(name="p1", company_id=self.company.id, description="d1", filename="f1",
-                         prompt_type=PromptType.COMPANY.value)
+                         visible_in_chat=True, execution_mode=PromptExecutionMode.CONVERSATIONAL.value)
         prompt2 = Prompt(name="p2", company_id=self.company.id, description="d2", filename="f2",
-                         prompt_type=PromptType.COMPANY.value)
+                         visible_in_chat=True, execution_mode=PromptExecutionMode.CONVERSATIONAL.value)
         self.session.add_all([prompt1, prompt2])
         self.session.commit()
 
@@ -480,7 +484,7 @@ class TestLLMQueryRepo:
 
         # Create a prompt for the main company
         p1 = Prompt(name="p1", company_id=self.company.id, description="d1", filename="f1",
-                    prompt_type=PromptType.COMPANY.value)
+                    visible_in_chat=True, execution_mode=PromptExecutionMode.CONVERSATIONAL.value)
 
         # Prompt for another company
         other_company = Company(name="Other", short_name="other")
@@ -488,10 +492,17 @@ class TestLLMQueryRepo:
         self.session.commit()
 
         p2 = Prompt(name="p2", company_id=other_company.id, description="d2", filename="f2",
-                    prompt_type=PromptType.COMPANY.value)
+                    visible_in_chat=True, execution_mode=PromptExecutionMode.CONVERSATIONAL.value)
 
-        # Agent prompt (should be filtered out by get_prompts, which only returns company prompts)
-        p3 = Prompt(name="agent_prompt", description="sys", filename="sys", prompt_type=PromptType.AGENT.value)
+        # Hidden prompt should be filtered out by the default chat-facing query
+        p3 = Prompt(
+            name="agent_prompt",
+            company_id=self.company.id,
+            description="sys",
+            filename="sys",
+            visible_in_chat=False,
+            execution_mode=PromptExecutionMode.AGENTIC.value,
+        )
 
         self.session.add_all([p1, p2, p3])
         self.session.commit()
@@ -501,27 +512,30 @@ class TestLLMQueryRepo:
         assert len(prompts) == 1
         assert prompts[0].name == "p1"
 
-    def test_get_prompts_include_all_excludes_legacy_system_type(self):
+    def test_get_prompts_include_all_returns_hidden_and_agentic_prompts(self):
         p1 = Prompt(
             name="company_prompt",
             company_id=self.company.id,
             description="d1",
             filename="f1",
-            prompt_type=PromptType.COMPANY.value,
+            visible_in_chat=True,
+            execution_mode=PromptExecutionMode.CONVERSATIONAL.value,
         )
         p2 = Prompt(
             name="agent_prompt",
             company_id=self.company.id,
             description="d2",
             filename="f2",
-            prompt_type=PromptType.AGENT.value,
+            visible_in_chat=False,
+            execution_mode=PromptExecutionMode.AGENTIC.value,
         )
         p3 = Prompt(
-            name="legacy_system_prompt",
+            name="hidden_conversational_prompt",
             company_id=self.company.id,
             description="legacy",
             filename="f3",
-            prompt_type="system",
+            visible_in_chat=False,
+            execution_mode="conversational",
         )
         self.session.add_all([p1, p2, p3])
         self.session.commit()
@@ -529,31 +543,7 @@ class TestLLMQueryRepo:
         prompts = self.repo.get_prompts(self.company, include_all=True)
         prompt_names = {p.name for p in prompts}
 
-        assert prompt_names == {"company_prompt", "agent_prompt"}
-
-    def test_delete_prompts_by_type(self):
-        p1 = Prompt(
-            name="legacy_system_prompt",
-            company_id=self.company.id,
-            description="legacy",
-            filename="f1",
-            prompt_type="system",
-        )
-        p2 = Prompt(
-            name="company_prompt",
-            company_id=self.company.id,
-            description="active",
-            filename="f2",
-            prompt_type=PromptType.COMPANY.value,
-        )
-        self.session.add_all([p1, p2])
-        self.session.commit()
-
-        deleted = self.repo.delete_prompts_by_type(self.company.id, ["system"])
-        remaining = self.repo.get_prompts(self.company, include_all=True)
-
-        assert deleted == 1
-        assert {p.name for p in remaining} == {"company_prompt"}
+        assert prompt_names == {"company_prompt", "agent_prompt", "hidden_conversational_prompt"}
 
     def test_get_prompt_by_name(self):
         """Test get_prompt_by_name returns the correct prompt."""

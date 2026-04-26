@@ -318,7 +318,8 @@ prompts:
       category: Sales
       order: 1
       active: true
-      prompt_type: company
+      visible_in_chat: true
+      execution_mode: conversational
       custom_fields:
         - data_key: start_date
           label: Start date
@@ -349,10 +350,11 @@ Per prompt supported keys:
 
 - `name` (required)
 - `description` (required)
-- `category` (required for `prompt_type: company`)
+- `category` (optional; if omitted, the agent appears under `General` in chat)
 - `order` (optional)
 - `active` (optional, default `true`)
-- `prompt_type` (optional, default `company`): `company` or `agent`
+- `visible_in_chat` (optional, default `true`)
+- `execution_mode` (optional, default `conversational`): `conversational` or `agentic`
 - `custom_fields` (optional list)
 - `output_schema` (optional object, JSON Schema)
 - `output_schema_mode` (optional, default `best_effort`): `best_effort` or `strict`

@@ -1,0 +1,12 @@
+Reglas para columnas JSONB:
+
+- Nunca trates una clave JSONB como si fuera una columna fisica.
+- Usa `jsonb_col->>'campo'` para texto y `jsonb_col->'campo'` para objetos o arrays.
+  Si vas a castear o comparar, primero extrae el valor correcto desde JSONB.
+- Usa `jsonb_each` solo sobre objetos JSONB.
+- Usa `jsonb_array_elements` y `jsonb_array_length` solo cuando
+  `jsonb_typeof(...) = 'array'`.
+- Si debes expandir arrays u objetos JSONB, hazlo en `FROM` o con
+  `LEFT JOIN LATERAL`, nunca directamente dentro de agregaciones.
+- Si usas `jsonb_array_elements(...) AS alias(value)`, accede a los campos como
+  `alias.value->>'campo'`, no como `alias.campo`.

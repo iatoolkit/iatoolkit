@@ -36,6 +36,9 @@ class HistoryHandle:
 
 class QueryService:
     _tool_selector_hook: Callable | None = None
+    SQL_TOOL_NAME = "iat_sql_query"
+    DOCUMENT_SEARCH_TOOL_NAME = "iat_document_search"
+    MEMORY_TOOL_NAMES = {"iat_memory_search", "iat_memory_get_page"}
     _PREVIOUS_RESPONSE_NOT_FOUND_MARKERS = (
         "previous_response_not_found",
         "previous response with id",
@@ -251,6 +254,19 @@ class QueryService:
             contract["attachment_mode"] = (
                 str(raw_attachment_mode).strip().lower() if raw_attachment_mode is not None else None
             )
+            raw_execution_mode = contract.get("execution_mode")
+            normalized_execution_mode = (
+                str(raw_execution_mode).strip().lower()
+                if raw_execution_mode is not None else "conversational"
+            )
+            if normalized_execution_mode not in {"conversational", "agentic"}:
+                normalized_execution_mode = "conversational"
+            contract["execution_mode"] = normalized_execution_mode
+            raw_visible_in_chat = contract.get("visible_in_chat")
+            contract["visible_in_chat"] = (
+                bool(raw_visible_in_chat)
+                if isinstance(raw_visible_in_chat, bool) else True
+            )
             raw_attachment_parser_provider = contract.get("attachment_parser_provider")
             contract["attachment_parser_provider"] = (
                 str(raw_attachment_parser_provider).strip().lower()
@@ -277,6 +293,23 @@ class QueryService:
                 if prompt_variant:
                     normalized_llm_request_options["prompt_variant"] = prompt_variant
             contract["llm_request_options"] = normalized_llm_request_options
+            raw_resource_bindings = contract.get("resource_bindings")
+            normalized_resource_bindings = []
+            if isinstance(raw_resource_bindings, list):
+                for item in raw_resource_bindings:
+                    if not isinstance(item, dict):
+                        continue
+                    resource_type = str(item.get("resource_type") or "").strip().lower()
+                    resource_key = str(item.get("resource_key") or "").strip()
+                    if not resource_type or not resource_key:
+                        continue
+                    normalized_resource_bindings.append({
+                        "resource_type": resource_type,
+                        "resource_key": resource_key,
+                        "binding_order": int(item.get("binding_order") or 0),
+                        "metadata_json": dict(item.get("metadata_json") or {}),
+                    })
+            contract["resource_bindings"] = normalized_resource_bindings
             contract["tool_policy"] = self._normalize_prompt_tool_policy(contract.get("tool_policy"))
             contract["provider"] = self._get_provider(company.short_name, contract.get("llm_model") or "")
             return contract
@@ -324,6 +357,7 @@ class QueryService:
         company_short_name: str,
         prompt_output_contract: dict | None,
         tools: list[dict],
+        include_forced_tools: bool = True,
     ) -> tuple[list[dict], dict | None]:
         policy = self._normalize_prompt_tool_policy((prompt_output_contract or {}).get("tool_policy"))
         if policy["mode"] != "explicit":
@@ -347,7 +381,9 @@ class QueryService:
             return [], metrics
 
         configured_tool_name_set = set(configured_tool_names)
-        forced_tool_names = self.tool_service.get_always_include_tool_names(company_short_name, tools)
+        forced_tool_names = []
+        if include_forced_tools:
+            forced_tool_names = self.tool_service.get_always_include_tool_names(company_short_name, tools)
         forced_tool_name_set = set(forced_tool_names)
 
         selected_tools: list[dict] = []
@@ -408,6 +444,76 @@ class QueryService:
                     lines.append(f"- {tool_name}")
 
         return f"{user_turn_prompt}\n\n" + "\n".join(lines)
+
+    @staticmethod
+    def _is_agentic_execution(prompt_output_contract: dict | None) -> bool:
+        execution_mode = str((prompt_output_contract or {}).get("execution_mode") or "").strip().lower()
+        return execution_mode == "agentic"
+
+    @staticmethod
+    def _get_tool_names(tools: list[dict] | None) -> list[str]:
+        tool_names: list[str] = []
+        for tool in tools or []:
+            if not isinstance(tool, dict):
+                continue
+            tool_name = str(tool.get("name") or "").strip()
+            if not tool_name or tool_name in tool_names:
+                continue
+            tool_names.append(tool_name)
+        return tool_names
+
+    @staticmethod
+    def _get_prompt_resource_bindings_by_type(
+        prompt_output_contract: dict | None,
+        resource_type: str,
+    ) -> list[str]:
+        selected_keys: list[str] = []
+        for binding in (prompt_output_contract or {}).get("resource_bindings") or []:
+            if not isinstance(binding, dict):
+                continue
+            binding_type = str(binding.get("resource_type") or "").strip().lower()
+            resource_key = str(binding.get("resource_key") or "").strip()
+            if binding_type != resource_type or not resource_key or resource_key in selected_keys:
+                continue
+            selected_keys.append(resource_key)
+        return selected_keys
+
+    def _validate_agent_resource_scope(self, prompt_output_contract: dict | None, tools: list[dict]) -> str | None:
+        if not self._is_agentic_execution(prompt_output_contract):
+            return None
+
+        tool_names = set(self._get_tool_names(tools))
+        prompt_name = str((prompt_output_contract or {}).get("prompt_name") or "").strip()
+        prompt_label = prompt_name or "agent"
+
+        if self.SQL_TOOL_NAME in tool_names:
+            sql_sources = self._get_prompt_resource_bindings_by_type(prompt_output_contract, "sql_source")
+            if not sql_sources:
+                return (
+                    f"Agent prompt '{prompt_label}' has tool '{self.SQL_TOOL_NAME}' enabled "
+                    f"but no SQL sources are bound."
+                )
+
+        if self.DOCUMENT_SEARCH_TOOL_NAME in tool_names:
+            rag_collections = self._get_prompt_resource_bindings_by_type(prompt_output_contract, "rag_collection")
+            if not rag_collections:
+                return (
+                    f"Agent prompt '{prompt_label}' has tool '{self.DOCUMENT_SEARCH_TOOL_NAME}' enabled "
+                    f"but no RAG collections are bound."
+                )
+
+        return None
+
+    @staticmethod
+    def _prepend_agent_runtime_context(user_turn_prompt: str, agent_system_context: str | None) -> str:
+        if not agent_system_context:
+            return user_turn_prompt
+        return (
+            "### Agent Runtime Context\n"
+            f"{agent_system_context}\n\n"
+            "### Agent Turn\n"
+            f"{user_turn_prompt}"
+        )
 
     def _resolve_prompt_request_overrides(
         self,
@@ -1045,17 +1151,7 @@ class QueryService:
                     contract=prompt_output_contract,
                 )
 
-            # --- History Management (Strategy Pattern) ---
-            history_handle, error_response = self._ensure_valid_history(
-                company=company,
-                user_identifier=user_identifier,
-                effective_model=effective_model,
-                question=effective_question,
-                user_turn_prompt=user_turn_prompt,
-                ignore_history=ignore_history
-            )
-            if error_response:
-                return error_response
+            is_agent_execution = self._is_agentic_execution(prompt_output_contract)
 
             # get the tools availables for this company
             tools = self.tool_service.get_tools_for_llm(company)
@@ -1063,6 +1159,7 @@ class QueryService:
                 company_short_name=company_short_name,
                 prompt_output_contract=prompt_output_contract,
                 tools=tools,
+                include_forced_tools=not is_agent_execution,
             )
             if tool_router_metrics is None:
                 tools, tool_router_metrics = self._select_tools_for_llm_with_metrics(
@@ -1078,6 +1175,28 @@ class QueryService:
                     tools,
                     explicit_only=True,
                 )
+
+            # --- History Management (Strategy Pattern) ---
+            if is_agent_execution:
+                history_handle = HistoryHandle(
+                    company_short_name=company_short_name,
+                    user_identifier=user_identifier,
+                    type="stateless",
+                    model=effective_model,
+                    request_params={},
+                )
+            else:
+                history_handle, error_response = self._ensure_valid_history(
+                    company=company,
+                    user_identifier=user_identifier,
+                    effective_model=effective_model,
+                    question=effective_question,
+                    user_turn_prompt=user_turn_prompt,
+                    ignore_history=ignore_history
+                )
+                if error_response:
+                    return error_response
+
             memory_lookup_decision = self.memory_lookup_policy_service.resolve(
                 question=effective_question,
                 tools=tools,
@@ -1088,41 +1207,74 @@ class QueryService:
                 user_turn_prompt,
                 memory_lookup_decision.should_suggest_memory_search,
             )
-            selected_system_prompt_keys = []
-            try:
-                selected_system_prompt_keys = self._normalize_selected_system_prompt_keys(
-                    self.session_context.get_selected_system_prompt_keys(
-                        company_short_name,
-                        user_identifier,
-                    )
-                )
-            except Exception as e:
-                logging.debug(
-                    "Could not read selected system prompt keys from session telemetry cache (company='%s'): %s",
-                    company_short_name,
-                    e,
-                )
 
-            if not selected_system_prompt_keys:
+            if is_agent_execution:
+                validation_error = self._validate_agent_resource_scope(prompt_output_contract, tools)
+                if validation_error:
+                    return {"error": True, "error_message": validation_error}
+
                 try:
-                    selected_system_prompt_keys = self._normalize_selected_system_prompt_keys(
-                        self.context_builder.get_selected_system_prompt_keys(
-                            company,
+                    agent_system_context, _, selected_system_prompt_keys = (
+                        self.context_builder.build_agent_system_context(
+                            company_short_name=company_short_name,
+                            user_identifier=user_identifier,
+                            prompt_name=prompt_name,
+                            enabled_tools=tools,
+                            prompt_output_contract=prompt_output_contract,
                             query_text=effective_question,
                         )
                     )
-                    self.session_context.save_selected_system_prompt_keys(
-                        company_short_name,
-                        user_identifier,
-                        selected_system_prompt_keys,
-                    )
                 except Exception as e:
                     logging.debug(
-                        "Could not resolve selected system prompt keys for telemetry (company='%s'): %s",
+                        "Could not resolve agent runtime context for telemetry (company='%s'): %s",
                         company_short_name,
                         e,
                     )
+                    agent_system_context = ""
                     selected_system_prompt_keys = []
+                user_turn_prompt = self._prepend_agent_runtime_context(
+                    user_turn_prompt,
+                    agent_system_context,
+                )
+                selected_system_prompt_keys = self._normalize_selected_system_prompt_keys(
+                    selected_system_prompt_keys
+                )
+            else:
+                selected_system_prompt_keys = []
+                try:
+                    selected_system_prompt_keys = self._normalize_selected_system_prompt_keys(
+                        self.session_context.get_selected_system_prompt_keys(
+                            company_short_name,
+                            user_identifier,
+                        )
+                    )
+                except Exception as e:
+                    logging.debug(
+                        "Could not read selected system prompt keys from session telemetry cache (company='%s'): %s",
+                        company_short_name,
+                        e,
+                    )
+
+                if not selected_system_prompt_keys:
+                    try:
+                        selected_system_prompt_keys = self._normalize_selected_system_prompt_keys(
+                            self.context_builder.get_selected_system_prompt_keys(
+                                company,
+                                query_text=effective_question,
+                            )
+                        )
+                        self.session_context.save_selected_system_prompt_keys(
+                            company_short_name,
+                            user_identifier,
+                            selected_system_prompt_keys,
+                        )
+                    except Exception as e:
+                        logging.debug(
+                            "Could not resolve selected system prompt keys for telemetry (company='%s'): %s",
+                            company_short_name,
+                            e,
+                        )
+                        selected_system_prompt_keys = []
 
             if selected_system_prompt_keys:
                 tool_router_metrics = dict(tool_router_metrics or {})
@@ -1201,9 +1353,10 @@ class QueryService:
                 response['error'] = True
 
             # save history using the manager passing the handle
-            self.history_manager.update_history(
-                history_handle, user_turn_prompt, response
-            )
+            if not is_agent_execution:
+                self.history_manager.update_history(
+                    history_handle, user_turn_prompt, response
+                )
 
             return response
         except Exception as e:

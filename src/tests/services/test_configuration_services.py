@@ -772,13 +772,13 @@ class TestConfigurationService:
         errors = self.service.validate_configuration(self.COMPANY_NAME)
         assert any("web_search.providers.brave.secret_ref" in e for e in errors)
 
-    def test_validate_configuration_rejects_unsupported_prompt_type(self):
+    def test_validate_configuration_allows_visible_prompt_without_category(self):
         invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
-        invalid_config["prompts"]["prompt_list"][0]["prompt_type"] = "system"
+        invalid_config["prompts"]["prompt_list"][0].pop("category", None)
 
         self.mock_asset_repo.exists.return_value = True
         self.mock_asset_repo.read_text.return_value = "yaml"
         self.mock_utility.load_yaml_from_string.return_value = invalid_config
 
         errors = self.service.validate_configuration(self.COMPANY_NAME)
-        assert any("Unsupported prompt_type 'system'" in e for e in errors)
+        assert all("Missing required key: 'category'" not in e for e in errors)

@@ -1,0 +1,14 @@
+Formatos HTML a usar cuando el prompt o la tarea lo piden explicitamente:
+
+Tablas:
+- Usa como base `table table-striped table-hover`.
+- Si una columna contiene RUT, fecha, id certificado o valores similares, usa
+  clase `nowrap` en el `<th>` y en el `<td>` correspondiente cuando aplique.
+- Si una columna debe ir centrada o alineada a la derecha, agrega
+  `class="text-center"` o `class="text-right"` tanto en `<th>` como en cada `<td>`.
+
+Listas clave-valor:
+- Cuando presentes datos como lista clave-valor, envuelve siempre la clave
+  en `<strong>`.
+- Ejemplo:
+  `<ul><li><strong>Nombre:</strong> Juan Perez</li></ul>`

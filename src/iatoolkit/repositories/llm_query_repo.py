@@ -3,8 +3,14 @@
 #
 # IAToolkit is open source software.
 
-from iatoolkit.repositories.models import (LLMQuery, Tool,
-                    Company, Prompt, PromptCategory, PromptType)
+from iatoolkit.repositories.models import (
+    LLMQuery,
+    Tool,
+    Company,
+    Prompt,
+    PromptCategory,
+    PromptExecutionMode,
+)
 from injector import inject
 from iatoolkit.repositories.database_manager import DatabaseManager
 from sqlalchemy import or_, and_
@@ -134,35 +140,18 @@ class LLMQueryRepo:
         return self.session.query(Prompt).filter_by(company_id=company.id, name=prompt_name).first()
 
     def get_prompts(self, company: Company, include_all: bool = False) -> list[Prompt]:
-        editable_types = [PromptType.COMPANY.value, PromptType.AGENT.value]
         if include_all:
             # Include all prompts (for the prompt admin dashboard)
             return self.session.query(Prompt).filter(
                 Prompt.company_id == company.id,
-                Prompt.prompt_type.in_(editable_types),
             ).all()
         else:
-            # Only active company prompts (default behavior for end users)
+            # Only active prompts explicitly exposed in chat for end users.
             return self.session.query(Prompt).filter(
                 Prompt.company_id == company.id,
-                Prompt.prompt_type == PromptType.COMPANY.value,
-                Prompt.active == True
+                Prompt.visible_in_chat.is_(True),
+                Prompt.active.is_(True),
             ).all()
-
-    def delete_prompts_by_type(self, company_id: int, prompt_types: list[str]) -> int:
-        if not prompt_types:
-            return 0
-
-        deleted_count = (
-            self.session.query(Prompt)
-            .filter(
-                Prompt.company_id == company_id,
-                Prompt.prompt_type.in_(prompt_types),
-            )
-            .delete(synchronize_session=False)
-        )
-        self.session.commit()
-        return int(deleted_count or 0)
 
     def create_or_update_prompt(self, new_prompt: Prompt):
         prompt = self.session.query(Prompt).filter_by(company_id=new_prompt.company_id,
@@ -171,7 +160,12 @@ class LLMQueryRepo:
             prompt.category_id = new_prompt.category_id
             prompt.description = new_prompt.description
             prompt.order = new_prompt.order
-            prompt.prompt_type = new_prompt.prompt_type
+            prompt.visible_in_chat = bool(getattr(new_prompt, "visible_in_chat", True))
+            prompt.execution_mode = (
+                getattr(new_prompt, "execution_mode", None)
+                or prompt.execution_mode
+                or PromptExecutionMode.CONVERSATIONAL.value
+            )
             prompt.filename = new_prompt.filename
             prompt.custom_fields = new_prompt.custom_fields
             prompt.output_schema = new_prompt.output_schema
@@ -189,6 +183,10 @@ class LLMQueryRepo:
             prompt.llm_request_options = dict(new_prompt.llm_request_options or {})
             prompt.tool_policy = dict(new_prompt.tool_policy or {})
         else:
+            if new_prompt.visible_in_chat is None:
+                new_prompt.visible_in_chat = True
+            if not new_prompt.execution_mode:
+                new_prompt.execution_mode = PromptExecutionMode.CONVERSATIONAL.value
             if not new_prompt.output_schema_mode:
                 new_prompt.output_schema_mode = "best_effort"
             if not new_prompt.output_response_mode:

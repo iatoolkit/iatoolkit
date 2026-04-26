@@ -75,7 +75,12 @@ class TestPromptService:
         result = self.prompt_service.get_system_prompt(company_id=1, company_short_name="test_co")
 
         assert result == "Contenido 1\nContenido 2"
-        mock_build_payload.assert_called_once_with({"has_sql_sources"}, query_text=None)
+        mock_build_payload.assert_called_once_with(
+            {"can_query_sql"},
+            query_text=None,
+            execution_mode="chat",
+            response_mode="chat_compatible",
+        )
 
     @patch('iatoolkit.services.prompt_service.build_system_prompt_payload')
     def test_get_system_prompt_payload_resolves_company_short_name_from_id(self, mock_build_payload):
@@ -88,7 +93,12 @@ class TestPromptService:
 
         assert payload == {"content": "Contenido base", "selected_keys": ["query_main"]}
         self.profile_repo.get_company_by_id.assert_called_once_with(1)
-        mock_build_payload.assert_called_once_with(set(), query_text=None)
+        mock_build_payload.assert_called_once_with(
+            set(),
+            query_text=None,
+            execution_mode="chat",
+            response_mode="chat_compatible",
+        )
 
     @patch('iatoolkit.services.prompt_service.build_system_prompt_payload')
     def test_get_system_prompt_payload_forwards_query_text(self, mock_build_payload):
@@ -102,7 +112,32 @@ class TestPromptService:
         )
 
         assert payload == {"content": "Contenido base", "selected_keys": ["query_main"]}
-        mock_build_payload.assert_called_once_with(set(), query_text="dame una tabla html")
+        mock_build_payload.assert_called_once_with(
+            set(),
+            query_text="dame una tabla html",
+            execution_mode="chat",
+            response_mode="chat_compatible",
+        )
+
+    @patch('iatoolkit.services.prompt_service.build_system_prompt_payload')
+    def test_get_system_prompt_payload_uses_capabilities_override_when_provided(self, mock_build_payload):
+        mock_build_payload.return_value = {"content": "Contenido base", "selected_keys": ["query_main"]}
+
+        payload = self.prompt_service.get_system_prompt_payload(
+            company_id=1,
+            company_short_name="test_co",
+            query_text="usa sql",
+            capabilities_override={"can_query_sql"},
+        )
+
+        assert payload == {"content": "Contenido base", "selected_keys": ["query_main"]}
+        self.mock_sql_service.get_db_names.assert_not_called()
+        mock_build_payload.assert_called_once_with(
+            {"can_query_sql"},
+            query_text="usa sql",
+            execution_mode="chat",
+            response_mode="chat_compatible",
+        )
 
     def test_get_system_prompt_payload_raises_when_company_does_not_exist(self):
         self.profile_repo.get_company_by_id.return_value = None
@@ -220,7 +255,7 @@ class TestPromptService:
 
         assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_NAME
 
-    def test_save_prompt_invalid_prompt_type_falls_back_to_company(self):
+    def test_save_prompt_defaults_to_visible_conversational_mode(self):
         self.profile_repo.get_company_by_short_name.return_value = self.mock_company
         self.llm_query_repo.get_category_by_name.return_value = None
 
@@ -229,12 +264,12 @@ class TestPromptService:
             'my_prompt',
             {
                 'content': 'Prompt text',
-                'prompt_type': 'system',
             }
         )
 
         saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
-        assert saved_prompt.prompt_type == 'company'
+        assert saved_prompt.visible_in_chat is True
+        assert saved_prompt.execution_mode == 'conversational'
 
     def test_save_prompt_persists_structured_output_schema_yaml_and_json(self):
         self.profile_repo.get_company_by_short_name.return_value = self.mock_company

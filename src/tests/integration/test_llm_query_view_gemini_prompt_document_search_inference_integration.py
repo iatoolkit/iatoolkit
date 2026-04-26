@@ -41,7 +41,15 @@ class FakeProfileService:
 
 
 class FakePromptService:
-    def get_system_prompt_payload(self, company_id, company_short_name=None, query_text=None):
+    def get_system_prompt_payload(
+        self,
+        company_id,
+        company_short_name=None,
+        query_text=None,
+        capabilities_override=None,
+        execution_mode=None,
+        response_mode=None,
+    ):
         return {"content": "system prompt", "selected_keys": ["query_main"]}
 
     def get_prompt_content(self, company, prompt_name):

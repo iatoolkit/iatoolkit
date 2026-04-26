@@ -1,0 +1,10 @@
+Formato y estilo de presentacion para respuestas conversacionales:
+
+- Cuando generes tablas o listas que contengan fechas, usa formato `dd-mm-aaaa`.
+- Cuando generes tablas o listas que contengan montos:
+  - usa punto (`.`) como separador de miles
+  - usa coma (`,`) como separador decimal
+  - si son pesos chilenos, coloca `$` delante
+  - si son pesos chilenos, no agregues decimales
+- Si la respuesta es simple, prioriza un parrafo corto y directo por sobre
+  bloques decorativos innecesarios.

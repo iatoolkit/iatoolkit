@@ -35,6 +35,34 @@ def _normalize_capability_list(value: Any, field_name: str, index: int) -> list[
     return normalized
 
 
+def _normalize_mode_list(
+    value: Any,
+    *,
+    field_name: str,
+    index: int,
+    allowed_values: set[str],
+) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise ValueError(f"prompts[{index}].include.{field_name} must be a list")
+
+    normalized: list[str] = []
+    for item_index, item in enumerate(value):
+        if not isinstance(item, str):
+            raise ValueError(f"prompts[{index}].include.{field_name}[{item_index}] must be a string")
+        mode = item.strip().lower()
+        if not mode:
+            raise ValueError(f"prompts[{index}].include.{field_name}[{item_index}] cannot be empty")
+        if mode not in allowed_values:
+            raise ValueError(
+                f"prompts[{index}].include.{field_name}[{item_index}] must be one of {sorted(allowed_values)}"
+            )
+        if mode not in normalized:
+            normalized.append(mode)
+    return normalized
+
+
 def _normalize_pattern_list(value: Any, index: int) -> list[str]:
     if value is None:
         return []
@@ -55,21 +83,51 @@ def _normalize_pattern_list(value: Any, index: int) -> list[str]:
 
 def _normalize_include_rule(value: Any, index: int) -> dict:
     if value in (None, "always"):
-        return {"type": "always", "all_capabilities": [], "any_capabilities": [], "any_patterns": []}
+        return {
+            "type": "always",
+            "all_capabilities": [],
+            "any_capabilities": [],
+            "any_patterns": [],
+            "execution_modes": [],
+            "response_modes": [],
+        }
 
     if not isinstance(value, dict):
         raise ValueError(f"prompts[{index}].include must be 'always' or an object")
 
-    unknown_keys = [key for key in value.keys() if key not in {"all_capabilities", "any_capabilities", "any_patterns"}]
+    unknown_keys = [
+        key
+        for key in value.keys()
+        if key not in {
+            "all_capabilities",
+            "any_capabilities",
+            "any_patterns",
+            "execution_modes",
+            "response_modes",
+        }
+    ]
     if unknown_keys:
         raise ValueError(f"prompts[{index}].include has unsupported keys: {sorted(unknown_keys)}")
 
     all_capabilities = _normalize_capability_list(value.get("all_capabilities"), "all_capabilities", index)
     any_capabilities = _normalize_capability_list(value.get("any_capabilities"), "any_capabilities", index)
     any_patterns = _normalize_pattern_list(value.get("any_patterns"), index)
-    if not all_capabilities and not any_capabilities and not any_patterns:
+    execution_modes = _normalize_mode_list(
+        value.get("execution_modes"),
+        field_name="execution_modes",
+        index=index,
+        allowed_values={"chat", "agent"},
+    )
+    response_modes = _normalize_mode_list(
+        value.get("response_modes"),
+        field_name="response_modes",
+        index=index,
+        allowed_values={"chat_compatible", "structured_only"},
+    )
+    if not all_capabilities and not any_capabilities and not any_patterns and not execution_modes and not response_modes:
         raise ValueError(
-            f"prompts[{index}].include must define at least one of 'all_capabilities', 'any_capabilities', or 'any_patterns'"
+            f"prompts[{index}].include must define at least one of "
+            "'all_capabilities', 'any_capabilities', 'any_patterns', 'execution_modes', or 'response_modes'"
         )
 
     return {
@@ -77,6 +135,8 @@ def _normalize_include_rule(value: Any, index: int) -> dict:
         "all_capabilities": all_capabilities,
         "any_capabilities": any_capabilities,
         "any_patterns": any_patterns,
+        "execution_modes": execution_modes,
+        "response_modes": response_modes,
     }
 
 
@@ -134,13 +194,33 @@ def get_system_prompt_entries() -> list[dict]:
     return [copy.deepcopy(item) for item in _load_catalog()]
 
 
-def _matches_include_rule(rule: dict, capabilities: set[str], query_text: str | None = None) -> bool:
+def _matches_include_rule(
+    rule: dict,
+    capabilities: set[str],
+    *,
+    query_text: str | None = None,
+    execution_mode: str | None = None,
+    response_mode: str | None = None,
+) -> bool:
     if rule.get("type") == "always":
         return True
 
     all_capabilities = rule.get("all_capabilities") or []
     any_capabilities = rule.get("any_capabilities") or []
     any_patterns = rule.get("any_patterns") or []
+    execution_modes = rule.get("execution_modes") or []
+    response_modes = rule.get("response_modes") or []
+
+    normalized_execution_mode = str(execution_mode or "").strip().lower()
+    normalized_response_mode = str(response_mode or "").strip().lower()
+
+    if execution_modes:
+        if not normalized_execution_mode or normalized_execution_mode not in execution_modes:
+            return False
+
+    if response_modes:
+        if not normalized_response_mode or normalized_response_mode not in response_modes:
+            return False
 
     if all_capabilities and not set(all_capabilities).issubset(capabilities):
         return False
@@ -161,13 +241,21 @@ def _matches_include_rule(rule: dict, capabilities: set[str], query_text: str | 
 def select_system_prompt_entries(
     capabilities: set[str] | list[str] | tuple[str, ...] | None = None,
     query_text: str | None = None,
+    execution_mode: str | None = None,
+    response_mode: str | None = None,
 ) -> list[dict]:
     capability_set = {item for item in (capabilities or []) if isinstance(item, str) and item.strip()}
     selected: list[dict] = []
 
     for entry in _load_catalog():
         include_rule = entry.get("include") or {"type": "always"}
-        if _matches_include_rule(include_rule, capability_set, query_text=query_text):
+        if _matches_include_rule(
+            include_rule,
+            capability_set,
+            query_text=query_text,
+            execution_mode=execution_mode,
+            response_mode=response_mode,
+        ):
             selected.append(copy.deepcopy(entry))
 
     return selected
@@ -176,8 +264,15 @@ def select_system_prompt_entries(
 def build_system_prompt_payload(
     capabilities: set[str] | list[str] | tuple[str, ...] | None = None,
     query_text: str | None = None,
+    execution_mode: str | None = None,
+    response_mode: str | None = None,
 ) -> dict:
-    selected_entries = select_system_prompt_entries(capabilities, query_text=query_text)
+    selected_entries = select_system_prompt_entries(
+        capabilities,
+        query_text=query_text,
+        execution_mode=execution_mode,
+        response_mode=response_mode,
+    )
 
     selected_keys: list[str] = []
     content_parts: list[str] = []

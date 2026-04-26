@@ -30,9 +30,10 @@ class DocumentStatus(str, enum.Enum):
     ACTIVE = "active"
     FAILED = "failed"
 
-class PromptType(str, enum.Enum):
-    COMPANY = "company"
-    AGENT = "agent"
+
+class PromptExecutionMode(str, enum.Enum):
+    CONVERSATIONAL = "conversational"
+    AGENTIC = "agentic"
 
 
 class PromptResourceType(str, enum.Enum):
@@ -550,7 +551,8 @@ class Prompt(Base):
     description = Column(String, nullable=False)
     filename = Column(String, nullable=False)
     active = Column(Boolean, default=True)
-    prompt_type = Column(String, default=PromptType.COMPANY.value, nullable=False)
+    visible_in_chat = Column(Boolean, default=True, nullable=False)
+    execution_mode = Column(String, default=PromptExecutionMode.CONVERSATIONAL.value, nullable=False)
     order = Column(Integer, nullable=True, default=0)
     category_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_prompt_categories.id', ondelete='SET NULL'), nullable=True)
     custom_fields = Column(JSON, nullable=False, default=[])
@@ -565,6 +567,7 @@ class Prompt(Base):
     llm_request_options = Column(JSON_NATIVE, nullable=False, default=dict)
     tool_policy = Column(JSON_NATIVE, nullable=False, default=dict)
     created_at = Column(DateTime, default=datetime.now)
+
     def to_dict(self):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
 
@@ -601,7 +604,7 @@ class PromptResourceBinding(Base):
             "prompt_id",
             "resource_type",
             "resource_key",
-            name="uix_prompt_resource_binding_prompt_type_key",
+            name="uix_prompt_resource_binding_resource_key",
         ),
     )
 

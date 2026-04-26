@@ -1440,3 +1440,124 @@ class TestQueryService:
         assert invoke_kwargs["tool_choice_override"] is None
         assert "call `iat_memory_search` before answering" not in invoke_kwargs["context"]
         assert "tool_policy" not in invoke_kwargs["execution_metadata"]
+
+    def test_llm_query_agent_uses_stateless_runtime_context_and_skips_history(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = [
+            {"type": "function", "name": "iat_sql_query", "description": "sql", "parameters": {}, "strict": True},
+            {"type": "function", "name": "crm_lookup", "description": "crm", "parameters": {}, "strict": True},
+        ]
+        self.mock_tool_service.get_always_include_tool_names.return_value = ["iat_sql_query"]
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "investiga clientes", [])
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "research_agent",
+            "execution_mode": "agentic",
+            "visible_in_chat": False,
+            "schema": None,
+            "schema_mode": "best_effort",
+            "response_mode": "chat_compatible",
+            "tool_policy": {
+                "mode": "explicit",
+                "tool_names": ["crm_lookup"],
+            },
+            "resource_bindings": [],
+        }
+        self.mock_context_builder.build_agent_system_context.return_value = (
+            "Agent Minimal Context",
+            {"id": MOCK_LOCAL_USER_ID},
+            ["query_main"],
+        )
+        self.mock_llm_client.invoke.return_value = {"valid_response": True, "answer": "ok"}
+
+        result = self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="research_agent",
+            question="investiga clientes",
+            model="gpt-test",
+        )
+
+        assert result["valid_response"] is True
+        self.mock_history_manager.populate_request_params.assert_not_called()
+        self.mock_history_manager.update_history.assert_not_called()
+        self.mock_session_context.get_selected_system_prompt_keys.assert_not_called()
+        self.mock_tool_service.get_always_include_tool_names.assert_not_called()
+        self.mock_context_builder.build_agent_system_context.assert_called_once()
+        build_kwargs = self.mock_context_builder.build_agent_system_context.call_args.kwargs
+        assert [tool["name"] for tool in build_kwargs["enabled_tools"]] == ["crm_lookup"]
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["previous_response_id"] is None
+        assert invoke_kwargs["context_history"] is None
+        assert invoke_kwargs["context"].startswith(
+            "### Agent Runtime Context\nAgent Minimal Context\n\n### Agent Turn\n"
+        )
+        assert [tool["name"] for tool in invoke_kwargs["tools"]] == ["crm_lookup"]
+        assert invoke_kwargs["execution_metadata"]["tool_router"]["selected_system_prompt_keys"] == ["query_main"]
+
+    def test_llm_query_agent_requires_sql_resource_binding(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = [
+            {"type": "function", "name": "iat_sql_query", "description": "sql", "parameters": {}, "strict": True},
+        ]
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "consulta ventas", [])
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "sql_agent",
+            "execution_mode": "agentic",
+            "visible_in_chat": False,
+            "schema": None,
+            "schema_mode": "best_effort",
+            "response_mode": "chat_compatible",
+            "tool_policy": {
+                "mode": "explicit",
+                "tool_names": ["iat_sql_query"],
+            },
+            "resource_bindings": [],
+        }
+
+        result = self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="sql_agent",
+            question="consulta ventas",
+            model="gpt-test",
+        )
+
+        assert result["error"] is True
+        assert "iat_sql_query" in result["error_message"]
+        self.mock_context_builder.build_agent_system_context.assert_not_called()
+        self.mock_llm_client.invoke.assert_not_called()
+        self.mock_history_manager.populate_request_params.assert_not_called()
+        self.mock_history_manager.update_history.assert_not_called()
+
+    def test_llm_query_agent_requires_rag_collection_binding(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = [
+            {"type": "function", "name": "iat_document_search", "description": "docs", "parameters": {}, "strict": True},
+        ]
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "busca contratos", [])
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "docs_agent",
+            "execution_mode": "agentic",
+            "visible_in_chat": False,
+            "schema": None,
+            "schema_mode": "best_effort",
+            "response_mode": "chat_compatible",
+            "tool_policy": {
+                "mode": "explicit",
+                "tool_names": ["iat_document_search"],
+            },
+            "resource_bindings": [],
+        }
+
+        result = self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="docs_agent",
+            question="busca contratos",
+            model="gpt-test",
+        )
+
+        assert result["error"] is True
+        assert "iat_document_search" in result["error_message"]
+        self.mock_context_builder.build_agent_system_context.assert_not_called()
+        self.mock_llm_client.invoke.assert_not_called()
+        self.mock_history_manager.populate_request_params.assert_not_called()
+        self.mock_history_manager.update_history.assert_not_called()

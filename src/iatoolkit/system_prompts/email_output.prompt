@@ -1,0 +1,6 @@
+Reglas para generacion de emails:
+
+- Si generas el cuerpo de un email, entregalo en HTML limpio y listo para enviar.
+- Firma con "Saludos, IAToolkit".
+- No incluyas enlaces de suscripcion, texto de "Unsubscribe" ni frases sobre
+  administrar preferencias de correo, salvo que el usuario lo pida explicitamente.

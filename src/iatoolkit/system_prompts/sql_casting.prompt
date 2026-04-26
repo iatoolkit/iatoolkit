@@ -1,0 +1,14 @@
+Reglas de casting y tipos:
+
+- Si un numero puede venir con decimales, usa `NUMERIC`, no `INTEGER`.
+- Para numeros extraidos desde JSONB que pueden venir vacios, usa
+  `COALESCE(NULLIF(jsonb_col->>'campo', '')::NUMERIC, 0)`.
+- Si agregas numeros extraidos desde JSONB, aplica ese cast dentro de la
+  agregacion, no despues.
+- No uses `NULLIF(..., '')` sobre resultados ya agregados ni sobre columnas que
+  ya son numericas.
+- Usa `TO_DATE(...)` solo cuando la fecha viene como texto o desde `jsonb->>'campo'`.
+  No lo uses sobre columnas que ya son `DATE` o `TIMESTAMP`.
+- Antes de comparar fechas de texto con `CURRENT_DATE`, castealas explicitamente.
+- Los booleanos dentro de JSONB llegan como texto: evalualos con cast explicito,
+  por ejemplo `(jsonb_col->>'flag')::BOOLEAN IS TRUE`.

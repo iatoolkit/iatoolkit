@@ -81,6 +81,9 @@ class TestContextBuilderService:
             company_id=1,
             company_short_name=MOCK_COMPANY_SHORT_NAME,
             query_text=None,
+            capabilities_override=set(),
+            execution_mode="chat",
+            response_mode="chat_compatible",
         )
 
     def test_build_system_context_company_not_found(self):
@@ -107,6 +110,63 @@ class TestContextBuilderService:
         context, _, _ = self.service.build_system_context(MOCK_COMPANY_SHORT_NAME, MOCK_USER_ID)
 
         assert "Available Document Collections" not in context
+
+    def test_build_agent_system_context_uses_only_bound_resources(self):
+        mock_profile = {"name": "Agent User"}
+        enabled_tools = [
+            {"name": "iat_sql_query", "description": "sql"},
+            {"name": "iat_document_search", "description": "docs"},
+            {"name": "iat_memory_search", "description": "memory"},
+        ]
+        prompt_contract = {
+            "resource_bindings": [
+                {"resource_type": "sql_source", "resource_key": "erp"},
+                {"resource_type": "rag_collection", "resource_key": "legal"},
+            ],
+        }
+
+        self.mock_profile_service.get_profile_by_identifier.return_value = mock_profile
+        self.mock_prompt_service.get_system_prompt_payload.return_value = {
+            "content": "Agent System Template",
+            "selected_keys": ["query_main", "sql_rules"],
+        }
+        self.mock_util.render_prompt_from_string.return_value = "Rendered Agent Prompt"
+        self.mock_company_context.get_sql_context.return_value = "Filtered SQL Context"
+        self.mock_knowledge_base_service.get_collection_descriptors.return_value = [
+            {"name": "legal", "description": "Contracts"},
+            {"name": "support", "description": "Policies"},
+        ]
+
+        context, profile, selected_keys = self.service.build_agent_system_context(
+            MOCK_COMPANY_SHORT_NAME,
+            MOCK_USER_ID,
+            "research_agent",
+            enabled_tools=enabled_tools,
+            prompt_output_contract=prompt_contract,
+            query_text="explica ventas",
+        )
+
+        assert "Filtered SQL Context" in context
+        assert "Available Document Collections" in context
+        assert "- legal: Contracts" in context
+        assert "- support: Policies" not in context
+        assert "### Personal Memory" in context
+        assert "Rendered Agent Prompt" in context
+        assert profile == mock_profile
+        assert selected_keys == ["query_main", "sql_rules"]
+        self.mock_company_context.get_company_context.assert_not_called()
+        self.mock_company_context.get_sql_context.assert_called_once_with(
+            MOCK_COMPANY_SHORT_NAME,
+            allowed_databases=["erp"],
+        )
+        self.mock_prompt_service.get_system_prompt_payload.assert_called_once_with(
+            company_id=1,
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            query_text="explica ventas",
+            capabilities_override={"can_query_sql"},
+            execution_mode="agent",
+            response_mode="chat_compatible",
+        )
 
     def test_build_user_turn_prompt_basic(self):
         """Should build a simple prompt with a direct question and no files."""
@@ -235,6 +295,8 @@ required:
     def test_get_prompt_output_contract_accepts_json_string_schema(self):
         self.mock_prompt_service.get_prompt_definition.return_value = SimpleNamespace(
             name="employee_prompt",
+            execution_mode="agentic",
+            visible_in_chat=False,
             output_schema='{"type":"object","properties":{"employees":{"type":"array"}}}',
             output_schema_yaml=None,
             output_schema_mode="strict",
@@ -250,6 +312,14 @@ required:
                 "prompt_variant": "baseline",
             },
             tool_policy={"mode": "explicit", "tool_names": ["iat_sql_query"]},
+            resource_bindings=[
+                SimpleNamespace(
+                    resource_type="sql_source",
+                    resource_key="erp",
+                    binding_order=0,
+                    metadata_json={"scope": "primary"},
+                )
+            ],
         )
         self.mock_prompt_service.normalize_tool_policy.return_value = {
             "mode": "explicit",
@@ -262,6 +332,8 @@ required:
         assert contract["schema"]["type"] == "object"
         assert contract["schema_mode"] == "strict"
         assert contract["response_mode"] == "structured_only"
+        assert contract["execution_mode"] == "agentic"
+        assert contract["visible_in_chat"] is False
         assert contract["attachment_mode"] == "native_only"
         assert contract["attachment_parser_provider"] == "basic"
         assert contract["attachment_fallback"] == "fail"
@@ -273,6 +345,14 @@ required:
             "prompt_variant": "baseline",
         }
         assert contract["tool_policy"] == {"mode": "explicit", "tool_names": ["iat_sql_query"]}
+        assert contract["resource_bindings"] == [
+            {
+                "resource_type": "sql_source",
+                "resource_key": "erp",
+                "binding_order": 0,
+                "metadata_json": {"scope": "primary"},
+            }
+        ]
 
     def test_get_prompt_output_contract_returns_attachment_policy_even_without_schema(self):
         self.mock_prompt_service.get_prompt_definition.return_value = SimpleNamespace(
@@ -286,12 +366,17 @@ required:
             attachment_fallback="fail",
             llm_model="gpt-4o-mini",
             llm_request_options={"text_verbosity": "low"},
+            execution_mode=None,
+            visible_in_chat=None,
+            resource_bindings=[],
         )
 
         contract = self.service.get_prompt_output_contract(self.mock_company, "employee_prompt")
 
         assert contract["prompt_name"] == "employee_prompt"
         assert contract["schema"] is None
+        assert contract["execution_mode"] == "conversational"
+        assert contract["visible_in_chat"] is True
         assert contract["attachment_mode"] == "native_only"
         assert contract["attachment_parser_provider"] == "docling"
         assert contract["attachment_fallback"] == "fail"

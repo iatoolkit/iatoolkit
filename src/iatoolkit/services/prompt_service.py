@@ -12,8 +12,12 @@ from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.sql_service import SqlService
 from iatoolkit.services.configuration_service import ConfigurationService
 from collections import defaultdict
-from iatoolkit.repositories.models import (Prompt, PromptCategory,
-                                           Company, PromptType)
+from iatoolkit.repositories.models import (
+    Prompt,
+    PromptCategory,
+    Company,
+    PromptExecutionMode,
+)
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.system_prompt_catalog import build_system_prompt_payload
 from iatoolkit.services.structured_output_service import StructuredOutputService
@@ -42,6 +46,9 @@ class PromptService:
     TEXT_VERBOSITY_HIGH = "high"
     TOOL_POLICY_MODE_INHERIT = "inherit"
     TOOL_POLICY_MODE_EXPLICIT = "explicit"
+    EXECUTION_MODE_CONVERSATIONAL = PromptExecutionMode.CONVERSATIONAL.value
+    EXECUTION_MODE_AGENTIC = PromptExecutionMode.AGENTIC.value
+    DEFAULT_CATEGORY_LABEL = "General"
 
     @inject
     def __init__(self,
@@ -58,21 +65,41 @@ class PromptService:
         self.sql_service = sql_service
         self.configuration_service = configuration_service
 
-    def _normalize_prompt_type(self, prompt_type: str | None) -> str:
-        candidate = str(prompt_type or PromptType.COMPANY.value).strip().lower()
+    def _normalize_execution_mode(
+        self,
+        execution_mode: str | None,
+    ) -> str:
+        candidate = str(execution_mode or "").strip().lower()
         allowed = {
-            PromptType.COMPANY.value,
-            PromptType.AGENT.value,
+            self.EXECUTION_MODE_CONVERSATIONAL,
+            self.EXECUTION_MODE_AGENTIC,
         }
         if candidate in allowed:
             return candidate
 
-        logging.warning(
-            "Unsupported prompt_type '%s'. Falling back to '%s'.",
-            prompt_type,
-            PromptType.COMPANY.value,
-        )
-        return PromptType.COMPANY.value
+        if candidate:
+            logging.warning(
+                "Unsupported execution_mode '%s'. Falling back to '%s'.",
+                execution_mode,
+                self.EXECUTION_MODE_CONVERSATIONAL,
+            )
+        return self.EXECUTION_MODE_CONVERSATIONAL
+
+    def _normalize_visible_in_chat(
+        self,
+        visible_in_chat,
+    ) -> bool:
+        if isinstance(visible_in_chat, bool):
+            return visible_in_chat
+
+        if isinstance(visible_in_chat, str):
+            candidate = visible_in_chat.strip().lower()
+            if candidate in {"true", "1", "yes", "on"}:
+                return True
+            if candidate in {"false", "0", "no", "off"}:
+                return False
+
+        return True
 
     def _normalize_output_schema_mode(self, output_schema_mode: str | None) -> str:
         candidate = str(output_schema_mode or self.OUTPUT_SCHEMA_MODE_BEST_EFFORT).strip().lower()
@@ -415,16 +442,8 @@ class PromptService:
             # group by category
             prompts_by_category = defaultdict(list)
             for prompt in all_prompts:
-                # Filter logic moved here or in repo.
-                # If include_all is False, we only want active prompts (and maybe only specific types)
-                if not include_all:
-
-                    # Standard user view: excludes system/agent hidden prompts if any?
-                    if prompt.prompt_type != PromptType.COMPANY.value:
-                        continue
-
                 # Grouping logic
-                cat_key = (0, "Uncategorized") # Default
+                cat_key = (0, self.DEFAULT_CATEGORY_LABEL)
                 if prompt.category:
                     cat_key = (prompt.category.order, prompt.category.name)
 
@@ -447,7 +466,13 @@ class PromptService:
                         {
                             'prompt': p.name,
                             'description': p.description,
-                            'type': p.prompt_type,
+                            'category': p.category.name if p.category else None,
+                            'visible_in_chat': bool(getattr(p, 'visible_in_chat', True)),
+                            'execution_mode': (
+                                str(getattr(p, 'execution_mode', None) or self.EXECUTION_MODE_CONVERSATIONAL)
+                                .strip()
+                                .lower()
+                            ),
                             'active': p.active,
                             'custom_fields': p.custom_fields,
                             'order': p.order,
@@ -550,7 +575,8 @@ class PromptService:
             order=data.get('order', 1),
             category_id=category_id,
             active=data.get('active', True),
-            prompt_type=self._normalize_prompt_type(data.get('prompt_type')),
+            visible_in_chat=self._normalize_visible_in_chat(data.get('visible_in_chat')),
+            execution_mode=self._normalize_execution_mode(data.get('execution_mode')),
             filename=f"{prompt_name.lower().replace(' ', '_')}.prompt",
             custom_fields=data.get('custom_fields', []),
             output_schema=output_schema,
@@ -597,7 +623,7 @@ class PromptService:
         try:
             db_names = self.sql_service.get_db_names(company_short_name)
             if isinstance(db_names, list) and db_names:
-                capabilities.add("has_sql_sources")
+                capabilities.add("can_query_sql")
         except Exception as e:
             logging.debug(
                 "Could not resolve SQL capabilities for company '%s': %s",
@@ -612,6 +638,9 @@ class PromptService:
         company_id: int,
         company_short_name: str | None = None,
         query_text: str | None = None,
+        capabilities_override: set[str] | None = None,
+        execution_mode: str | None = None,
+        response_mode: str | None = None,
     ) -> dict:
         try:
             resolved_short_name = (company_short_name or "").strip()
@@ -624,8 +653,24 @@ class PromptService:
                     )
                 resolved_short_name = company.short_name
 
-            capabilities = self._resolve_system_prompt_capabilities(resolved_short_name)
-            payload = build_system_prompt_payload(capabilities, query_text=query_text)
+            if capabilities_override is None:
+                capabilities = self._resolve_system_prompt_capabilities(resolved_short_name)
+            else:
+                capabilities = {
+                    str(item or "").strip()
+                    for item in capabilities_override
+                    if str(item or "").strip()
+                }
+            normalized_execution_mode = str(execution_mode or "chat").strip().lower() or "chat"
+            normalized_response_mode = (
+                str(response_mode or "chat_compatible").strip().lower() or "chat_compatible"
+            )
+            payload = build_system_prompt_payload(
+                capabilities,
+                query_text=query_text,
+                execution_mode=normalized_execution_mode,
+                response_mode=normalized_response_mode,
+            )
             selected_keys = payload.get("selected_keys")
             if not isinstance(selected_keys, list):
                 selected_keys = []
@@ -648,11 +693,15 @@ class PromptService:
         company_id: int,
         company_short_name: str | None = None,
         query_text: str | None = None,
+        execution_mode: str | None = None,
+        response_mode: str | None = None,
     ):
         payload = self.get_system_prompt_payload(
             company_id=company_id,
             company_short_name=company_short_name,
             query_text=query_text,
+            execution_mode=execution_mode,
+            response_mode=response_mode,
         )
         return payload.get("content", "")
 
@@ -695,15 +744,15 @@ class PromptService:
 
             for prompt_data in prompt_list:
                 category_name = prompt_data.get('category')
-                if not category_name or category_name not in category_map:
+                if category_name and category_name not in category_map:
                     logging.warning(
-                        f"⚠️  Warning: Prompt '{prompt_data['name']}' has an invalid or missing category. Skipping.")
+                        f"⚠️  Warning: Prompt '{prompt_data['name']}' has an invalid category. Skipping.")
                     continue
 
                 prompt_name = prompt_data['name']
                 defined_prompt_names.add(prompt_name)
 
-                category_obj = category_map[category_name]
+                category_obj = category_map.get(category_name)
                 filename = f"{prompt_name}.prompt"
                 normalized_schema = StructuredOutputService.normalize_schema(prompt_data.get("output_schema"))
 
@@ -712,9 +761,10 @@ class PromptService:
                     name=prompt_name,
                     description=prompt_data.get('description'),
                     order=prompt_data.get('order'),
-                    category_id=category_obj.id,
+                    category_id=category_obj.id if category_obj else None,
                     active=prompt_data.get('active', True),
-                    prompt_type=self._normalize_prompt_type(prompt_data.get('prompt_type')),
+                    visible_in_chat=self._normalize_visible_in_chat(prompt_data.get('visible_in_chat')),
+                    execution_mode=self._normalize_execution_mode(prompt_data.get('execution_mode')),
                     filename=filename,
                     custom_fields=prompt_data.get('custom_fields', []),
                     output_schema=normalized_schema,

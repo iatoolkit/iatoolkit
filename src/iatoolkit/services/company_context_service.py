@@ -66,8 +66,18 @@ class CompanyContextService:
         # Join all parts with a clear separator
         return "\n\n---\n\n".join(context_parts)
 
+    def get_sql_context(self, company_short_name: str, allowed_databases: List[str] | None = None) -> str:
+        try:
+            sql_context, _ = self._get_sql_enriched_context(
+                company_short_name,
+                allowed_databases=allowed_databases,
+            )
+            return sql_context
+        except Exception as e:
+            logging.warning(f"Could not generate SQL context for '{company_short_name}': {e}")
+            return ""
 
-    def _get_sql_enriched_context(self, company_short_name: str):
+    def _get_sql_enriched_context(self, company_short_name: str, allowed_databases: List[str] | None = None):
         """
         Generates the SQL context for the LLM using the enriched schema logic.
         It iterates over configured databases, fetches their enriched structure,
@@ -77,12 +87,22 @@ class CompanyContextService:
         if not sql_sources:
             return '', []
 
+        allowed_database_set = {
+            str(database or "").strip()
+            for database in (allowed_databases or [])
+            if str(database or "").strip()
+        }
+        if allowed_databases is not None and not allowed_database_set:
+            return "", []
+
         context_output = []
         db_tables=[]
 
         for source in sql_sources:
             db_name = source.get('database')
             if not db_name:
+                continue
+            if allowed_database_set and db_name not in allowed_database_set:
                 continue
 
             try:

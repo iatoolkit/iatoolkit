@@ -77,8 +77,8 @@ class TestCategoriesView:
         assert response.status_code == 200
         data = response.json
 
-        assert "prompt_types" in data
-        assert data["prompt_types"] == ["company", "agent"]
+        assert "prompt_execution_modes" in data
+        assert data["prompt_execution_modes"] == ["conversational", "agentic"]
 
         assert "prompt_categories" in data
         assert "Sales" in data["prompt_categories"]

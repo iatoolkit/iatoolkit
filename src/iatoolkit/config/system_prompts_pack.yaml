@@ -1,13 +1,106 @@
-version: 1
+version: 2
 prompts:
-  - key: query_main
-    filename: query_main.prompt
-    include: always
-  - key: format_styles
-    filename: format_styles.prompt
-    include: always
-  - key: sql_rules
-    filename: sql_rules.prompt
+  - key: core_identity
+    filename: core_identity.prompt
     include:
+      execution_modes:
+        - chat
+        - agent
+  - key: chat_user_profile
+    filename: chat_user_profile.prompt
+    include:
+      execution_modes:
+        - chat
+  - key: chat_state_rules
+    filename: chat_state_rules.prompt
+    include:
+      execution_modes:
+        - chat
+  - key: links_documents
+    filename: links_documents.prompt
+    include:
+      execution_modes:
+        - chat
+        - agent
+  - key: multimodal_basics
+    filename: multimodal_basics.prompt
+    include:
+      execution_modes:
+        - chat
+        - agent
+  - key: output_basics
+    filename: output_basics.prompt
+    include:
+      execution_modes:
+        - chat
+        - agent
+      response_modes:
+        - chat_compatible
+  - key: presentation_formatting
+    filename: presentation_formatting.prompt
+    include:
+      execution_modes:
+        - chat
+      response_modes:
+        - chat_compatible
+  - key: html_structures
+    filename: html_structures.prompt
+    include:
+      execution_modes:
+        - chat
+      response_modes:
+        - chat_compatible
+  - key: tool_html_passthrough
+    filename: tool_html_passthrough.prompt
+    include:
+      execution_modes:
+        - chat
+        - agent
+  - key: file_download_output
+    filename: file_download_output.prompt
+    include:
+      execution_modes:
+        - chat
+        - agent
       all_capabilities:
-        - has_sql_sources
+        - can_generate_files
+  - key: email_output
+    filename: email_output.prompt
+    include:
+      execution_modes:
+        - chat
+        - agent
+      all_capabilities:
+        - can_send_email
+  - key: sql_core
+    filename: sql_core.prompt
+    include:
+      execution_modes:
+        - chat
+        - agent
+      all_capabilities:
+        - can_query_sql
+  - key: sql_jsonb
+    filename: sql_jsonb.prompt
+    include:
+      execution_modes:
+        - chat
+        - agent
+      all_capabilities:
+        - can_query_sql
+  - key: sql_casting
+    filename: sql_casting.prompt
+    include:
+      execution_modes:
+        - chat
+        - agent
+      all_capabilities:
+        - can_query_sql
+  - key: sql_aggregation_scope
+    filename: sql_aggregation_scope.prompt
+    include:
+      execution_modes:
+        - chat
+        - agent
+      all_capabilities:
+        - can_query_sql

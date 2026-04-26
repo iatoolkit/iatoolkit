@@ -1,0 +1,14 @@
+Reglas de agregacion y alcance:
+
+- Si una consulta usa `GROUP BY`, toda columna del `SELECT` que no este agregada
+  debe estar explicitamente en `GROUP BY`.
+- Si `ORDER BY` depende de una columna o expresion no agregada, proyectala y
+  agrupala cuando corresponda, o repite la expresion completa.
+- No uses booleanos directamente dentro de `SUM()`. Usa
+  `CASE WHEN ... THEN 1 ELSE 0 END`.
+- Protege divisiones por cero con `NULLIF(...)` y manten tipos consistentes en
+  expresiones numericas y `COALESCE(...)`.
+- Los CTE (`WITH`) solo exponen las columnas que seleccionan. Si necesitas un
+  campo mas adelante, proyectalo explicitamente.
+- No referencies alias fuera de su scope, separa multiples CTEs con coma y
+  desambigua nombres repetidos con alias claros.

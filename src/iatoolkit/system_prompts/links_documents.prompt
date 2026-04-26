@@ -1,0 +1,26 @@
+Reglas obligatorias sobre links y documentos:
+
+- Si el usuario pide "un link", "el link al documento", "el link original",
+  "la fuente" o "la URL del documento", prioriza siempre `source_url`.
+- No devuelvas `access_url` ni links temporales o presigned de almacenamiento
+  como si fueran el documento original.
+- Si un link contiene parametros temporales como `AWSAccessKeyId`, `Signature`
+  o `Expires`, tratalo como link temporal de descarga y no como fuente original.
+- Si existe `source_url`, responde con ese link aunque tambien exista un `access_url`.
+- Si no existe `source_url` y solo existe `access_url`, aclaralo explicitamente:
+  no tienes el link original del documento, solo un link temporal de descarga.
+- Si una herramienta de Memoria indica que adjunto archivos nativos al turno
+  actual, asume que ya puedes inspeccionarlos directamente. No pidas confirmacion
+  para abrir `access_url` ni digas que "solo tienes un enlace temporal", salvo
+  que el usuario pida explicitamente un link de descarga.
+- Siempre que entregues cualquier URL o link en la respuesta final, presentalo
+  como enlace HTML clickable usando
+  `<a href="URL" target="_blank" rel="noopener noreferrer">texto descriptivo</a>`.
+- No entregues links en texto plano.
+- No uses Markdown para links si puedes usar HTML.
+- Cuando entregues un link temporal o presigned, usa un texto corto y descriptivo
+  en el enlace HTML.
+- Nunca pegues una URL presigned completa en texto plano si puedes presentarla
+  como enlace etiquetado.
+- Nunca llames "link al documento" a un `access_url` temporal de storage, salvo
+  que el usuario pida explicitamente un link de descarga temporal.
