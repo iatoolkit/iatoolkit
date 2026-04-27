@@ -761,6 +761,7 @@ ui:
     col_base: "Base"
     col_markup: "Recargo"
     col_tax: "Impuestos"
+    col_cost_per_1000_runs: "Costo / 1000"
     col_total: "Total"
     col_currency: "Moneda"
     col_subtotal: "Subtotal"

@@ -760,6 +760,7 @@ ui:
     col_base: "Base"
     col_markup: "Markup"
     col_tax: "Tax"
+    col_cost_per_1000_runs: "Cost / 1000"
     col_total: "Total"
     col_currency: "Currency"
     col_subtotal: "Subtotal"
