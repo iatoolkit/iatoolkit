@@ -52,6 +52,49 @@ class ConfigurationService:
             return {}
         return {"id": model_id}
 
+    @staticmethod
+    def _validate_openrouter_provider_preferences(add_error, section: str, provider_cfg) -> None:
+        if not isinstance(provider_cfg, dict):
+            add_error(section, "Must be a dictionary.")
+            return
+
+        for list_key in ("order", "only", "ignore"):
+            if list_key not in provider_cfg:
+                continue
+            raw_value = provider_cfg.get(list_key)
+            if not isinstance(raw_value, list) or any(not isinstance(item, str) or not item.strip() for item in raw_value):
+                add_error(f"{section}.{list_key}", "Must be a list of non-empty strings.")
+
+        for bool_key in ("allow_fallbacks", "require_parameters", "zdr"):
+            if bool_key in provider_cfg and not isinstance(provider_cfg.get(bool_key), bool):
+                add_error(f"{section}.{bool_key}", "Must be a boolean.")
+
+        if "data_collection" in provider_cfg:
+            data_collection = str(provider_cfg.get("data_collection") or "").strip().lower()
+            if data_collection not in {"allow", "deny"}:
+                add_error(f"{section}.data_collection", "Must be 'allow' or 'deny'.")
+
+        if "sort" in provider_cfg:
+            sort_value = provider_cfg.get("sort")
+            if isinstance(sort_value, str):
+                if sort_value.strip().lower() not in {"price", "throughput", "latency"}:
+                    add_error(
+                        f"{section}.sort",
+                        "Must be one of: ['latency', 'price', 'throughput'], or a dictionary."
+                    )
+            elif isinstance(sort_value, dict):
+                sort_by = str(sort_value.get("by") or "").strip().lower()
+                if sort_by and sort_by not in {"price", "throughput", "latency"}:
+                    add_error(f"{section}.sort.by", "Must be one of: ['latency', 'price', 'throughput'].")
+                partition = sort_value.get("partition")
+                if partition is not None and str(partition).strip().lower() not in {"provider", "model", "none"}:
+                    add_error(f"{section}.sort.partition", "Must be one of: ['model', 'none', 'provider'].")
+            else:
+                add_error(
+                    f"{section}.sort",
+                    "Must be one of: ['latency', 'price', 'throughput'], or a dictionary."
+                )
+
     def load_configuration(self, company_short_name: str):
         """
         Main entry point for configuring a company instance.
@@ -365,15 +408,43 @@ class ConfigurationService:
             for index, model_entry in enumerate(llm_available_models):
                 normalized_model = self._normalize_model_entry(model_entry)
                 provider = str(normalized_model.get("provider") or "").strip().lower()
+                model_specific_config = normalized_model.get("config")
                 if provider and provider not in supported_llm_providers:
                     add_error(
                         f"llm.available_models[{index}].provider",
                         f"Unsupported provider '{provider}'. Must be one of: {sorted(supported_llm_providers)}."
                     )
+                if model_specific_config is not None and not isinstance(model_specific_config, dict):
+                    add_error(f"llm.available_models[{index}].config", "Must be a dictionary.")
                 if provider == "openai_compatible":
                     openai_compatible_in_use = True
                 if provider == "openrouter":
                     openrouter_in_use = True
+                    if isinstance(model_specific_config, dict):
+                        if "routing" in model_specific_config:
+                            self._validate_openrouter_provider_preferences(
+                                add_error,
+                                f"llm.available_models[{index}].config.routing",
+                                model_specific_config.get("routing"),
+                            )
+                        if "openrouter_provider" in model_specific_config:
+                            add_error(
+                                f"llm.available_models[{index}].config.openrouter_provider",
+                                "Unsupported key. Use 'config.routing' instead.",
+                            )
+                elif isinstance(model_specific_config, dict) and (
+                    "routing" in model_specific_config or "openrouter_provider" in model_specific_config
+                ):
+                    if "routing" in model_specific_config:
+                        add_error(
+                            f"llm.available_models[{index}].config.routing",
+                            "Only supported when the model provider is 'openrouter'.",
+                        )
+                    if "openrouter_provider" in model_specific_config:
+                        add_error(
+                            f"llm.available_models[{index}].config.openrouter_provider",
+                            "Unsupported key. Use 'config.routing' instead.",
+                        )
 
             providers_cfg = config.get("llm", {}).get("providers")
             if providers_cfg is not None and not isinstance(providers_cfg, dict):

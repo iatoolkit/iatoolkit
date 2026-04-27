@@ -345,6 +345,13 @@ class TestLLMProxy:
         self.config_service_mock.get_llm_model_config.return_value = {
             "id": "openai/gpt-5.2",
             "provider": "openrouter",
+            "config": {
+                "routing": {
+                    "order": ["openai"],
+                    "allow_fallbacks": False,
+                    "require_parameters": True,
+                }
+            },
         }
         self.config_service_mock.get_llm_provider_config.return_value = {
             "base_url": "https://openrouter.ai/api/v1",
@@ -371,6 +378,12 @@ class TestLLMProxy:
                 "X-OpenRouter-Title": "IAToolkit",
             },
         )
+        adapter_kwargs = self.mock_openrouter_adapter_instance.create_response.call_args.kwargs
+        assert adapter_kwargs["provider"] == {
+            "order": ["openai"],
+            "allow_fallbacks": False,
+            "require_parameters": True,
+        }
 
     def test_openrouter_cache_uses_default_headers(self):
         self.config_service_mock.get_configuration.return_value = {
@@ -424,6 +437,43 @@ class TestLLMProxy:
         adapter_kwargs = self.mock_openrouter_adapter_instance.create_response.call_args.kwargs
         assert adapter_kwargs["tools"] == []
         assert adapter_kwargs["tool_choice"] is None
+
+    def test_openrouter_runtime_provider_overrides_model_routing_config(self):
+        self.model_registry_mock.get_provider.return_value = "unknown"
+        self.config_service_mock.get_configuration.return_value = {
+            "provider_api_keys": {"openrouter": "OPENROUTER_KEY"}
+        }
+        self.config_service_mock.get_llm_model_config.return_value = {
+            "id": "openai/gpt-5.2",
+            "provider": "openrouter",
+            "config": {
+                "routing": {
+                    "order": ["openai"],
+                    "allow_fallbacks": False,
+                    "require_parameters": True,
+                }
+            },
+        }
+        self.config_service_mock.get_llm_provider_config.return_value = {
+            "base_url": "https://openrouter.ai/api/v1",
+        }
+
+        with patch.dict(os.environ, {"OPENROUTER_KEY": "dummy"}, clear=True):
+            self.proxy.create_response(
+                company_short_name=self.company_short_name,
+                model="openai/gpt-5.2",
+                input=[],
+                provider={"allow_fallbacks": True, "sort": "latency"},
+            )
+
+        self.mock_openrouter_adapter_instance.create_response.assert_called_once()
+        adapter_kwargs = self.mock_openrouter_adapter_instance.create_response.call_args.kwargs
+        assert adapter_kwargs["provider"] == {
+            "order": ["openai"],
+            "allow_fallbacks": True,
+            "require_parameters": True,
+            "sort": "latency",
+        }
 
     def test_clear_runtime_cache_clears_adapter_and_client_caches(self):
         self.proxy.adapters = {(LLMProxy.PROVIDER_OPENAI, "key", ""): MagicMock()}

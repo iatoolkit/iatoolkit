@@ -673,6 +673,35 @@ class TestConfigurationService:
         errors = self.service.validate_configuration(self.COMPANY_NAME)
         assert errors == []
 
+    def test_validate_configuration_accepts_openrouter_model_routing_config(self):
+        valid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        valid_config["llm"]["available_models"].append({
+            "id": "openai/gpt-5.2",
+            "label": "GPT-5.2 via OpenRouter",
+            "description": "OpenRouter model",
+            "provider": "openrouter",
+            "config": {
+                "routing": {
+                    "order": ["openai"],
+                    "allow_fallbacks": False,
+                    "require_parameters": True,
+                    "data_collection": "deny",
+                    "sort": "latency",
+                }
+            },
+        })
+        valid_config["llm"]["provider_api_keys"]["openrouter"] = "OPENROUTER_API_KEY"
+        valid_config["llm"]["openrouter"] = {
+            "base_url": "https://openrouter.ai/api/v1",
+        }
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = valid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert errors == []
+
     def test_validate_configuration_rejects_openrouter_without_base_url(self):
         invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
         invalid_config["llm"]["available_models"].append({
@@ -690,6 +719,64 @@ class TestConfigurationService:
 
         errors = self.service.validate_configuration(self.COMPANY_NAME)
         assert any("llm.openrouter" in e for e in errors)
+
+    def test_validate_configuration_rejects_invalid_openrouter_model_routing_config(self):
+        invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        invalid_config["llm"]["available_models"].append({
+            "id": "openai/gpt-5.2",
+            "label": "GPT-5.2 via OpenRouter",
+            "description": "OpenRouter model",
+            "provider": "openrouter",
+            "config": {
+                "routing": {
+                    "order": "openai",
+                    "allow_fallbacks": "no",
+                    "data_collection": "maybe",
+                    "sort": "cheapest",
+                }
+            },
+        })
+        invalid_config["llm"]["provider_api_keys"]["openrouter"] = "OPENROUTER_API_KEY"
+        invalid_config["llm"]["openrouter"] = {
+            "base_url": "https://openrouter.ai/api/v1",
+        }
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = invalid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert any("llm.available_models[1].config.routing.order" in e for e in errors)
+        assert any("llm.available_models[1].config.routing.allow_fallbacks" in e for e in errors)
+        assert any("llm.available_models[1].config.routing.data_collection" in e for e in errors)
+        assert any("llm.available_models[1].config.routing.sort" in e for e in errors)
+
+    def test_validate_configuration_rejects_legacy_openrouter_provider_key(self):
+        invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        invalid_config["llm"]["available_models"].append({
+            "id": "openai/gpt-5.2",
+            "label": "GPT-5.2 via OpenRouter",
+            "description": "OpenRouter model",
+            "provider": "openrouter",
+            "config": {
+                "openrouter_provider": {
+                    "order": ["openai"],
+                    "allow_fallbacks": False,
+                }
+            },
+        })
+        invalid_config["llm"]["provider_api_keys"]["openrouter"] = "OPENROUTER_API_KEY"
+        invalid_config["llm"]["openrouter"] = {
+            "base_url": "https://openrouter.ai/api/v1",
+        }
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = invalid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert any("llm.available_models[1].config.openrouter_provider" in e for e in errors)
+        assert any("Use 'config.routing' instead" in e for e in errors)
 
     def test_get_llm_model_config_returns_provider_metadata(self):
         self.service._loaded_configs[self.COMPANY_NAME] = copy.deepcopy(MOCK_VALID_CONFIG)
@@ -731,6 +818,30 @@ class TestConfigurationService:
         assert model_config["provider"] == "openrouter"
         assert provider_config["base_url"] == "https://openrouter.ai/api/v1"
         assert provider_config["http_referer"] == "https://example.com/iatoolkit"
+
+    def test_get_llm_model_config_preserves_openrouter_model_routing_config(self):
+        self.service._loaded_configs[self.COMPANY_NAME] = copy.deepcopy(MOCK_VALID_CONFIG)
+        self.service._loaded_configs[self.COMPANY_NAME]["llm"]["available_models"].append({
+            "id": "openai/gpt-5.2",
+            "label": "GPT-5.2 via OpenRouter",
+            "description": "OpenRouter model",
+            "provider": "openrouter",
+            "config": {
+                "routing": {
+                    "order": ["openai"],
+                    "allow_fallbacks": False,
+                    "require_parameters": True,
+                }
+            },
+        })
+
+        model_config = self.service.get_llm_model_config(self.COMPANY_NAME, "openai/gpt-5.2")
+
+        assert model_config["config"]["routing"] == {
+            "order": ["openai"],
+            "allow_fallbacks": False,
+            "require_parameters": True,
+        }
 
     def test_validate_configuration_rejects_llm_default_attachment_mode_auto(self):
         invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)

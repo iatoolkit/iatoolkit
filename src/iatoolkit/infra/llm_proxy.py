@@ -86,6 +86,7 @@ class LLMProxy:
             company_short_name=company_short_name,
             model=model,
         )
+        model_config = self.configuration_service.get_llm_model_config(company_short_name, model) or {}
         provider_config = self.configuration_service.get_llm_provider_config(company_short_name, provider) or {}
 
         adapter = self._get_or_create_adapter(
@@ -97,6 +98,11 @@ class LLMProxy:
             provider=provider,
             provider_config=provider_config,
             request_kwargs=kwargs,
+        )
+        request_kwargs = self._apply_model_request_overrides(
+            provider=provider,
+            model_config=model_config,
+            request_kwargs=request_kwargs,
         )
 
         # Delegate to the adapter (OpenAI, Gemini, DeepSeek, xAI, Anthropic, etc.)
@@ -215,6 +221,35 @@ class LLMProxy:
                 effective_kwargs["tools"] = []
             if "tool_choice" in effective_kwargs:
                 effective_kwargs["tool_choice"] = None
+
+        return effective_kwargs
+
+    def _apply_model_request_overrides(
+        self,
+        provider: str,
+        model_config: Dict[str, Any],
+        request_kwargs: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        effective_kwargs = dict(request_kwargs or {})
+
+        if provider != self.PROVIDER_OPENROUTER or not isinstance(model_config, dict):
+            return effective_kwargs
+
+        model_runtime_config = model_config.get("config")
+        if not isinstance(model_runtime_config, dict):
+            return effective_kwargs
+
+        openrouter_provider = model_runtime_config.get("routing")
+        if not isinstance(openrouter_provider, dict) or not openrouter_provider:
+            return effective_kwargs
+
+        existing_provider = effective_kwargs.get("provider")
+        if isinstance(existing_provider, dict):
+            merged_provider = dict(openrouter_provider)
+            merged_provider.update(existing_provider)
+            effective_kwargs["provider"] = merged_provider
+        elif existing_provider is None:
+            effective_kwargs["provider"] = dict(openrouter_provider)
 
         return effective_kwargs
 

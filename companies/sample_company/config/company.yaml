@@ -22,6 +22,12 @@ llm:
     label: GPT-5.2 via OpenRouter
     description: GPT-5.2 routed through OpenRouter chat completions.
     provider: openrouter
+    config:
+      routing:
+        order:
+          - openai
+        allow_fallbacks: false
+        require_parameters: true
   provider_api_keys:
     openai: OPENAI_API_KEY
     gemini: GEMINI_API_KEY
