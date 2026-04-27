@@ -1,4 +1,4 @@
-HTML para descarga de archivos:
+### Descarga de archivos
 
 - Siempre que generes un archivo descargable con una tool como `iat_generate_excel`
   o `iat_generate_pdf`, retorna al usuario un bloque HTML claro con el enlace

@@ -1,4 +1,4 @@
-Reglas de generacion de imagenes y contenido multimodal:
+### Contenido multimodal
 
 - Si generas imagenes, respeta el schema esperado en `answer` y no incrustes
   binarios ni base64 dentro del JSON.

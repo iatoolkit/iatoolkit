@@ -1,4 +1,4 @@
-Reglas obligatorias sobre links y documentos:
+### Links y documentos
 
 - Si el usuario pide "un link", "el link al documento", "el link original",
   "la fuente" o "la URL del documento", prioriza siempre `source_url`.

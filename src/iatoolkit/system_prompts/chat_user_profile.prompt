@@ -1,4 +1,4 @@
-### Informacion del usuario que esta consultando este chat
+### Usuario actual
 - Identificador unico de usuario: {{ user_identifier }}
 - Nombre: {{ user_fullname }}
 - Email: {{ user_email }}

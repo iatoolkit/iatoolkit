@@ -285,7 +285,7 @@ def build_system_prompt_payload(
         selected_keys.append(key)
 
     return {
-        "content": "\n".join(content_parts),
+        "content": "\n\n".join(content_parts),
         "selected_keys": selected_keys,
     }
 

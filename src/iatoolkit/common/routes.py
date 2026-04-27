@@ -22,6 +22,8 @@ def register_views(app):
     from iatoolkit.views.load_document_api_view import LoadDocumentApiView
     from iatoolkit.views.user_feedback_api_view import UserFeedbackApiView
     from iatoolkit.views.prompt_api_view import PromptApiView
+    from iatoolkit.views.chat_context_preview_api_view import ChatContextPreviewApiView
+    from iatoolkit.views.prompt_context_preview_api_view import PromptContextPreviewApiView
     from iatoolkit.views.prompt_resource_api_view import PromptResourceApiView
     from iatoolkit.views.history_api_view import HistoryApiView
     from iatoolkit.views.help_content_api_view import HelpContentApiView
@@ -123,6 +125,16 @@ def register_views(app):
                      view_func=prompt_view,
                      methods=['GET', 'POST','PUT', 'DELETE'])
 
+    app.add_url_rule(
+        '/<string:company_short_name>/api/admin/context-preview/chat',
+        view_func=ChatContextPreviewApiView.as_view('chat_context_preview_api'),
+        methods=['GET'],
+    )
+    app.add_url_rule(
+        '/<string:company_short_name>/api/admin/prompts/<string:prompt_name>/context-preview',
+        view_func=PromptContextPreviewApiView.as_view('prompt_context_preview_api'),
+        methods=['POST'],
+    )
     app.add_url_rule(
         '/<string:company_short_name>/api/admin/prompts/<string:prompt_name>/resources',
         view_func=PromptResourceApiView.as_view('prompt_resources_api'),

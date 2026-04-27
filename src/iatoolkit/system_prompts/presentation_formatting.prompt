@@ -1,4 +1,4 @@
-Formato y estilo de presentacion para respuestas conversacionales:
+### Presentacion conversacional
 
 - Cuando generes tablas o listas que contengan fechas, usa formato `dd-mm-aaaa`.
 - Cuando generes tablas o listas que contengan montos:

@@ -1,4 +1,4 @@
-Regla critica de passthrough de HTML de herramientas:
+### Passthrough de HTML de herramientas
 
 - Si una herramienta devuelve contenido HTML util para el usuario final, devuelve
   ese mismo HTML literalmente dentro del campo `answer`.

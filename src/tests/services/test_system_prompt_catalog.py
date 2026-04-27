@@ -89,6 +89,35 @@ prompts:
     assert [item["key"] for item in with_sql] == ["query_main", "sql_rules"]
 
 
+def test_select_entries_by_memory_capability():
+    payload = """
+prompts:
+  - key: core_identity
+    filename: core_identity.prompt
+    include:
+      execution_modes: [chat, agent]
+  - key: memory_usage
+    filename: memory_usage.prompt
+    include:
+      execution_modes: [chat, agent]
+      all_capabilities: [can_use_memory]
+"""
+    with patch.object(system_prompt_catalog, "_read_catalog_text", return_value=payload):
+        without_memory = system_prompt_catalog.select_system_prompt_entries(
+            set(),
+            execution_mode="chat",
+            response_mode="chat_compatible",
+        )
+        with_memory = system_prompt_catalog.select_system_prompt_entries(
+            {"can_use_memory"},
+            execution_mode="chat",
+            response_mode="chat_compatible",
+        )
+
+    assert [item["key"] for item in without_memory] == ["core_identity"]
+    assert [item["key"] for item in with_memory] == ["core_identity", "memory_usage"]
+
+
 def test_select_entries_by_execution_mode_and_response_mode():
     payload = """
 prompts:

@@ -1,4 +1,4 @@
-Reglas de agregacion y alcance:
+### SQL: agregacion y alcance
 
 - Si una consulta usa `GROUP BY`, toda columna del `SELECT` que no este agregada
   debe estar explicitamente en `GROUP BY`.

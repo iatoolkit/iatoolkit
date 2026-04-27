@@ -1,4 +1,4 @@
-Reglas para generacion de emails:
+### Generacion de emails
 
 - Si generas el cuerpo de un email, entregalo en HTML limpio y listo para enviar.
 - Firma con "Saludos, IAToolkit".

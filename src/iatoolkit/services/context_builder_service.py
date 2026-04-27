@@ -190,12 +190,12 @@ class ContextBuilderService:
         # 3. Get company specific context (DB Schemas, Docs, etc.)
         company_specific_context = self.company_context_service.get_company_context(company_short_name)
         collection_context = self._build_collection_context(company_short_name)
-        memory_context = self._build_memory_context()
 
-        # 4. Merge contexts
-        final_system_context = "\n".join(
+        # 4. Merge contexts. Conversational chat sees behavior and identity first,
+        # then retrieval hints, and only then the heavier company data blocks.
+        final_system_context = "\n\n".join(
             section
-            for section in (company_specific_context, collection_context, memory_context, rendered_system_prompt)
+            for section in (rendered_system_prompt, collection_context, company_specific_context)
             if section
         )
 
@@ -224,6 +224,8 @@ class ContextBuilderService:
         capabilities: set[str] = set()
         if self.SQL_TOOL_NAME in tool_names:
             capabilities.add("can_query_sql")
+        if any(tool_name in self.MEMORY_TOOL_NAMES for tool_name in tool_names):
+            capabilities.add("can_use_memory")
         if any(tool_name in self.FILE_GENERATION_TOOL_NAMES for tool_name in tool_names):
             capabilities.add("can_generate_files")
         if self.EMAIL_TOOL_NAME in tool_names:
@@ -309,13 +311,9 @@ class ContextBuilderService:
                 collection_names=rag_collections,
             )
 
-        memory_context = ""
-        if any(tool_name in self.MEMORY_TOOL_NAMES for tool_name in enabled_tool_names):
-            memory_context = self._build_memory_context()
-
-        final_system_context = "\n".join(
+        final_system_context = "\n\n".join(
             section
-            for section in (sql_context, collection_context, memory_context, rendered_system_prompt)
+            for section in (rendered_system_prompt, collection_context, sql_context)
             if section
         )
 
@@ -351,9 +349,9 @@ class ContextBuilderService:
             return ""
 
         lines = [
-            "### Available Document Collections",
-            "Use `iat_document_search` when internal company documents may help answer the user.",
-            "Available collections:",
+            "## Colecciones documentales disponibles",
+            "Usa `iat_document_search` cuando documentos internos de la empresa puedan ayudar a responder al usuario.",
+            "### Colecciones",
         ]
 
         for name, description in selected_entries[:20]:
@@ -365,18 +363,11 @@ class ContextBuilderService:
         if len(lines) <= 3:
             return ""
 
-        lines.append("If one collection clearly matches the question, prefer that collection. If unclear, search without specifying a collection first.")
+        lines.append(
+            "Si una coleccion coincide claramente con la pregunta, prefierela. "
+            "Si no esta claro, busca primero sin especificar coleccion."
+        )
         return "\n".join(lines)
-
-    def _build_memory_context(self) -> str:
-        return "\n".join([
-            "### Personal Memory",
-            "The user may have personal memory pages built from saved notes, links, files, and chat messages.",
-            "Use `iat_memory_search` when the user is explicitly asking about saved notes, remembered items, or personal continuity across sessions.",
-            "If `iat_memory_search` returns a result with `has_native_files=true`, call `iat_memory_get_page` before answering whenever the attached file contents may matter.",
-            "Use `iat_memory_get_page` to read a specific page before answering when needed.",
-            "Prefer memory pages as compiled context; do not assume all saved content is globally relevant.",
-        ])
 
     def build_user_turn_prompt(self,
                                company: Company,

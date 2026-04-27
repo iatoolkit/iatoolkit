@@ -83,13 +83,13 @@ class TestCompanyContextService:
         result_context, db_tables = self.context_service._get_sql_enriched_context(self.COMPANY_NAME)
 
         # Assert
-        assert "These are the SQL databases" in result_context
-        assert "***Database (`database_key`)***: main_db" in result_context
-        assert "**Description:** Main database" in result_context
+        assert "## Bases de datos SQL disponibles" in result_context
+        assert "### Base SQL (`database_key`): main_db" in result_context
+        assert "- Descripcion: Main database" in result_context
 
         # Check Table info
-        assert "Table: **users**" in result_context
-        assert "Description: User table" in result_context
+        assert "#### Tabla: `users`" in result_context
+        assert "- Descripcion: User table" in result_context
 
         # Check Column info
         assert "- `id` (INTEGER): Primary Key" in result_context
@@ -154,6 +154,8 @@ class TestCompanyContextService:
         assert "MARKDOWN_CONTENT" in full_context
         assert "SQL_CONTENT" in full_context
         assert "YAML_EXTRA" in full_context
+        assert full_context.index("MARKDOWN_CONTENT") < full_context.index("SQL_CONTENT")
+        assert full_context.index("SQL_CONTENT") < full_context.index("YAML_EXTRA")
 
         # Verify _get_yaml_schema_context received the tables list to avoid duplication
         self.context_service._get_yaml_schema_context.assert_called_with(self.COMPANY_NAME, ["users"])
@@ -172,7 +174,8 @@ class TestCompanyContextService:
         }
         output = self.context_service.generate_schema_table(schema)
         assert "### Objeto: `TestEntity`" in output
-        assert "##Descripción:  Entity Desc" in output
+        assert "- Descripcion: Entity Desc" in output
+        assert "#### Estructura de datos" in output
         assert "- **`field1`** (string): Field Desc" in output
 
     # --- Tests for get_enriched_database_schema (The Core Logic) ---
@@ -519,9 +522,9 @@ class TestCompanyContextService:
 
         # Se ajusta la expectativa para incluir los headers y la indentación correcta de subcampos
         expected_schema = "\n".join([
-            "\n### Objeto: `TestEntity`",
-            "##Descripción:  Descripción de la entidad",
-            "**Estructura de Datos:**",
+            "### Objeto: `TestEntity`",
+            "- Descripcion: Descripción de la entidad",
+            "#### Estructura de datos",
             "- **`field1`** (string): Descripción del campo 1",
             "- **`field2`** (integer): Descripción del campo 2",
             "- **`field3`** (list): Descripción del campo 3 (lista de objetos)",

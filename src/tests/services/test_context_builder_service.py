@@ -52,14 +52,21 @@ class TestContextBuilderService:
         self.mock_profile_service.get_profile_by_identifier.return_value = mock_profile
         self.mock_prompt_service.get_system_prompt_payload.return_value = {
             "content": "System Template",
-            "selected_keys": ["query_main", "format_styles"],
+            "selected_keys": ["core_identity", "memory_usage", "output_basics"],
         }
-        self.mock_tool_service.get_tools_for_llm.return_value = []
+        self.mock_tool_service.get_tools_for_llm.return_value = [
+            {"name": "iat_memory_search", "description": "Memory search"},
+        ]
         self.mock_knowledge_base_service.get_collection_descriptors.return_value = [
             {"name": "legal", "description": "Contracts and annexes", "parser_provider": "docling"},
             {"name": "support", "description": "Policies and operational manuals", "parser_provider": None},
         ]
-        self.mock_util.render_prompt_from_string.return_value = "Rendered System Prompt"
+        self.mock_util.render_prompt_from_string.return_value = (
+            "Rendered System Prompt\n"
+            "### Memoria personal\n"
+            "If `iat_memory_search` returns a result with `has_native_files=true`, "
+            "call `iat_memory_get_page` before answering whenever the attached file contents may matter."
+        )
         self.mock_company_context.get_company_context.return_value = "DB Schema Context"
 
         # Act
@@ -67,21 +74,23 @@ class TestContextBuilderService:
 
         # Assert
         assert "DB Schema Context" in context
-        assert "Available Document Collections" in context
-        assert "Use `iat_document_search` when internal company documents may help answer the user." in context
-        assert "### Personal Memory" in context
+        assert "## Colecciones documentales disponibles" in context
+        assert "Usa `iat_document_search` cuando documentos internos de la empresa puedan ayudar a responder al usuario." in context
+        assert "### Memoria personal" in context
         assert "has_native_files=true" in context
         assert "- legal: Contracts and annexes" in context
         assert "- support: Policies and operational manuals" in context
         assert "Rendered System Prompt" in context
+        assert context.index("Rendered System Prompt") < context.index("## Colecciones documentales disponibles")
+        assert context.index("## Colecciones documentales disponibles") < context.index("DB Schema Context")
         assert profile == mock_profile
-        assert selected_keys == ["query_main", "format_styles"]
+        assert selected_keys == ["core_identity", "memory_usage", "output_basics"]
         self.mock_util.render_prompt_from_string.assert_called_once()
         self.mock_prompt_service.get_system_prompt_payload.assert_called_once_with(
             company_id=1,
             company_short_name=MOCK_COMPANY_SHORT_NAME,
             query_text=None,
-            capabilities_override=set(),
+            capabilities_override={"can_use_memory"},
             execution_mode="chat",
             response_mode="chat_compatible",
         )
@@ -109,7 +118,7 @@ class TestContextBuilderService:
 
         context, _, _ = self.service.build_system_context(MOCK_COMPANY_SHORT_NAME, MOCK_USER_ID)
 
-        assert "Available Document Collections" not in context
+        assert "Colecciones documentales disponibles" not in context
 
     def test_build_agent_system_context_uses_only_bound_resources(self):
         mock_profile = {"name": "Agent User"}
@@ -128,9 +137,9 @@ class TestContextBuilderService:
         self.mock_profile_service.get_profile_by_identifier.return_value = mock_profile
         self.mock_prompt_service.get_system_prompt_payload.return_value = {
             "content": "Agent System Template",
-            "selected_keys": ["query_main", "sql_rules"],
+            "selected_keys": ["core_identity", "memory_usage", "sql_core"],
         }
-        self.mock_util.render_prompt_from_string.return_value = "Rendered Agent Prompt"
+        self.mock_util.render_prompt_from_string.return_value = "Rendered Agent Prompt\n### Memoria personal"
         self.mock_company_context.get_sql_context.return_value = "Filtered SQL Context"
         self.mock_knowledge_base_service.get_collection_descriptors.return_value = [
             {"name": "legal", "description": "Contracts"},
@@ -147,13 +156,15 @@ class TestContextBuilderService:
         )
 
         assert "Filtered SQL Context" in context
-        assert "Available Document Collections" in context
+        assert "## Colecciones documentales disponibles" in context
         assert "- legal: Contracts" in context
         assert "- support: Policies" not in context
-        assert "### Personal Memory" in context
+        assert "### Memoria personal" in context
         assert "Rendered Agent Prompt" in context
+        assert context.index("Rendered Agent Prompt") < context.index("## Colecciones documentales disponibles")
+        assert context.index("## Colecciones documentales disponibles") < context.index("Filtered SQL Context")
         assert profile == mock_profile
-        assert selected_keys == ["query_main", "sql_rules"]
+        assert selected_keys == ["core_identity", "memory_usage", "sql_core"]
         self.mock_company_context.get_company_context.assert_not_called()
         self.mock_company_context.get_sql_context.assert_called_once_with(
             MOCK_COMPANY_SHORT_NAME,
@@ -163,7 +174,7 @@ class TestContextBuilderService:
             company_id=1,
             company_short_name=MOCK_COMPANY_SHORT_NAME,
             query_text="explica ventas",
-            capabilities_override={"can_query_sql"},
+            capabilities_override={"can_query_sql", "can_use_memory"},
             execution_mode="agent",
             response_mode="chat_compatible",
         )

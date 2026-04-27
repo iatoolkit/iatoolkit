@@ -34,9 +34,11 @@ class CompanyContextService:
         """
         Builds the full context by aggregating three sources:
         1. Static context files (Markdown).
-        2. Static schema files (YAML files for SQL data sources).
+        2. Physical SQL schemas and enriched metadata.
+        3. Residual schema files (YAML files not already covered by SQL enrichment).
         """
         context_parts = []
+        db_tables = []
 
         # 1. Context from Markdown (context/*.md)  files
         try:
@@ -46,20 +48,24 @@ class CompanyContextService:
         except Exception as e:
             logging.warning(f"Could not load Markdown context for '{company_short_name}': {e}")
 
-        # 2. Context from company-specific SQL databases
-        db_tables = []
+        # 2. Resolve company-specific SQL databases. We collect them first so YAML
+        # context can avoid duplicating table definitions already covered by SQL.
+        sql_context = ""
         try:
             sql_context, db_tables = self._get_sql_enriched_context(company_short_name)
-            if sql_context:
-                context_parts.append(sql_context)
         except Exception as e:
             logging.warning(f"Could not generate SQL context for '{company_short_name}': {e}")
 
-        # 3. Context from yaml (schema/*.yaml) files
+        # 3. Append physical SQL context after markdown. Table-level YAML metadata
+        # is already merged inline inside the enriched SQL definitions.
+        if sql_context:
+            context_parts.append(sql_context)
+
+        # 4. Context from residual yaml (schema/*.yaml) files
         try:
             yaml_schema_context = self._get_yaml_schema_context(company_short_name, db_tables)
             if yaml_schema_context:
-                context_parts.append(yaml_schema_context)
+                context_parts.append(f"## Esquemas adicionales\n\n{yaml_schema_context.strip()}")
         except Exception as e:
             logging.warning(f"Could not load Yaml context for '{company_short_name}': {e}")
 
@@ -112,16 +118,15 @@ class CompanyContextService:
                     continue
 
                 # 2. Build Header for this Database
-                db_context = f"***Database (`database_key`)***: {db_name}\n"
+                db_context = f"### Base SQL (`database_key`): {db_name}\n"
 
                 # Optional: Add DB description from config if available (useful context)
                 db_desc = source.get('description', '')
                 if db_desc:
-                    db_context += f"**Description:** {db_desc}\n"
+                    db_context += f"- Descripcion: {db_desc}\n"
 
                 db_context += (
-                    f"IMPORTANT: To query this database you MUST use the service/tool "
-                    f"**iat_sql_query**, with `database_key='{db_name}'`.\n"
+                    f"- Usa `iat_sql_query` con `database_key='{db_name}'` para consultar esta base.\n"
                 )
 
                 # 3. Format Tables
@@ -130,11 +135,11 @@ class CompanyContextService:
                     columns = table_data.get('columns', [])
 
                     # Table Header
-                    table_str = f"\nTable: **{table_name}**"
+                    table_str = f"\n\n#### Tabla: `{table_name}`"
                     if table_desc:
-                        table_str += f"\nDescription: {table_desc}"
+                        table_str += f"\n- Descripcion: {table_desc}"
 
-                    table_str += "\nColumns:"
+                    table_str += "\n- Columnas:"
 
                     # Format Columns
                     for col in columns:
@@ -171,7 +176,11 @@ class CompanyContextService:
         if not context_output:
             return "", []
 
-        header = "These are the SQL databases you can query using the **`iat_sql_service`**. The schema below includes enriched metadata:\n"
+        header = (
+            "## Bases de datos SQL disponibles\n\n"
+            "Estas son las bases SQL que puedes consultar usando `iat_sql_query`. "
+            "El schema a continuacion incluye metadata enriquecida.\n"
+        )
         return header + "\n\n---\n\n".join(context_output), db_tables
 
 
@@ -206,7 +215,7 @@ class CompanyContextService:
                     # 4. Generate markdown description from the dict
                     if schema_dict:
                         # We use generate_schema_table which accepts a dict directly
-                        yaml_schema_context += self.generate_schema_table(schema_dict)
+                        yaml_schema_context += self.generate_schema_table(schema_dict) + "\n\n"
 
                 except Exception as e:
                     logging.warning(f"Error processing schema file {filename}: {e}")
@@ -227,25 +236,25 @@ class CompanyContextService:
 
         root_name = keys[0]
         root_data = schema[root_name]
-        output = [f"\n### Objeto: `{root_name}`"]
+        output = [f"### Objeto: `{root_name}`"]
 
         # table description
         root_description = root_data.get('description', '')
         if root_description:
             clean_desc = root_description.replace('\n', ' ').strip()
-            output.append(f"##Descripción:  {clean_desc}")
+            output.append(f"- Descripcion: {clean_desc}")
 
         # extract columns and properties from the root object
         # priority: columns > properties > fields
         properties = root_data.get('columns', root_data.get('properties', {}))
         if properties:
-            output.append("**Estructura de Datos:**")
+            output.append("#### Estructura de datos")
 
             # use indent_level 0 for the main columns
             # call recursive function to format the properties
             output.append(self._format_json_schema(properties, 0))
         else:
-            output.append("\n_Sin definición de estructura._")
+            output.append("_Sin definicion de estructura._")
 
         return "\n".join(output)
 

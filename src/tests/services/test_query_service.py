@@ -44,6 +44,7 @@ class TestQueryService:
         self.model_registry.get_provider.return_value = "openai"
         self.model_registry.get_history_type.return_value = "server_side"
         self.mock_configuration_service.get_llm_model_config.return_value = None
+        self.mock_llm_client.count_tokens.return_value = 123
 
         # New dependency mock
         self.mock_context_builder = MagicMock(spec=ContextBuilderService)
@@ -1561,3 +1562,124 @@ class TestQueryService:
         self.mock_llm_client.invoke.assert_not_called()
         self.mock_history_manager.populate_request_params.assert_not_called()
         self.mock_history_manager.update_history.assert_not_called()
+
+    def test_preview_prompt_context_agentic_uses_runtime_context(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = [
+            {"type": "function", "name": "iat_sql_query", "description": "sql", "parameters": {}, "strict": True},
+            {"type": "function", "name": "crm_lookup", "description": "crm", "parameters": {}, "strict": True},
+        ]
+        self.mock_tool_service.get_always_include_tool_names.return_value = ["iat_sql_query"]
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt body", "investiga clientes", [])
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "research_agent",
+            "execution_mode": "agentic",
+            "visible_in_chat": False,
+            "schema": None,
+            "schema_mode": "best_effort",
+            "response_mode": "chat_compatible",
+            "tool_policy": {
+                "mode": "explicit",
+                "tool_names": ["crm_lookup"],
+            },
+            "resource_bindings": [],
+        }
+        self.mock_context_builder.build_agent_system_context.return_value = (
+            "Agent Minimal Context",
+            {"id": MOCK_LOCAL_USER_ID},
+            ["core_identity"],
+        )
+
+        result = self.service.preview_prompt_context(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="research_agent",
+            client_data={"topic": "clientes"},
+        )
+
+        assert result["execution_mode"] == "agentic"
+        assert result["history_type"] == "stateless"
+        assert result["runtime_context"] == "Agent Minimal Context"
+        assert result["selected_system_prompt_keys"] == ["core_identity"]
+        assert result["tool_names"] == ["crm_lookup"]
+        assert result["token_count"] == 123
+        assert result["final_input_preview"].startswith(
+            "### Agent Runtime Context\nAgent Minimal Context\n\n### Agent Turn\nprompt body"
+        )
+        self.mock_history_manager.populate_request_params.assert_not_called()
+        self.mock_context_builder.build_agent_system_context.assert_called_once()
+
+    def test_preview_prompt_context_conversational_returns_logical_chat_preview(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = [
+            {"type": "function", "name": "crm_lookup", "description": "crm", "parameters": {}, "strict": True},
+        ]
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt body", "quien soy yo", [])
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "chat_agent",
+            "execution_mode": "conversational",
+            "visible_in_chat": True,
+            "schema": None,
+            "schema_mode": "best_effort",
+            "response_mode": "chat_compatible",
+            "tool_policy": {
+                "mode": "inherit",
+                "tool_names": [],
+            },
+            "resource_bindings": [],
+        }
+        self.mock_context_builder.build_system_context.return_value = (
+            "Chat System Context",
+            {"id": MOCK_LOCAL_USER_ID},
+            ["core_identity", "chat_state_rules"],
+        )
+
+        result = self.service.preview_prompt_context(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="chat_agent",
+        )
+
+        assert result["execution_mode"] == "conversational"
+        assert result["runtime_context"] == "Chat System Context"
+        assert result["history_type"] == HistoryManagerService.TYPE_SERVER_SIDE
+        assert result["selected_system_prompt_keys"] == ["core_identity", "chat_state_rules"]
+        assert result["note"]
+        assert result["final_input_preview"].startswith(
+            "### Chat Runtime Context\nChat System Context\n\n### Chat Turn\nprompt body"
+        )
+        self.mock_context_builder.build_system_context.assert_called_once_with(
+            MOCK_COMPANY_SHORT_NAME,
+            MOCK_LOCAL_USER_ID,
+            query_text="quien soy yo",
+        )
+
+    def test_preview_chat_context_returns_built_context(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = [
+            {"type": "function", "name": "crm_lookup", "description": "crm", "parameters": {}, "strict": True},
+            {"type": "function", "name": "iat_sql_query", "description": "sql", "parameters": {}, "strict": True},
+        ]
+        self.mock_context_builder.build_system_context.return_value = (
+            "Chat System Context",
+            {"id": MOCK_LOCAL_USER_ID},
+            ["core_identity", "sql_core"],
+        )
+        self.mock_context_builder.compute_context_version.return_value = "ctx_hash_123"
+        self.mock_session_context.get_context_version.return_value = "ctx_hash_123"
+
+        result = self.service.preview_chat_context(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+        )
+
+        assert result["mode"] == "chat"
+        assert result["execution_mode"] == "conversational"
+        assert result["context"] == "Chat System Context"
+        assert result["selected_system_prompt_keys"] == ["core_identity", "sql_core"]
+        assert result["tool_names"] == ["crm_lookup", "iat_sql_query"]
+        assert result["context_version"] == "ctx_hash_123"
+        assert result["cached_context_version"] == "ctx_hash_123"
+        assert result["token_count"] == 123
+        self.mock_context_builder.build_system_context.assert_called_once_with(
+            MOCK_COMPANY_SHORT_NAME,
+            MOCK_LOCAL_USER_ID,
+            query_text=None,
+        )

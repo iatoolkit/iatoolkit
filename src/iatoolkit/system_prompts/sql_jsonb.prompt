@@ -1,4 +1,4 @@
-Reglas para columnas JSONB:
+### SQL: columnas JSONB
 
 - Nunca trates una clave JSONB como si fuera una columna fisica.
 - Usa `jsonb_col->>'campo'` para texto y `jsonb_col->'campo'` para objetos o arrays.

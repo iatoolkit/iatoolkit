@@ -1,4 +1,4 @@
-Reglas base para SQL:
+### SQL: reglas base
 
 - Trabaja siempre en PostgreSQL y genera consultas sintacticamente validas.
 - Usa solo tablas, columnas y relaciones presentes en el schema provisto.

@@ -1362,3 +1362,244 @@ class QueryService:
         except Exception as e:
             logging.exception(e)
             return {'error': True, "error_message": f"{str(e)}"}
+
+    def preview_prompt_context(self,
+                               company_short_name: str,
+                               user_identifier: str,
+                               prompt_name: str,
+                               *,
+                               client_data: dict | None = None,
+                               question: str = "") -> dict:
+        try:
+            company = self.profile_repo.get_company_by_short_name(short_name=company_short_name)
+            if not company:
+                return {
+                    "error": True,
+                    "status_code": 404,
+                    "error_message": self.i18n_service.t(
+                        'errors.company_not_found',
+                        company_short_name=company_short_name,
+                    ),
+                }
+
+            if not prompt_name:
+                return {
+                    "error": True,
+                    "status_code": 400,
+                    "error_message": "Prompt name is required.",
+                }
+
+            prompt_output_contract = self._resolve_prompt_output_contract(company, prompt_name)
+            if not prompt_output_contract:
+                return {
+                    "error": True,
+                    "status_code": 404,
+                    "error_message": "Prompt not found.",
+                }
+
+            safe_client_data = client_data if isinstance(client_data, dict) else {}
+            effective_model = self._resolve_model(company_short_name, None, prompt_output_contract)
+            output_schema = self._build_output_text_schema_payload(
+                company_short_name,
+                effective_model,
+                prompt_output_contract,
+            )
+            provider = self._get_provider(company_short_name, effective_model)
+
+            user_turn_prompt, effective_question, _images = self.context_builder.build_user_turn_prompt(
+                company=company,
+                user_identifier=user_identifier,
+                client_data=safe_client_data,
+                files=[],
+                prompt_name=prompt_name,
+                question=question or "",
+            )
+
+            if prompt_output_contract.get("schema") and (
+                not output_schema or provider in ("gemini", "deepseek", "openai_compatible")
+            ):
+                user_turn_prompt = self._append_structured_schema_instruction(
+                    user_turn_prompt=user_turn_prompt,
+                    contract=prompt_output_contract,
+                )
+
+            is_agent_execution = self._is_agentic_execution(prompt_output_contract)
+            tools = self.tool_service.get_tools_for_llm(company)
+            tools, tool_router_metrics = self._apply_prompt_tool_policy(
+                company_short_name=company_short_name,
+                prompt_output_contract=prompt_output_contract,
+                tools=tools,
+                include_forced_tools=not is_agent_execution,
+            )
+            if tool_router_metrics is None:
+                tools, tool_router_metrics = self._select_tools_for_llm_with_metrics(
+                    company_short_name=company_short_name,
+                    company=company,
+                    user_identifier=user_identifier,
+                    question=effective_question,
+                    tools=tools,
+                )
+            else:
+                user_turn_prompt = self._append_effective_tools_instruction(
+                    user_turn_prompt,
+                    tools,
+                    explicit_only=True,
+                )
+
+            memory_lookup_decision = self.memory_lookup_policy_service.resolve(
+                question=effective_question,
+                tools=tools,
+                tool_router_metrics=tool_router_metrics,
+            )
+            user_turn_prompt = self._append_memory_search_instruction(
+                user_turn_prompt,
+                memory_lookup_decision.should_suggest_memory_search,
+            )
+
+            runtime_context = ""
+            selected_system_prompt_keys: list[str] = []
+            preview_note = None
+
+            if is_agent_execution:
+                validation_error = self._validate_agent_resource_scope(prompt_output_contract, tools)
+                if validation_error:
+                    return {
+                        "error": True,
+                        "status_code": 400,
+                        "error_message": validation_error,
+                    }
+
+                runtime_context, _, selected_system_prompt_keys = self.context_builder.build_agent_system_context(
+                    company_short_name=company_short_name,
+                    user_identifier=user_identifier,
+                    prompt_name=prompt_name,
+                    enabled_tools=tools,
+                    prompt_output_contract=prompt_output_contract,
+                    query_text=effective_question,
+                )
+                final_input_preview = self._prepend_agent_runtime_context(
+                    user_turn_prompt,
+                    runtime_context,
+                )
+                history_type = "stateless"
+            else:
+                runtime_context, _, selected_system_prompt_keys = self.context_builder.build_system_context(
+                    company_short_name,
+                    user_identifier,
+                    query_text=effective_question,
+                )
+                final_input_preview = (
+                    "### Chat Runtime Context\n"
+                    f"{runtime_context}\n\n"
+                    "### Chat Turn\n"
+                    f"{user_turn_prompt}"
+                ) if runtime_context else user_turn_prompt
+                history_type = self._get_history_type(company_short_name, effective_model)
+                preview_note = (
+                    "This conversational preview shows the logical system context and turn. "
+                    "Providers with server-side history may persist the base context separately."
+                )
+
+            token_count = 0
+            try:
+                token_count = int(self.llm_client.count_tokens(final_input_preview or ""))
+            except Exception:
+                token_count = 0
+
+            selected_system_prompt_keys = self._normalize_selected_system_prompt_keys(
+                selected_system_prompt_keys
+            )
+
+            return {
+                "prompt_name": prompt_name,
+                "execution_mode": prompt_output_contract.get("execution_mode") or "conversational",
+                "visible_in_chat": bool(prompt_output_contract.get("visible_in_chat", True)),
+                "response_mode": prompt_output_contract.get("response_mode") or "chat_compatible",
+                "history_type": history_type,
+                "provider": provider,
+                "effective_model": effective_model,
+                "tool_policy": self._normalize_prompt_tool_policy(prompt_output_contract.get("tool_policy")),
+                "resource_bindings": list(prompt_output_contract.get("resource_bindings") or []),
+                "selected_system_prompt_keys": selected_system_prompt_keys,
+                "tool_names": self._get_tool_names(tools),
+                "tool_router": tool_router_metrics or {},
+                "memory_lookup": {
+                    "tool_choice_override": memory_lookup_decision.tool_choice_override,
+                    "should_suggest_memory_search": memory_lookup_decision.should_suggest_memory_search,
+                    "reason": memory_lookup_decision.reason,
+                    "confidence": memory_lookup_decision.confidence,
+                    "metadata": memory_lookup_decision.metadata,
+                },
+                "token_count": token_count,
+                "runtime_context": runtime_context or "",
+                "user_turn_prompt": user_turn_prompt,
+                "final_input_preview": final_input_preview,
+                "note": preview_note,
+            }
+        except Exception as e:
+            logging.exception(e)
+            return {'error': True, "status_code": 500, "error_message": f"{str(e)}"}
+
+    def preview_chat_context(self,
+                             company_short_name: str,
+                             user_identifier: str,
+                             *,
+                             question: str = "") -> dict:
+        try:
+            company = self.profile_repo.get_company_by_short_name(short_name=company_short_name)
+            if not company:
+                return {
+                    "error": True,
+                    "status_code": 404,
+                    "error_message": self.i18n_service.t(
+                        'errors.company_not_found',
+                        company_short_name=company_short_name,
+                    ),
+                }
+
+            effective_model = self._resolve_model(company_short_name, None, {})
+            provider = self._get_provider(company_short_name, effective_model)
+            history_type = self._get_history_type(company_short_name, effective_model)
+            tools = self.tool_service.get_tools_for_llm(company)
+            runtime_context, _user_profile, selected_system_prompt_keys = self.context_builder.build_system_context(
+                company_short_name,
+                user_identifier,
+                query_text=question or None,
+            )
+            selected_system_prompt_keys = self._normalize_selected_system_prompt_keys(
+                selected_system_prompt_keys
+            )
+
+            context_version = ""
+            cached_context_version = ""
+            if runtime_context:
+                context_version = self.context_builder.compute_context_version(runtime_context)
+            try:
+                cached_context_version = str(
+                    self.session_context.get_context_version(company_short_name, user_identifier) or ""
+                ).strip()
+            except Exception:
+                cached_context_version = ""
+            token_count = 0
+            try:
+                token_count = int(self.llm_client.count_tokens(runtime_context or ""))
+            except Exception:
+                token_count = 0
+
+            return {
+                "mode": "chat",
+                "execution_mode": "conversational",
+                "response_mode": "chat_compatible",
+                "history_type": history_type,
+                "provider": provider,
+                "effective_model": effective_model,
+                "selected_system_prompt_keys": selected_system_prompt_keys,
+                "tool_names": self._get_tool_names(tools),
+                "context_version": context_version,
+                "cached_context_version": cached_context_version,
+                "token_count": token_count,
+                "context": runtime_context or "",
+            }
+        except Exception as e:
+            logging.exception(e)
+            return {'error': True, "status_code": 500, "error_message": f"{str(e)}"}
