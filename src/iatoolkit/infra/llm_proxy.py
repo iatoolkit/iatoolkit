@@ -7,7 +7,9 @@
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.infra.llm_providers.openai_adapter import OpenAIAdapter
 from iatoolkit.infra.llm_providers.gemini_adapter import GeminiAdapter
+from iatoolkit.infra.llm_providers.deepseek_adapter import DeepseekAdapter
 from iatoolkit.infra.llm_providers.openai_compatible_chat_adapter import OpenAICompatibleChatAdapter
+from iatoolkit.infra.llm_providers.openrouter_adapter import OpenRouterAdapter
 from iatoolkit.infra.llm_providers.anthropic_adapter import AnthropicAdapter
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.common.util import Utility
@@ -39,6 +41,7 @@ class LLMProxy:
     PROVIDER_XAI = "xai"
     PROVIDER_ANTHROPIC = "anthropic"
     PROVIDER_OPENAI_COMPATIBLE = "openai_compatible"
+    PROVIDER_OPENROUTER = "openrouter"
     DEFAULT_CONNECT_TIMEOUT_SECONDS = 10.0
     DEFAULT_READ_TIMEOUT_SECONDS = 300.0
     DEFAULT_MAX_RETRIES = 0
@@ -145,6 +148,7 @@ class LLMProxy:
         client_config = self._get_client_config(company_short_name, provider)
         api_key = client_config["api_key"]
         base_url = client_config.get("base_url") or ""
+        default_headers = client_config.get("default_headers") or {}
         connect_timeout_seconds = client_config["connect_timeout_seconds"]
         read_timeout_seconds = client_config["read_timeout_seconds"]
         max_retries = client_config["max_retries"]
@@ -152,6 +156,7 @@ class LLMProxy:
             provider,
             api_key or "",
             base_url,
+            tuple(sorted(default_headers.items())),
             connect_timeout_seconds,
             read_timeout_seconds,
             max_retries,
@@ -166,6 +171,7 @@ class LLMProxy:
             provider,
             api_key,
             base_url=base_url,
+            default_headers=default_headers,
             connect_timeout_seconds=connect_timeout_seconds,
             read_timeout_seconds=read_timeout_seconds,
             max_retries=max_retries,
@@ -177,9 +183,11 @@ class LLMProxy:
         elif provider == self.PROVIDER_GEMINI:
             adapter = GeminiAdapter(client)
         elif provider == self.PROVIDER_DEEPSEEK:
-            adapter = OpenAICompatibleChatAdapter(client, provider_label="DeepSeek")
+            adapter = DeepseekAdapter(client)
         elif provider == self.PROVIDER_OPENAI_COMPATIBLE:
             adapter = OpenAICompatibleChatAdapter(client, provider_label="OpenAI-compatible")
+        elif provider == self.PROVIDER_OPENROUTER:
+            adapter = OpenRouterAdapter(client)
         elif provider == self.PROVIDER_ANTHROPIC:
             adapter = AnthropicAdapter(client)
         else:
@@ -199,7 +207,7 @@ class LLMProxy:
     ) -> Dict[str, Any]:
         effective_kwargs = dict(request_kwargs or {})
 
-        if provider != self.PROVIDER_OPENAI_COMPATIBLE:
+        if provider not in {self.PROVIDER_OPENAI_COMPATIBLE, self.PROVIDER_OPENROUTER}:
             return effective_kwargs
 
         if provider_config.get("disable_tools") is True:
@@ -219,6 +227,7 @@ class LLMProxy:
         provider: str,
         api_key: str,
         base_url: str = "",
+        default_headers: Dict[str, str] | None = None,
         *,
         connect_timeout_seconds: float | None = None,
         read_timeout_seconds: float | None = None,
@@ -244,6 +253,7 @@ class LLMProxy:
             provider,
             api_key or "",
             base_url or "",
+            tuple(sorted((default_headers or {}).items())),
             connect_timeout_seconds,
             read_timeout_seconds,
             max_retries,
@@ -257,6 +267,7 @@ class LLMProxy:
                 provider,
                 api_key,
                 base_url=base_url,
+                default_headers=default_headers,
                 connect_timeout_seconds=connect_timeout_seconds,
                 read_timeout_seconds=read_timeout_seconds,
                 max_retries=max_retries,
@@ -269,6 +280,7 @@ class LLMProxy:
         provider: str,
         api_key: str,
         base_url: str = "",
+        default_headers: Dict[str, str] | None = None,
         *,
         connect_timeout_seconds: float | None = None,
         read_timeout_seconds: float | None = None,
@@ -325,6 +337,20 @@ class LLMProxy:
                 max_retries=max_retries,
             )
 
+        if provider == self.PROVIDER_OPENROUTER:
+            if not base_url:
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.CONFIG_ERROR,
+                    "Provider 'openrouter' requires a configured base_url."
+                )
+            return OpenAI(
+                api_key=api_key,
+                base_url=base_url,
+                timeout=timeout,
+                max_retries=max_retries,
+                default_headers=default_headers or None,
+            )
+
         if provider == self.PROVIDER_GEMINI:
             # Example placeholder: you may already have a Gemini client factory elsewhere.
             # Here you could create and configure the Gemini client (e.g. google.generativeai).
@@ -353,6 +379,7 @@ class LLMProxy:
         return {
             "api_key": self._get_api_key_from_config(company_short_name, provider),
             "base_url": self._get_base_url_from_config(company_short_name, provider),
+            "default_headers": self._get_default_headers_from_config(company_short_name, provider),
             "connect_timeout_seconds": self._resolve_provider_float(
                 provider_config,
                 ("connect_timeout_seconds",),
@@ -499,7 +526,7 @@ class LLMProxy:
         return api_key_value
 
     def _get_base_url_from_config(self, company_short_name: str, provider: str) -> str:
-        if provider != self.PROVIDER_OPENAI_COMPATIBLE:
+        if provider not in {self.PROVIDER_OPENAI_COMPATIBLE, self.PROVIDER_OPENROUTER}:
             return ""
 
         provider_config = self.configuration_service.get_llm_provider_config(company_short_name, provider) or {}
@@ -527,6 +554,27 @@ class LLMProxy:
             )
 
         return base_url
+
+    def _get_default_headers_from_config(self, company_short_name: str, provider: str) -> dict:
+        if provider != self.PROVIDER_OPENROUTER:
+            return {}
+
+        provider_config = self.configuration_service.get_llm_provider_config(company_short_name, provider) or {}
+        if not isinstance(provider_config, dict):
+            provider_config = {}
+
+        headers: dict[str, str] = {}
+
+        http_referer = str(provider_config.get("http_referer") or "").strip()
+        if http_referer:
+            headers["HTTP-Referer"] = http_referer
+
+        x_title = str(provider_config.get("x_title") or "").strip()
+        if x_title:
+            headers["X-Title"] = x_title
+            headers["X-OpenRouter-Title"] = x_title
+
+        return headers
 
     @classmethod
     def clear_low_level_clients_cache(cls):

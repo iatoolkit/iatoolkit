@@ -125,8 +125,7 @@ class TestDeepseekAdapter:
         assert call_kwargs["messages"][-1] == {"role": "user", "content": "Search python"}
         # tools should be passed as-is
         assert call_kwargs["tools"] is not None
-        # With current implementation, tool_choice "auto" is passed through
-        assert call_kwargs["tool_choice"] == "auto"
+        assert "tool_choice" not in call_kwargs
 
         # Assert mapped LLMResponse
         assert len(result.output) == 1
@@ -179,10 +178,10 @@ class TestDeepseekAdapter:
         call_kwargs = self.mock_deepseek_client.chat.completions.create.call_args.kwargs
         assert call_kwargs["response_format"] == {"type": "json_object"}
 
-    def test_build_messages_from_input_maps_function_call_output_to_assistant(self):
+    def test_build_messages_from_input_maps_function_call_output_to_tool_message(self):
         """
-        function_call_output items must be converted into assistant messages containing
-        the tool result so the model can use them to answer.
+        function_call_output items must be converted into proper tool messages so
+        chat.completions providers can associate the result with the original call_id.
         """
         # Arrange
         self.mock_deepseek_client.chat.completions.create.return_value = self._create_mock_response()
@@ -203,15 +202,17 @@ class TestDeepseekAdapter:
             input=input_data,
         )
 
-        # Assert that messages contain the tool result as an assistant message
+        # Assert that messages contain the tool result as a tool message
         call_kwargs = self.mock_deepseek_client.chat.completions.create.call_args.kwargs
         messages = call_kwargs["messages"]
 
         assert len(messages) == 2
         assert messages[0] == {"role": "user", "content": "question"}
-        assert messages[1]["role"] == "user"
-        assert "Tool result:" in messages[1]["content"]
-        assert '{"rows": [{"id": 1, "name": "Alice"}]}' in messages[1]["content"]
+        assert messages[1] == {
+            "role": "tool",
+            "tool_call_id": "call_1",
+            "content": '{"rows": [{"id": 1, "name": "Alice"}]}',
+        }
 
     def test_create_response_disables_tools_after_function_output_with_auto_choice(self):
         """
@@ -244,11 +245,14 @@ class TestDeepseekAdapter:
         assert "tools" not in call_kwargs
         assert "tool_choice" not in call_kwargs
 
-        # Messages should still include the tool result as assistant message
+        # Messages should still include the tool result as a proper tool message
         messages = call_kwargs["messages"]
         assert len(messages) == 2
-        assert messages[1]["role"] == "user"
-        assert "Tool result:" in messages[1]["content"]
+        assert messages[1] == {
+            "role": "tool",
+            "tool_call_id": "call_1",
+            "content": "some result",
+        }
 
     # ------------------------------------------------------------------
     # Response mapping and error handling

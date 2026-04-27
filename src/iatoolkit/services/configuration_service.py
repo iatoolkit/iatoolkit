@@ -342,6 +342,7 @@ class ConfigurationService:
                 "xai",
                 "anthropic",
                 "openai_compatible",
+                "openrouter",
             }
             llm_defaults_mode = str(config.get("llm", {}).get("default_attachment_mode", "extracted_only")).strip().lower()
             llm_defaults_fallback = str(config.get("llm", {}).get("default_attachment_fallback", "extract")).strip().lower()
@@ -360,6 +361,7 @@ class ConfigurationService:
 
             llm_available_models = config.get("llm", {}).get("available_models") or []
             openai_compatible_in_use = False
+            openrouter_in_use = False
             for index, model_entry in enumerate(llm_available_models):
                 normalized_model = self._normalize_model_entry(model_entry)
                 provider = str(normalized_model.get("provider") or "").strip().lower()
@@ -370,6 +372,8 @@ class ConfigurationService:
                     )
                 if provider == "openai_compatible":
                     openai_compatible_in_use = True
+                if provider == "openrouter":
+                    openrouter_in_use = True
 
             providers_cfg = config.get("llm", {}).get("providers")
             if providers_cfg is not None and not isinstance(providers_cfg, dict):
@@ -402,6 +406,49 @@ class ConfigurationService:
                                 "llm.providers.openai_compatible.base_url",
                                 "Must be an absolute HTTP or HTTPS URL.",
                             )
+
+            if openrouter_in_use:
+                provider_cfg = config.get("llm", {}).get("openrouter")
+                if not isinstance(provider_cfg, dict):
+                    add_error(
+                        "llm.openrouter",
+                        "Provider configuration is required and must be a dictionary.",
+                    )
+                else:
+                    has_base_url = any(
+                        str(provider_cfg.get(key) or "").strip()
+                        for key in ("base_url", "base_url_env", "base_url_secret_ref")
+                    )
+                    if not has_base_url:
+                        add_error(
+                            "llm.openrouter",
+                            "One of 'base_url', 'base_url_env', or 'base_url_secret_ref' is required.",
+                        )
+
+                    raw_base_url = str(provider_cfg.get("base_url") or "").strip()
+                    if raw_base_url:
+                        parsed = urlparse(raw_base_url)
+                        if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+                            add_error(
+                                "llm.openrouter.base_url",
+                                "Must be an absolute HTTP or HTTPS URL.",
+                            )
+
+                    raw_http_referer = provider_cfg.get("http_referer")
+                    if raw_http_referer is not None:
+                        if not isinstance(raw_http_referer, str) or not raw_http_referer.strip():
+                            add_error("llm.openrouter.http_referer", "Must be a non-empty string.")
+                        else:
+                            parsed = urlparse(raw_http_referer.strip())
+                            if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+                                add_error(
+                                    "llm.openrouter.http_referer",
+                                    "Must be an absolute HTTP or HTTPS URL.",
+                                )
+
+                    raw_x_title = provider_cfg.get("x_title")
+                    if raw_x_title is not None and (not isinstance(raw_x_title, str) or not raw_x_title.strip()):
+                        add_error("llm.openrouter.x_title", "Must be a non-empty string.")
 
         # 3. Embedding Provider
         if isinstance(config.get("embedding_provider"), dict):
@@ -938,6 +985,10 @@ class ConfigurationService:
 
         self._ensure_config_loaded(company_short_name)
         llm_config = self._loaded_configs[company_short_name].get("llm") or {}
+        direct_provider_cfg = llm_config.get(candidate)
+        if isinstance(direct_provider_cfg, dict):
+            return dict(direct_provider_cfg)
+
         providers_cfg = llm_config.get("providers")
         if not isinstance(providers_cfg, dict):
             return {}

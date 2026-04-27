@@ -201,6 +201,8 @@ class QueryService:
         provider = self._get_provider(company_short_name, model)
         if provider in ("openai", "xai"):
             return HistoryManagerService.TYPE_SERVER_SIDE
+        if provider == "openrouter":
+            return HistoryManagerService.TYPE_CLIENT_SIDE
 
         history_type_str = self.model_registry.get_history_type(model)
         if history_type_str == "server_side":
@@ -539,7 +541,7 @@ class QueryService:
         if not request_options:
             return {}, None, None, metadata
 
-        supported_provider = provider in ("openai", "xai")
+        supported_provider = provider in ("openai", "xai", "openrouter")
         if not supported_provider:
             metadata["ignored"] = True
             metadata["reason"] = "provider_unsupported"
@@ -559,7 +561,7 @@ class QueryService:
             text_overrides["verbosity"] = text_verbosity
             metadata["applied"]["text_verbosity"] = text_verbosity
 
-        if "store" in request_options:
+        if provider in ("openai", "xai") and "store" in request_options:
             store_override = bool(request_options.get("store"))
             metadata["applied"]["store"] = store_override
 
@@ -676,6 +678,18 @@ class QueryService:
             return {
                 "response_format": {
                     "type": "json_object",
+                }
+            }
+
+        if provider == "openrouter":
+            return {
+                "response_format": {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": self._sanitize_schema_name(contract.get("prompt_name") or "prompt_output"),
+                        "strict": schema_mode == "strict",
+                        "schema": schema,
+                    },
                 }
             }
 

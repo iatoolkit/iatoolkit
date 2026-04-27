@@ -18,11 +18,20 @@ llm:
     label: Llama 3.3 70B Instruct
     description: Open source model exposed through a dedicated OpenAI-compatible endpoint.
     provider: openai_compatible
+  - id: openai/gpt-5.2
+    label: GPT-5.2 via OpenRouter
+    description: GPT-5.2 routed through OpenRouter chat completions.
+    provider: openrouter
   provider_api_keys:
     openai: OPENAI_API_KEY
     gemini: GEMINI_API_KEY
     deepseek: DEEP_SEEK_API_KEY
     openai_compatible: OSS_LLM_API_KEY
+    openrouter: OPENROUTER_API_KEY
+  openrouter:
+    base_url: https://openrouter.ai/api/v1
+    http_referer: https://example.com/iatoolkit
+    x_title: IAToolkit
   providers:
     openai_compatible:
       base_url_env: OSS_LLM_BASE_URL

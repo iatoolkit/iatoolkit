@@ -33,23 +33,31 @@ class TestLLMProxy:
         # Parches para los adaptadores
         self.openai_adapter_patcher = patch("iatoolkit.infra.llm_proxy.OpenAIAdapter")
         self.gemini_adapter_patcher = patch("iatoolkit.infra.llm_proxy.GeminiAdapter")
+        self.deepseek_adapter_patcher = patch("iatoolkit.infra.llm_proxy.DeepseekAdapter")
         self.openai_compatible_adapter_patcher = patch("iatoolkit.infra.llm_proxy.OpenAICompatibleChatAdapter")
+        self.openrouter_adapter_patcher = patch("iatoolkit.infra.llm_proxy.OpenRouterAdapter")
         self.anthropic_adapter_patcher = patch("iatoolkit.infra.llm_proxy.AnthropicAdapter")
 
         self.mock_openai_adapter_class = self.openai_adapter_patcher.start()
         self.mock_gemini_adapter_class = self.gemini_adapter_patcher.start()
+        self.mock_deepseek_adapter_class = self.deepseek_adapter_patcher.start()
         self.mock_openai_compatible_adapter_class = self.openai_compatible_adapter_patcher.start()
+        self.mock_openrouter_adapter_class = self.openrouter_adapter_patcher.start()
         self.mock_anthropic_adapter_class = self.anthropic_adapter_patcher.start()
 
         # Instancias mock de adaptadores
         self.mock_openai_adapter_instance = MagicMock()
         self.mock_gemini_adapter_instance = MagicMock()
+        self.mock_deepseek_adapter_instance = MagicMock()
         self.mock_openai_compatible_adapter_instance = MagicMock()
+        self.mock_openrouter_adapter_instance = MagicMock()
         self.mock_anthropic_adapter_instance = MagicMock()
 
         self.mock_openai_adapter_class.return_value = self.mock_openai_adapter_instance
         self.mock_gemini_adapter_class.return_value = self.mock_gemini_adapter_instance
+        self.mock_deepseek_adapter_class.return_value = self.mock_deepseek_adapter_instance
         self.mock_openai_compatible_adapter_class.return_value = self.mock_openai_compatible_adapter_instance
+        self.mock_openrouter_adapter_class.return_value = self.mock_openrouter_adapter_instance
         self.mock_anthropic_adapter_class.return_value = self.mock_anthropic_adapter_instance
 
         # Instancia de LLMProxy bajo prueba
@@ -134,11 +142,15 @@ class TestLLMProxy:
             self.mock_openai_adapter_instance.create_response.assert_called_once()
             self.mock_gemini_adapter_instance.create_response.assert_not_called()
             self.mock_openai_compatible_adapter_instance.create_response.assert_not_called()
+            self.mock_deepseek_adapter_instance.create_response.assert_not_called()
+            self.mock_openrouter_adapter_instance.create_response.assert_not_called()
 
             # Reset de llamadas de los adapters (no del cache de adapters)
             self.mock_openai_adapter_instance.reset_mock()
             self.mock_gemini_adapter_instance.reset_mock()
+            self.mock_deepseek_adapter_instance.reset_mock()
             self.mock_openai_compatible_adapter_instance.reset_mock()
+            self.mock_openrouter_adapter_instance.reset_mock()
             self.mock_anthropic_adapter_instance.reset_mock()
 
             # 2) Modelo Gemini
@@ -150,11 +162,15 @@ class TestLLMProxy:
             self.mock_gemini_adapter_instance.create_response.assert_called_once()
             self.mock_openai_adapter_instance.create_response.assert_not_called()
             self.mock_openai_compatible_adapter_instance.create_response.assert_not_called()
+            self.mock_deepseek_adapter_instance.create_response.assert_not_called()
+            self.mock_openrouter_adapter_instance.create_response.assert_not_called()
 
             # Reset de llamadas
             self.mock_openai_adapter_instance.reset_mock()
             self.mock_gemini_adapter_instance.reset_mock()
+            self.mock_deepseek_adapter_instance.reset_mock()
             self.mock_openai_compatible_adapter_instance.reset_mock()
+            self.mock_openrouter_adapter_instance.reset_mock()
             self.mock_anthropic_adapter_instance.reset_mock()
 
             # 3) Modelo DeepSeek
@@ -163,15 +179,19 @@ class TestLLMProxy:
                 model="deepseek-chat",
                 input=[],
             )
-            self.mock_openai_compatible_adapter_instance.create_response.assert_called_once()
+            self.mock_deepseek_adapter_instance.create_response.assert_called_once()
             self.mock_openai_adapter_instance.create_response.assert_not_called()
             self.mock_gemini_adapter_instance.create_response.assert_not_called()
+            self.mock_openai_compatible_adapter_instance.create_response.assert_not_called()
             self.mock_anthropic_adapter_instance.create_response.assert_not_called()
+            self.mock_openrouter_adapter_instance.create_response.assert_not_called()
 
             # Reset de llamadas
             self.mock_openai_adapter_instance.reset_mock()
             self.mock_gemini_adapter_instance.reset_mock()
+            self.mock_deepseek_adapter_instance.reset_mock()
             self.mock_openai_compatible_adapter_instance.reset_mock()
+            self.mock_openrouter_adapter_instance.reset_mock()
             self.mock_anthropic_adapter_instance.reset_mock()
 
             # 4) Modelo Anthropic (mockeamos _get_or_create_client para no depender del SDK real)
@@ -185,6 +205,8 @@ class TestLLMProxy:
             self.mock_openai_adapter_instance.create_response.assert_not_called()
             self.mock_gemini_adapter_instance.create_response.assert_not_called()
             self.mock_openai_compatible_adapter_instance.create_response.assert_not_called()
+            self.mock_deepseek_adapter_instance.create_response.assert_not_called()
+            self.mock_openrouter_adapter_instance.create_response.assert_not_called()
 
     def test_routing_to_openai_compatible_provider_uses_model_config_provider(self):
         self.model_registry_mock.get_provider.return_value = "unknown"
@@ -312,6 +334,94 @@ class TestLLMProxy:
 
         self.mock_openai_compatible_adapter_instance.create_response.assert_called_once()
         adapter_kwargs = self.mock_openai_compatible_adapter_instance.create_response.call_args.kwargs
+        assert adapter_kwargs["tools"] == []
+        assert adapter_kwargs["tool_choice"] is None
+
+    def test_routing_to_openrouter_provider_uses_model_config_provider(self):
+        self.model_registry_mock.get_provider.return_value = "unknown"
+        self.config_service_mock.get_configuration.return_value = {
+            "provider_api_keys": {"openrouter": "OPENROUTER_KEY"}
+        }
+        self.config_service_mock.get_llm_model_config.return_value = {
+            "id": "openai/gpt-5.2",
+            "provider": "openrouter",
+        }
+        self.config_service_mock.get_llm_provider_config.return_value = {
+            "base_url": "https://openrouter.ai/api/v1",
+            "http_referer": "https://example.com/app",
+            "x_title": "IAToolkit",
+        }
+
+        with patch.dict(os.environ, {"OPENROUTER_KEY": "dummy"}, clear=True):
+            self.proxy.create_response(
+                company_short_name=self.company_short_name,
+                model="openai/gpt-5.2",
+                input=[],
+            )
+
+        self.mock_openrouter_adapter_instance.create_response.assert_called_once()
+        self.mock_openai_class.assert_called_once_with(
+            api_key="dummy",
+            base_url="https://openrouter.ai/api/v1",
+            timeout=ANY,
+            max_retries=0,
+            default_headers={
+                "HTTP-Referer": "https://example.com/app",
+                "X-Title": "IAToolkit",
+                "X-OpenRouter-Title": "IAToolkit",
+            },
+        )
+
+    def test_openrouter_cache_uses_default_headers(self):
+        self.config_service_mock.get_configuration.return_value = {
+            "provider_api_keys": {"openrouter": "OPENROUTER_KEY"}
+        }
+        self.config_service_mock.get_llm_provider_config.side_effect = (
+            lambda company, _provider: {
+                "base_url": "https://openrouter.ai/api/v1",
+                "http_referer": "https://example.com/app",
+                "x_title": "IAToolkit A" if company == "company_a" else "IAToolkit B",
+            }
+        )
+
+        adapter_a = MagicMock(name="openrouter_adapter_a")
+        adapter_b = MagicMock(name="openrouter_adapter_b")
+        self.mock_openrouter_adapter_class.side_effect = [adapter_a, adapter_b]
+
+        with patch.dict(os.environ, {"OPENROUTER_KEY": "sk-openrouter"}, clear=True):
+            first = self.proxy._get_or_create_adapter(LLMProxy.PROVIDER_OPENROUTER, "company_a")
+            second = self.proxy._get_or_create_adapter(LLMProxy.PROVIDER_OPENROUTER, "company_b")
+            third = self.proxy._get_or_create_adapter(LLMProxy.PROVIDER_OPENROUTER, "company_a")
+
+        assert first is adapter_a
+        assert second is adapter_b
+        assert third is adapter_a
+
+    def test_openrouter_can_disable_tools_via_provider_config(self):
+        self.model_registry_mock.get_provider.return_value = "unknown"
+        self.config_service_mock.get_configuration.return_value = {
+            "provider_api_keys": {"openrouter": "OPENROUTER_KEY"}
+        }
+        self.config_service_mock.get_llm_model_config.return_value = {
+            "id": "openai/gpt-5.2",
+            "provider": "openrouter",
+        }
+        self.config_service_mock.get_llm_provider_config.return_value = {
+            "base_url": "https://openrouter.ai/api/v1",
+            "disable_tools": True,
+        }
+
+        with patch.dict(os.environ, {"OPENROUTER_KEY": "dummy"}, clear=True):
+            self.proxy.create_response(
+                company_short_name=self.company_short_name,
+                model="openai/gpt-5.2",
+                input=[],
+                tools=[{"type": "function", "function": {"name": "search_docs"}}],
+                tool_choice="auto",
+            )
+
+        self.mock_openrouter_adapter_instance.create_response.assert_called_once()
+        adapter_kwargs = self.mock_openrouter_adapter_instance.create_response.call_args.kwargs
         assert adapter_kwargs["tools"] == []
         assert adapter_kwargs["tool_choice"] is None
 
