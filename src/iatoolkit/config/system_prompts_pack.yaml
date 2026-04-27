@@ -71,7 +71,6 @@ prompts:
     include:
       execution_modes:
         - chat
-        - agent
   - key: file_download_output
     filename: file_download_output.prompt
     section: output_contract
