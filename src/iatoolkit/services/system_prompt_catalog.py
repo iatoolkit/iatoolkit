@@ -11,6 +11,15 @@ import yaml
 SYSTEM_PROMPTS_CONFIG_PACKAGE = "iatoolkit.config"
 SYSTEM_PROMPTS_CONFIG_FILENAME = "system_prompts_pack.yaml"
 SYSTEM_PROMPTS_PACKAGE = "iatoolkit.system_prompts"
+SYSTEM_PROMPT_SECTION_ORDER = (
+    "identity",
+    "business_context",
+    "conversation_rules",
+    "retrieval_guidance",
+    "data_access_rules",
+    "output_contract",
+)
+SYSTEM_PROMPT_ALLOWED_SECTIONS = set(SYSTEM_PROMPT_SECTION_ORDER)
 
 
 def _read_catalog_text() -> str:
@@ -79,6 +88,17 @@ def _normalize_pattern_list(value: Any, index: int) -> list[str]:
         if pattern not in normalized:
             normalized.append(pattern)
     return normalized
+
+
+def _normalize_section(value: Any, index: int) -> str:
+    section = str(value or "").strip().lower()
+    if not section:
+        raise ValueError(f"prompts[{index}].section is required")
+    if section not in SYSTEM_PROMPT_ALLOWED_SECTIONS:
+        raise ValueError(
+            f"prompts[{index}].section must be one of {list(SYSTEM_PROMPT_SECTION_ORDER)}"
+        )
+    return section
 
 
 def _normalize_include_rule(value: Any, index: int) -> dict:
@@ -165,6 +185,7 @@ def _parse_catalog(text: str) -> list[dict]:
         filename = str(raw_prompt.get("filename") or "").strip()
         if not filename:
             raise ValueError(f"prompts[{index}].filename is required")
+        section = _normalize_section(raw_prompt.get("section"), index)
 
         include_rule = _normalize_include_rule(raw_prompt.get("include"), index)
 
@@ -172,6 +193,7 @@ def _parse_catalog(text: str) -> list[dict]:
             {
                 "key": key,
                 "filename": filename,
+                "section": section,
                 "include": include_rule,
             }
         )
@@ -279,14 +301,42 @@ def build_system_prompt_payload(
     for entry in selected_entries:
         filename = str(entry.get("filename") or "").strip()
         key = str(entry.get("key") or "").strip()
+        section = str(entry.get("section") or "").strip().lower()
         if not filename or not key:
             continue
         content_parts.append(_read_prompt_text(filename))
         selected_keys.append(key)
 
+    section_buckets: dict[str, dict[str, Any]] = {
+        section: {"section": section, "content_parts": [], "selected_keys": []}
+        for section in SYSTEM_PROMPT_SECTION_ORDER
+    }
+    for entry in selected_entries:
+        filename = str(entry.get("filename") or "").strip()
+        key = str(entry.get("key") or "").strip()
+        section = str(entry.get("section") or "").strip().lower()
+        if not filename or not key or section not in section_buckets:
+            continue
+        section_buckets[section]["content_parts"].append(_read_prompt_text(filename))
+        section_buckets[section]["selected_keys"].append(key)
+
+    sections: list[dict] = []
+    for section in SYSTEM_PROMPT_SECTION_ORDER:
+        bucket = section_buckets[section]
+        if not bucket["content_parts"]:
+            continue
+        sections.append(
+            {
+                "section": section,
+                "content": "\n\n".join(bucket["content_parts"]),
+                "selected_keys": list(bucket["selected_keys"]),
+            }
+        )
+
     return {
-        "content": "\n\n".join(content_parts),
+        "content": "\n\n".join(section["content"] for section in sections),
         "selected_keys": selected_keys,
+        "sections": sections,
     }
 
 

@@ -67,12 +67,17 @@ class TestContextBuilderService:
             "If `iat_memory_search` returns a result with `has_native_files=true`, "
             "call `iat_memory_get_page` before answering whenever the attached file contents may matter."
         )
-        self.mock_company_context.get_company_context.return_value = "DB Schema Context"
+        self.mock_company_context.get_company_context_blocks.return_value = {
+            "markdown_context": "Company Business Context",
+            "sql_context": "DB Schema Context",
+            "yaml_context": "",
+        }
 
         # Act
         context, profile, selected_keys = self.service.build_system_context(MOCK_COMPANY_SHORT_NAME, MOCK_USER_ID)
 
         # Assert
+        assert "Company Business Context" in context
         assert "DB Schema Context" in context
         assert "## Colecciones documentales disponibles" in context
         assert "Usa `iat_document_search` cuando documentos internos de la empresa puedan ayudar a responder al usuario." in context
@@ -81,7 +86,8 @@ class TestContextBuilderService:
         assert "- legal: Contracts and annexes" in context
         assert "- support: Policies and operational manuals" in context
         assert "Rendered System Prompt" in context
-        assert context.index("Rendered System Prompt") < context.index("## Colecciones documentales disponibles")
+        assert context.index("Rendered System Prompt") < context.index("Company Business Context")
+        assert context.index("Company Business Context") < context.index("## Colecciones documentales disponibles")
         assert context.index("## Colecciones documentales disponibles") < context.index("DB Schema Context")
         assert profile == mock_profile
         assert selected_keys == ["core_identity", "memory_usage", "output_basics"]
@@ -114,7 +120,11 @@ class TestContextBuilderService:
         self.mock_tool_service.get_tools_for_llm.return_value = []
         self.mock_knowledge_base_service.get_collection_descriptors.return_value = []
         self.mock_util.render_prompt_from_string.return_value = "Rendered System Prompt"
-        self.mock_company_context.get_company_context.return_value = "DB Schema Context"
+        self.mock_company_context.get_company_context_blocks.return_value = {
+            "markdown_context": "",
+            "sql_context": "DB Schema Context",
+            "yaml_context": "",
+        }
 
         context, _, _ = self.service.build_system_context(MOCK_COMPANY_SHORT_NAME, MOCK_USER_ID)
 
@@ -165,7 +175,7 @@ class TestContextBuilderService:
         assert context.index("## Colecciones documentales disponibles") < context.index("Filtered SQL Context")
         assert profile == mock_profile
         assert selected_keys == ["core_identity", "memory_usage", "sql_core"]
-        self.mock_company_context.get_company_context.assert_not_called()
+        self.mock_company_context.get_company_context_blocks.assert_not_called()
         self.mock_company_context.get_sql_context.assert_called_once_with(
             MOCK_COMPANY_SHORT_NAME,
             allowed_databases=["erp"],

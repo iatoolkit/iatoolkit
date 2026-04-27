@@ -2,42 +2,47 @@ version: 2
 prompts:
   - key: core_identity
     filename: core_identity.prompt
+    section: identity
     include:
       execution_modes:
         - chat
         - agent
   - key: chat_user_profile
     filename: chat_user_profile.prompt
+    section: identity
     include:
       execution_modes:
         - chat
   - key: chat_state_rules
     filename: chat_state_rules.prompt
+    section: conversation_rules
     include:
       execution_modes:
         - chat
   - key: links_documents
     filename: links_documents.prompt
+    section: conversation_rules
     include:
       execution_modes:
         - chat
         - agent
   - key: memory_usage
     filename: memory_usage.prompt
+    section: conversation_rules
     include:
       execution_modes:
         - chat
-        - agent
       all_capabilities:
         - can_use_memory
   - key: multimodal_basics
     filename: multimodal_basics.prompt
+    section: conversation_rules
     include:
       execution_modes:
         - chat
-        - agent
   - key: output_basics
     filename: output_basics.prompt
+    section: output_contract
     include:
       execution_modes:
         - chat
@@ -46,6 +51,7 @@ prompts:
         - chat_compatible
   - key: presentation_formatting
     filename: presentation_formatting.prompt
+    section: output_contract
     include:
       execution_modes:
         - chat
@@ -53,6 +59,7 @@ prompts:
         - chat_compatible
   - key: html_structures
     filename: html_structures.prompt
+    section: output_contract
     include:
       execution_modes:
         - chat
@@ -60,12 +67,14 @@ prompts:
         - chat_compatible
   - key: tool_html_passthrough
     filename: tool_html_passthrough.prompt
+    section: output_contract
     include:
       execution_modes:
         - chat
         - agent
   - key: file_download_output
     filename: file_download_output.prompt
+    section: output_contract
     include:
       execution_modes:
         - chat
@@ -74,6 +83,7 @@ prompts:
         - can_generate_files
   - key: email_output
     filename: email_output.prompt
+    section: output_contract
     include:
       execution_modes:
         - chat
@@ -82,6 +92,7 @@ prompts:
         - can_send_email
   - key: sql_core
     filename: sql_core.prompt
+    section: data_access_rules
     include:
       execution_modes:
         - chat
@@ -90,6 +101,7 @@ prompts:
         - can_query_sql
   - key: sql_jsonb
     filename: sql_jsonb.prompt
+    section: data_access_rules
     include:
       execution_modes:
         - chat
@@ -98,6 +110,7 @@ prompts:
         - can_query_sql
   - key: sql_casting
     filename: sql_casting.prompt
+    section: data_access_rules
     include:
       execution_modes:
         - chat
@@ -106,6 +119,7 @@ prompts:
         - can_query_sql
   - key: sql_aggregation_scope
     filename: sql_aggregation_scope.prompt
+    section: data_access_rules
     include:
       execution_modes:
         - chat

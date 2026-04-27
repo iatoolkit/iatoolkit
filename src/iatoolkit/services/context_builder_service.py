@@ -27,6 +27,14 @@ class ContextBuilderService:
     MEMORY_TOOL_NAMES = {"iat_memory_search", "iat_memory_get_page"}
     FILE_GENERATION_TOOL_NAMES = {"iat_generate_excel", "iat_generate_pdf"}
     EMAIL_TOOL_NAME = "iat_send_email"
+    SYSTEM_PROMPT_SECTION_ORDER = (
+        "identity",
+        "business_context",
+        "conversation_rules",
+        "retrieval_guidance",
+        "data_access_rules",
+        "output_contract",
+    )
 
     """
     Service responsible for constructing the text contexts and prompts used by the LLM.
@@ -175,28 +183,30 @@ class ContextBuilderService:
             execution_mode="chat",
             response_mode="chat_compatible",
         )
-        system_prompt_template = system_prompt_payload.get("content", "")
         selected_system_prompt_keys = system_prompt_payload.get("selected_keys")
         if not isinstance(selected_system_prompt_keys, list):
             selected_system_prompt_keys = []
-        rendered_system_prompt = self.util.render_prompt_from_string(
-            template_string=system_prompt_template,
-            question=None,
+        rendered_sections = self._render_system_prompt_sections(
+            system_prompt_payload=system_prompt_payload,
             client_data=user_profile,
             company=company,
             service_list=available_tools,
         )
 
         # 3. Get company specific context (DB Schemas, Docs, etc.)
-        company_specific_context = self.company_context_service.get_company_context(company_short_name)
+        company_context_blocks = self.company_context_service.get_company_context_blocks(company_short_name)
         collection_context = self._build_collection_context(company_short_name)
 
-        # 4. Merge contexts. Conversational chat sees behavior and identity first,
-        # then retrieval hints, and only then the heavier company data blocks.
-        final_system_context = "\n\n".join(
-            section
-            for section in (rendered_system_prompt, collection_context, company_specific_context)
-            if section
+        final_system_context = self._join_context_sections(
+            rendered_sections.get("identity"),
+            company_context_blocks.get("markdown_context"),
+            rendered_sections.get("conversation_rules"),
+            rendered_sections.get("retrieval_guidance"),
+            collection_context,
+            rendered_sections.get("data_access_rules"),
+            company_context_blocks.get("sql_context"),
+            company_context_blocks.get("yaml_context"),
+            rendered_sections.get("output_contract"),
         )
 
         return final_system_context, user_profile, selected_system_prompt_keys
@@ -284,14 +294,11 @@ class ContextBuilderService:
             execution_mode="agent",
             response_mode=str(resolved_contract.get("response_mode") or "chat_compatible").strip().lower() or "chat_compatible",
         )
-        system_prompt_template = system_prompt_payload.get("content", "")
         selected_system_prompt_keys = system_prompt_payload.get("selected_keys")
         if not isinstance(selected_system_prompt_keys, list):
             selected_system_prompt_keys = []
-
-        rendered_system_prompt = self.util.render_prompt_from_string(
-            template_string=system_prompt_template,
-            question=None,
+        rendered_sections = self._render_system_prompt_sections(
+            system_prompt_payload=system_prompt_payload,
             client_data=user_profile,
             company=company,
             service_list=enabled_tools,
@@ -311,13 +318,66 @@ class ContextBuilderService:
                 collection_names=rag_collections,
             )
 
-        final_system_context = "\n\n".join(
-            section
-            for section in (rendered_system_prompt, collection_context, sql_context)
-            if section
+        final_system_context = self._join_context_sections(
+            rendered_sections.get("identity"),
+            rendered_sections.get("conversation_rules"),
+            rendered_sections.get("retrieval_guidance"),
+            collection_context,
+            rendered_sections.get("data_access_rules"),
+            sql_context,
+            rendered_sections.get("output_contract"),
         )
 
         return final_system_context, user_profile, selected_system_prompt_keys
+
+    def _render_system_prompt_sections(
+        self,
+        *,
+        system_prompt_payload: dict | None,
+        client_data: dict | None,
+        company: Company,
+        service_list: list[dict] | None,
+    ) -> dict[str, str]:
+        payload = system_prompt_payload or {}
+        raw_sections = payload.get("sections")
+        rendered_sections: dict[str, str] = {}
+
+        if isinstance(raw_sections, list) and raw_sections:
+            for item in raw_sections:
+                if not isinstance(item, dict):
+                    continue
+                section_name = str(item.get("section") or "").strip().lower()
+                template_string = str(item.get("content") or "").strip()
+                if not section_name or not template_string:
+                    continue
+                rendered_sections[section_name] = self.util.render_prompt_from_string(
+                    template_string=template_string,
+                    question=None,
+                    client_data=client_data,
+                    company=company,
+                    service_list=service_list,
+                ).strip()
+
+        if rendered_sections:
+            return rendered_sections
+
+        fallback_content = str(payload.get("content") or "").strip()
+        if not fallback_content:
+            return {}
+
+        return {
+            "identity": self.util.render_prompt_from_string(
+                template_string=fallback_content,
+                question=None,
+                client_data=client_data,
+                company=company,
+                service_list=service_list,
+            ).strip()
+        }
+
+    @staticmethod
+    def _join_context_sections(*sections: str | None) -> str:
+        return "\n\n".join(section for section in sections if section)
 
     def _build_collection_context(self, company_short_name: str, collection_names: list[str] | None = None) -> str:
         try:

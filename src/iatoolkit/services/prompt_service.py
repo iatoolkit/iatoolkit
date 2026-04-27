@@ -674,10 +674,14 @@ class PromptService:
             selected_keys = payload.get("selected_keys")
             if not isinstance(selected_keys, list):
                 selected_keys = []
+            sections = payload.get("sections")
+            if not isinstance(sections, list):
+                sections = []
 
             return {
                 "content": payload.get("content", ""),
                 "selected_keys": selected_keys,
+                "sections": sections,
             }
 
         except IAToolkitException:

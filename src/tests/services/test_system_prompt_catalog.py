@@ -20,9 +20,11 @@ version: 1
 prompts:
   - key: query_main
     filename: query_main.prompt
+    section: identity
     include: always
   - key: sql_rules
     filename: sql_rules.prompt
+    section: data_access_rules
     include:
       all_capabilities:
         - can_query_sql
@@ -32,6 +34,7 @@ prompts:
         {
             "key": "query_main",
             "filename": "query_main.prompt",
+            "section": "identity",
             "include": {
                 "type": "always",
                 "all_capabilities": [],
@@ -44,6 +47,7 @@ prompts:
         {
             "key": "sql_rules",
             "filename": "sql_rules.prompt",
+            "section": "data_access_rules",
             "include": {
                 "type": "capabilities",
                 "all_capabilities": ["can_query_sql"],
@@ -61,6 +65,7 @@ def test_parse_catalog_rejects_invalid_include():
 prompts:
   - key: query_main
     filename: query_main.prompt
+    section: identity
     include:
       unsupported: true
 """
@@ -75,9 +80,11 @@ def test_select_entries_by_capability():
 prompts:
   - key: query_main
     filename: query_main.prompt
+    section: identity
     include: always
   - key: sql_rules
     filename: sql_rules.prompt
+    section: data_access_rules
     include:
       all_capabilities: [can_query_sql]
 """
@@ -94,10 +101,12 @@ def test_select_entries_by_memory_capability():
 prompts:
   - key: core_identity
     filename: core_identity.prompt
+    section: identity
     include:
       execution_modes: [chat, agent]
   - key: memory_usage
     filename: memory_usage.prompt
+    section: conversation_rules
     include:
       execution_modes: [chat, agent]
       all_capabilities: [can_use_memory]
@@ -123,14 +132,17 @@ def test_select_entries_by_execution_mode_and_response_mode():
 prompts:
   - key: core_identity
     filename: core_identity.prompt
+    section: identity
     include:
       execution_modes: [chat, agent]
   - key: chat_user_profile
     filename: chat_user_profile.prompt
+    section: identity
     include:
       execution_modes: [chat]
   - key: output_basics
     filename: output_basics.prompt
+    section: output_contract
     include:
       execution_modes: [chat, agent]
       response_modes: [chat_compatible]
@@ -156,9 +168,11 @@ def test_select_entries_by_query_pattern():
 prompts:
   - key: query_main
     filename: query_main.prompt
+    section: identity
     include: always
   - key: format_styles
     filename: format_styles.prompt
+    section: output_contract
     include:
       any_patterns: [html, tabla, link]
 """
@@ -183,6 +197,7 @@ def test_catalog_loader_is_cached_in_memory():
 prompts:
   - key: query_main
     filename: query_main.prompt
+    section: identity
     include: always
 """
     with patch.object(system_prompt_catalog, "_read_catalog_text", return_value=payload) as mock_read_catalog, \
@@ -190,6 +205,16 @@ prompts:
         first = system_prompt_catalog.build_system_prompt_payload(set(), execution_mode="chat")
         second = system_prompt_catalog.build_system_prompt_payload(set(), execution_mode="chat")
 
-    assert first == {"content": "main prompt", "selected_keys": ["query_main"]}
-    assert second == {"content": "main prompt", "selected_keys": ["query_main"]}
+    assert first == {
+        "content": "main prompt",
+        "selected_keys": ["query_main"],
+        "sections": [
+            {
+                "section": "identity",
+                "content": "main prompt",
+                "selected_keys": ["query_main"],
+            }
+        ],
+    }
+    assert second == first
     assert mock_read_catalog.call_count == 1

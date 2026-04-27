@@ -70,6 +70,10 @@ class TestPromptService:
         mock_build_payload.return_value = {
             "content": "Contenido 1\nContenido 2",
             "selected_keys": ["query_main", "sql_rules"],
+            "sections": [
+                {"section": "identity", "content": "Contenido 1", "selected_keys": ["query_main"]},
+                {"section": "data_access_rules", "content": "Contenido 2", "selected_keys": ["sql_rules"]},
+            ],
         }
 
         result = self.prompt_service.get_system_prompt(company_id=1, company_short_name="test_co")
@@ -87,11 +91,19 @@ class TestPromptService:
         self.mock_company.short_name = "resolved_short_name"
         self.profile_repo.get_company_by_id.return_value = self.mock_company
         self.mock_sql_service.get_db_names.return_value = []
-        mock_build_payload.return_value = {"content": "Contenido base", "selected_keys": ["query_main"]}
+        mock_build_payload.return_value = {
+            "content": "Contenido base",
+            "selected_keys": ["query_main"],
+            "sections": [{"section": "identity", "content": "Contenido base", "selected_keys": ["query_main"]}],
+        }
 
         payload = self.prompt_service.get_system_prompt_payload(company_id=1)
 
-        assert payload == {"content": "Contenido base", "selected_keys": ["query_main"]}
+        assert payload == {
+            "content": "Contenido base",
+            "selected_keys": ["query_main"],
+            "sections": [{"section": "identity", "content": "Contenido base", "selected_keys": ["query_main"]}],
+        }
         self.profile_repo.get_company_by_id.assert_called_once_with(1)
         mock_build_payload.assert_called_once_with(
             set(),
@@ -103,7 +115,11 @@ class TestPromptService:
     @patch('iatoolkit.services.prompt_service.build_system_prompt_payload')
     def test_get_system_prompt_payload_forwards_query_text(self, mock_build_payload):
         self.mock_sql_service.get_db_names.return_value = []
-        mock_build_payload.return_value = {"content": "Contenido base", "selected_keys": ["query_main"]}
+        mock_build_payload.return_value = {
+            "content": "Contenido base",
+            "selected_keys": ["query_main"],
+            "sections": [{"section": "identity", "content": "Contenido base", "selected_keys": ["query_main"]}],
+        }
 
         payload = self.prompt_service.get_system_prompt_payload(
             company_id=1,
@@ -111,7 +127,11 @@ class TestPromptService:
             query_text="dame una tabla html",
         )
 
-        assert payload == {"content": "Contenido base", "selected_keys": ["query_main"]}
+        assert payload == {
+            "content": "Contenido base",
+            "selected_keys": ["query_main"],
+            "sections": [{"section": "identity", "content": "Contenido base", "selected_keys": ["query_main"]}],
+        }
         mock_build_payload.assert_called_once_with(
             set(),
             query_text="dame una tabla html",
@@ -121,7 +141,11 @@ class TestPromptService:
 
     @patch('iatoolkit.services.prompt_service.build_system_prompt_payload')
     def test_get_system_prompt_payload_uses_capabilities_override_when_provided(self, mock_build_payload):
-        mock_build_payload.return_value = {"content": "Contenido base", "selected_keys": ["query_main"]}
+        mock_build_payload.return_value = {
+            "content": "Contenido base",
+            "selected_keys": ["query_main"],
+            "sections": [{"section": "identity", "content": "Contenido base", "selected_keys": ["query_main"]}],
+        }
 
         payload = self.prompt_service.get_system_prompt_payload(
             company_id=1,
@@ -130,7 +154,11 @@ class TestPromptService:
             capabilities_override={"can_query_sql"},
         )
 
-        assert payload == {"content": "Contenido base", "selected_keys": ["query_main"]}
+        assert payload == {
+            "content": "Contenido base",
+            "selected_keys": ["query_main"],
+            "sections": [{"section": "identity", "content": "Contenido base", "selected_keys": ["query_main"]}],
+        }
         self.mock_sql_service.get_db_names.assert_not_called()
         mock_build_payload.assert_called_once_with(
             {"can_query_sql"},

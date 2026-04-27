@@ -31,46 +31,56 @@ class CompanyContextService:
         self.asset_repo = asset_repo
 
     def get_company_context(self, company_short_name: str) -> str:
+        blocks = self.get_company_context_blocks(company_short_name)
+        return "\n\n---\n\n".join(
+            section
+            for section in (
+                blocks.get("markdown_context"),
+                blocks.get("sql_context"),
+                blocks.get("yaml_context"),
+            )
+            if section
+        )
+
+    def get_company_context_blocks(self, company_short_name: str) -> dict[str, str]:
         """
         Builds the full context by aggregating three sources:
         1. Static context files (Markdown).
         2. Physical SQL schemas and enriched metadata.
         3. Residual schema files (YAML files not already covered by SQL enrichment).
         """
-        context_parts = []
+        md_context = ""
+        sql_context = ""
+        yaml_context = ""
         db_tables = []
 
         # 1. Context from Markdown (context/*.md)  files
         try:
-            md_context = self._get_static_file_context(company_short_name)
-            if md_context:
-                context_parts.append(md_context)
+            md_context = self._get_static_file_context(company_short_name).strip()
         except Exception as e:
             logging.warning(f"Could not load Markdown context for '{company_short_name}': {e}")
 
         # 2. Resolve company-specific SQL databases. We collect them first so YAML
         # context can avoid duplicating table definitions already covered by SQL.
-        sql_context = ""
         try:
             sql_context, db_tables = self._get_sql_enriched_context(company_short_name)
+            sql_context = sql_context.strip()
         except Exception as e:
             logging.warning(f"Could not generate SQL context for '{company_short_name}': {e}")
 
-        # 3. Append physical SQL context after markdown. Table-level YAML metadata
-        # is already merged inline inside the enriched SQL definitions.
-        if sql_context:
-            context_parts.append(sql_context)
-
         # 4. Context from residual yaml (schema/*.yaml) files
         try:
-            yaml_schema_context = self._get_yaml_schema_context(company_short_name, db_tables)
+            yaml_schema_context = self._get_yaml_schema_context(company_short_name, db_tables).strip()
             if yaml_schema_context:
-                context_parts.append(f"## Esquemas adicionales\n\n{yaml_schema_context.strip()}")
+                yaml_context = f"## Esquemas adicionales\n\n{yaml_schema_context}"
         except Exception as e:
             logging.warning(f"Could not load Yaml context for '{company_short_name}': {e}")
 
-        # Join all parts with a clear separator
-        return "\n\n---\n\n".join(context_parts)
+        return {
+            "markdown_context": md_context,
+            "sql_context": sql_context,
+            "yaml_context": yaml_context,
+        }
 
     def get_sql_context(self, company_short_name: str, allowed_databases: List[str] | None = None) -> str:
         try:
