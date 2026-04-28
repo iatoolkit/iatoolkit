@@ -458,6 +458,10 @@ help_files:
 ```yaml
 knowledge_base:
   parsing_provider: auto
+  metadata_search_fields:
+    - key: doi
+      label: DOI
+      match: exact
   collections:
     - name: supplier_manual
       parser_provider: docling
@@ -482,6 +486,10 @@ knowledge_base:
 Supported keys:
 
 - `parsing_provider` (optional): `auto`, `docling`, `basic`.
+- `metadata_search_fields` (optional list):
+  - string form, e.g. `- doi`
+  - object form `{ key, label, match }`
+  - `match` supports `contains` or `exact`
 - `collections` (optional list):
   - string form (legacy), or
   - object form `{ name, parser_provider }`

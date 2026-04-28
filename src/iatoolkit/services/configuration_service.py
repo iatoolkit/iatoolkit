@@ -823,6 +823,49 @@ class ConfigurationService:
                 if not isinstance(docling_config, dict):
                     add_error("knowledge_base.docling", "Must be a dictionary.")
 
+            metadata_search_fields = kb_config.get("metadata_search_fields")
+            if metadata_search_fields is not None:
+                if not isinstance(metadata_search_fields, list):
+                    add_error("knowledge_base.metadata_search_fields", "Must be a list.")
+                else:
+                    for i, item in enumerate(metadata_search_fields):
+                        if isinstance(item, str):
+                            if not item.strip():
+                                add_error(
+                                    f"knowledge_base.metadata_search_fields[{i}]",
+                                    "Metadata field name cannot be empty."
+                                )
+                        elif isinstance(item, dict):
+                            key = item.get("key")
+                            if not isinstance(key, str) or not key.strip():
+                                add_error(
+                                    f"knowledge_base.metadata_search_fields[{i}].key",
+                                    "Missing required key: 'key' (non-empty string)."
+                                )
+                            label = item.get("label")
+                            if label is not None and (not isinstance(label, str) or not label.strip()):
+                                add_error(
+                                    f"knowledge_base.metadata_search_fields[{i}].label",
+                                    "Must be a non-empty string if provided."
+                                )
+                            match = item.get("match")
+                            if match is not None:
+                                if not isinstance(match, str):
+                                    add_error(
+                                        f"knowledge_base.metadata_search_fields[{i}].match",
+                                        "Must be a string if provided."
+                                    )
+                                elif match.strip().lower() not in {"exact", "contains"}:
+                                    add_error(
+                                        f"knowledge_base.metadata_search_fields[{i}].match",
+                                        "Must be one of: ['contains', 'exact']."
+                                    )
+                        else:
+                            add_error(
+                                f"knowledge_base.metadata_search_fields[{i}]",
+                                "Each metadata search field must be a string or an object with keys like {key, label, match}."
+                            )
+
             prod_connector = kb_config.get("connectors", {}).get("production", {})
             if prod_connector.get("type") == "s3":
                 for key in ["bucket", "prefix"]:

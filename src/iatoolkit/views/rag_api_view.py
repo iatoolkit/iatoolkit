@@ -8,6 +8,7 @@ from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.knowledge_base_service import KnowledgeBaseService
 from iatoolkit.services.visual_kb_service import VisualKnowledgeBaseService
 from iatoolkit.services.auth_service import AuthService
+from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.common.util import Utility
 from iatoolkit.services.i18n_service import I18nService
 from flask import request, jsonify, send_file
@@ -27,11 +28,13 @@ class RagApiView(MethodView):
     def __init__(self,
                  knowledge_base_service: KnowledgeBaseService,
                  visual_kb_service: VisualKnowledgeBaseService,
+                 configuration_service: ConfigurationService,
                  auth_service: AuthService,
                  i18n_service: I18nService,
                  utility: Utility):
         self.knowledge_base_service = knowledge_base_service
         self.visual_kb_service = visual_kb_service
+        self.configuration_service = configuration_service
         self.auth_service = auth_service
         self.utility = utility
         self.i18n_service = i18n_service
@@ -65,17 +68,37 @@ class RagApiView(MethodView):
             # 2. Parse Input
             data = request.get_json() or {}
 
+            metadata_search_fields = self._get_metadata_search_fields(company_short_name)
+            metadata_field_map = {field["key"]: field for field in metadata_search_fields}
+
             status = data.get('status', [])
             user_identifier = data.get('user_identifier')
             keyword = data.get('filename_keyword')
             from_date_str = data.get('from_date')
             to_date_str = data.get('to_date')
             collection = data.get('collection', '')
+            metadata_key = str(data.get('metadata_key') or '').strip()
+            metadata_value = str(data.get('metadata_value') or '').strip()
+            metadata_match_mode = str(data.get('metadata_match_mode') or '').strip().lower()
             limit = int(data.get('limit', 100))
             offset = int(data.get('offset', 0))
 
             from_date = datetime.fromisoformat(from_date_str) if from_date_str else None
             to_date = datetime.fromisoformat(to_date_str) if to_date_str else None
+
+            if metadata_value and not metadata_key and len(metadata_search_fields) == 1:
+                metadata_key = metadata_search_fields[0]["key"]
+
+            if metadata_key:
+                selected_metadata_field = metadata_field_map.get(metadata_key)
+                if not selected_metadata_field:
+                    return jsonify({
+                        'result': 'error',
+                        'message': f"Invalid metadata search field: {metadata_key}"
+                    }), 400
+                metadata_match_mode = selected_metadata_field.get("match") or metadata_match_mode or "contains"
+            else:
+                metadata_match_mode = None
 
             # 3. Call Service
             documents = self.knowledge_base_service.list_documents(
@@ -86,6 +109,9 @@ class RagApiView(MethodView):
                 user_identifier=user_identifier,
                 from_date=from_date,
                 to_date=to_date,
+                metadata_key=metadata_key or None,
+                metadata_value=metadata_value or None,
+                metadata_match_mode=metadata_match_mode,
                 limit=limit,
                 offset=offset
             )
@@ -107,13 +133,59 @@ class RagApiView(MethodView):
             return jsonify({
                 'result': 'success',
                 'count': len(response_list),
-                'documents': response_list
+                'documents': response_list,
+                'metadata_search_fields': metadata_search_fields
             }), 200
 
         except IAToolkitException as e:
             return jsonify({'result': 'error', 'message': e.message}), e.http_code
         except Exception as e:
             return jsonify({'result': 'error', 'message': str(e)}), 500
+
+    def _get_metadata_search_fields(self, company_short_name: str) -> list[dict]:
+        kb_config = self.configuration_service.get_configuration(company_short_name, "knowledge_base") or {}
+        raw_fields = kb_config.get("metadata_search_fields") or []
+        normalized_fields = []
+
+        if not isinstance(raw_fields, list):
+            return normalized_fields
+
+        for item in raw_fields:
+            normalized = self._normalize_metadata_search_field(item)
+            if normalized:
+                normalized_fields.append(normalized)
+
+        return normalized_fields
+
+    @staticmethod
+    def _normalize_metadata_search_field(item) -> dict | None:
+        if isinstance(item, str):
+            key = item.strip()
+            if not key:
+                return None
+            return {
+                "key": key,
+                "label": key,
+                "match": "contains"
+            }
+
+        if not isinstance(item, dict):
+            return None
+
+        key = str(item.get("key") or "").strip()
+        if not key:
+            return None
+
+        label = str(item.get("label") or key).strip() or key
+        match = str(item.get("match") or "contains").strip().lower()
+        if match not in {"exact", "contains"}:
+            match = "contains"
+
+        return {
+            "key": key,
+            "label": label,
+            "match": match
+        }
 
     def get_file_content(self, company_short_name, document_id):
         """

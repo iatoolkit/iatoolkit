@@ -11,6 +11,7 @@ from datetime import datetime
 from iatoolkit.views.rag_api_view import RagApiView
 from iatoolkit.services.knowledge_base_service import KnowledgeBaseService
 from iatoolkit.services.visual_kb_service import VisualKnowledgeBaseService
+from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.auth_service import AuthService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.common.util import Utility
@@ -29,9 +30,11 @@ class TestRagApiView:
         # Mock dependencies
         self.mock_kb_service = MagicMock(spec=KnowledgeBaseService)
         self.mock_visual_kb_service = MagicMock(spec=VisualKnowledgeBaseService)
+        self.mock_config_service = MagicMock(spec=ConfigurationService)
         self.mock_auth_service = MagicMock(spec=AuthService)
         self.mock_utility = MagicMock(spec=Utility)
         self.mock_i8n_service = MagicMock(spec=I18nService)
+        self.mock_config_service.get_configuration.return_value = {}
 
         self.mock_i8n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
 
@@ -40,6 +43,7 @@ class TestRagApiView:
             'rag_api',
             knowledge_base_service=self.mock_kb_service,
             visual_kb_service=self.mock_visual_kb_service,
+            configuration_service=self.mock_config_service,
             auth_service=self.mock_auth_service,
             i18n_service=self.mock_i8n_service,
             utility=self.mock_utility
@@ -147,10 +151,14 @@ class TestRagApiView:
             collection='',
             from_date=None,
             to_date=None,
+            metadata_key=None,
+            metadata_value=None,
+            metadata_match_mode=None,
             limit=10,
             offset=0
         )
         self.mock_auth_service.verify_for_company.assert_called_once_with(self.company_short_name)
+        assert data['metadata_search_fields'] == []
 
     def test_list_files_auth_error(self):
         """Should return error if auth verify fails."""
@@ -165,6 +173,42 @@ class TestRagApiView:
         assert response.status_code == 401
         assert response.get_json()['error_message'] == 'Auth failed'
         self.mock_kb_service.list_documents.assert_not_called()
+
+    def test_list_files_with_configured_metadata_filter(self):
+        self.mock_config_service.get_configuration.return_value = {
+            "metadata_search_fields": [
+                {"key": "doi", "label": "DOI", "match": "exact"}
+            ]
+        }
+        self.mock_kb_service.list_documents.return_value = []
+
+        response = self.client.post(
+            f'/{self.company_short_name}/api/rag/files',
+            json={
+                "metadata_value": "10.1007/s00213-018-4955-z"
+            }
+        )
+
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data["metadata_search_fields"] == [
+            {"key": "doi", "label": "DOI", "match": "exact"}
+        ]
+
+        self.mock_kb_service.list_documents.assert_called_with(
+            company_short_name=self.company_short_name,
+            status=[],
+            user_identifier=None,
+            filename_keyword=None,
+            collection='',
+            from_date=None,
+            to_date=None,
+            metadata_key='doi',
+            metadata_value='10.1007/s00213-018-4955-z',
+            metadata_match_mode='exact',
+            limit=100,
+            offset=0
+        )
 
     # --- Get File Content Tests ---
 
@@ -286,6 +330,9 @@ class TestRagApiView:
             filename_keyword=None,
             from_date=None,
             to_date=None,
+            metadata_key=None,
+            metadata_value=None,
+            metadata_match_mode=None,
             limit=100,
             offset=0,
             collection="Legal" # Verify new param

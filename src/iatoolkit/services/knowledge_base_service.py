@@ -14,7 +14,7 @@ from iatoolkit.services.storage_service import StorageService
 from iatoolkit.services.parsers.parsing_service import ParsingService
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from iatoolkit.services.visual_kb_service import VisualKnowledgeBaseService
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 from typing import Any
 import json
 from iatoolkit.common.exceptions import IAToolkitException
@@ -564,6 +564,9 @@ class KnowledgeBaseService:
                        filename_keyword: Optional[str] = None,
                        from_date: Optional[datetime] = None,
                        to_date: Optional[datetime] = None,
+                       metadata_key: Optional[str] = None,
+                       metadata_value: Optional[str] = None,
+                       metadata_match_mode: Optional[str] = None,
                        limit: int = 100,
                        offset: int = 0) -> List[Document]:
         """
@@ -577,6 +580,9 @@ class KnowledgeBaseService:
             filename_keyword: Optional substring to search in filename.
             from_date: Optional start date filter (created_at).
             to_date: Optional end date filter (created_at).
+            metadata_key: Optional top-level metadata field name inside Document.meta.
+            metadata_value: Optional metadata field value to filter by.
+            metadata_match_mode: Optional metadata match mode: 'exact' or 'contains'.
             limit: Pagination limit.
             offset: Pagination offset.
 
@@ -612,6 +618,16 @@ class KnowledgeBaseService:
 
         if to_date:
             query = query.filter(Document.created_at <= to_date)
+
+        normalized_metadata_key = str(metadata_key or "").strip()
+        normalized_metadata_value = str(metadata_value or "").strip().lower()
+        normalized_match_mode = str(metadata_match_mode or "contains").strip().lower()
+        if normalized_metadata_key and normalized_metadata_value:
+            meta_value_expr = func.lower(func.coalesce(Document.meta[normalized_metadata_key].as_string(), ""))
+            if normalized_match_mode == "exact":
+                query = query.filter(meta_value_expr == normalized_metadata_value)
+            else:
+                query = query.filter(meta_value_expr.like(f"%{normalized_metadata_value}%"))
 
         # Apply sorting (newest first) and pagination
         query = query.order_by(desc(Document.created_at))
