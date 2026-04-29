@@ -70,6 +70,11 @@ ui:
       primary_input: "Entrada Principal"
       prompt_args: "Argumentos del Prompt (Client Data)"
       llm_output: "Salida LLM (JSON Crudo)"
+      telemetry_label: "Telemetría"
+      telemetry_open_trace: "Abrir traza"
+      telemetry_not_recorded: "No registrada"
+      telemetry_disabled: "Deshabilitada"
+      telemetry_unknown_provider: "provider desconocido"
 
 
   login_widget:
@@ -1044,6 +1049,8 @@ ui:
     store_response_default: "Por defecto del provider"
     store_response_true: "Sí"
     store_response_false: "No"
+    telemetry_enabled_label: "Telemetría LLM"
+    telemetry_enabled_help: "Envía las ejecuciones LLM de este agente al backend de telemetría de la empresa cuando la telemetría esté habilitada en la configuración de la compañía."
     tools_title: "Selección de Tools"
     tools_mode_label: "Modo de Tools"
     tools_mode_inherit: "Automático"

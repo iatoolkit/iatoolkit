@@ -503,6 +503,7 @@ class TestConfigurationService:
             "text_verbosity": "medium",
             "prompt_version": "2",
             "prompt_variant": "baseline",
+            "telemetry_enabled": True,
         }
 
         self.mock_asset_repo.exists.return_value = True
@@ -511,6 +512,68 @@ class TestConfigurationService:
 
         errors = self.service.validate_configuration(self.COMPANY_NAME)
         assert errors == []
+
+    def test_validate_configuration_accepts_braintrust_telemetry(self):
+        valid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        valid_config["llm"]["telemetry"] = {
+            "enabled": True,
+            "provider": "braintrust",
+            "braintrust": {
+                "project": "acme-prod",
+                "api_key": "BRAINTRUST_API_KEY",
+                "api_url": "https://api.braintrust.dev",
+            },
+        }
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = valid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert errors == []
+
+    def test_validate_configuration_rejects_invalid_telemetry_provider(self):
+        invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        invalid_config["llm"]["telemetry"] = {
+            "enabled": True,
+            "provider": "langfuse",
+        }
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = invalid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert any("llm.telemetry.provider" in e for e in errors)
+
+    def test_get_llm_telemetry_config_returns_dict(self):
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = {
+            **copy.deepcopy(MOCK_VALID_CONFIG),
+            "llm": {
+                **copy.deepcopy(MOCK_VALID_CONFIG["llm"]),
+                "telemetry": {
+                    "enabled": True,
+                    "provider": "braintrust",
+                    "braintrust": {
+                        "project": "acme-prod",
+                        "api_key": "BRAINTRUST_API_KEY",
+                    },
+                },
+            },
+        }
+
+        telemetry_config = self.service.get_llm_telemetry_config(self.COMPANY_NAME)
+
+        assert telemetry_config == {
+            "enabled": True,
+            "provider": "braintrust",
+            "braintrust": {
+                "project": "acme-prod",
+                "api_key": "BRAINTRUST_API_KEY",
+            },
+        }
 
     def test_validate_configuration_accepts_prompt_tool_policy(self):
         valid_config = copy.deepcopy(MOCK_VALID_CONFIG)

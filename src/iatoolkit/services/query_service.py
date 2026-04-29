@@ -14,6 +14,7 @@ from iatoolkit.services.history_manager_service import HistoryManagerService
 from iatoolkit.services.context_builder_service import ContextBuilderService
 from iatoolkit.services.attachment_policy_service import AttachmentPolicyService
 from iatoolkit.services.memory_lookup_policy_service import MemoryLookupPolicyService
+from iatoolkit.services.telemetry_service import NoopTelemetryService
 from iatoolkit.common.model_registry import ModelRegistry
 from injector import inject
 import logging
@@ -58,6 +59,7 @@ class QueryService:
                  context_builder: ContextBuilderService,
                  attachment_policy_service: AttachmentPolicyService | None = None,
                  memory_lookup_policy_service: MemoryLookupPolicyService | None = None,
+                 telemetry_service=None,
                  ):
         self.profile_repo = profile_repo
         self.tool_service = tool_service
@@ -71,6 +73,19 @@ class QueryService:
         self.context_builder = context_builder
         self.attachment_policy_service = attachment_policy_service
         self.memory_lookup_policy_service = memory_lookup_policy_service or MemoryLookupPolicyService()
+        self._telemetry_service = telemetry_service
+
+    @property
+    def telemetry_service(self):
+        if self._telemetry_service is None:
+            try:
+                from iatoolkit import current_iatoolkit
+                from iatoolkit.services.telemetry_service import TelemetryService
+
+                self._telemetry_service = current_iatoolkit().get_injector().get(TelemetryService)
+            except Exception:
+                self._telemetry_service = NoopTelemetryService()
+        return self._telemetry_service
 
     @classmethod
     def register_tool_selector_hook(cls, hook: Callable | None):
@@ -294,6 +309,8 @@ class QueryService:
                 prompt_variant = str(raw_llm_request_options.get("prompt_variant") or "").strip()
                 if prompt_variant:
                     normalized_llm_request_options["prompt_variant"] = prompt_variant
+                if isinstance(raw_llm_request_options.get("telemetry_enabled"), bool):
+                    normalized_llm_request_options["telemetry_enabled"] = raw_llm_request_options["telemetry_enabled"]
             contract["llm_request_options"] = normalized_llm_request_options
             raw_resource_bindings = contract.get("resource_bindings")
             normalized_resource_bindings = []
@@ -583,6 +600,29 @@ class QueryService:
             "prompt_variant": prompt_variant[:512],
         }
 
+    def _resolve_telemetry_request(
+        self,
+        *,
+        company_short_name: str,
+        user_identifier: str,
+        effective_model: str,
+        provider: str,
+        task_id: int | None,
+        prompt_output_contract: dict | None,
+        execution_metadata: dict | None = None,
+        request_metadata: dict | None = None,
+    ) -> dict:
+        return self.telemetry_service.resolve_execution_request(
+            company_short_name=company_short_name,
+            prompt_output_contract=prompt_output_contract,
+            model=effective_model,
+            provider=provider,
+            task_id=task_id,
+            user_identifier=user_identifier,
+            execution_metadata=execution_metadata,
+            request_metadata=request_metadata,
+        )
+
     @staticmethod
     def _append_memory_search_instruction(prompt: str, should_suggest_memory_search: bool) -> str:
         if not should_suggest_memory_search:
@@ -825,6 +865,7 @@ class QueryService:
                                       attachment_plan: dict,
                                       execution_metadata: dict,
                                       request_metadata: dict | None,
+                                      telemetry_request: dict | None,
                                       prompt_output_contract: dict,
                                       history_handle: HistoryHandle,
                                       ignore_history: bool) -> tuple[dict, HistoryHandle]:
@@ -850,6 +891,7 @@ class QueryService:
                 store=store,
                 execution_metadata=execution_metadata,
                 request_metadata=request_metadata,
+                telemetry_request=telemetry_request,
                 response_contract=prompt_output_contract if prompt_output_contract.get("schema") else None,
             )
             return response, history_handle
@@ -907,6 +949,7 @@ class QueryService:
                 store=store,
                 execution_metadata=execution_metadata,
                 request_metadata=request_metadata,
+                telemetry_request=telemetry_request,
                 response_contract=prompt_output_contract if prompt_output_contract.get("schema") else None,
             )
             return response, retry_history_handle
@@ -1340,6 +1383,16 @@ class QueryService:
                 "provider": provider,
                 "company_defaults": self._resolve_company_attachment_defaults(company_short_name, prompt_name=prompt_name),
             }
+            telemetry_request = self._resolve_telemetry_request(
+                company_short_name=company_short_name,
+                user_identifier=user_identifier,
+                effective_model=effective_model,
+                provider=provider,
+                task_id=task_id,
+                prompt_output_contract=prompt_output_contract,
+                execution_metadata=execution_metadata,
+                request_metadata=request_metadata,
+            )
 
             response, history_handle = self._invoke_with_history_recovery(
                 company=company,
@@ -1358,6 +1411,7 @@ class QueryService:
                 attachment_plan=attachment_plan,
                 execution_metadata=execution_metadata,
                 request_metadata=request_metadata,
+                telemetry_request=telemetry_request,
                 prompt_output_contract=prompt_output_contract,
                 history_handle=history_handle,
                 ignore_history=ignore_history,

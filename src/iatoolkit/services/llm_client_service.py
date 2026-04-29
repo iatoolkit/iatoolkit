@@ -23,6 +23,7 @@ from typing import Dict, Optional, List, Any
 from iatoolkit.services.dispatcher_service import Dispatcher
 from iatoolkit.services.storage_service import StorageService
 from iatoolkit.services.structured_output_service import StructuredOutputService
+from iatoolkit.services.telemetry_service import NoopTelemetryService
 
 CONTEXT_ERROR_MESSAGE = 'Tu consulta supera el límite de contexto, utiliza el boton de recarga de contexto.'
 
@@ -36,7 +37,8 @@ class llmClient:
                  llm_proxy: LLMProxy,
                  model_registry: ModelRegistry,
                  storage_service: StorageService,
-                 util: Utility
+                 util: Utility,
+                 telemetry_service=None,
                  ):
         self.llmquery_repo = llmquery_repo
         self.llm_proxy = llm_proxy
@@ -44,6 +46,7 @@ class llmClient:
         self.storage_service = storage_service
         self.util = util
         self._dispatcher = None # Cache for the lazy-loaded dispatcher
+        self._telemetry_service = telemetry_service
 
         # Lazy init to avoid network/bootstrap failures during app startup.
         self.encoding = None
@@ -61,6 +64,18 @@ class llmClient:
             # Use the global context proxy to get the injector, then get the service
             self._dispatcher = current_iatoolkit().get_injector().get(Dispatcher)
         return self._dispatcher
+
+    @property
+    def telemetry_service(self):
+        if self._telemetry_service is None:
+            try:
+                from iatoolkit import current_iatoolkit
+                from iatoolkit.services.telemetry_service import TelemetryService
+
+                self._telemetry_service = current_iatoolkit().get_injector().get(TelemetryService)
+            except Exception:
+                self._telemetry_service = NoopTelemetryService()
+        return self._telemetry_service
 
 
     def invoke(self,
@@ -81,6 +96,7 @@ class llmClient:
                task_id: Optional[int] = None,
                execution_metadata: Optional[Dict[str, Any]] = None,
                request_metadata: Optional[Dict[str, str]] = None,
+               telemetry_request: Optional[Dict[str, Any]] = None,
                response_contract: Optional[Dict[str, Any]] = None
                ) -> dict:
 
@@ -102,6 +118,7 @@ class llmClient:
         )
         text_payload = request_params["text"]
         reasoning_payload = request_params["reasoning"]
+        telemetry_execution = self.telemetry_service.start_execution(telemetry_request)
 
         try:
             start_time = time.time()
@@ -285,6 +302,22 @@ class llmClient:
                              answer_time=stats['response_time']
                              )
             self.llmquery_repo.add_query(query)
+            telemetry_execution.finalize(
+                query_id=query.id,
+                success=decoded_response.get('status', False),
+                answer_preview=decoded_response.get('answer', ''),
+                metrics={
+                    "total_tokens": combined_stats.get("total_tokens"),
+                    "response_time": combined_stats.get("response_time"),
+                    "sql_retry_count": combined_stats.get("sql_retry_count"),
+                },
+            )
+            telemetry_stats = telemetry_execution.build_stats()
+            if telemetry_stats:
+                query.stats = dict(query.stats or {})
+                query.stats["telemetry"] = telemetry_stats
+                self.llmquery_repo.commit()
+                combined_stats = dict(query.stats or {})
             logging.info(f"finish llm call in {int(time.time() - start_time)} secs..")
             if function_calls:
                 logging.info(f"time within the function calls {f_call_time:.1f} secs.")
@@ -312,9 +345,17 @@ class llmClient:
         except SQLAlchemyError as db_error:
             # rollback
             self.llmquery_repo.session.rollback()
+            telemetry_execution.finalize(
+                success=False,
+                error_message=str(db_error),
+            )
             logging.error(f"Error de base de datos: {str(db_error)}")
             raise db_error
         except OperationalError as e:
+            telemetry_execution.finalize(
+                success=False,
+                error_message=str(e),
+            )
             logging.error(f"Operational error: {str(e)}")
             raise e
         except Exception as e:
@@ -331,6 +372,15 @@ class llmClient:
                              function_calls=f_calls,
                              )
             self.llmquery_repo.add_query(query)
+            telemetry_execution.finalize(
+                query_id=query.id,
+                success=False,
+                error_message=error_message,
+            )
+            telemetry_stats = telemetry_execution.build_stats()
+            if telemetry_stats:
+                query.stats = {"telemetry": telemetry_stats}
+                self.llmquery_repo.commit()
 
             # in case of context error
             if "context_length_exceeded" in str(e):

@@ -521,6 +521,56 @@ class ConfigurationService:
                     if raw_x_title is not None and (not isinstance(raw_x_title, str) or not raw_x_title.strip()):
                         add_error("llm.openrouter.x_title", "Must be a non-empty string.")
 
+            telemetry_cfg = config.get("llm", {}).get("telemetry")
+            if telemetry_cfg is not None:
+                if not isinstance(telemetry_cfg, dict):
+                    add_error("llm.telemetry", "Must be a dictionary.")
+                else:
+                    telemetry_enabled = telemetry_cfg.get("enabled", False)
+                    if not isinstance(telemetry_enabled, bool):
+                        add_error("llm.telemetry.enabled", "Must be a boolean.")
+
+                    telemetry_provider = telemetry_cfg.get("provider")
+                    normalized_telemetry_provider = ""
+                    if telemetry_provider is not None:
+                        if not isinstance(telemetry_provider, str) or not telemetry_provider.strip():
+                            add_error("llm.telemetry.provider", "Must be a non-empty string.")
+                        else:
+                            normalized_telemetry_provider = telemetry_provider.strip().lower()
+                            if normalized_telemetry_provider not in {"braintrust"}:
+                                add_error(
+                                    "llm.telemetry.provider",
+                                    "Unsupported provider. Must be 'braintrust'.",
+                                )
+                    elif telemetry_enabled:
+                        add_error("llm.telemetry.provider", "Missing required key: 'provider'.")
+
+                    if normalized_telemetry_provider == "braintrust":
+                        braintrust_cfg = telemetry_cfg.get("braintrust")
+                        if not isinstance(braintrust_cfg, dict):
+                            add_error("llm.telemetry.braintrust", "Must be a dictionary.")
+                        else:
+                            if telemetry_enabled:
+                                project = braintrust_cfg.get("project")
+                                if not isinstance(project, str) or not project.strip():
+                                    add_error("llm.telemetry.braintrust.project", "Must be a non-empty string.")
+
+                                api_key = braintrust_cfg.get("api_key")
+                                if not isinstance(api_key, str) or not api_key.strip():
+                                    add_error("llm.telemetry.braintrust.api_key", "Must be a non-empty string.")
+
+                            api_url = braintrust_cfg.get("api_url")
+                            if api_url is not None:
+                                if not isinstance(api_url, str) or not api_url.strip():
+                                    add_error("llm.telemetry.braintrust.api_url", "Must be a non-empty string.")
+                                else:
+                                    parsed = urlparse(api_url.strip())
+                                    if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc:
+                                        add_error(
+                                            "llm.telemetry.braintrust.api_url",
+                                            "Must be an absolute HTTP or HTTPS URL.",
+                                        )
+
         # 3. Embedding Provider
         if isinstance(config.get("embedding_provider"), dict):
             if not config.get("embedding_provider", {}).get("provider"):
@@ -678,6 +728,7 @@ class ConfigurationService:
                         "text_verbosity",
                         "prompt_version",
                         "prompt_variant",
+                        "telemetry_enabled",
                     }
                     unknown_option_keys = sorted(
                         key for key in llm_request_options.keys() if key not in allowed_option_keys
@@ -723,6 +774,15 @@ class ConfigurationService:
                                 f"prompts[{i}].llm_request_options.prompt_variant",
                                 "Must be a non-empty string.",
                             )
+
+                    if "telemetry_enabled" in llm_request_options and not isinstance(
+                        llm_request_options.get("telemetry_enabled"),
+                        bool,
+                    ):
+                        add_error(
+                            f"prompts[{i}].llm_request_options.telemetry_enabled",
+                            "Must be a boolean.",
+                        )
 
             tool_policy = prompt.get("tool_policy")
             if tool_policy is not None:
@@ -1109,6 +1169,12 @@ class ConfigurationService:
 
         provider_cfg = providers_cfg.get(candidate)
         return dict(provider_cfg) if isinstance(provider_cfg, dict) else {}
+
+    def get_llm_telemetry_config(self, company_short_name: str) -> dict:
+        self._ensure_config_loaded(company_short_name)
+        llm_config = self._loaded_configs[company_short_name].get("llm") or {}
+        telemetry_cfg = llm_config.get("telemetry")
+        return dict(telemetry_cfg) if isinstance(telemetry_cfg, dict) else {}
 
 
     def _load_and_merge_configs(self, company_short_name: str) -> dict:

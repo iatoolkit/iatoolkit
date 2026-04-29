@@ -16,6 +16,7 @@ from iatoolkit.services.dispatcher_service import Dispatcher
 from iatoolkit.services.tool_service import ToolService
 from iatoolkit.common.model_registry import ModelRegistry
 from iatoolkit.services.attachment_policy_service import AttachmentPolicyService
+from iatoolkit.services.telemetry_service import TelemetryService
 
 # --- Constantes para los Tests ---
 MOCK_COMPANY_SHORT_NAME = "test_company"
@@ -41,10 +42,12 @@ class TestQueryService:
         self.mock_configuration_service = MagicMock(spec=ConfigurationService)
         self.mock_history_manager = MagicMock(spec=HistoryManagerService)
         self.model_registry = MagicMock(spec=ModelRegistry)
+        self.mock_telemetry_service = MagicMock(spec=TelemetryService)
         self.model_registry.get_provider.return_value = "openai"
         self.model_registry.get_history_type.return_value = "server_side"
         self.mock_configuration_service.get_llm_model_config.return_value = None
         self.mock_llm_client.count_tokens.return_value = 123
+        self.mock_telemetry_service.resolve_execution_request.return_value = {}
 
         # New dependency mock
         self.mock_context_builder = MagicMock(spec=ContextBuilderService)
@@ -100,6 +103,7 @@ class TestQueryService:
             model_registry=self.model_registry,
             context_builder=self.mock_context_builder,
             attachment_policy_service=self.mock_attachment_policy_service,
+            telemetry_service=self.mock_telemetry_service,
         )
 
         self.mock_i18n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
@@ -257,6 +261,48 @@ class TestQueryService:
 
         # Verificar actualización de historia
         self.mock_history_manager.update_history.assert_called_once()
+
+    def test_llm_query_forwards_telemetry_request_to_llm_client(self):
+        user_prompt = "User prompt with context"
+        effective_q = "Hi"
+        images = []
+        self.mock_context_builder.build_user_turn_prompt.return_value = (
+            user_prompt, effective_q, images
+        )
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': 'existing_id'}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "sales_prompt",
+            "llm_request_options": {"telemetry_enabled": True},
+        }
+        self.mock_telemetry_service.resolve_execution_request.return_value = {
+            "requested": True,
+            "enabled": True,
+            "provider": "braintrust",
+            "project": "acme-prod",
+        }
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'Hello'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            question="Hi",
+            model='gpt-test',
+            prompt_name="sales_prompt",
+        )
+
+        self.mock_telemetry_service.resolve_execution_request.assert_called_once()
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["telemetry_request"] == {
+            "requested": True,
+            "enabled": True,
+            "provider": "braintrust",
+            "project": "acme-prod",
+        }
 
     def test_llm_query_retries_when_server_side_ignore_history_uses_stale_initial_response_id(self):
         self.model_registry.get_history_type.return_value = "server_side"

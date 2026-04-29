@@ -402,6 +402,7 @@ class IAToolkit:
         from iatoolkit.services.i18n_service import I18nService
         from iatoolkit.services.language_service import LanguageService
         from iatoolkit.services.configuration_service import ConfigurationService
+        from iatoolkit.services.telemetry_service import TelemetryService
         from iatoolkit.services.embedding_service import EmbeddingService
         from iatoolkit.services.history_manager_service import HistoryManagerService
         from iatoolkit.services.tool_service import ToolService
@@ -443,6 +444,7 @@ class IAToolkit:
         binder.bind(I18nService, to=I18nService)
         binder.bind(LanguageService, to=LanguageService)
         binder.bind(ConfigurationService, to=ConfigurationService)
+        binder.bind(TelemetryService, to=TelemetryService)
         binder.bind(EmbeddingService, to=EmbeddingService)
         binder.bind(HistoryManagerService, to=HistoryManagerService)
         binder.bind(ToolService, to=ToolService)

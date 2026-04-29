@@ -345,6 +345,7 @@ class PromptService:
             "text_verbosity",
             "prompt_version",
             "prompt_variant",
+            "telemetry_enabled",
         }
         unknown_keys = sorted(
             key for key in llm_request_options.keys() if key not in allowed_keys
@@ -421,6 +422,15 @@ class PromptService:
                     "llm_request_options.prompt_variant must be a non-empty string.",
                 )
             normalized_options["prompt_variant"] = candidate_prompt_variant
+
+        raw_telemetry_enabled = llm_request_options.get("telemetry_enabled")
+        if raw_telemetry_enabled is not None:
+            if not isinstance(raw_telemetry_enabled, bool):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "llm_request_options.telemetry_enabled must be a boolean.",
+                )
+            normalized_options["telemetry_enabled"] = raw_telemetry_enabled
 
         return normalized_options
 

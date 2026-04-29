@@ -369,6 +369,7 @@ properties:
                     'text_verbosity': 'medium',
                     'prompt_version': '2',
                     'prompt_variant': 'baseline',
+                    'telemetry_enabled': True,
                 },
             },
         )
@@ -380,6 +381,7 @@ properties:
             'text_verbosity': 'medium',
             'prompt_version': '2',
             'prompt_variant': 'baseline',
+            'telemetry_enabled': True,
         }
 
     def test_save_prompt_persists_explicit_tool_policy(self):

@@ -69,6 +69,11 @@ ui:
       primary_input: "Primary Input"
       prompt_args: "Prompt Arguments (Client Data)"
       llm_output: "LLM Output (Raw JSON)"
+      telemetry_label: "Telemetry"
+      telemetry_open_trace: "Open Trace"
+      telemetry_not_recorded: "Not recorded"
+      telemetry_disabled: "Disabled"
+      telemetry_unknown_provider: "unknown provider"
 
   login_widget:
     title: "Sign In"
@@ -1041,6 +1046,8 @@ ui:
     store_response_default: "Provider default"
     store_response_true: "Yes"
     store_response_false: "No"
+    telemetry_enabled_label: "LLM Telemetry"
+    telemetry_enabled_help: "Send this agent's LLM runs to the company telemetry backend when telemetry is enabled in company configuration."
     tools_title: "Tool Selection"
     tools_mode_label: "Tools Mode"
     tools_mode_inherit: "Automatic"
