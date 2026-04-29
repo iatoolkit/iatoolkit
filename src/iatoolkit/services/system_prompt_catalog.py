@@ -10,7 +10,7 @@ import yaml
 
 SYSTEM_PROMPTS_CONFIG_PACKAGE = "iatoolkit.config"
 SYSTEM_PROMPTS_CONFIG_FILENAME = "system_prompts_pack.yaml"
-SYSTEM_PROMPTS_PACKAGE = "iatoolkit.system_prompts"
+SYSTEM_PROMPTS_DIRNAME = "system_prompts"
 SYSTEM_PROMPT_SECTION_ORDER = (
     "identity",
     "business_context",
@@ -209,7 +209,11 @@ def _load_catalog() -> tuple[dict, ...]:
 
 @lru_cache(maxsize=64)
 def _read_prompt_text(filename: str) -> str:
-    return importlib.resources.read_text(SYSTEM_PROMPTS_PACKAGE, filename)
+    return (
+        importlib.resources.files(SYSTEM_PROMPTS_CONFIG_PACKAGE)
+        .joinpath(SYSTEM_PROMPTS_DIRNAME, filename)
+        .read_text(encoding="utf-8")
+    )
 
 
 def get_system_prompt_entries() -> list[dict]:

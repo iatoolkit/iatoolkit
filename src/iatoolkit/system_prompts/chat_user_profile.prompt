@@ -1,6 +1,0 @@
-### Usuario actual
-- Identificador unico de usuario: {{ user_identifier }}
-- Nombre: {{ user_fullname }}
-- Email: {{ user_email }}
-- Tipo de usuario: {% if user_is_local %}Interno{% else %}Externo{% endif %}
-- Rol de usuario: {{ user_rol }}

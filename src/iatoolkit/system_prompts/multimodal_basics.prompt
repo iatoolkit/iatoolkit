@@ -1,6 +1,0 @@
-### Contenido multimodal
-
-- Si generas imagenes, respeta el schema esperado en `answer` y no incrustes
-  binarios ni base64 dentro del JSON.
-- Si la respuesta incluye contenido multimodal, la imagen debe devolverse como
-  contenido multimodal separado (`content_parts`) y no embebida en texto libre.
