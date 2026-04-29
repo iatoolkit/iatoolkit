@@ -4,10 +4,9 @@
 # IAToolkit is open source software.
 
 import logging
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from iatoolkit.infra.llm_response import LLMResponse, ToolCall, Usage
 from iatoolkit.common.exceptions import IAToolkitException
-from typing import List
 import mimetypes
 import re
 import base64
@@ -31,7 +30,8 @@ class OpenAIAdapter:
                         images: Optional[List[Dict]] = None,
                         attachments: Optional[List[Dict]] = None,
                         store: Optional[bool] = None,
-                        metadata: Optional[Dict[str, str]] = None) -> LLMResponse:
+                        metadata: Optional[Dict[str, str]] = None,
+                        telemetry_execution: Any = None) -> LLMResponse:
         """Llamada a la API de OpenAI y mapeo a estructura común"""
         try:
             # Handle multimodal input if images are present
@@ -64,6 +64,8 @@ class OpenAIAdapter:
             if tool_choice_payload is not None:
                 params['tool_choice'] = tool_choice_payload
 
+            self._record_telemetry_input(telemetry_execution, params)
+
             # Llamar a la API de OpenAI
             openai_response = self.client.responses.create(**params)
 
@@ -75,6 +77,12 @@ class OpenAIAdapter:
             logging.error(error_message)
 
             raise IAToolkitException(IAToolkitException.ErrorType.LLM_ERROR, error_message)
+
+    @staticmethod
+    def _record_telemetry_input(telemetry_execution: Any, payload: Dict[str, Any]) -> None:
+        record_input = getattr(telemetry_execution, "record_input", None)
+        if callable(record_input):
+            record_input(payload)
 
     @staticmethod
     def _map_tool_choice(tool_choice: str, tools_payload: List[Dict]) -> Optional[Dict | str]:

@@ -16,8 +16,12 @@ class TestLLMProxy:
         self.config_service_mock = MagicMock(spec=ConfigurationService)
         self.model_registry_mock = MagicMock(spec=ModelRegistry)
         self.secret_provider_mock = MagicMock(spec=SecretProvider)
+        self.telemetry_service_mock = MagicMock()
         self.secret_provider_mock.get_secret.side_effect = (
             lambda _company, key_name, default=None: os.getenv(key_name, default)
+        )
+        self.telemetry_service_mock.wrap_client_for_request.side_effect = (
+            lambda **kwargs: kwargs["client"]
         )
         self.config_service_mock.get_llm_model_config.return_value = None
         self.config_service_mock.get_llm_provider_config.return_value = {}
@@ -66,6 +70,7 @@ class TestLLMProxy:
             configuration_service=self.config_service_mock,
             model_registry=self.model_registry_mock,
             secret_provider=self.secret_provider_mock,
+            telemetry_service=self.telemetry_service_mock,
         )
 
         # Aseguramos que el cache global esté limpio para cada test
@@ -238,6 +243,49 @@ class TestLLMProxy:
         timeout = self.mock_openai_class.call_args.kwargs["timeout"]
         assert timeout.connect == 10.0
         assert timeout.read == 300.0
+
+    def test_create_response_wraps_client_when_telemetry_request_is_enabled(self):
+        self.model_registry_mock.get_provider.return_value = "openai"
+        self.config_service_mock.get_configuration.return_value = {"api-key": "LLM_KEY"}
+        wrapped_client = MagicMock(name="wrapped_openai_client")
+        self.telemetry_service_mock.wrap_client_for_request.side_effect = (
+            lambda **kwargs: wrapped_client
+        )
+
+        with patch.dict(os.environ, {"LLM_KEY": "dummy"}, clear=True):
+            self.proxy.create_response(
+                company_short_name=self.company_short_name,
+                model="gpt-5",
+                input=[],
+                telemetry_request={
+                    "requested": True,
+                    "enabled": True,
+                    "provider": "braintrust",
+                    "project": "acme-prod",
+                },
+            )
+
+        self.telemetry_service_mock.wrap_client_for_request.assert_called_once()
+        wrap_kwargs = self.telemetry_service_mock.wrap_client_for_request.call_args.kwargs
+        assert wrap_kwargs["llm_provider"] == LLMProxy.PROVIDER_OPENAI
+        assert wrap_kwargs["request"]["provider"] == "braintrust"
+        self.mock_openai_adapter_class.assert_called_once_with(wrapped_client)
+
+    def test_create_response_forwards_telemetry_execution_to_adapter(self):
+        self.model_registry_mock.get_provider.return_value = "openai"
+        self.config_service_mock.get_configuration.return_value = {"api-key": "LLM_KEY"}
+        telemetry_execution = MagicMock(name="telemetry_execution")
+
+        with patch.dict(os.environ, {"LLM_KEY": "dummy"}, clear=True):
+            self.proxy.create_response(
+                company_short_name=self.company_short_name,
+                model="gpt-5",
+                input=[],
+                telemetry_execution=telemetry_execution,
+            )
+
+        adapter_kwargs = self.mock_openai_adapter_instance.create_response.call_args.kwargs
+        assert adapter_kwargs["telemetry_execution"] is telemetry_execution
 
     def test_client_uses_provider_timeout_and_retry_config(self):
         self.config_service_mock.get_configuration.return_value = {"api-key": "KEY"}

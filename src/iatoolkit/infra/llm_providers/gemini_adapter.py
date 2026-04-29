@@ -53,6 +53,7 @@ class GeminiAdapter:
                         attachments: Optional[List[Dict]] = None,
                         store: Optional[bool] = None,
                         metadata: Optional[Dict[str, str]] = None,
+                        telemetry_execution: Any = None,
                         ) -> LLMResponse:
         try:
             _ = store
@@ -105,6 +106,15 @@ class GeminiAdapter:
                 else:
                     raise
 
+            self._record_telemetry_input(
+                telemetry_execution,
+                {
+                    "model": model,
+                    "contents": contents,
+                    "config": dict(config_kwargs),
+                },
+            )
+
             # call the new SDK
             response = self.client.models.generate_content(
                 model=model,
@@ -143,6 +153,12 @@ class GeminiAdapter:
                 error_message = f"Tu consulta supera el límite de contexto de Gemini: {str(e)}"
 
             raise IAToolkitException(IAToolkitException.ErrorType.LLM_ERROR, error_message)
+
+    @staticmethod
+    def _record_telemetry_input(telemetry_execution: Any, payload: Dict[str, Any]) -> None:
+        record_input = getattr(telemetry_execution, "record_input", None)
+        if callable(record_input):
+            record_input(payload)
 
     def _extract_system_and_filter_input(self, input_list: List[Dict]) -> tuple[Optional[str], List[Dict]]:
         """Extrae el mensaje de sistema para usarlo en system_instruction."""

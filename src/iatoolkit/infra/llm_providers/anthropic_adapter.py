@@ -33,7 +33,8 @@ class AnthropicAdapter:
                         images: Optional[List[Dict]] = None,
                         attachments: Optional[List[Dict]] = None,
                         store: Optional[bool] = None,
-                        metadata: Optional[Dict[str, str]] = None) -> LLMResponse:
+                        metadata: Optional[Dict[str, str]] = None,
+                        telemetry_execution: Any = None) -> LLMResponse:
         """
         Calls Anthropic Messages API and maps the response to common LLMResponse.
 
@@ -76,6 +77,8 @@ class AnthropicAdapter:
                 if tool_choice_payload:
                     params["tool_choice"] = tool_choice_payload
 
+            self._record_telemetry_input(telemetry_execution, params)
+
             anthropic_response = self.client.messages.create(**params)
             return self._map_anthropic_response(anthropic_response, model)
 
@@ -86,6 +89,12 @@ class AnthropicAdapter:
                 IAToolkitException.ErrorType.LLM_ERROR,
                 error_message
             ) from e
+
+    @staticmethod
+    def _record_telemetry_input(telemetry_execution: Any, payload: Dict[str, Any]) -> None:
+        record_input = getattr(telemetry_execution, "record_input", None)
+        if callable(record_input):
+            record_input(payload)
 
     def _prepare_messages(self, input_items: List[Dict], images: List[Dict]) -> tuple[Optional[str], List[Dict]]:
         system_parts: List[str] = []

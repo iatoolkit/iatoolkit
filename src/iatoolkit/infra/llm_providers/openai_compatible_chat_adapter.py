@@ -48,6 +48,7 @@ class OpenAICompatibleChatAdapter:
         text = kwargs.get("text") or {}
         reasoning = kwargs.get("reasoning")
         metadata = kwargs.get("metadata")
+        telemetry_execution = kwargs.get("telemetry_execution")
 
         try:
             messages: List[Dict[str, Any]] = []
@@ -111,6 +112,7 @@ class OpenAICompatibleChatAdapter:
                 call_kwargs["parallel_tool_calls"] = bool(kwargs.get("parallel_tool_calls"))
 
             self._extend_call_kwargs(call_kwargs, kwargs)
+            self._record_telemetry_input(telemetry_execution, call_kwargs)
 
             logging.debug(
                 "[%sAdapter] Calling chat.completions API with %s messages.",
@@ -129,6 +131,12 @@ class OpenAICompatibleChatAdapter:
                 IAToolkitException.ErrorType.LLM_ERROR,
                 f"{self.provider_label} error: {ex}"
             ) from ex
+
+    @staticmethod
+    def _record_telemetry_input(telemetry_execution: Any, payload: Dict[str, Any]) -> None:
+        record_input = getattr(telemetry_execution, "record_input", None)
+        if callable(record_input):
+            record_input(payload)
 
     def _extend_call_kwargs(self, call_kwargs: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
         _ = call_kwargs

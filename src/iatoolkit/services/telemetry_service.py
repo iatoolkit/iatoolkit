@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -26,7 +27,24 @@ class TelemetryExecution:
     metadata: dict[str, Any] = field(default_factory=dict)
     trace_id: str | None = None
     trace_url: str | None = None
+    _input_payloads: list[Any] = field(default_factory=list)
     _finalized: bool = False
+
+    def record_input(self, payload: Any) -> None:
+        if payload is None or self._finalized:
+            return
+
+        try:
+            self._input_payloads.append(copy.deepcopy(payload))
+        except Exception:
+            self._input_payloads.append(payload)
+
+    def build_input_payload(self) -> Any | None:
+        if not self._input_payloads:
+            return None
+        if len(self._input_payloads) == 1:
+            return self._input_payloads[0]
+        return {"requests": list(self._input_payloads)}
 
     def finalize(
         self,
@@ -56,6 +74,9 @@ class TelemetryExecution:
                 metadata["metrics"] = dict(metrics)
 
             event: dict[str, Any] = {}
+            input_payload = self.build_input_payload()
+            if input_payload is not None:
+                event["input"] = input_payload
             if metadata:
                 event["metadata"] = metadata
             if answer_preview:
@@ -104,6 +125,15 @@ class NoopTelemetryService:
 
     def start_execution(self, request: dict[str, Any] | None) -> TelemetryExecution:
         return TelemetryExecution()
+
+    def wrap_client_for_request(
+        self,
+        *,
+        llm_provider: str,
+        client: Any,
+        request: dict[str, Any] | None,
+    ) -> Any:
+        return client
 
 
 class BraintrustTelemetryBridge:
@@ -155,6 +185,16 @@ class BraintrustTelemetryBridge:
             bridge=self,
             metadata=metadata,
         )
+
+    def wrap_client(self, *, llm_provider: str, client: Any) -> Any:
+        self._ensure_runtime()
+
+        provider_name = str(llm_provider or "").strip().lower()
+        if provider_name in {"openai", "xai", "deepseek", "openai_compatible", "openrouter"}:
+            return self._braintrust.wrap_openai(client)
+        if provider_name == "anthropic":
+            return self._braintrust.wrap_anthropic(client)
+        return client
 
     def _ensure_runtime(self) -> None:
         if self._braintrust is not None and self._instrumented:
@@ -416,3 +456,29 @@ class TelemetryService:
                 runtime_error=str(exc),
                 metadata=dict(request.get("metadata") or {}),
             )
+
+    def wrap_client_for_request(
+        self,
+        *,
+        llm_provider: str,
+        client: Any,
+        request: dict[str, Any] | None,
+    ) -> Any:
+        if client is None:
+            return None
+        if not isinstance(request, dict) or not request.get("enabled"):
+            return client
+
+        provider_name = str(request.get("provider") or "").strip().lower()
+        if provider_name != self.PROVIDER_BRAINTRUST:
+            return client
+
+        try:
+            return self._braintrust_bridge.wrap_client(llm_provider=llm_provider, client=client)
+        except Exception as exc:
+            logging.warning(
+                "Telemetry client wrapping unavailable for provider '%s': %s",
+                llm_provider,
+                exc,
+            )
+            return client

@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock
 
-from iatoolkit.services.telemetry_service import TelemetryService
+from iatoolkit.services.telemetry_service import TelemetryExecution, TelemetryService
 
 
 class TestTelemetryService:
@@ -38,3 +38,45 @@ class TestTelemetryService:
         assert request["metadata"]["agent_name"] == "sales_prompt"
         assert "company_short_name" not in request["metadata"]
         assert "prompt_name" not in request["metadata"]
+
+    def test_finalize_logs_exact_root_input_payload(self):
+        bridge = MagicMock()
+        span = MagicMock()
+        execution = TelemetryExecution(
+            enabled=True,
+            bridge=bridge,
+            span=span,
+        )
+
+        execution.record_input({
+            "model": "gpt-5",
+            "input": [{"role": "user", "content": "hola"}],
+        })
+        execution.finalize(success=True, answer_preview="ok")
+
+        event = bridge.log_span.call_args.args[1]
+        assert event["input"] == {
+            "model": "gpt-5",
+            "input": [{"role": "user", "content": "hola"}],
+        }
+
+    def test_finalize_wraps_multiple_provider_requests_in_root_input(self):
+        bridge = MagicMock()
+        span = MagicMock()
+        execution = TelemetryExecution(
+            enabled=True,
+            bridge=bridge,
+            span=span,
+        )
+
+        execution.record_input({"model": "gpt-5", "input": [{"role": "user", "content": "primer turno"}]})
+        execution.record_input({"model": "gpt-5", "input": [{"type": "function_call_output", "output": "ok"}]})
+        execution.finalize(success=True, answer_preview="ok")
+
+        event = bridge.log_span.call_args.args[1]
+        assert event["input"] == {
+            "requests": [
+                {"model": "gpt-5", "input": [{"role": "user", "content": "primer turno"}]},
+                {"model": "gpt-5", "input": [{"type": "function_call_output", "output": "ok"}]},
+            ]
+        }

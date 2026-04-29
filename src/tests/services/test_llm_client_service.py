@@ -103,9 +103,6 @@ class TestLLMClient:
         })
         self.telemetry_service_mock.start_execution.return_value = telemetry_execution
         self.mock_proxy.create_response.return_value = self.mock_llm_response
-        persisted_query = MagicMock()
-        persisted_query.id = 42
-        persisted_query.stats = {"total_tokens": 150}
         self.llmquery_repo.add_query.side_effect = lambda query: setattr(query, "id", 42)
 
         result = self.client.invoke(
@@ -131,6 +128,32 @@ class TestLLMClient:
         saved_query = self.llmquery_repo.add_query.call_args.args[0]
         assert saved_query.stats["telemetry"]["provider"] == "braintrust"
         assert result["stats"]["telemetry"]["trace_url"] == "https://braintrust.dev/app/trace/123"
+
+    def test_invoke_forwards_telemetry_request_to_llm_proxy(self):
+        self.mock_proxy.create_response.return_value = self.mock_llm_response
+        telemetry_request = {
+            "requested": True,
+            "enabled": True,
+            "provider": "braintrust",
+            "project": "acme-prod",
+        }
+
+        self.client.invoke(
+            company=self.company,
+            user_identifier='user1',
+            previous_response_id='prev1',
+            model='gpt-5',
+            question='q',
+            context='c',
+            tools=[],
+            text={},
+            images=[],
+            telemetry_request=telemetry_request,
+        )
+
+        first_call_kwargs = self.mock_proxy.create_response.call_args.kwargs
+        assert first_call_kwargs["telemetry_request"] == telemetry_request
+        assert first_call_kwargs["telemetry_execution"] is self.telemetry_service_mock.start_execution.return_value
 
     def test_invoke_passes_reasoning_override_to_model_registry(self):
         self.mock_proxy.create_response.return_value = self.mock_llm_response

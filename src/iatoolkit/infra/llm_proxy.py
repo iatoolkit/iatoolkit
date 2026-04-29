@@ -17,6 +17,7 @@ from iatoolkit.infra.llm_response import LLMResponse
 from iatoolkit.common.model_registry import ModelRegistry
 from iatoolkit.common.interfaces.secret_provider import SecretProvider
 from iatoolkit.common.secret_resolver import resolve_secret
+from iatoolkit.services.telemetry_service import NoopTelemetryService
 
 from openai import OpenAI, Timeout         # For OpenAI and xAI (OpenAI-compatible)
 
@@ -53,6 +54,7 @@ class LLMProxy:
         configuration_service: ConfigurationService,
         model_registry: ModelRegistry,
         secret_provider: SecretProvider,
+        telemetry_service=None,
     ):
         """
         Init a new instance of the proxy. It can be a base factory or a working instance with configured clients.
@@ -62,9 +64,22 @@ class LLMProxy:
         self.configuration_service = configuration_service
         self.model_registry = model_registry
         self.secret_provider = secret_provider
+        self._telemetry_service = telemetry_service
 
         # adapter cache by (provider, api_key, base_url)
         self.adapters: Dict[Tuple[Any, ...], Any] = {}
+
+    @property
+    def telemetry_service(self):
+        if self._telemetry_service is None:
+            try:
+                from iatoolkit import current_iatoolkit
+                from iatoolkit.services.telemetry_service import TelemetryService
+
+                self._telemetry_service = current_iatoolkit().get_injector().get(TelemetryService)
+            except Exception:
+                self._telemetry_service = NoopTelemetryService()
+        return self._telemetry_service
 
     # -------------------------------------------------------------------------
     # Public API
@@ -81,6 +96,9 @@ class LLMProxy:
                 "company_short_name is required in kwargs to resolve LLM credentials."
             )
 
+        telemetry_request = kwargs.pop("telemetry_request", None)
+        telemetry_execution = kwargs.pop("telemetry_execution", None)
+
         # Determine the provider based on the model name
         provider = self._resolve_provider_for_company_model(
             company_short_name=company_short_name,
@@ -92,6 +110,7 @@ class LLMProxy:
         adapter = self._get_or_create_adapter(
             provider=provider,
             company_short_name=company_short_name,
+            telemetry_request=telemetry_request,
         )
 
         request_kwargs = self._apply_provider_request_overrides(
@@ -104,6 +123,8 @@ class LLMProxy:
             model_config=model_config,
             request_kwargs=request_kwargs,
         )
+        if telemetry_execution is not None:
+            request_kwargs["telemetry_execution"] = telemetry_execution
 
         # Delegate to the adapter (OpenAI, Gemini, DeepSeek, xAI, Anthropic, etc.)
         return adapter.create_response(model=model, input=input, **request_kwargs)
@@ -146,7 +167,12 @@ class LLMProxy:
     # Adapter management
     # -------------------------------------------------------------------------
 
-    def _get_or_create_adapter(self, provider: str, company_short_name: str) -> Any:
+    def _get_or_create_adapter(
+        self,
+        provider: str,
+        company_short_name: str,
+        telemetry_request: Dict[str, Any] | None = None,
+    ) -> Any:
         """
         Return an adapter instance for the given provider.
         If none exists yet, create it using a cached or new low-level client.
@@ -158,21 +184,6 @@ class LLMProxy:
         connect_timeout_seconds = client_config["connect_timeout_seconds"]
         read_timeout_seconds = client_config["read_timeout_seconds"]
         max_retries = client_config["max_retries"]
-        adapter_cache_key = (
-            provider,
-            api_key or "",
-            base_url,
-            tuple(sorted(default_headers.items())),
-            connect_timeout_seconds,
-            read_timeout_seconds,
-            max_retries,
-        )
-
-        # If already created for this provider+key, just return it
-        if adapter_cache_key in self.adapters and self.adapters[adapter_cache_key] is not None:
-            return self.adapters[adapter_cache_key]
-
-        # Otherwise, create low-level client from configuration
         client = self._get_or_create_client(
             provider,
             api_key,
@@ -183,27 +194,49 @@ class LLMProxy:
             max_retries=max_retries,
         )
 
-        # Wrap client with the correct adapter
-        if provider == self.PROVIDER_OPENAI:
-            adapter = OpenAIAdapter(client)
-        elif provider == self.PROVIDER_GEMINI:
-            adapter = GeminiAdapter(client)
-        elif provider == self.PROVIDER_DEEPSEEK:
-            adapter = DeepseekAdapter(client)
-        elif provider == self.PROVIDER_OPENAI_COMPATIBLE:
-            adapter = OpenAICompatibleChatAdapter(client, provider_label="OpenAI-compatible")
-        elif provider == self.PROVIDER_OPENROUTER:
-            adapter = OpenRouterAdapter(client)
-        elif provider == self.PROVIDER_ANTHROPIC:
-            adapter = AnthropicAdapter(client)
-        else:
-            raise IAToolkitException(
-                IAToolkitException.ErrorType.MODEL,
-                f"Provider not supported in _get_or_create_adapter: {provider}"
-            )
+        wrapped_client = self.telemetry_service.wrap_client_for_request(
+            llm_provider=provider,
+            client=client,
+            request=telemetry_request,
+        )
+        if wrapped_client is not client:
+            return self._build_adapter(provider, wrapped_client)
 
+        adapter_cache_key = (
+            provider,
+            api_key or "",
+            base_url,
+            tuple(sorted(default_headers.items())),
+            connect_timeout_seconds,
+            read_timeout_seconds,
+            max_retries,
+        )
+
+        if adapter_cache_key in self.adapters and self.adapters[adapter_cache_key] is not None:
+            return self.adapters[adapter_cache_key]
+
+        adapter = self._build_adapter(provider, client)
         self.adapters[adapter_cache_key] = adapter
         return adapter
+
+    def _build_adapter(self, provider: str, client: Any) -> Any:
+        if provider == self.PROVIDER_OPENAI:
+            return OpenAIAdapter(client)
+        if provider == self.PROVIDER_GEMINI:
+            return GeminiAdapter(client)
+        if provider == self.PROVIDER_DEEPSEEK:
+            return DeepseekAdapter(client)
+        if provider == self.PROVIDER_OPENAI_COMPATIBLE:
+            return OpenAICompatibleChatAdapter(client, provider_label="OpenAI-compatible")
+        if provider == self.PROVIDER_OPENROUTER:
+            return OpenRouterAdapter(client)
+        if provider == self.PROVIDER_ANTHROPIC:
+            return AnthropicAdapter(client)
+
+        raise IAToolkitException(
+            IAToolkitException.ErrorType.MODEL,
+            f"Provider not supported in _get_or_create_adapter: {provider}"
+        )
 
     def _apply_provider_request_overrides(
         self,

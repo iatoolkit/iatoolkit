@@ -48,6 +48,34 @@ class TestOpenAIAdapter:
         assert result.output_text == 'Hello, world!'
         assert result.usage.total_tokens == 15
 
+    def test_create_response_records_exact_request_payload_for_telemetry(self):
+        mock_response = MagicMock()
+        mock_response.id = 'chatcmpl-telemetry'
+        mock_response.model = 'gpt-5'
+        mock_response.status = 'completed'
+        mock_response.output_text = 'ok'
+        mock_response.output = []
+        mock_response.usage.input_tokens = 10
+        mock_response.usage.output_tokens = 5
+        mock_response.usage.total_tokens = 15
+        self.mock_openai_client.responses.create.return_value = mock_response
+
+        telemetry_execution = MagicMock()
+        input_data = [{'role': 'user', 'content': 'Hello'}]
+
+        self.adapter.create_response(
+            model='gpt-5',
+            input=input_data,
+            telemetry_execution=telemetry_execution,
+            text={'verbosity': 'medium'},
+        )
+
+        telemetry_execution.record_input.assert_called_once_with({
+            'model': 'gpt-5',
+            'input': input_data,
+            'text': {'verbosity': 'medium'},
+        })
+
     def test_create_response_with_tools(self):
         """Prueba create_response cuando la respuesta incluye llamadas a herramientas."""
         # Arrange

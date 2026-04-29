@@ -155,6 +155,8 @@ class llmClient:
                     attachments=active_attachments,
                     store=store,
                     metadata=request_metadata,
+                    telemetry_request=telemetry_request,
+                    telemetry_execution=telemetry_execution,
                 )
                 stats = self.get_stats(response)
 
@@ -263,6 +265,8 @@ class llmClient:
                     attachments=active_attachments,
                     store=store,
                     metadata=request_metadata,
+                    telemetry_request=telemetry_request,
+                    telemetry_execution=telemetry_execution,
                 )
                 stats_fcall = self.add_stats(stats_fcall, self.get_stats(response))
 
