@@ -158,7 +158,10 @@ class HistoryManagerService:
             if last_content != user_turn_prompt:
                 context_history.append({"role": "user", "content": user_turn_prompt})
 
-            if response.get('answer'):
+            history_messages = response.get("history_messages")
+            if isinstance(history_messages, list) and history_messages:
+                context_history.extend(history_messages)
+            elif response.get('answer'):
                 context_history.append({"role": "assistant", "content": response.get('answer', '')})
 
             self.session_context.save_context_history(

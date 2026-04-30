@@ -81,6 +81,12 @@ class TestLLMClient:
         assert result['valid_response'] is True
         assert 'Test response' in result['answer']
         assert result['response_id'] == 'response_123'
+        assert result['history_messages'] == [
+            {
+                "role": "assistant",
+                "content": json.dumps({"answer": "Test response", "aditional_data": {}}),
+            }
+        ]
 
         assert 'content_parts' in result
         assert len(result['content_parts']) > 0
@@ -367,7 +373,7 @@ class TestLLMClient:
             self.mock_proxy.create_response.side_effect = [response_with_tools, self.mock_llm_response]
 
             # 6. Invoke the client. Now, when it calls current_iatoolkit, it will get our mock.
-            self.client.invoke(
+            result = self.client.invoke(
                 company=self.company, user_identifier='user1', previous_response_id='prev1',
                 model='gpt-5', question='q', context='c', tools=[{}], text={}, images=fake_images
             )
@@ -386,10 +392,51 @@ class TestLLMClient:
 
         # Verify that the function output was reinjected into the history
         second_call_args = self.mock_proxy.create_response.call_args_list[1].kwargs
-        function_output_message = second_call_args['input'][1]
+        assistant_tool_call_message = second_call_args['input'][1]
+        function_output_message = second_call_args['input'][2]
+        assert assistant_tool_call_message == {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [
+                {
+                    "id": "call1",
+                    "type": "function",
+                    "function": {
+                        "name": "test_func",
+                        "arguments": '{"a": 1}',
+                    },
+                }
+            ],
+        }
         assert function_output_message.get('type') == 'function_call_output'
         assert function_output_message.get('output') == '{"status": "ok"}'
         assert second_call_args['attachments'] == []
+        assert result['history_messages'] == [
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call1",
+                        "type": "function",
+                        "function": {
+                            "name": "test_func",
+                            "arguments": '{"a": 1}',
+                        },
+                    }
+                ],
+            },
+            {
+                "type": "function_call_output",
+                "call_id": "call1",
+                "status": "completed",
+                "output": '{"status": "ok"}',
+            },
+            {
+                "role": "assistant",
+                "content": json.dumps({"answer": "Test response", "aditional_data": {}}),
+            },
+        ]
 
     def test_invoke_passes_native_attachments_to_llm_proxy(self):
         self.mock_proxy.create_response.return_value = self.mock_llm_response
@@ -441,7 +488,7 @@ class TestLLMClient:
             )
 
         second_call_args = self.mock_proxy.create_response.call_args_list[1].kwargs
-        function_output_message = second_call_args['input'][1]
+        function_output_message = second_call_args['input'][2]
         parsed_output = json.loads(function_output_message.get('output'))
         assert "__native_attachments__" not in parsed_output
         assert second_call_args['attachments'] == [
@@ -469,7 +516,7 @@ class TestLLMClient:
             )
 
         second_call_args = self.mock_proxy.create_response.call_args_list[1].kwargs
-        function_output_message = second_call_args['input'][1]
+        function_output_message = second_call_args['input'][2]
         parsed_output = json.loads(function_output_message.get('output'))
         assert parsed_output == {"status": "ok", "count": 2}
 

@@ -21,7 +21,7 @@ class TestDeepseekAdapter:
     # Helpers
     # ------------------------------------------------------------------
 
-    def _create_mock_response(self, content="Hello", tool_calls=None):
+    def _create_mock_response(self, content="Hello", tool_calls=None, reasoning_content=""):
         """Helper to create a mock DeepSeek-like response object."""
         mock_response = MagicMock()
         mock_response.id = "chatcmpl-deepseek-123"
@@ -30,6 +30,7 @@ class TestDeepseekAdapter:
         mock_message = MagicMock()
         mock_message.content = content
         mock_message.tool_calls = tool_calls
+        mock_message.reasoning_content = reasoning_content
 
         mock_choice = MagicMock()
         mock_choice.message = mock_message
@@ -178,6 +179,32 @@ class TestDeepseekAdapter:
         call_kwargs = self.mock_deepseek_client.chat.completions.create.call_args.kwargs
         assert call_kwargs["response_format"] == {"type": "json_object"}
 
+    def test_create_response_maps_reasoning_to_deepseek_thinking_mode(self):
+        self.mock_deepseek_client.chat.completions.create.return_value = self._create_mock_response(content="ok")
+
+        self.adapter.create_response(
+            model="deepseek-v4-pro",
+            input=[{"role": "user", "content": "Think this through"}],
+            reasoning={"effort": "xhigh"},
+        )
+
+        call_kwargs = self.mock_deepseek_client.chat.completions.create.call_args.kwargs
+        assert call_kwargs["reasoning_effort"] == "max"
+        assert call_kwargs["extra_body"]["thinking"] == {"type": "enabled"}
+
+    def test_create_response_maps_minimal_reasoning_to_non_thinking_mode(self):
+        self.mock_deepseek_client.chat.completions.create.return_value = self._create_mock_response(content="ok")
+
+        self.adapter.create_response(
+            model="deepseek-v4-pro",
+            input=[{"role": "user", "content": "Answer fast"}],
+            reasoning={"effort": "minimal"},
+        )
+
+        call_kwargs = self.mock_deepseek_client.chat.completions.create.call_args.kwargs
+        assert "reasoning_effort" not in call_kwargs
+        assert call_kwargs["extra_body"]["thinking"] == {"type": "disabled"}
+
     def test_build_messages_from_input_maps_function_call_output_to_tool_message(self):
         """
         function_call_output items must be converted into proper tool messages so
@@ -214,45 +241,78 @@ class TestDeepseekAdapter:
             "content": '{"rows": [{"id": 1, "name": "Alice"}]}',
         }
 
-    def test_create_response_disables_tools_after_function_output_with_auto_choice(self):
+    def test_create_response_reconstructs_assistant_tool_call_turn_before_tool_output(self):
         """
-        When input already contains function_call_output and tool_choice is 'auto',
-        tools and tool_choice must be removed from the API call to avoid infinite loops.
+        DeepSeek requires a prior assistant message with tool_calls before any tool
+        message. The adapter reconstructs that assistant message from the previous
+        model response when the caller only reinjects function_call_output items.
         """
-        self.mock_deepseek_client.chat.completions.create.return_value = self._create_mock_response()
+        mock_tool_call = MagicMock()
+        mock_tool_call.type = "function"
+        mock_tool_call.id = "call_1"
+        mock_tool_call.function.name = "iat_sql_query"
+        mock_tool_call.function.arguments = '{"query":"select 1"}'
 
-        input_data = [
-            {"role": "user", "content": "question"},
-            {
-                "type": "function_call_output",
-                "call_id": "call_1",
-                "status": "completed",
-                "output": "some result",
-            },
+        self.mock_deepseek_client.chat.completions.create.side_effect = [
+            self._create_mock_response(
+                content="Let me query that",
+                tool_calls=[mock_tool_call],
+                reasoning_content="Need database lookup first.",
+            ),
+            self._create_mock_response(content="done"),
         ]
-        tools = [{"type": "function", "function": {"name": "iat_sql_query"}}]
 
-        # Act
+        tools = [{"type": "function", "function": {"name": "iat_sql_query"}}]
         self.adapter.create_response(
-            model="deepseek-chat",
-            input=input_data,
+            model="deepseek-v4-pro",
+            input=[{"role": "user", "content": "question"}],
             tools=tools,
             tool_choice="auto",
+            reasoning={"effort": "high"},
         )
 
-        # Assert: tools and tool_choice should NOT be sent
-        call_kwargs = self.mock_deepseek_client.chat.completions.create.call_args.kwargs
-        assert "tools" not in call_kwargs
-        assert "tool_choice" not in call_kwargs
+        self.adapter.create_response(
+            model="deepseek-v4-pro",
+            input=[
+                {
+                    "type": "function_call_output",
+                    "call_id": "call_1",
+                    "status": "completed",
+                    "output": "some result",
+                },
+            ],
+            tools=tools,
+            tool_choice="auto",
+            reasoning={"effort": "high"},
+        )
 
-        # Messages should still include the tool result as a proper tool message
+        call_kwargs = self.mock_deepseek_client.chat.completions.create.call_args_list[1].kwargs
         messages = call_kwargs["messages"]
         assert len(messages) == 2
+        assert messages[0] == {
+            "role": "assistant",
+            "content": "Let me query that",
+            "reasoning_content": "Need database lookup first.",
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {
+                        "name": "iat_sql_query",
+                        "arguments": '{"query":"select 1"}',
+                    },
+                }
+            ],
+        }
         assert messages[1] == {
             "role": "tool",
             "tool_call_id": "call_1",
             "content": "some result",
         }
+        assert call_kwargs["tools"] is not None
+        assert "tool_choice" not in call_kwargs
+        assert call_kwargs["reasoning_effort"] == "high"
+        assert call_kwargs["extra_body"]["thinking"] == {"type": "enabled"}
 
     # ------------------------------------------------------------------
     # Response mapping and error handling

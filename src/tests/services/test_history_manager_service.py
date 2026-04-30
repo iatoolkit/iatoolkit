@@ -220,6 +220,70 @@ class TestHistoryManager(unittest.TestCase):
             self.company_short_name, self.user_identifier, expected_saved_history, model="deepseek_chat"
         )
 
+    def test_update_history_client_side_uses_history_messages_when_present(self):
+        handle = MockHistoryHandle(self.company_short_name,
+                                   self.user_identifier,
+                                   HistoryManagerService.TYPE_CLIENT_SIDE,
+                                   model="deepseek_chat",
+                                   )
+
+        initial_history = [{"role": "user", "content": "System"}]
+        self.mock_session_context.get_context_history.return_value = initial_history.copy()
+
+        user_turn = "User Question"
+        response = {
+            "answer": "Model Answer",
+            "history_messages": [
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "reasoning_content": "Let me think",
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {"name": "lookup", "arguments": "{}"},
+                        }
+                    ],
+                },
+                {
+                    "type": "function_call_output",
+                    "call_id": "call_1",
+                    "output": '{"status":"ok"}',
+                },
+                {"role": "assistant", "content": "Model Answer"},
+            ],
+        }
+
+        self.manager.update_history(handle, user_turn, response)
+
+        expected_saved_history = [
+            {"role": "user", "content": "System"},
+            {"role": "user", "content": user_turn},
+            {
+                "role": "assistant",
+                "content": "",
+                "reasoning_content": "Let me think",
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {"name": "lookup", "arguments": "{}"},
+                    }
+                ],
+            },
+            {
+                "type": "function_call_output",
+                "call_id": "call_1",
+                "output": '{"status":"ok"}',
+            },
+            {"role": "assistant", "content": "Model Answer"},
+        ]
+
+        self.mock_session_context.save_context_history.assert_called_with(
+            self.company_short_name, self.user_identifier, expected_saved_history, model="deepseek_chat"
+        )
+
     # --- get_full_history Tests ---
 
     def test_get_full_history_success(self):

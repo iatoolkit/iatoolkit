@@ -105,6 +105,7 @@ class llmClient:
         active_attachments = list(attachments)
         f_calls = []  # keep track of the function calls executed by the LLM
         f_call_time = 0
+        history_messages = []
         response = None
         sql_retry_count = 0
         force_tool_name = None
@@ -158,6 +159,7 @@ class llmClient:
                     telemetry_request=telemetry_request,
                     telemetry_execution=telemetry_execution,
                 )
+                history_messages.extend(self._build_history_messages_from_response(response))
                 stats = self.get_stats(response)
 
             except Exception as e:
@@ -176,6 +178,19 @@ class llmClient:
                 # check if there are function calls to execute
                 function_calls = False
                 stats_fcall = {}
+                has_pending_tool_calls = any(
+                    tool_call.type == "function_call" for tool_call in (response.output or [])
+                )
+                if has_pending_tool_calls:
+                    pending_response_history_messages = self._build_history_messages_from_response(response)
+                    response_assistant_messages = [
+                        message
+                        for message in pending_response_history_messages
+                        if isinstance(message, dict) and message.get("role") == "assistant"
+                    ]
+                    if response_assistant_messages:
+                        input_messages.extend(response_assistant_messages)
+
                 for tool_call in response.output:
                     if tool_call.type != "function_call":
                         continue
@@ -233,6 +248,12 @@ class llmClient:
                         "status": "completed",
                         "output": self._serialize_tool_output(result)
                     })
+                    history_messages.append({
+                        "type": "function_call_output",
+                        "call_id": tool_call.call_id,
+                        "status": "completed",
+                        "output": self._serialize_tool_output(result),
+                    })
                     function_calls = True
 
                     # log the function call parameters and execution time in secs
@@ -268,6 +289,7 @@ class llmClient:
                     telemetry_request=telemetry_request,
                     telemetry_execution=telemetry_execution,
                 )
+                history_messages.extend(self._build_history_messages_from_response(response))
                 stats_fcall = self.add_stats(stats_fcall, self.get_stats(response))
 
             # --- IMAGE PROCESSING ---
@@ -342,6 +364,7 @@ class llmClient:
                 'schema_errors': decoded_response.get('schema_errors', []),
                 'schema_mode': decoded_response.get('schema_mode'),
                 'schema_applied': decoded_response.get('schema_applied', False),
+                'history_messages': history_messages,
             }
             if getattr(response, 'id', None):
                 result['response_id'] = response.id
@@ -444,6 +467,54 @@ class llmClient:
             merged.append(attachment)
 
         return merged
+
+    @staticmethod
+    def _build_history_messages_from_response(response) -> list[dict]:
+        if response is None:
+            return []
+
+        assistant_message = {
+            "role": "assistant",
+            "content": getattr(response, "output_text", "") or "",
+        }
+
+        tool_calls = llmClient._serialize_history_tool_calls(getattr(response, "output", None) or [])
+        if tool_calls:
+            assistant_message["tool_calls"] = tool_calls
+
+        reasoning_content = str(getattr(response, "reasoning_content", "") or "").strip()
+        if reasoning_content:
+            assistant_message["reasoning_content"] = reasoning_content
+
+        has_assistant_payload = bool(assistant_message.get("content")) or bool(tool_calls) or bool(reasoning_content)
+        if not has_assistant_payload:
+            return []
+
+        return [assistant_message]
+
+    @staticmethod
+    def _serialize_history_tool_calls(tool_calls) -> list[dict]:
+        serialized: list[dict] = []
+        for tool_call in tool_calls or []:
+            if getattr(tool_call, "type", None) != "function_call":
+                continue
+
+            call_id = str(getattr(tool_call, "call_id", "") or "").strip()
+            name = str(getattr(tool_call, "name", "") or "").strip()
+            arguments = str(getattr(tool_call, "arguments", "{}") or "{}")
+            if not call_id or not name:
+                continue
+
+            serialized.append({
+                "id": call_id,
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "arguments": arguments,
+                },
+            })
+
+        return serialized
 
     def set_company_context(self,
             company: Company,

@@ -6,6 +6,7 @@
 import base64
 import logging
 import mimetypes
+import threading
 from typing import Any, Dict, List, Optional
 
 from iatoolkit.common.exceptions import IAToolkitException
@@ -22,12 +23,18 @@ class OpenAICompatibleChatAdapter:
 
     supports_multimodal = False
     supports_reasoning = False
+    supports_reasoning_effort = False
+    supports_reasoning_content_messages = False
     supports_metadata = False
     supports_parallel_tool_calls = False
+    supports_thinking = False
+    allow_follow_up_tool_calls = True
 
     def __init__(self, openai_compatible_client, provider_label: str = "OpenAI-compatible"):
         self.client = openai_compatible_client
         self.provider_label = provider_label
+        self._pending_assistant_tool_messages: Dict[str, Dict[str, Any]] = {}
+        self._pending_assistant_tool_messages_lock = threading.Lock()
 
     def create_response(self, model: str, input: List[Dict], **kwargs) -> LLMResponse:
         """
@@ -71,21 +78,20 @@ class OpenAICompatibleChatAdapter:
                         len(attachments),
                     )
 
-            has_function_outputs = any(
-                item.get("type") == "function_call_output" for item in input
-            )
-
             tools_payload = self._build_tools_payload(tools)
             if not tools_payload:
                 tool_choice = None
-
-            if has_function_outputs and tool_choice == "auto":
-                logging.debug(
-                    "[%sAdapter] Detected function_call_output in input; disabling tools and tool_choice to avoid tool loop.",
-                    self.provider_label,
+            elif not self.allow_follow_up_tool_calls:
+                has_function_outputs = any(
+                    item.get("type") == "function_call_output" for item in input
                 )
-                tools_payload = None
-                tool_choice = None
+                if has_function_outputs and tool_choice == "auto":
+                    logging.debug(
+                        "[%sAdapter] Detected function_call_output in input; disabling tools/tool_choice for this provider.",
+                        self.provider_label,
+                    )
+                    tools_payload = None
+                    tool_choice = None
 
             call_kwargs: Dict[str, Any] = {
                 "model": model,
@@ -102,8 +108,12 @@ class OpenAICompatibleChatAdapter:
             if response_format:
                 call_kwargs["response_format"] = response_format
 
-            if self.supports_reasoning and reasoning:
-                call_kwargs["reasoning"] = reasoning
+            self._apply_reasoning_request_options(
+                call_kwargs=call_kwargs,
+                model=model,
+                reasoning=reasoning,
+                kwargs=kwargs,
+            )
 
             if self.supports_metadata and metadata:
                 call_kwargs["metadata"] = metadata
@@ -142,8 +152,79 @@ class OpenAICompatibleChatAdapter:
         _ = call_kwargs
         _ = kwargs
 
+    def _apply_reasoning_request_options(
+        self,
+        call_kwargs: Dict[str, Any],
+        model: str,
+        reasoning: Optional[Dict[str, Any]],
+        kwargs: Dict[str, Any],
+    ) -> None:
+        if self.supports_reasoning and reasoning:
+            call_kwargs["reasoning"] = dict(reasoning)
+
+        reasoning_effort = self._extract_reasoning_effort(reasoning, kwargs)
+        if self.supports_reasoning_effort:
+            mapped_effort = self._map_reasoning_effort(model, reasoning_effort, kwargs)
+            if mapped_effort:
+                call_kwargs["reasoning_effort"] = mapped_effort
+
+        if self.supports_thinking:
+            thinking_payload = self._build_thinking_payload(model, reasoning, kwargs)
+            if thinking_payload is not None:
+                extra_body = dict(call_kwargs.get("extra_body") or {})
+                extra_body["thinking"] = thinking_payload
+                call_kwargs["extra_body"] = extra_body
+
+    @staticmethod
+    def _extract_reasoning_effort(reasoning: Optional[Dict[str, Any]], kwargs: Dict[str, Any]) -> str:
+        explicit_effort = kwargs.get("reasoning_effort")
+        if explicit_effort is not None:
+            return str(explicit_effort or "").strip().lower()
+
+        if isinstance(reasoning, dict):
+            return str(reasoning.get("effort") or "").strip().lower()
+
+        return ""
+
+    def _map_reasoning_effort(self, model: str, effort: str, kwargs: Dict[str, Any]) -> Optional[str]:
+        _ = model
+        _ = kwargs
+        return effort or None
+
+    def _build_thinking_payload(
+        self,
+        model: str,
+        reasoning: Optional[Dict[str, Any]],
+        kwargs: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        _ = model
+        _ = reasoning
+        return self._normalize_thinking_payload(kwargs.get("thinking"))
+
+    @staticmethod
+    def _normalize_thinking_payload(raw_thinking: Any) -> Optional[Dict[str, Any]]:
+        if raw_thinking is None:
+            return None
+
+        if isinstance(raw_thinking, dict):
+            normalized = dict(raw_thinking)
+            thinking_type = str(normalized.get("type") or "").strip().lower()
+            if thinking_type:
+                normalized["type"] = thinking_type
+            return normalized
+
+        if isinstance(raw_thinking, bool):
+            return {"type": "enabled" if raw_thinking else "disabled"}
+
+        thinking_type = str(raw_thinking or "").strip().lower()
+        if not thinking_type:
+            return None
+
+        return {"type": thinking_type}
+
     def _build_messages_from_input(self, input_items: List[Dict]) -> List[Dict]:
         messages: List[Dict[str, Any]] = []
+        seen_tool_call_ids: set[str] = set()
 
         for item in input_items:
             if item.get("type") == "function_call_output":
@@ -156,11 +237,19 @@ class OpenAICompatibleChatAdapter:
                     )
                     continue
 
+                call_id = str(item.get("call_id") or "").strip()
+                if call_id and call_id not in seen_tool_call_ids:
+                    pending_assistant_message = self._consume_pending_assistant_tool_message(call_id)
+                    if pending_assistant_message is not None:
+                        messages.append(pending_assistant_message)
+                        seen_tool_call_ids.update(
+                            self._extract_tool_call_ids(pending_assistant_message.get("tool_calls"))
+                        )
+
                 tool_message: Dict[str, Any] = {
                     "role": "tool",
                     "content": output,
                 }
-                call_id = str(item.get("call_id") or "").strip()
                 if call_id:
                     tool_message["tool_call_id"] = call_id
                 messages.append(tool_message)
@@ -177,6 +266,16 @@ class OpenAICompatibleChatAdapter:
                 role = "assistant"
 
             message: Dict[str, Any] = {"role": role, "content": content}
+            tool_calls = self._normalize_tool_calls(item.get("tool_calls"))
+            if tool_calls:
+                message["tool_calls"] = tool_calls
+                seen_tool_call_ids.update(self._extract_tool_call_ids(tool_calls))
+
+            if self.supports_reasoning_content_messages:
+                reasoning_content = str(item.get("reasoning_content") or "").strip()
+                if reasoning_content:
+                    message["reasoning_content"] = reasoning_content
+
             tool_call_id = str(item.get("tool_call_id") or "").strip()
             if role == "tool" and tool_call_id:
                 message["tool_call_id"] = tool_call_id
@@ -188,6 +287,69 @@ class OpenAICompatibleChatAdapter:
             messages.append(message)
 
         return messages
+
+    def _consume_pending_assistant_tool_message(self, call_id: str) -> Optional[Dict[str, Any]]:
+        if not call_id:
+            return None
+
+        with self._pending_assistant_tool_messages_lock:
+            pending_entry = self._pending_assistant_tool_messages.get(call_id)
+            if not pending_entry:
+                return None
+
+            for pending_call_id in pending_entry.get("call_ids", []):
+                self._pending_assistant_tool_messages.pop(pending_call_id, None)
+
+            assistant_message = pending_entry.get("assistant_message")
+            return dict(assistant_message) if isinstance(assistant_message, dict) else None
+
+    @staticmethod
+    def _extract_tool_call_ids(tool_calls: Any) -> List[str]:
+        call_ids: List[str] = []
+        if not isinstance(tool_calls, list):
+            return call_ids
+
+        for tool_call in tool_calls:
+            if isinstance(tool_call, dict):
+                call_id = str(tool_call.get("id") or "").strip()
+            else:
+                call_id = str(getattr(tool_call, "id", "") or "").strip()
+            if call_id:
+                call_ids.append(call_id)
+
+        return call_ids
+
+    def _normalize_tool_calls(self, tool_calls: Any) -> List[Dict[str, Any]]:
+        normalized_tool_calls: List[Dict[str, Any]] = []
+        if not isinstance(tool_calls, list):
+            return normalized_tool_calls
+
+        for tool_call in tool_calls:
+            if isinstance(tool_call, dict):
+                function = tool_call.get("function") or {}
+                normalized_tool_call = {
+                    "id": str(tool_call.get("id") or "").strip(),
+                    "type": str(tool_call.get("type") or "function").strip() or "function",
+                    "function": {
+                        "name": str(function.get("name") or "").strip(),
+                        "arguments": str(function.get("arguments") or "{}"),
+                    },
+                }
+            else:
+                function = getattr(tool_call, "function", None)
+                normalized_tool_call = {
+                    "id": str(getattr(tool_call, "id", "") or "").strip(),
+                    "type": str(getattr(tool_call, "type", "function") or "function").strip() or "function",
+                    "function": {
+                        "name": str(getattr(function, "name", "") or "").strip(),
+                        "arguments": str(getattr(function, "arguments", "{}") or "{}"),
+                    },
+                }
+
+            if normalized_tool_call["id"] and normalized_tool_call["function"]["name"]:
+                normalized_tool_calls.append(normalized_tool_call)
+
+        return normalized_tool_calls
 
     def _prepare_multimodal_messages(
         self,
@@ -318,13 +480,13 @@ class OpenAICompatibleChatAdapter:
                 )
                 func_def["parameters"] = {}
 
+            if tool.get("strict") is True and "strict" not in func_def:
+                func_def["strict"] = True
+
             compat_tool: Dict[str, Any] = {
                 "type": tool.get("type", "function"),
                 "function": func_def,
             }
-
-            if tool.get("strict") is True:
-                compat_tool["strict"] = True
 
             tools_payload.append(compat_tool)
 
@@ -399,6 +561,13 @@ class OpenAICompatibleChatAdapter:
 
         else:
             logging.debug("[%s] RAW tool_calls: %s", self.provider_label, tool_calls)
+            normalized_tool_calls = self._normalize_tool_calls(tool_calls)
+            self._cache_pending_assistant_tool_message(
+                response=response,
+                message=message,
+                normalized_tool_calls=normalized_tool_calls,
+                reasoning_content=reasoning_content,
+            )
 
             for tc in tool_calls:
                 func = getattr(tc, "function", None)
@@ -442,3 +611,32 @@ class OpenAICompatibleChatAdapter:
     # is still referenced by a few tests/imports.
     def _map_deepseek_chat_response(self, response: Any) -> LLMResponse:
         return self._map_chat_completion_response(response)
+
+    def _cache_pending_assistant_tool_message(
+        self,
+        response: Any,
+        message: Any,
+        normalized_tool_calls: List[Dict[str, Any]],
+        reasoning_content: str,
+    ) -> None:
+        if not normalized_tool_calls:
+            return
+
+        assistant_message: Dict[str, Any] = {
+            "role": "assistant",
+            "content": getattr(message, "content", "") or "",
+            "tool_calls": normalized_tool_calls,
+        }
+        if self.supports_reasoning_content_messages and reasoning_content:
+            assistant_message["reasoning_content"] = reasoning_content
+
+        group_id = str(getattr(response, "id", "") or normalized_tool_calls[0]["id"]).strip()
+        pending_entry = {
+            "group_id": group_id,
+            "call_ids": [tool_call["id"] for tool_call in normalized_tool_calls],
+            "assistant_message": assistant_message,
+        }
+
+        with self._pending_assistant_tool_messages_lock:
+            for tool_call in normalized_tool_calls:
+                self._pending_assistant_tool_messages[tool_call["id"]] = pending_entry
