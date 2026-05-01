@@ -12,5 +12,12 @@
 - Antes de comparar fechas de texto con `CURRENT_DATE`, castealas explicitamente.
 - Los booleanos dentro de JSONB llegan como texto: evalualos con cast explicito,
   por ejemplo `(jsonb_col->>'flag')::BOOLEAN IS TRUE`.
-- siempre que uses `ROUND()` sobre un `DOUBLE PRECISION` (que es lo que devuelve `AVG()`
-  sobre columnas `float`), castea antes: `ROUND(... ::NUMERIC, decimales)`.
+- La función ROUND(double precision, integer) NO EXISTE en PostgreSQL.
+Todo ROUND() que lleve segundo argumento (cantidad de decimales) debe aplicarsesobre NUMERIC, no sobre DOUBLE PRECISION.
+
+Si la expresión a redondear viene de AVG(), MIN(), MAX(), SUM() sobre unacolumna de tipo float/double precision, casteala siempre antes del ROUND:
+ ROUND(AVG(columna)::NUMERIC, decimales)ROUND(MIN(columna)::NUMERIC, decimales)ROUND(MAX(columna)::NUMERIC, decimales)ROUND(SUM(columna)::NUMERIC, decimales)
+Esto aplica incluso si la subexpresión ya fue casteada antes: el cast debeestar dentro del ROUND, no afuera.
+Si usás ROUND sin segundo argumento, no hace falta el cast:
+ROUND(AVG(columna)) -- esto sí funciona, devuelve double precision redondeado a entero
+Antes de entregar la consulta SQL final, revisá cada ocurrencia de ROUND(..., N)y verificá que su primer argumento sea NUMERIC. Si no lo es, agregale ::NUMERIC.```
