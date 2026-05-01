@@ -449,6 +449,13 @@ class PromptService:
             # Deduplicate prompts by id
             all_prompts = list({p.id: p for p in all_prompts}.values())
 
+            if not include_all:
+                all_prompts = [
+                    prompt for prompt in all_prompts
+                    if bool(getattr(prompt, 'active', True))
+                    and bool(getattr(prompt, 'visible_in_chat', True))
+                ]
+
             # group by category
             prompts_by_category = defaultdict(list)
             for prompt in all_prompts:

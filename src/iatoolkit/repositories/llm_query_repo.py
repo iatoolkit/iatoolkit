@@ -160,6 +160,8 @@ class LLMQueryRepo:
             prompt.category_id = new_prompt.category_id
             prompt.description = new_prompt.description
             prompt.order = new_prompt.order
+            if new_prompt.active is not None:
+                prompt.active = new_prompt.active
             prompt.visible_in_chat = bool(getattr(new_prompt, "visible_in_chat", True))
             prompt.execution_mode = (
                 getattr(new_prompt, "execution_mode", None)
@@ -183,6 +185,8 @@ class LLMQueryRepo:
             prompt.llm_request_options = dict(new_prompt.llm_request_options or {})
             prompt.tool_policy = dict(new_prompt.tool_policy or {})
         else:
+            if new_prompt.active is None:
+                new_prompt.active = True
             if new_prompt.visible_in_chat is None:
                 new_prompt.visible_in_chat = True
             if not new_prompt.execution_mode:

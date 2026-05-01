@@ -13,6 +13,28 @@ from iatoolkit.common.exceptions import IAToolkitException
 
 
 class TestPromptService:
+    @staticmethod
+    def _build_prompt_mock(prompt_id: int, prompt_name: str, active: bool) -> MagicMock:
+        prompt = MagicMock(spec=Prompt)
+        prompt.id = prompt_id
+        prompt.name = prompt_name
+        prompt.description = f"{prompt_name} description"
+        prompt.category = None
+        prompt.visible_in_chat = True
+        prompt.execution_mode = 'conversational'
+        prompt.active = active
+        prompt.custom_fields = []
+        prompt.order = prompt_id
+        prompt.output_schema_mode = 'best_effort'
+        prompt.output_response_mode = 'chat_compatible'
+        prompt.attachment_mode = 'extracted_only'
+        prompt.attachment_parser_provider = 'basic'
+        prompt.attachment_fallback = 'extract'
+        prompt.llm_model = None
+        prompt.llm_request_options = {}
+        prompt.tool_policy = {}
+        return prompt
+
     @pytest.fixture(autouse=True)
     def setup(self):
         """Configura mocks y la instancia del servicio para cada test."""
@@ -60,6 +82,50 @@ class TestPromptService:
         self.llm_query_repo.get_prompts.return_value = []
         result = self.prompt_service.get_prompts(company_short_name='test_company')
         assert result == {'message': []}
+
+    def test_get_prompts_filters_inactive_rows_for_chat(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        active_prompt = self._build_prompt_mock(1, 'active_prompt', True)
+        inactive_prompt = self._build_prompt_mock(2, 'inactive_prompt', False)
+        self.llm_query_repo.get_prompts.return_value = [active_prompt, inactive_prompt]
+
+        result = self.prompt_service.get_prompts(company_short_name='test_company')
+
+        assert result == {
+            'message': [{
+                'category_name': self.prompt_service.DEFAULT_CATEGORY_LABEL,
+                'category_order': 0,
+                'prompts': [{
+                    'prompt': 'active_prompt',
+                    'description': 'active_prompt description',
+                    'category': None,
+                    'visible_in_chat': True,
+                    'execution_mode': 'conversational',
+                    'active': True,
+                    'custom_fields': [],
+                    'order': 1,
+                    'output_schema_mode': 'best_effort',
+                    'output_response_mode': 'chat_compatible',
+                    'attachment_mode': 'extracted_only',
+                    'attachment_parser_provider': 'basic',
+                    'attachment_fallback': 'extract',
+                    'llm_model': None,
+                    'llm_request_options': {},
+                    'tool_policy': {},
+                }],
+            }]
+        }
+
+    def test_get_prompts_include_all_keeps_inactive_rows_for_admin(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        active_prompt = self._build_prompt_mock(1, 'active_prompt', True)
+        inactive_prompt = self._build_prompt_mock(2, 'inactive_prompt', False)
+        self.llm_query_repo.get_prompts.return_value = [active_prompt, inactive_prompt]
+
+        result = self.prompt_service.get_prompts(company_short_name='test_company', include_all=True)
+        prompt_names = [prompt['prompt'] for prompt in result['message'][0]['prompts']]
+
+        assert prompt_names == ['active_prompt', 'inactive_prompt']
 
     # --- Tests para get_system_prompt ---
 

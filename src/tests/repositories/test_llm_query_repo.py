@@ -255,9 +255,35 @@ class TestLLMQueryRepo:
         assert result.description == "New Desc"
         assert result.filename == "new.txt"
         assert result.order == 10
+        assert result.active is True
         assert result.visible_in_chat is False
         assert result.execution_mode == PromptExecutionMode.AGENTIC.value
         assert result.custom_fields == [{'key': 'val'}]
+
+    def test_create_or_update_prompt_updates_existing_active_flag(self):
+        prompt = Prompt(
+            name="p_update_active",
+            company_id=self.company.id,
+            description="Old Desc",
+            filename="old.txt",
+            active=True,
+        )
+        self.session.add(prompt)
+        self.session.commit()
+
+        new_prompt_data = Prompt(
+            name="p_update_active",
+            company_id=self.company.id,
+            description="New Desc",
+            filename="new.txt",
+            active=False,
+        )
+
+        result = self.repo.create_or_update_prompt(new_prompt_data)
+        self.session.commit()
+
+        assert result.id == prompt.id
+        assert result.active is False
 
     def test_create_prompt_category(self):
         """Test creating a new prompt category."""
