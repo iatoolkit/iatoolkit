@@ -184,10 +184,10 @@ def register_views(app):
     # --- RAG API Routes ---
     rag_view = RagApiView.as_view('rag_api')
 
-    # 1. List Files (POST for filters)
+    # 1. List Files (GET/POST for filters + pagination)
     app.add_url_rule('/api/rag/<company_short_name>/files',
                      view_func=rag_view,
-                     methods=['POST'],
+                     methods=['GET', 'POST'],
                      defaults={'action': 'list_files'})
 
     # 2. Delete File

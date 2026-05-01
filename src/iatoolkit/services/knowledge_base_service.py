@@ -556,61 +556,33 @@ class KnowledgeBaseService:
 
         return None
 
-    def list_documents(self,
-                       company_short_name: str,
-                       status: Optional[Union[str, List[str]]] = None,
-                       user_identifier: Optional[str] = None,
-                       collection: str = None,
-                       filename_keyword: Optional[str] = None,
-                       from_date: Optional[datetime] = None,
-                       to_date: Optional[datetime] = None,
-                       metadata_key: Optional[str] = None,
-                       metadata_value: Optional[str] = None,
-                       metadata_match_mode: Optional[str] = None,
-                       limit: int = 100,
-                       offset: int = 0) -> List[Document]:
-        """
-        Retrieves a paginated list of documents based on various filters.
-        Used by the frontend to display the Knowledge Base grid.
-
-        Args:
-            company_short_name: Required. Filters by company.
-            status: Optional status enum value or list of values (e.g. 'active' or ['active', 'failed']).
-            user_identifier: Optional. Filters by the user who uploaded the document.
-            filename_keyword: Optional substring to search in filename.
-            from_date: Optional start date filter (created_at).
-            to_date: Optional end date filter (created_at).
-            metadata_key: Optional top-level metadata field name inside Document.meta.
-            metadata_value: Optional metadata field value to filter by.
-            metadata_match_mode: Optional metadata match mode: 'exact' or 'contains'.
-            limit: Pagination limit.
-            offset: Pagination offset.
-
-        Returns:
-            List of Document objects matching the criteria.
-        """
+    def _build_documents_query(self,
+                               company_short_name: str,
+                               status: Optional[Union[str, List[str]]] = None,
+                               user_identifier: Optional[str] = None,
+                               collection: str = None,
+                               filename_keyword: Optional[str] = None,
+                               from_date: Optional[datetime] = None,
+                               to_date: Optional[datetime] = None,
+                               metadata_key: Optional[str] = None,
+                               metadata_value: Optional[str] = None,
+                               metadata_match_mode: Optional[str] = None):
         session = self.document_repo.session
-
-        # Start building the query
         query = session.query(Document).join(Company).filter(Company.short_name == company_short_name)
 
-        # Filter by status (single string or list)
         if status:
             if isinstance(status, list):
                 query = query.filter(Document.status.in_(status))
             else:
                 query = query.filter(Document.status == status)
 
-        # filter by collection
         if collection:
             query = query.join(Document.collection_type).filter(CollectionType.name == collection.lower())
 
-        # Filter by user identifier
         if user_identifier:
             query = query.filter(Document.user_identifier.ilike(f"%{user_identifier}%"))
 
         if filename_keyword:
-            # Case-insensitive search
             query = query.filter(Document.filename.ilike(f"%{filename_keyword}%"))
 
         if from_date:
@@ -629,11 +601,65 @@ class KnowledgeBaseService:
             else:
                 query = query.filter(meta_value_expr.like(f"%{normalized_metadata_value}%"))
 
-        # Apply sorting (newest first) and pagination
+        return query
+
+    def list_documents(self,
+                       company_short_name: str,
+                       status: Optional[Union[str, List[str]]] = None,
+                       user_identifier: Optional[str] = None,
+                       collection: str = None,
+                       filename_keyword: Optional[str] = None,
+                       from_date: Optional[datetime] = None,
+                       to_date: Optional[datetime] = None,
+                       metadata_key: Optional[str] = None,
+                       metadata_value: Optional[str] = None,
+                       metadata_match_mode: Optional[str] = None,
+                       limit: int = 100,
+                       offset: int = 0) -> List[Document]:
+        """
+        Retrieves a paginated list of documents based on various filters.
+        Used by the frontend to display the Knowledge Base grid.
+        """
+        query = self._build_documents_query(
+            company_short_name=company_short_name,
+            status=status,
+            user_identifier=user_identifier,
+            collection=collection,
+            filename_keyword=filename_keyword,
+            from_date=from_date,
+            to_date=to_date,
+            metadata_key=metadata_key,
+            metadata_value=metadata_value,
+            metadata_match_mode=metadata_match_mode,
+        )
         query = query.order_by(desc(Document.created_at))
         query = query.limit(limit).offset(offset)
-
         return query.all()
+
+    def count_documents(self,
+                        company_short_name: str,
+                        status: Optional[Union[str, List[str]]] = None,
+                        user_identifier: Optional[str] = None,
+                        collection: str = None,
+                        filename_keyword: Optional[str] = None,
+                        from_date: Optional[datetime] = None,
+                        to_date: Optional[datetime] = None,
+                        metadata_key: Optional[str] = None,
+                        metadata_value: Optional[str] = None,
+                        metadata_match_mode: Optional[str] = None) -> int:
+        query = self._build_documents_query(
+            company_short_name=company_short_name,
+            status=status,
+            user_identifier=user_identifier,
+            collection=collection,
+            filename_keyword=filename_keyword,
+            from_date=from_date,
+            to_date=to_date,
+            metadata_key=metadata_key,
+            metadata_value=metadata_value,
+            metadata_match_mode=metadata_match_mode,
+        )
+        return int(query.order_by(None).count() or 0)
 
     def get_document_content(self, document_id: int) -> tuple[bytes, str]:
         """

@@ -12,3 +12,5 @@
 - Antes de comparar fechas de texto con `CURRENT_DATE`, castealas explicitamente.
 - Los booleanos dentro de JSONB llegan como texto: evalualos con cast explicito,
   por ejemplo `(jsonb_col->>'flag')::BOOLEAN IS TRUE`.
+- siempre que uses `ROUND()` sobre un `DOUBLE PRECISION` (que es lo que devuelve `AVG()`
+  sobre columnas `float`), castea antes: `ROUND(... ::NUMERIC, decimales)`.

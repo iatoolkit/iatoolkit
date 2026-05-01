@@ -35,6 +35,7 @@ class TestRagApiView:
         self.mock_utility = MagicMock(spec=Utility)
         self.mock_i8n_service = MagicMock(spec=I18nService)
         self.mock_config_service.get_configuration.return_value = {}
+        self.mock_kb_service.count_documents.return_value = 0
 
         self.mock_i8n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
 
@@ -53,7 +54,7 @@ class TestRagApiView:
         self.app.add_url_rule(
             '/<company_short_name>/api/rag/files',
             view_func=rag_view,
-            methods=['POST'],
+            methods=['GET', 'POST'],
             defaults={'action': 'list_files'}
         )
 
@@ -125,6 +126,7 @@ class TestRagApiView:
             error_message=None
         )
         self.mock_kb_service.list_documents.return_value = [mock_doc]
+        self.mock_kb_service.count_documents.return_value = 1
 
         payload = {
             "user_identifier": "fl",
@@ -140,6 +142,8 @@ class TestRagApiView:
         data = response.get_json()
         assert data['result'] == 'success'
         assert data['count'] == 1
+        assert data['page_count'] == 1
+        assert data['total_count'] == 1
         assert data['documents'][0]['filename'] == 'contract.pdf'
 
         # Verify service call params
@@ -156,6 +160,18 @@ class TestRagApiView:
             metadata_match_mode=None,
             limit=10,
             offset=0
+        )
+        self.mock_kb_service.count_documents.assert_called_with(
+            company_short_name=self.company_short_name,
+            status='active',
+            user_identifier='fl',
+            filename_keyword=None,
+            collection='',
+            from_date=None,
+            to_date=None,
+            metadata_key=None,
+            metadata_value=None,
+            metadata_match_mode=None,
         )
         self.mock_auth_service.verify_for_company.assert_called_once_with(self.company_short_name)
         assert data['metadata_search_fields'] == []
@@ -181,6 +197,7 @@ class TestRagApiView:
             ]
         }
         self.mock_kb_service.list_documents.return_value = []
+        self.mock_kb_service.count_documents.return_value = 0
 
         response = self.client.post(
             f'/{self.company_short_name}/api/rag/files',
@@ -208,6 +225,70 @@ class TestRagApiView:
             metadata_match_mode='exact',
             limit=100,
             offset=0
+        )
+        self.mock_kb_service.count_documents.assert_called_with(
+            company_short_name=self.company_short_name,
+            status=[],
+            user_identifier=None,
+            filename_keyword=None,
+            collection='',
+            from_date=None,
+            to_date=None,
+            metadata_key='doi',
+            metadata_value='10.1007/s00213-018-4955-z',
+            metadata_match_mode='exact',
+        )
+
+    def test_list_files_get_supports_server_pagination_query_params(self):
+        mock_doc = Document(
+            id=7,
+            filename="paper.pdf",
+            status=DocumentStatus.ACTIVE,
+            created_at=datetime(2024, 2, 1),
+            meta={"doi": "10.1000/test"},
+            error_message=None
+        )
+        self.mock_kb_service.list_documents.return_value = [mock_doc]
+        self.mock_kb_service.count_documents.return_value = 42
+
+        response = self.client.get(
+            f'/{self.company_short_name}/api/rag/files'
+            '?filename_keyword=paper&status=active&limit=10&offset=20'
+        )
+
+        assert response.status_code == 200
+        data = response.get_json()
+        assert data['count'] == 1
+        assert data['page_count'] == 1
+        assert data['total_count'] == 42
+        assert data['limit'] == 10
+        assert data['offset'] == 20
+
+        self.mock_kb_service.list_documents.assert_called_with(
+            company_short_name=self.company_short_name,
+            status='active',
+            user_identifier=None,
+            filename_keyword='paper',
+            collection='',
+            from_date=None,
+            to_date=None,
+            metadata_key=None,
+            metadata_value=None,
+            metadata_match_mode=None,
+            limit=10,
+            offset=20
+        )
+        self.mock_kb_service.count_documents.assert_called_with(
+            company_short_name=self.company_short_name,
+            status='active',
+            user_identifier=None,
+            filename_keyword='paper',
+            collection='',
+            from_date=None,
+            to_date=None,
+            metadata_key=None,
+            metadata_value=None,
+            metadata_match_mode=None,
         )
 
     # --- Get File Content Tests ---

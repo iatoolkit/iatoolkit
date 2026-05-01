@@ -54,10 +54,38 @@ class RagApiView(MethodView):
 
         return super().dispatch_request(*args, **kwargs)
 
+    @staticmethod
+    def _normalize_status_filter(raw_status):
+        if raw_status is None:
+            return []
+
+        if isinstance(raw_status, (list, tuple)):
+            values = []
+            for item in raw_status:
+                if item is None:
+                    continue
+                values.extend(str(item).split(','))
+        else:
+            values = str(raw_status).split(',')
+
+        normalized_values = [value.strip() for value in values if str(value).strip()]
+        if not normalized_values:
+            return []
+        if len(normalized_values) == 1:
+            return normalized_values[0]
+        return normalized_values
+
+    @staticmethod
+    def _safe_int(value, default: int) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
     def list_files(self, company_short_name):
         """
-        POST /api/rag/<company_short_name>/files
-        Returns a paginated list of documents based on filters provided in the JSON body.
+        GET|POST /api/rag/<company_short_name>/files
+        Returns a paginated list of documents based on filters provided in the query string or JSON body.
         """
         try:
             # 1. Authenticate the user from the current session.
@@ -66,12 +94,19 @@ class RagApiView(MethodView):
                 return jsonify(auth_result), auth_result.get("status_code")
 
             # 2. Parse Input
-            data = request.get_json() or {}
+            data = request.args if request.method == 'GET' else (request.get_json() or {})
 
             metadata_search_fields = self._get_metadata_search_fields(company_short_name)
             metadata_field_map = {field["key"]: field for field in metadata_search_fields}
 
-            status = data.get('status', [])
+            if request.method == 'GET':
+                raw_status = request.args.getlist('status')
+                if not raw_status:
+                    raw_status = request.args.get('status')
+            else:
+                raw_status = data.get('status', [])
+
+            status = self._normalize_status_filter(raw_status)
             user_identifier = data.get('user_identifier')
             keyword = data.get('filename_keyword')
             from_date_str = data.get('from_date')
@@ -80,8 +115,8 @@ class RagApiView(MethodView):
             metadata_key = str(data.get('metadata_key') or '').strip()
             metadata_value = str(data.get('metadata_value') or '').strip()
             metadata_match_mode = str(data.get('metadata_match_mode') or '').strip().lower()
-            limit = int(data.get('limit', 100))
-            offset = int(data.get('offset', 0))
+            limit = self._safe_int(data.get('limit', 100), 100)
+            offset = self._safe_int(data.get('offset', 0), 0)
 
             from_date = datetime.fromisoformat(from_date_str) if from_date_str else None
             to_date = datetime.fromisoformat(to_date_str) if to_date_str else None
@@ -101,20 +136,24 @@ class RagApiView(MethodView):
                 metadata_match_mode = None
 
             # 3. Call Service
+            service_filters = {
+                'company_short_name': company_short_name,
+                'status': status,
+                'collection': collection,
+                'filename_keyword': keyword,
+                'user_identifier': user_identifier,
+                'from_date': from_date,
+                'to_date': to_date,
+                'metadata_key': metadata_key or None,
+                'metadata_value': metadata_value or None,
+                'metadata_match_mode': metadata_match_mode,
+            }
             documents = self.knowledge_base_service.list_documents(
-                company_short_name=company_short_name,
-                status=status,
-                collection=collection,
-                filename_keyword=keyword,
-                user_identifier=user_identifier,
-                from_date=from_date,
-                to_date=to_date,
-                metadata_key=metadata_key or None,
-                metadata_value=metadata_value or None,
-                metadata_match_mode=metadata_match_mode,
+                **service_filters,
                 limit=limit,
                 offset=offset
             )
+            total_count = self.knowledge_base_service.count_documents(**service_filters)
 
             # 4. Format Response
             response_list = []
@@ -133,6 +172,10 @@ class RagApiView(MethodView):
             return jsonify({
                 'result': 'success',
                 'count': len(response_list),
+                'page_count': len(response_list),
+                'total_count': total_count,
+                'limit': limit,
+                'offset': offset,
                 'documents': response_list,
                 'metadata_search_fields': metadata_search_fields
             }), 200
