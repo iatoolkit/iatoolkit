@@ -50,12 +50,12 @@
                     <!-- Selector de modelo LLM -->
                     <button type="button"
                             id="llm-model-button"
-                            class="btn btn-sm py-1 px-3"
-                            style="border-radius: 0.4rem; border: 1px solid rgba(255,255,255,0.7); background: rgba(0,0,0,0.08); color: {{ branding.header_text_color }};">
-                        <i class="bi bi-cpu me-1"></i>
+                            class="btn btn-sm py-0 px-2"
+                            style="border-radius: 0.4rem; border: 1px solid rgba(255,255,255,0.7); background: rgba(0,0,0,0.08); color: {{ branding.header_text_color }}; min-height: 31px; font-size: 0.85rem;">
                         <span id="llm-model-button-label">
                             {{ (llm_available_models[0].label if llm_available_models and llm_available_models[0].label else llm_default_model) or 'Modelo IA' }}
                         </span>
+                        <span id="llm-model-button-reasoning" class="ms-2 small" aria-hidden="true"></span>
                     </button>
                     <!-- Popup simple para selección de modelo -->
                     <div id="llm-model-popup"
@@ -78,7 +78,7 @@
                                 <button type="button" id="llm-model-cancel-button" class="btn btn-sm btn-outline-secondary">
                                     {{ t('ui.common.cancel') }}
                                 </button>
-                                <button type="button" id="llm-model-apply-button" class="btn btn-sm btn-branded">
+                                <button type="button" id="llm-model-apply-button" class="btn btn-sm btn-branded-primary">
                                     {{ t('ui.common.apply') }}
                                 </button>
                             </div>

@@ -224,6 +224,7 @@ window.currentLlmReasoningEffort = window.currentLlmReasoningEffort || null;
      */
     function updateButtonLabel() {
         const labelEl = document.getElementById('llm-model-button-label');
+        const reasoningEl = document.getElementById('llm-model-button-reasoning');
         if (!labelEl) return;
 
         const models = getAvailableModels();
@@ -237,6 +238,41 @@ window.currentLlmReasoningEffort = window.currentLlmReasoningEffort || null;
         } else {
             labelEl.textContent = 'Modelo IA';
         }
+
+        if (reasoningEl) {
+            const indicator = getReasoningIndicatorState();
+            if (!indicator) {
+                reasoningEl.innerHTML = '';
+                reasoningEl.removeAttribute('title');
+            } else {
+                reasoningEl.innerHTML = `<i class="bi ${indicator.icon}"></i>`;
+                reasoningEl.title = indicator.label;
+            }
+        }
+    }
+
+    function getReasoningIndicatorState() {
+        const metadata = getActiveModelMetadata();
+        if (!modelSupportsReasoning(metadata)) {
+            return null;
+        }
+
+        const effort = String(window.currentLlmReasoningEffort || '').trim().toLowerCase();
+        const labels = {
+            minimal: t('ui.prompts.thinking_level_minimal', 'Minimal'),
+            low: t('ui.prompts.thinking_level_low', 'Low'),
+            medium: t('ui.prompts.thinking_level_medium', 'Medium'),
+            high: t('ui.prompts.thinking_level_high', 'High'),
+            xhigh: t('ui.prompts.thinking_level_xhigh', 'XHigh'),
+            auto: t('ui.config.default_reasoning_auto', 'Automatic'),
+        };
+
+        if (effort === 'minimal') return { icon: 'bi-dot', label: labels.minimal };
+        if (effort === 'low') return { icon: 'bi-lightbulb', label: labels.low };
+        if (effort === 'medium') return { icon: 'bi-stars', label: labels.medium };
+        if (effort === 'high') return { icon: 'bi-lightning-charge', label: labels.high };
+        if (effort === 'xhigh') return { icon: 'bi-lightning-charge-fill', label: labels.xhigh };
+        return { icon: 'bi-circle', label: labels.auto };
     }
 
     function renderReasoningControl() {
@@ -436,6 +472,8 @@ window.currentLlmReasoningEffort = window.currentLlmReasoningEffort || null;
             reasoningSelect.addEventListener('change', () => {
                 const nextValue = String(reasoningSelect.value || '').trim().toLowerCase();
                 pendingReasoningEffort = nextValue || null;
+                window.currentLlmReasoningEffort = pendingReasoningEffort || null;
+                updateButtonLabel();
             });
         }
 

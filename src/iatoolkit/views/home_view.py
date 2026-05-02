@@ -51,7 +51,10 @@ class HomeView(MethodView):
                         branding=branding_data,
                     )
 
-                message = self.i18n_service.t('errors.templates.home_template_not_found', company_name=company_short_name)
+                message = self.i18n_service.t(
+                    'errors.templates.home_template_not_found',
+                    company_short_name=company_short_name
+                )
                 return render_template(
                     "error.html",
                     company_short_name=company_short_name,
