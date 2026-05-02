@@ -63,7 +63,7 @@ class ModelRegistry:
         Examples:
             "gpt-4o"        -> "openai"
             "gemini-pro"    -> "gemini"
-            "deepseek-chat" -> "deepseek"
+            "deepseek-v4-pro" -> "deepseek"
         """
         if not model:
             return "unknown"

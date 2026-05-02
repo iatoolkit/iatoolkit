@@ -7,9 +7,13 @@ llm:
   - id: gpt-5.2
     label: gpt-5.2
     description: Fast, recommended for general purpose tasks.
-  - id: deepseek-chat
-    label: deepseek-chat
+  - id: deepseek-v4-flash
+    label: deepseek-v4-flash
     description: Fast and cheap.
+    provider: deepseek
+  - id: deepseek-v4-pro
+    label: deepseek-v4-pro
+    description: Stronger reasoning and tool use.
     provider: deepseek
   - id: gemini-3-pro-preview
     label: gemini-3-pro-preview

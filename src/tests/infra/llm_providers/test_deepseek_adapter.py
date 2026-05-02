@@ -25,7 +25,7 @@ class TestDeepseekAdapter:
         """Helper to create a mock DeepSeek-like response object."""
         mock_response = MagicMock()
         mock_response.id = "chatcmpl-deepseek-123"
-        mock_response.model = "deepseek-chat"
+        mock_response.model = "deepseek-v4-flash"
 
         mock_message = MagicMock()
         mock_message.content = content
@@ -65,7 +65,7 @@ class TestDeepseekAdapter:
 
         # Act
         result = self.adapter.create_response(
-            model="deepseek-chat",
+            model="deepseek-v4-flash",
             input=input_data,
             context_history=context_history,
         )
@@ -74,7 +74,7 @@ class TestDeepseekAdapter:
         self.mock_deepseek_client.chat.completions.create.assert_called_once()
         call_kwargs = self.mock_deepseek_client.chat.completions.create.call_args.kwargs
 
-        assert call_kwargs["model"] == "deepseek-chat"
+        assert call_kwargs["model"] == "deepseek-v4-flash"
         messages = call_kwargs["messages"]
         assert len(messages) == 3
         assert messages[0] == {"role": "user", "content": "Hi"}
@@ -114,7 +114,7 @@ class TestDeepseekAdapter:
 
         # Act
         result = self.adapter.create_response(
-            model="deepseek-coder",
+            model="deepseek-v4-pro",
             input=input_data,
             tools=tools,
             tool_choice="auto",
@@ -122,7 +122,7 @@ class TestDeepseekAdapter:
 
         # Assert API call
         call_kwargs = self.mock_deepseek_client.chat.completions.create.call_args.kwargs
-        assert call_kwargs["model"] == "deepseek-coder"
+        assert call_kwargs["model"] == "deepseek-v4-pro"
         assert call_kwargs["messages"][-1] == {"role": "user", "content": "Search python"}
         # tools should be passed as-is
         assert call_kwargs["tools"] is not None
@@ -144,7 +144,7 @@ class TestDeepseekAdapter:
         tools = [{"type": "function", "function": {"name": "search_web"}}]
 
         self.adapter.create_response(
-            model="deepseek-chat",
+            model="deepseek-v4-pro",
             input=[],
             tools=tools,
             tool_choice="required",
@@ -158,7 +158,7 @@ class TestDeepseekAdapter:
         self.mock_deepseek_client.chat.completions.create.return_value = self._create_mock_response()
 
         self.adapter.create_response(
-            model="deepseek-chat",
+            model="deepseek-v4-flash",
             input=[{"role": "user", "content": "Hello"}],
             tool_choice="auto",
         )
@@ -171,7 +171,7 @@ class TestDeepseekAdapter:
         self.mock_deepseek_client.chat.completions.create.return_value = self._create_mock_response(content="{}")
 
         self.adapter.create_response(
-            model="deepseek-chat",
+            model="deepseek-v4-flash",
             input=[{"role": "user", "content": "Return json"}],
             text={"response_format": {"type": "json_object"}},
         )
@@ -218,6 +218,19 @@ class TestDeepseekAdapter:
         assert call_kwargs["reasoning_effort"] == "high"
         assert call_kwargs["extra_body"]["thinking"] == {"type": "enabled"}
 
+    @pytest.mark.parametrize("legacy_model", ["deepseek-chat", "deepseek-reasoner", "deepseek-coder"])
+    def test_create_response_rejects_unsupported_legacy_or_unknown_model(self, legacy_model):
+        with pytest.raises(IAToolkitException) as excinfo:
+            self.adapter.create_response(
+                model=legacy_model,
+                input=[{"role": "user", "content": "Hello"}],
+            )
+
+        assert excinfo.value.error_type == IAToolkitException.ErrorType.MODEL
+        assert "Unsupported DeepSeek model" in str(excinfo.value)
+        assert "deepseek-v4-flash" in str(excinfo.value)
+        assert "deepseek-v4-pro" in str(excinfo.value)
+
     def test_build_messages_from_input_maps_function_call_output_to_tool_message(self):
         """
         function_call_output items must be converted into proper tool messages so
@@ -238,7 +251,7 @@ class TestDeepseekAdapter:
 
         # Act
         self.adapter.create_response(
-            model="deepseek-chat",
+            model="deepseek-v4-flash",
             input=input_data,
         )
 
@@ -371,7 +384,7 @@ class TestDeepseekAdapter:
         self.mock_deepseek_client.chat.completions.create.side_effect = Exception("Deepseek Server Error")
 
         with pytest.raises(IAToolkitException) as excinfo:
-            self.adapter.create_response(model="deepseek-chat", input=[])
+            self.adapter.create_response(model="deepseek-v4-flash", input=[])
 
         assert excinfo.value.error_type == IAToolkitException.ErrorType.LLM_ERROR
         assert "DeepSeek error:" in str(excinfo.value)

@@ -182,7 +182,7 @@ class TestLLMProxy:
             # 3) Modelo DeepSeek
             self.proxy.create_response(
                 company_short_name=self.company_short_name,
-                model="deepseek-chat",
+                model="deepseek-v4-flash",
                 input=[],
             )
             self.mock_deepseek_adapter_instance.create_response.assert_called_once()

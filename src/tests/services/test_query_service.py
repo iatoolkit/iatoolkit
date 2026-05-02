@@ -1390,7 +1390,7 @@ class TestQueryService:
             company_short_name=MOCK_COMPANY_SHORT_NAME,
             user_identifier=MOCK_LOCAL_USER_ID,
             prompt_name="paper_prompt",
-            model="deepseek-chat"
+            model="deepseek-v4-pro"
         )
 
         invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
