@@ -152,6 +152,16 @@ class IAToolkit:
         # get a value from the config dict or the environment variable
         return self.config.get(key, os.getenv(key, default))
 
+    def _get_redis_max_connections(self) -> int:
+        raw_value = self._get_config_value("REDIS_MAX_CONNECTIONS", "30")
+        try:
+            parsed = int(raw_value)
+            if parsed > 0:
+                return parsed
+        except (TypeError, ValueError):
+            pass
+        return 30
+
     def _setup_request_globals(self):
         """
         Configures functions to run before each request to set up
@@ -271,7 +281,8 @@ class IAToolkit:
                 port=url.port,
                 password=url.password,
                 ssl=(url.scheme == "rediss"),
-                ssl_cert_reqs=None
+                ssl_cert_reqs=None,
+                max_connections=self._get_redis_max_connections(),
             )
 
             self.app.config.update({

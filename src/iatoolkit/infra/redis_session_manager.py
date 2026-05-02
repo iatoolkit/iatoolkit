@@ -17,6 +17,17 @@ class RedisSessionManager:
     """
     _client = None
 
+    @staticmethod
+    def _get_max_connections() -> int:
+        raw_value = os.getenv("REDIS_MAX_CONNECTIONS", "30")
+        try:
+            parsed = int(raw_value)
+            if parsed > 0:
+                return parsed
+        except (TypeError, ValueError):
+            pass
+        return 30
+
     @classmethod
     def _get_client(cls):
         if cls._client is None:
@@ -28,7 +39,8 @@ class RedisSessionManager:
                 password=url.password,
                 ssl=(url.scheme == "rediss"),
                 ssl_cert_reqs=None,
-                decode_responses=True  # Importante para strings
+                decode_responses=True,  # Importante para strings
+                max_connections=cls._get_max_connections(),
             )
             # verify connection
             cls._client.ping()
