@@ -123,6 +123,12 @@ class LLMProxy:
             model_config=model_config,
             request_kwargs=request_kwargs,
         )
+        request_kwargs = self._apply_company_request_defaults(
+            company_short_name=company_short_name,
+            model=model,
+            provider=provider,
+            request_kwargs=request_kwargs,
+        )
         if telemetry_execution is not None:
             request_kwargs["telemetry_execution"] = telemetry_execution
 
@@ -284,6 +290,63 @@ class LLMProxy:
         elif existing_provider is None:
             effective_kwargs["provider"] = dict(openrouter_provider)
 
+        return effective_kwargs
+
+    def _apply_company_request_defaults(
+        self,
+        company_short_name: str,
+        model: str,
+        provider: str,
+        request_kwargs: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        effective_kwargs = dict(request_kwargs or {})
+
+        get_capabilities_fn = getattr(self.model_registry, "get_capabilities", None)
+        capabilities = (
+            get_capabilities_fn(model, provider=provider)
+            if callable(get_capabilities_fn)
+            else None
+        )
+        if not isinstance(capabilities, dict):
+            capabilities = {}
+
+        supports_reasoning_effort = bool(
+            capabilities.get("supports_reasoning_effort", provider in {
+                self.PROVIDER_OPENAI,
+                self.PROVIDER_XAI,
+                self.PROVIDER_DEEPSEEK,
+                self.PROVIDER_OPENAI_COMPATIBLE,
+                self.PROVIDER_OPENROUTER,
+            })
+        )
+        if not supports_reasoning_effort:
+            return effective_kwargs
+
+        explicit_reasoning_effort = str(effective_kwargs.get("reasoning_effort") or "").strip().lower()
+        if explicit_reasoning_effort:
+            return effective_kwargs
+
+        request_defaults = self.configuration_service.get_llm_request_defaults(company_short_name) or {}
+        default_reasoning = dict(request_defaults.get("reasoning") or {})
+        default_reasoning_effort = str(default_reasoning.get("effort") or "").strip().lower()
+        if not default_reasoning_effort:
+            return effective_kwargs
+
+        current_reasoning = effective_kwargs.get("reasoning")
+        if current_reasoning is None:
+            effective_kwargs["reasoning"] = {"effort": default_reasoning_effort}
+            return effective_kwargs
+
+        if not isinstance(current_reasoning, dict):
+            return effective_kwargs
+
+        current_reasoning_effort = str(current_reasoning.get("effort") or "").strip().lower()
+        if current_reasoning_effort:
+            return effective_kwargs
+
+        merged_reasoning = dict(current_reasoning)
+        merged_reasoning["effort"] = default_reasoning_effort
+        effective_kwargs["reasoning"] = merged_reasoning
         return effective_kwargs
 
     # -------------------------------------------------------------------------

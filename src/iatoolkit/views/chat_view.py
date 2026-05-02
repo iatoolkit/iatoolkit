@@ -48,6 +48,10 @@ class ChatView(MethodView):
             branding_data = self.branding_service.get_company_branding(company_short_name)
             onboarding_cards = self.config_service.get_configuration(company_short_name, 'onboarding_cards')
             default_llm_model, available_llm_models = self.config_service.get_llm_configuration(company_short_name)
+            llm_request_defaults = self.config_service.get_llm_request_defaults(company_short_name) or {}
+            llm_default_reasoning_effort = str(
+                ((llm_request_defaults.get("reasoning") or {}).get("effort")) or ""
+            ).strip().lower()
             prompts = self.prompt_service.get_prompts(company_short_name)
             js_translations = self.i18n_service.get_translation_block('js_messages')
 
@@ -61,6 +65,7 @@ class ChatView(MethodView):
                 js_translations=js_translations,
                 llm_default_model=default_llm_model,
                 llm_available_models=available_llm_models,
+                llm_default_reasoning_effort=llm_default_reasoning_effort,
                 # redeem_token is None for direct access
                 redeem_token=None
             )

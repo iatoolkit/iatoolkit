@@ -25,6 +25,7 @@ class TestLLMProxy:
         )
         self.config_service_mock.get_llm_model_config.return_value = None
         self.config_service_mock.get_llm_provider_config.return_value = {}
+        self.config_service_mock.get_llm_request_defaults.return_value = {}
 
         # Empresa base
         self.company_short_name = "test_company"
@@ -244,6 +245,27 @@ class TestLLMProxy:
         assert timeout.connect == 10.0
         assert timeout.read == 300.0
 
+    def test_deepseek_applies_company_reasoning_effort_default(self):
+        self.model_registry_mock.get_provider.return_value = "deepseek"
+        self.config_service_mock.get_configuration.return_value = {
+            "provider_api_keys": {"deepseek": "DEEPSEEK_KEY"}
+        }
+        self.config_service_mock.get_llm_request_defaults.return_value = {
+            "text": {},
+            "reasoning": {"effort": "high"},
+        }
+
+        with patch.dict(os.environ, {"DEEPSEEK_KEY": "dummy"}, clear=True):
+            self.proxy.create_response(
+                company_short_name=self.company_short_name,
+                model="deepseek-v4-pro",
+                input=[],
+            )
+
+        self.mock_deepseek_adapter_instance.create_response.assert_called_once()
+        adapter_kwargs = self.mock_deepseek_adapter_instance.create_response.call_args.kwargs
+        assert adapter_kwargs["reasoning"] == {"effort": "high"}
+
     def test_create_response_wraps_client_when_telemetry_request_is_enabled(self):
         self.model_registry_mock.get_provider.return_value = "openai"
         self.config_service_mock.get_configuration.return_value = {"api-key": "LLM_KEY"}
@@ -385,6 +407,34 @@ class TestLLMProxy:
         assert adapter_kwargs["tools"] == []
         assert adapter_kwargs["tool_choice"] is None
 
+    def test_openai_compatible_applies_company_reasoning_effort_default(self):
+        self.model_registry_mock.get_provider.return_value = "unknown"
+        self.config_service_mock.get_configuration.return_value = {
+            "provider_api_keys": {"openai_compatible": "OSS_KEY"}
+        }
+        self.config_service_mock.get_llm_model_config.return_value = {
+            "id": "meta-llama/Llama-3.1-8B-Instruct",
+            "provider": "openai_compatible",
+        }
+        self.config_service_mock.get_llm_provider_config.return_value = {
+            "base_url": "https://oss.example.com/v1",
+        }
+        self.config_service_mock.get_llm_request_defaults.return_value = {
+            "text": {},
+            "reasoning": {"effort": "high"},
+        }
+
+        with patch.dict(os.environ, {"OSS_KEY": "dummy"}, clear=True):
+            self.proxy.create_response(
+                company_short_name=self.company_short_name,
+                model="meta-llama/Llama-3.1-8B-Instruct",
+                input=[],
+            )
+
+        self.mock_openai_compatible_adapter_instance.create_response.assert_called_once()
+        adapter_kwargs = self.mock_openai_compatible_adapter_instance.create_response.call_args.kwargs
+        assert adapter_kwargs["reasoning"] == {"effort": "high"}
+
     def test_routing_to_openrouter_provider_uses_model_config_provider(self):
         self.model_registry_mock.get_provider.return_value = "unknown"
         self.config_service_mock.get_configuration.return_value = {
@@ -432,6 +482,34 @@ class TestLLMProxy:
             "allow_fallbacks": False,
             "require_parameters": True,
         }
+
+    def test_openrouter_applies_company_reasoning_effort_default(self):
+        self.model_registry_mock.get_provider.return_value = "unknown"
+        self.config_service_mock.get_configuration.return_value = {
+            "provider_api_keys": {"openrouter": "OPENROUTER_KEY"}
+        }
+        self.config_service_mock.get_llm_model_config.return_value = {
+            "id": "openai/gpt-5.2",
+            "provider": "openrouter",
+        }
+        self.config_service_mock.get_llm_provider_config.return_value = {
+            "base_url": "https://openrouter.ai/api/v1",
+        }
+        self.config_service_mock.get_llm_request_defaults.return_value = {
+            "text": {},
+            "reasoning": {"effort": "medium"},
+        }
+
+        with patch.dict(os.environ, {"OPENROUTER_KEY": "dummy"}, clear=True):
+            self.proxy.create_response(
+                company_short_name=self.company_short_name,
+                model="openai/gpt-5.2",
+                input=[],
+            )
+
+        self.mock_openrouter_adapter_instance.create_response.assert_called_once()
+        adapter_kwargs = self.mock_openrouter_adapter_instance.create_response.call_args.kwargs
+        assert adapter_kwargs["reasoning"] == {"effort": "medium"}
 
     def test_openrouter_cache_uses_default_headers(self):
         self.config_service_mock.get_configuration.return_value = {
@@ -485,6 +563,35 @@ class TestLLMProxy:
         adapter_kwargs = self.mock_openrouter_adapter_instance.create_response.call_args.kwargs
         assert adapter_kwargs["tools"] == []
         assert adapter_kwargs["tool_choice"] is None
+
+    def test_openrouter_explicit_reasoning_overrides_company_default(self):
+        self.model_registry_mock.get_provider.return_value = "unknown"
+        self.config_service_mock.get_configuration.return_value = {
+            "provider_api_keys": {"openrouter": "OPENROUTER_KEY"}
+        }
+        self.config_service_mock.get_llm_model_config.return_value = {
+            "id": "openai/gpt-5.2",
+            "provider": "openrouter",
+        }
+        self.config_service_mock.get_llm_provider_config.return_value = {
+            "base_url": "https://openrouter.ai/api/v1",
+        }
+        self.config_service_mock.get_llm_request_defaults.return_value = {
+            "text": {},
+            "reasoning": {"effort": "low"},
+        }
+
+        with patch.dict(os.environ, {"OPENROUTER_KEY": "dummy"}, clear=True):
+            self.proxy.create_response(
+                company_short_name=self.company_short_name,
+                model="openai/gpt-5.2",
+                input=[],
+                reasoning={"effort": "xhigh"},
+            )
+
+        self.mock_openrouter_adapter_instance.create_response.assert_called_once()
+        adapter_kwargs = self.mock_openrouter_adapter_instance.create_response.call_args.kwargs
+        assert adapter_kwargs["reasoning"] == {"effort": "xhigh"}
 
     def test_openrouter_runtime_provider_overrides_model_routing_config(self):
         self.model_registry_mock.get_provider.return_value = "unknown"

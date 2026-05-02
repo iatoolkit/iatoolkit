@@ -1030,6 +1030,77 @@ class TestQueryService:
             "text_verbosity": "high",
         }
 
+    def test_llm_query_applies_prompt_reasoning_effort_for_deepseek_provider(self):
+        self.mock_configuration_service.get_llm_model_config.return_value = {"provider": "deepseek"}
+        self.mock_tool_service.get_tools_for_llm.return_value = []
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt content", "question", [])
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "sales_prompt",
+            "schema": None,
+            "schema_mode": "best_effort",
+            "response_mode": "chat_compatible",
+            "llm_request_options": {
+                "reasoning_effort": "high",
+                "text_verbosity": "high",
+            },
+        }
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="sales_prompt",
+            model="deepseek-v4-pro",
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["reasoning"] == {"effort": "high"}
+        assert invoke_kwargs["text"] == {}
+        assert invoke_kwargs["execution_metadata"]["llm_request_options"]["applied"] == {
+            "reasoning_effort": "high",
+        }
+        assert invoke_kwargs["execution_metadata"]["llm_request_options"]["ignored_keys"] == ["text_verbosity"]
+
+    def test_llm_query_applies_prompt_reasoning_effort_for_openai_compatible_provider(self):
+        self.mock_configuration_service.get_llm_model_config.return_value = {"provider": "openai_compatible"}
+        self.mock_tool_service.get_tools_for_llm.return_value = []
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt content", "question", [])
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "sales_prompt",
+            "schema": None,
+            "schema_mode": "best_effort",
+            "response_mode": "chat_compatible",
+            "llm_request_options": {
+                "reasoning_effort": "xhigh",
+            },
+        }
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="sales_prompt",
+            model="meta-llama/Llama-3.1-8B-Instruct",
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["reasoning"] == {"effort": "xhigh"}
+        assert invoke_kwargs["execution_metadata"]["llm_request_options"]["applied"] == {
+            "reasoning_effort": "xhigh",
+        }
+
     def test_llm_query_passes_prompt_tracking_metadata(self):
         self.mock_tool_service.get_tools_for_llm.return_value = []
         self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt content", "question", [])

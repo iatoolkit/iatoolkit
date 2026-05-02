@@ -9,6 +9,7 @@ from iatoolkit.infra.llm_providers.openai_compatible_chat_adapter import OpenAIC
 class DeepseekAdapter(OpenAICompatibleChatAdapter):
     """Backward-compatible DeepSeek adapter wrapper."""
 
+    supports_reasoning = False
     supports_reasoning_effort = True
     supports_reasoning_content_messages = True
     supports_thinking = True

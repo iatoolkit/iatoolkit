@@ -105,6 +105,18 @@ class TestOpenRouterAdapter:
         assert result.output_text == "{}"
         assert result.reasoning_content == "reasoning trace"
 
+    def test_create_response_builds_reasoning_payload_from_reasoning_effort_kwarg(self):
+        self.mock_openrouter_client.chat.completions.create.return_value = self._create_mock_response()
+
+        self.adapter.create_response(
+            model="openai/gpt-5.2",
+            input=[{"role": "user", "content": "Hello"}],
+            reasoning_effort="high",
+        )
+
+        call_kwargs = self.mock_openrouter_client.chat.completions.create.call_args.kwargs
+        assert call_kwargs["extra_body"]["reasoning"] == {"effort": "high"}
+
     def test_create_response_passthroughs_openrouter_request_options(self):
         self.mock_openrouter_client.chat.completions.create.return_value = self._create_mock_response()
 

@@ -123,12 +123,14 @@ class llmClient:
 
         try:
             start_time = time.time()
+            reasoning_mode = str((reasoning_payload or {}).get("effort") or "none").strip().lower() or "none"
             logging.info(
-                "calling llm model '%s' with %s tokens...and %s images...and %s native attachments...",
+                "calling llm model '%s' with %s tokens...and %s images...and %s native attachments...and reasoning mode '%s'...",
                 model,
                 self.count_tokens(context, context_history),
                 len(images),
                 len(attachments),
+                reasoning_mode,
             )
 
             # this is the first call to the LLM on the iteration

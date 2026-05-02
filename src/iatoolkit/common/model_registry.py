@@ -16,7 +16,7 @@ from typing import Literal
 
 
 HistoryType = Literal["server_side", "client_side"]
-ProviderType = Literal["openai", "gemini", "deepseek", "xai", "anthropic", "unknown"]
+ProviderType = Literal["openai", "gemini", "deepseek", "xai", "anthropic", "openrouter", "openai_compatible", "unknown"]
 
 
 @dataclass(frozen=True)
@@ -47,7 +47,10 @@ class ModelRegistry:
             "deepseek": ("deepseek",),
             "xai": ("grok", "grok-1", "grok-beta"),
             "anthropic": ("claude", "claude-3", "claude-2"),
+            "openrouter": ("openrouter/",),
         }
+        self._reasoning_effort_options = ("minimal", "low", "medium", "high", "xhigh")
+        self._text_verbosity_options = ("low", "medium", "high")
 
     # ------------------------------------------------------------------
     # Public API
@@ -71,6 +74,42 @@ class ModelRegistry:
                 return provider
 
         return "unknown"
+
+    def normalize_provider(self, provider: str | None = None, model: str | None = None) -> ProviderType:
+        candidate = str(provider or "").strip().lower()
+        if candidate in {
+            "openai",
+            "gemini",
+            "deepseek",
+            "xai",
+            "anthropic",
+            "openrouter",
+            "openai_compatible",
+        }:
+            return candidate  # type: ignore[return-value]
+        return self.get_provider(model or "")
+
+    def get_capabilities(self, model: str, provider: str | None = None) -> dict:
+        normalized_provider = self.normalize_provider(provider=provider, model=model)
+        supports_reasoning_effort = normalized_provider in {
+            "openai",
+            "xai",
+            "openrouter",
+            "deepseek",
+            "openai_compatible",
+        }
+        supports_text_verbosity = normalized_provider in {"openai", "xai", "openrouter"}
+        supports_store = normalized_provider in {"openai", "xai"}
+
+        return {
+            "provider": normalized_provider,
+            "history_type": self.get_history_type(model),
+            "supports_reasoning_effort": supports_reasoning_effort,
+            "allowed_reasoning_efforts": list(self._reasoning_effort_options) if supports_reasoning_effort else [],
+            "supports_text_verbosity": supports_text_verbosity,
+            "allowed_text_verbosity": list(self._text_verbosity_options) if supports_text_verbosity else [],
+            "supports_store": supports_store,
+        }
 
     def get_request_defaults(self, model: str) -> dict:
         """

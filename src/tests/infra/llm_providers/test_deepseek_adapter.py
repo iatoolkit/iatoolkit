@@ -205,6 +205,19 @@ class TestDeepseekAdapter:
         assert "reasoning_effort" not in call_kwargs
         assert call_kwargs["extra_body"]["thinking"] == {"type": "disabled"}
 
+    def test_create_response_maps_reasoning_effort_kwarg_to_deepseek_thinking_mode(self):
+        self.mock_deepseek_client.chat.completions.create.return_value = self._create_mock_response(content="ok")
+
+        self.adapter.create_response(
+            model="deepseek-v4-pro",
+            input=[{"role": "user", "content": "Think this through"}],
+            reasoning_effort="high",
+        )
+
+        call_kwargs = self.mock_deepseek_client.chat.completions.create.call_args.kwargs
+        assert call_kwargs["reasoning_effort"] == "high"
+        assert call_kwargs["extra_body"]["thinking"] == {"type": "enabled"}
+
     def test_build_messages_from_input_maps_function_call_output_to_tool_message(self):
         """
         function_call_output items must be converted into proper tool messages so

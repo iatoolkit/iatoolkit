@@ -42,6 +42,9 @@ class LLMQueryApiView(MethodView):
                 company_short_name=company_short_name,
                 user_identifier=user_identifier,
                 model=data.get('model', ''),
+                llm_request_options={
+                    "reasoning_effort": data.get('reasoning_effort', '')
+                },
                 question=data.get('question', ''),
                 prompt_name=data.get('prompt_name'),
                 client_data=data.get('client_data', {}),

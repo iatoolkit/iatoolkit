@@ -69,6 +69,19 @@
                             <div id="llm-model-list" class="list-group list-group-flush">
                                 {# El contenido se inyecta vía JavaScript con window.availableLlmModels #}
                             </div>
+                            <div class="mt-3 pt-2 border-top">
+                                <div class="small mb-1 fw-bold">{{ t('ui.prompts.thinking_level_label') }}</div>
+                                <select id="llm-reasoning-select" class="form-select form-select-sm mb-2"></select>
+                                <div id="llm-reasoning-help" class="small text-muted"></div>
+                            </div>
+                            <div class="d-flex justify-content-end gap-2 mt-3 pt-2 border-top">
+                                <button type="button" id="llm-model-cancel-button" class="btn btn-sm btn-outline-secondary">
+                                    {{ t('ui.common.cancel') }}
+                                </button>
+                                <button type="button" id="llm-model-apply-button" class="btn btn-sm btn-branded">
+                                    {{ t('ui.common.apply') }}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -281,6 +294,7 @@
     // LLM configuration from backend
     window.defaultLlmModel = {{ llm_default_model | tojson }};
     window.availableLlmModels = {{ llm_available_models | tojson }};
+    window.defaultLlmReasoningEffort = {{ llm_default_reasoning_effort | tojson }};
 
 
     // JS translations helper

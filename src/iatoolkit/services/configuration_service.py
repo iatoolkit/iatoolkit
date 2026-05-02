@@ -5,6 +5,7 @@
 from iatoolkit.repositories.models import Company
 from iatoolkit.common.interfaces.asset_storage import AssetRepository, AssetType
 from iatoolkit.common.interfaces.secret_provider import SecretProvider
+from iatoolkit.common.model_registry import ModelRegistry
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.common.util import Utility
@@ -27,12 +28,14 @@ class ConfigurationService:
                  llm_query_repo: LLMQueryRepo,
                  profile_repo: ProfileRepo,
                  utility: Utility,
-                 secret_provider: SecretProvider):
+                 secret_provider: SecretProvider,
+                 model_registry: ModelRegistry):
         self.asset_repo = asset_repo
         self.llm_query_repo = llm_query_repo
         self.profile_repo = profile_repo
         self.utility = utility
         self.secret_provider = secret_provider
+        self.model_registry = model_registry
         self._loaded_configs = {}   # cache for store loaded configurations
 
     def _ensure_config_loaded(self, company_short_name: str):
@@ -378,6 +381,7 @@ class ConfigurationService:
                 add_error("llm", "Missing required key: 'model'")
             if not config.get("llm", {}).get("provider_api_keys"):
                 add_error("llm", "Missing required key: 'provider_api_keys'")
+            allowed_reasoning_efforts = {"minimal", "low", "medium", "high", "xhigh"}
             supported_llm_providers = {
                 "openai",
                 "gemini",
@@ -401,6 +405,13 @@ class ConfigurationService:
                     "llm.default_attachment_fallback",
                     f"Unsupported value '{llm_defaults_fallback}'. Must be one of: {sorted(allowed_attachment_fallbacks)}."
                 )
+            if "reasoning_effort" in config.get("llm", {}):
+                llm_reasoning_effort = str(config.get("llm", {}).get("reasoning_effort") or "").strip().lower()
+                if llm_reasoning_effort not in allowed_reasoning_efforts:
+                    add_error(
+                        "llm.reasoning_effort",
+                        f"Unsupported value '{llm_reasoning_effort}'. Must be one of: {sorted(allowed_reasoning_efforts)}."
+                    )
 
             llm_available_models = config.get("llm", {}).get("available_models") or []
             openai_compatible_in_use = False
@@ -1125,16 +1136,45 @@ class ConfigurationService:
         llm_config = self._loaded_configs[company_short_name].get("llm")
         if llm_config:
             default_llm_model = llm_config.get("model")
-            available_llm_models = llm_config.get('available_models') or []
+            available_llm_models = self.get_llm_model_descriptors(company_short_name)
 
         # fallback: if no explicit list of models is provided, use the default model
         if not available_llm_models and default_llm_model:
-            available_llm_models = [{
+            available_llm_models = [self._build_llm_model_descriptor({
                 "id": default_llm_model,
                 "label": default_llm_model,
                 "description": "Modelo por defecto configurado para esta compañía."
-            }]
+            })]
         return default_llm_model, available_llm_models
+
+    def _build_llm_model_descriptor(self, model_entry) -> dict:
+        normalized = self._normalize_model_entry(model_entry)
+        model_id = str(normalized.get("id") or "").strip()
+        if not model_id:
+            return {}
+
+        provider = self.model_registry.normalize_provider(
+            provider=normalized.get("provider"),
+            model=model_id,
+        )
+        capabilities = self.model_registry.get_capabilities(model_id, provider=provider)
+        descriptor = dict(normalized)
+        descriptor["id"] = model_id
+        descriptor["label"] = str(descriptor.get("label") or model_id).strip()
+        descriptor["description"] = str(descriptor.get("description") or "").strip()
+        descriptor["provider"] = provider
+        descriptor.update(capabilities)
+        return descriptor
+
+    def get_llm_model_descriptors(self, company_short_name: str) -> list[dict]:
+        self._ensure_config_loaded(company_short_name)
+        llm_config = self._loaded_configs[company_short_name].get("llm") or {}
+        raw_models = llm_config.get("available_models") or []
+        descriptors = [
+            self._build_llm_model_descriptor(model_entry)
+            for model_entry in raw_models
+        ]
+        return [item for item in descriptors if item.get("id")]
 
     def get_llm_model_config(self, company_short_name: str, model_id: str | None) -> dict | None:
         candidate = str(model_id or "").strip()
@@ -1175,6 +1215,17 @@ class ConfigurationService:
         llm_config = self._loaded_configs[company_short_name].get("llm") or {}
         telemetry_cfg = llm_config.get("telemetry")
         return dict(telemetry_cfg) if isinstance(telemetry_cfg, dict) else {}
+
+    def get_llm_request_defaults(self, company_short_name: str) -> dict:
+        self._ensure_config_loaded(company_short_name)
+        llm_config = self._loaded_configs[company_short_name].get("llm") or {}
+        defaults = {"text": {}, "reasoning": {}}
+
+        reasoning_effort = str(llm_config.get("reasoning_effort") or "").strip().lower()
+        if reasoning_effort in {"minimal", "low", "medium", "high", "xhigh"}:
+            defaults["reasoning"]["effort"] = reasoning_effort
+
+        return defaults
 
 
     def _load_and_merge_configs(self, company_short_name: str) -> dict:

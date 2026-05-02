@@ -44,9 +44,9 @@ class OpenRouterAdapter(OpenAICompatibleChatAdapter):
 
         extra_body = dict(call_kwargs.get("extra_body") or {})
 
-        reasoning = kwargs.get("reasoning")
-        if isinstance(reasoning, dict) and reasoning:
-            extra_body["reasoning"] = dict(reasoning)
+        reasoning_payload = self._build_reasoning_payload(kwargs.get("reasoning"), kwargs)
+        if reasoning_payload:
+            extra_body["reasoning"] = reasoning_payload
 
         vendor_specific_keys = (
             "models",

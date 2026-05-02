@@ -540,15 +540,20 @@ class QueryService:
         company_short_name: str,
         effective_model: str,
         prompt_output_contract: dict | None,
+        runtime_request_options: dict | None,
         ignore_history: bool,
         tools: list[dict],
     ) -> tuple[dict, dict | None, bool | None, dict]:
         provider = self._get_provider(company_short_name, effective_model)
         prompt_options = dict((prompt_output_contract or {}).get("llm_request_options") or {})
+        runtime_options = dict(runtime_request_options or {})
         request_option_keys = {"reasoning_effort", "store", "text_verbosity"}
         request_options = {
             key: value for key, value in prompt_options.items() if key in request_option_keys
         }
+        request_options.update({
+            key: value for key, value in runtime_options.items() if key in request_option_keys
+        })
         metadata = {
             "provider": provider,
             "requested": dict(request_options or {}),
@@ -558,29 +563,64 @@ class QueryService:
         if not request_options:
             return {}, None, None, metadata
 
-        supported_provider = provider in ("openai", "xai", "openrouter")
-        if not supported_provider:
-            metadata["ignored"] = True
-            metadata["reason"] = "provider_unsupported"
-            return {}, None, None, metadata
+        get_capabilities_fn = getattr(self.model_registry, "get_capabilities", None)
+        capabilities = (
+            get_capabilities_fn(effective_model, provider=provider)
+            if callable(get_capabilities_fn)
+            else None
+        )
+        if not isinstance(capabilities, dict):
+            capabilities = {}
+
+        reasoning_provider_supported = bool(
+            capabilities.get("supports_reasoning_effort", provider in (
+                "openai",
+                "xai",
+                "openrouter",
+                "deepseek",
+                "openai_compatible",
+            ))
+        )
+        text_verbosity_provider_supported = bool(
+            capabilities.get("supports_text_verbosity", provider in ("openai", "xai", "openrouter"))
+        )
+        store_provider_supported = bool(
+            capabilities.get("supports_store", provider in ("openai", "xai"))
+        )
 
         text_overrides = {}
         reasoning_overrides = None
         store_override = None
+        ignored_option_keys = []
 
         reasoning_effort = str(request_options.get("reasoning_effort") or "").strip().lower()
         if reasoning_effort in {"minimal", "low", "medium", "high", "xhigh"}:
-            reasoning_overrides = {"effort": reasoning_effort}
-            metadata["applied"]["reasoning_effort"] = reasoning_effort
+            if reasoning_provider_supported:
+                reasoning_overrides = {"effort": reasoning_effort}
+                metadata["applied"]["reasoning_effort"] = reasoning_effort
+            else:
+                ignored_option_keys.append("reasoning_effort")
 
         text_verbosity = str(request_options.get("text_verbosity") or "").strip().lower()
         if text_verbosity:
-            text_overrides["verbosity"] = text_verbosity
-            metadata["applied"]["text_verbosity"] = text_verbosity
+            if text_verbosity_provider_supported:
+                text_overrides["verbosity"] = text_verbosity
+                metadata["applied"]["text_verbosity"] = text_verbosity
+            else:
+                ignored_option_keys.append("text_verbosity")
 
-        if provider in ("openai", "xai") and "store" in request_options:
-            store_override = bool(request_options.get("store"))
-            metadata["applied"]["store"] = store_override
+        if "store" in request_options:
+            if store_provider_supported:
+                store_override = bool(request_options.get("store"))
+                metadata["applied"]["store"] = store_override
+            else:
+                ignored_option_keys.append("store")
+
+        if ignored_option_keys:
+            metadata["ignored_keys"] = sorted(set(ignored_option_keys))
+        if not metadata["applied"] and ignored_option_keys:
+            metadata["ignored"] = True
+            metadata["reason"] = "provider_unsupported"
 
         return text_overrides, reasoning_overrides, store_override, metadata
 
@@ -1106,6 +1146,7 @@ class QueryService:
                   company_short_name: str,
                   user_identifier: str,
                   model: Optional[str] = None,
+                  llm_request_options: dict | None = None,
                   prompt_name: str = None,
                   question: str = '',
                   client_data: dict = {},
@@ -1342,6 +1383,7 @@ class QueryService:
                     company_short_name=company_short_name,
                     effective_model=effective_model,
                     prompt_output_contract=prompt_output_contract,
+                    runtime_request_options=llm_request_options,
                     ignore_history=ignore_history,
                     tools=tools,
                 )

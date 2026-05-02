@@ -22,7 +22,7 @@ class OpenAICompatibleChatAdapter:
     """
 
     supports_multimodal = False
-    supports_reasoning = False
+    supports_reasoning = True
     supports_reasoning_effort = False
     supports_reasoning_content_messages = False
     supports_metadata = False
@@ -159,8 +159,9 @@ class OpenAICompatibleChatAdapter:
         reasoning: Optional[Dict[str, Any]],
         kwargs: Dict[str, Any],
     ) -> None:
-        if self.supports_reasoning and reasoning:
-            call_kwargs["reasoning"] = dict(reasoning)
+        reasoning_payload = self._build_reasoning_payload(reasoning, kwargs)
+        if self.supports_reasoning and reasoning_payload:
+            call_kwargs["reasoning"] = reasoning_payload
 
         reasoning_effort = self._extract_reasoning_effort(reasoning, kwargs)
         if self.supports_reasoning_effort:
@@ -185,6 +186,25 @@ class OpenAICompatibleChatAdapter:
             return str(reasoning.get("effort") or "").strip().lower()
 
         return ""
+
+    def _build_reasoning_payload(
+        self,
+        reasoning: Optional[Dict[str, Any]],
+        kwargs: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        if isinstance(reasoning, dict):
+            normalized_reasoning = dict(reasoning)
+            normalized_effort = self._extract_reasoning_effort(reasoning, kwargs)
+            if normalized_effort:
+                normalized_reasoning["effort"] = normalized_effort
+            if normalized_reasoning:
+                return normalized_reasoning
+
+        reasoning_effort = self._extract_reasoning_effort(reasoning, kwargs)
+        if reasoning_effort:
+            return {"effort": reasoning_effort}
+
+        return None
 
     def _map_reasoning_effort(self, model: str, effort: str, kwargs: Dict[str, Any]) -> Optional[str]:
         _ = model

@@ -315,6 +315,10 @@ class FinalizeContextView(MethodView):
             branding_data = self.branding_service.get_company_branding(company_short_name)
 
             default_llm_model, available_llm_models = self.config_service.get_llm_configuration(company_short_name)
+            llm_request_defaults = self.config_service.get_llm_request_defaults(company_short_name) or {}
+            llm_default_reasoning_effort = str(
+                ((llm_request_defaults.get("reasoning") or {}).get("effort")) or ""
+            ).strip().lower()
 
             # 2. Finalize the context rebuild (the heavy task).
             self.query_service.set_context_for_llm(
@@ -342,6 +346,7 @@ class FinalizeContextView(MethodView):
                 redeem_token=token,
                 llm_default_model=default_llm_model,
                 llm_available_models=available_llm_models,
+                llm_default_reasoning_effort=llm_default_reasoning_effort,
             )
 
         except Exception as e:

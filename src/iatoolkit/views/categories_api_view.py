@@ -75,9 +75,11 @@ class CategoriesApiView(MethodView):
             ]
 
             # C. LLM Models (from ConfigurationService)
-            _, llm_models = self.configuration_service.get_llm_configuration(company_short_name)
-            # Extract only IDs
+            llm_default_model, llm_models = self.configuration_service.get_llm_configuration(company_short_name)
+            response_data["llm_default_model"] = llm_default_model
             response_data["llm_models"] = [m['id'] for m in llm_models if 'id' in m]
+            response_data["llm_model_descriptors"] = llm_models
+            response_data["llm_model_details"] = llm_models
 
             return jsonify(response_data)
 

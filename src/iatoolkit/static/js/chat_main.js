@@ -110,7 +110,8 @@ const handleChatMessage = async function () {
             client_data: clientData,
             files: filesBase64.map(f => ({ filename: f.name, content: f.base64 })),
             user_identifier: window.user_identifier,
-            model: (window.currentLlmModel || window.defaultLlmModel || '')
+            model: (window.currentLlmModel || window.defaultLlmModel || ''),
+            reasoning_effort: (window.currentLlmReasoningEffort || '')
         };
 
         const responseData = await callToolkit("/api/llm_query", data, "POST");

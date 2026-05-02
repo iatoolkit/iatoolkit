@@ -661,6 +661,17 @@ class TestConfigurationService:
         errors = self.service.validate_configuration(self.COMPANY_NAME)
         assert errors == []
 
+    def test_validate_configuration_accepts_llm_default_reasoning_effort(self):
+        valid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        valid_config["llm"]["reasoning_effort"] = "high"
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = valid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert errors == []
+
     def test_validate_configuration_rejects_invalid_llm_default_attachment_policy(self):
         invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
         invalid_config["llm"]["default_attachment_mode"] = "invalid_mode"
@@ -671,6 +682,32 @@ class TestConfigurationService:
 
         errors = self.service.validate_configuration(self.COMPANY_NAME)
         assert any("llm.default_attachment_mode" in e for e in errors)
+
+    def test_validate_configuration_rejects_invalid_llm_default_reasoning_effort(self):
+        invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        invalid_config["llm"]["reasoning_effort"] = "ultra"
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = invalid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert any("llm.reasoning_effort" in e for e in errors)
+
+    def test_get_llm_request_defaults_returns_reasoning_effort(self):
+        config = copy.deepcopy(MOCK_VALID_CONFIG)
+        config["llm"]["reasoning_effort"] = "xhigh"
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = config
+
+        defaults = self.service.get_llm_request_defaults(self.COMPANY_NAME)
+
+        assert defaults == {
+            "text": {},
+            "reasoning": {"effort": "xhigh"},
+        }
 
     def test_validate_configuration_accepts_openai_compatible_provider_metadata(self):
         valid_config = copy.deepcopy(MOCK_VALID_CONFIG)
