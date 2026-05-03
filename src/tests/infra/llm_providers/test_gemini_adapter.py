@@ -180,6 +180,46 @@ class TestGeminiAdapter:
         assert tool_call.name == "get_weather"
         assert tool_call.arguments == json.dumps({"location": "Santiago"})
 
+    def test_prepare_gemini_contents_accepts_openai_style_history_tool_calls(self):
+        self.mock_types.Content = MagicMock(side_effect=lambda **kwargs: kwargs)
+        self.mock_types.Part.from_text = MagicMock(side_effect=lambda text: {"kind": "text", "text": text})
+        self.mock_types.Part.from_function_call = MagicMock(
+            side_effect=lambda name, args: {"kind": "function_call", "name": name, "args": args}
+        )
+        self.mock_types.Part.from_function_response = MagicMock(
+            side_effect=lambda name, response: {"kind": "function_response", "name": name, "response": response}
+        )
+
+        contents = self.adapter._prepare_gemini_contents(
+            [
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [
+                        {
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {
+                                "name": "iat_memory_search",
+                                "arguments": "{\"query\": \"onboarding\"}",
+                            },
+                        }
+                    ],
+                },
+                {
+                    "type": "function_call_output",
+                    "call_id": "call_1",
+                    "output": "{\"result\": \"ok\"}",
+                },
+            ]
+        )
+
+        assert len(contents) == 2
+        self.mock_types.Part.from_function_call.assert_called_once_with(
+            name="iat_memory_search",
+            args={"query": "onboarding"},
+        )
+
     def test_create_response_multimodal_input(self):
         """Prueba que se fusionan las imágenes en el mensaje de usuario."""
         # Configurar los mocks de types

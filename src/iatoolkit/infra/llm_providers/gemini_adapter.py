@@ -235,10 +235,10 @@ class GeminiAdapter:
                 # Reconstruir llamadas a herramientas si existen
                 if "tool_calls" in message:
                     for tc in message["tool_calls"]:
-                        args = tc["arguments"]
-                        if isinstance(args, str):
-                            args = json.loads(args)
-                        parts.append(types.Part.from_function_call(name=tc["name"], args=args))
+                        function_name, args = self._extract_history_tool_call(tc)
+                        if not function_name:
+                            continue
+                        parts.append(types.Part.from_function_call(name=function_name, args=args))
 
                 content = message.get("context") or message.get("content", "")
                 if content:
@@ -696,3 +696,30 @@ class GeminiAdapter:
             output_tokens=output_tokens,
             total_tokens=total_tokens
         )
+
+    @staticmethod
+    def _extract_history_tool_call(tool_call: Dict[str, Any]) -> tuple[str, Dict[str, Any]]:
+        if not isinstance(tool_call, dict):
+            return "", {}
+
+        function_payload = tool_call.get("function")
+        if isinstance(function_payload, dict):
+            function_name = str(function_payload.get("name") or "").strip()
+            arguments = function_payload.get("arguments", {})
+        else:
+            function_name = str(tool_call.get("name") or "").strip()
+            arguments = tool_call.get("arguments", {})
+
+        if isinstance(arguments, str):
+            try:
+                parsed_arguments = json.loads(arguments)
+                if isinstance(parsed_arguments, dict):
+                    arguments = parsed_arguments
+                else:
+                    arguments = {"value": parsed_arguments}
+            except Exception:
+                arguments = {"value": arguments}
+        elif not isinstance(arguments, dict):
+            arguments = {}
+
+        return function_name, arguments

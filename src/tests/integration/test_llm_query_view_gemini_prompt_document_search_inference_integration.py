@@ -376,7 +376,12 @@ def test_prompt_execution_with_gemini_document_search_and_inference_embeddings()
 
     assert llm_proxy.calls[0]["tools"][0]["name"] == "iat_document_search"
 
-    function_output_event = llm_proxy.calls[1]["input"][1]
+    assistant_tool_call_event = llm_proxy.calls[1]["input"][1]
+    assert assistant_tool_call_event["role"] == "assistant"
+    assert assistant_tool_call_event["tool_calls"][0]["id"] == "call_doc_1"
+    assert assistant_tool_call_event["tool_calls"][0]["function"]["name"] == "iat_document_search"
+
+    function_output_event = llm_proxy.calls[1]["input"][2]
     assert function_output_event["type"] == "function_call_output"
     assert function_output_event["call_id"] == "call_doc_1"
 

@@ -83,6 +83,31 @@ class TestAttachmentPolicyService:
         assert plan["native_attachments"] == []
         assert plan["files_for_context"] == []
 
+    def test_extracted_only_routes_images_to_text_extraction_when_provider_cannot_accept_images(self):
+        plan = self.service.build_attachment_plan(
+            company_short_name="acme",
+            provider="unknown",
+            files=[{"filename": "photo.png", "base64": "U0FNUExF"}],
+            policy={"attachment_mode": "extracted_only", "attachment_fallback": "extract"},
+        )
+
+        assert plan["errors"] == []
+        assert len(plan["files_for_context"]) == 1
+        assert plan["files_for_context"][0]["force_text_extraction"] is True
+        assert plan["stats"]["extract_candidates"] == 1
+
+    def test_native_only_fails_when_provider_cannot_accept_images(self):
+        plan = self.service.build_attachment_plan(
+            company_short_name="acme",
+            provider="unknown",
+            files=[{"filename": "photo.png", "base64": "U0FNUExF"}],
+            policy={"attachment_mode": "native_only", "attachment_fallback": "fail"},
+        )
+
+        assert len(plan["errors"]) == 1
+        assert "cannot be sent as native image" in plan["errors"][0]
+        assert plan["files_for_context"] == []
+
     def test_native_plus_extracted_keeps_context_when_native_is_not_supported(self):
         plan = self.service.build_attachment_plan(
             company_short_name="acme",

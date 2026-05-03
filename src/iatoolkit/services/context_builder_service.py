@@ -503,6 +503,7 @@ class ContextBuilderService:
             # Support multiple naming conventions for robustness
             filename = document.get('file_id') or document.get('filename') or document.get('name')
             base64_content = document.get('base64') or document.get('content')
+            force_text_extraction = bool(document.get("force_text_extraction"))
 
             if not filename:
                 context_parts.append("\n<error>Documento adjunto sin nombre ignorado.</error>\n")
@@ -513,14 +514,17 @@ class ContextBuilderService:
                 continue
 
             # Detect if the file is an image
-            if self._is_image(filename):
+            if self._is_image(filename) and not force_text_extraction:
                 images.append({'name': filename, 'base64': base64_content})
                 continue
 
             try:
                 # Handle JSON/XML directly or decode base64 for other text files
-                if self._is_json(filename):
-                    document_text = json.dumps(document.get('content'))
+                if self._is_json(filename) or self._is_xml(filename):
+                    document_text = self._decode_structured_attachment_text(
+                        filename=filename,
+                        payload=base64_content,
+                    )
                 else:
                     file_content = self.util.normalize_base64_payload(base64_content)
                     document_text = self.parsing_service.extract_text_for_context(
@@ -552,4 +556,26 @@ class ContextBuilderService:
         return filename.lower().endswith(('.png', '.jpg', '.jpeg', '.webp', '.gif'))
 
     def _is_json(self, filename: str) -> bool:
-        return filename.lower().endswith(('.json', '.xml'))
+        return filename.lower().endswith('.json')
+
+    def _is_xml(self, filename: str) -> bool:
+        return filename.lower().endswith('.xml')
+
+    def _decode_structured_attachment_text(self, filename: str, payload: str) -> str:
+        try:
+            normalized_payload = self.util.normalize_base64_payload(payload)
+            if isinstance(normalized_payload, bytes):
+                raw_text = normalized_payload.decode("utf-8-sig", errors="replace")
+            else:
+                raw_text = str(normalized_payload)
+        except Exception:
+            raw_text = str(payload or "")
+
+        if self._is_json(filename):
+            try:
+                parsed_json = json.loads(raw_text)
+                return json.dumps(parsed_json, ensure_ascii=False, indent=2)
+            except Exception:
+                return raw_text
+
+        return raw_text

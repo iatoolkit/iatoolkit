@@ -24,6 +24,9 @@ class TestUserSessionContextService(unittest.TestCase):
         self.mock_redis_manager.hset = MagicMock()
         self.mock_redis_manager.hdel = MagicMock()
         self.mock_redis_manager.pipeline = MagicMock()
+        self.mock_redis_manager.normalize_value = MagicMock(
+            side_effect=lambda value: value.decode("utf-8") if isinstance(value, bytes) else value
+        )
 
     def tearDown(self):
         """Limpia los patches después de cada test."""
@@ -137,6 +140,17 @@ class TestUserSessionContextService(unittest.TestCase):
         mock_pipe.hget.assert_any_call(self.session_key, 'prepared_context_version')
         mock_pipe.hdel.assert_called_once_with(self.session_key, 'prepared_context', 'prepared_context_version')
         mock_pipe.execute.assert_called_once()
+
+    def test_get_and_clear_prepared_context_decodes_bytes_from_pipeline(self):
+        mock_pipe = MagicMock()
+        self.mock_redis_manager.pipeline.return_value = mock_pipe
+        mock_pipe.execute.return_value = [b"contexto_preparado", b"v_prep_1"]
+
+        context, version = self.service.get_and_clear_prepared_context(self.company_short_name, self.user_identifier)
+
+        self.assertEqual(context, "contexto_preparado")
+        self.assertEqual(version, "v_prep_1")
+        self.assertEqual(self.mock_redis_manager.normalize_value.call_count, 2)
 
     def test_save_and_get_selected_system_prompt_keys(self):
         keys = ["query_main", "format_styles", "query_main", " "]

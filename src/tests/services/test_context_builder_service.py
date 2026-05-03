@@ -263,6 +263,39 @@ class TestContextBuilderService:
         # Assert
         assert "<error>Error al procesar el archivo corrupt.pdf: Parsing error</error>" in context
 
+    def test_process_attachments_decodes_json_and_xml_payloads(self):
+        files = [
+            {'filename': 'data.json', 'base64': 'eyJhIjoxfQ=='},
+            {'filename': 'data.xml', 'base64': 'PHg+MTwveD4='},
+        ]
+
+        def normalize_payload(value):
+            if value == 'eyJhIjoxfQ==':
+                return b'{"a":1}'
+            if value == 'PHg+MTwveD4=':
+                return b'<x>1</x>'
+            return b''
+
+        self.mock_util.normalize_base64_payload.side_effect = normalize_payload
+
+        context, images = self.service._process_attachments(files)
+
+        assert images == []
+        assert '"a": 1' in context
+        assert '<x>1</x>' in context
+        assert 'null' not in context
+        assert '"PHg+MTwveD4="' not in context
+
+    def test_process_attachments_can_force_text_extraction_for_images(self):
+        files = [{'filename': 'photo.png', 'base64': 'aW1hZ2VieXRlcw==', 'force_text_extraction': True}]
+        self.mock_util.normalize_base64_payload.return_value = b'imagebytes'
+        self.mock_parsing_service.extract_text_for_context.return_value = "OCR Content"
+
+        context, images = self.service._process_attachments(files)
+
+        assert "OCR Content" in context
+        assert images == []
+
     def test_compute_context_version(self):
         """Should return a SHA256 hash."""
         v1 = self.service.compute_context_version("context A")

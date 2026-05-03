@@ -100,8 +100,31 @@ class AttachmentPolicyService:
             filename = meta.get("name") or "attachment"
 
             if meta.get("is_image"):
-                # Keep current image flow untouched (ContextBuilder -> images list).
-                files_for_context.append(file_obj)
+                wants_native = self._wants_native(mode, meta, capabilities)
+                wants_extract = self._wants_extract(mode, meta, capabilities)
+                native_ok = False
+
+                if wants_native:
+                    if bool(capabilities.get("supports_native_images")):
+                        files_for_context.append(dict(file_obj))
+                        native_ok = True
+                        stats["native_sent_count"] += 1
+                    elif fallback == self.FALLBACK_EXTRACT or wants_extract:
+                        stats["fallback_to_extract"] += 1
+                        wants_extract = True
+                    else:
+                        errors.append(
+                            f"Image attachment '{filename}' cannot be sent as native image for provider '{provider}'."
+                        )
+
+                if wants_extract:
+                    extract_copy = dict(file_obj)
+                    extract_copy["force_text_extraction"] = True
+                    files_for_context.append(extract_copy)
+                    stats["extract_candidates"] += 1
+
+                if wants_native and not native_ok and not wants_extract:
+                    stats["errors"] += 1
                 continue
 
             wants_native = self._wants_native(mode, meta, capabilities)

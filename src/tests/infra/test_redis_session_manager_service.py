@@ -46,6 +46,14 @@ class TestRedisSessionManager(unittest.TestCase):
         self.assertEqual(result, 'retrieved_value')
         self.mock_redis_client.get.assert_called_once_with('existing_key')
 
+    def test_get_decodes_bytes_value(self):
+        self.mock_redis_client.get.return_value = b'retrieved_value'
+
+        result = RedisSessionManager.get('existing_key')
+
+        self.assertEqual(result, 'retrieved_value')
+        self.mock_redis_client.get.assert_called_once_with('existing_key')
+
     def test_get_non_existing_key(self):
         """Prueba que get devuelve el valor por defecto (string vacío) si la clave no existe."""
         # Simular que Redis no encuentra la clave
@@ -55,6 +63,14 @@ class TestRedisSessionManager(unittest.TestCase):
 
         # El valor por defecto en la firma del método es ""
         self.assertEqual(result, "")
+
+    def test_hget_decodes_bytes_value(self):
+        self.mock_redis_client.hget.return_value = b'field_value'
+
+        result = RedisSessionManager.hget('hash_key', 'field')
+
+        self.assertEqual(result, 'field_value')
+        self.mock_redis_client.hget.assert_called_once_with('hash_key', 'field')
 
     def test_remove(self):
         """Prueba que el método remove llama a `client.delete`."""

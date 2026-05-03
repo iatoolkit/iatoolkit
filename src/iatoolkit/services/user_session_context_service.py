@@ -245,7 +245,12 @@ class UserSessionContextService:
         results = pipe.execute()
 
         # results[0] is the context, results[1] is the version
-        return (results[0], results[1]) if results else (None, None)
+        if not results:
+            return None, None
+
+        context = RedisSessionManager.normalize_value(results[0]) if len(results) > 0 else None
+        version = RedisSessionManager.normalize_value(results[1]) if len(results) > 1 else None
+        return context, version
 
     # --- Métodos de Bloqueo ---
     def acquire_lock(self, lock_key: str, expire_seconds: int) -> bool:

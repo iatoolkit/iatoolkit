@@ -17,6 +17,14 @@ class RedisSessionManager:
     """
     _client = None
 
+    @classmethod
+    def set_client(cls, client):
+        cls._client = client
+
+    @classmethod
+    def clear_client(cls):
+        cls._client = None
+
     @staticmethod
     def _get_max_connections() -> int:
         raw_value = os.getenv("REDIS_MAX_CONNECTIONS", "30")
@@ -48,6 +56,12 @@ class RedisSessionManager:
             db = cls._client.connection_pool.connection_kwargs.get('db', 0)
         return cls._client
 
+    @staticmethod
+    def normalize_value(value):
+        if isinstance(value, bytes):
+            return value.decode("utf-8")
+        return value
+
     @classmethod
     def set(cls, key: str, value: str, **kwargs):
         """
@@ -63,7 +77,7 @@ class RedisSessionManager:
     def get(cls, key: str, default: str = ""):
         client = cls._get_client()
         value = client.get(key)
-        result = value if value is not None else default
+        result = cls.normalize_value(value) if value is not None else default
         return result
 
     @classmethod
@@ -81,7 +95,7 @@ class RedisSessionManager:
         Devuelve None si la clave o el campo no existen.
         """
         client = cls._get_client()
-        return client.hget(key, field)
+        return cls.normalize_value(client.hget(key, field))
 
     @classmethod
     def hdel(cls, key: str, *fields):

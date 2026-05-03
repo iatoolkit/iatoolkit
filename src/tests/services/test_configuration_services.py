@@ -12,6 +12,7 @@ from iatoolkit.repositories.models import Company
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.common.interfaces.secret_provider import SecretProvider
+from iatoolkit.common.model_registry import ModelRegistry
 
 # A complete and valid mock configuration, passing all validation rules.
 MOCK_VALID_CONFIG = {
@@ -110,6 +111,7 @@ class TestConfigurationService:
         self.profile_repo = Mock(spec=ProfileRepo)
         self.mock_asset_repo = Mock(spec=AssetRepository)
         self.mock_secret_provider = Mock(spec=SecretProvider)
+        self.model_registry = ModelRegistry()
 
         self.mock_company_instance = Mock(spec=BaseCompany)
         self.mock_company = Company(id=1, short_name='ACME')
@@ -120,7 +122,8 @@ class TestConfigurationService:
                                             llm_query_repo=self.mock_llm_query_repo,
                                             profile_repo=self.profile_repo,
                                             asset_repo=self.mock_asset_repo,
-                                            secret_provider=self.mock_secret_provider)
+                                            secret_provider=self.mock_secret_provider,
+                                            model_registry=self.model_registry)
         self.COMPANY_NAME = 'acme'
 
     @patch('iatoolkit.current_iatoolkit')
