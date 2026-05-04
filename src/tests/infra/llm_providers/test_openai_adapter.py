@@ -343,3 +343,110 @@ class TestOpenAIAdapter:
 
         # output_text debe incluir texto (la imagen está en content_parts)
         assert 'Here is the image:' in result.output_text
+
+    def test_create_response_strips_chat_style_tool_history_for_openai_follow_up(self):
+        mock_response = MagicMock()
+        mock_response.id = 'resp-follow-up'
+        mock_response.model = 'gpt-4.1'
+        mock_response.status = 'completed'
+        mock_response.output = []
+        mock_response.output_text = 'done'
+        mock_response.usage = None
+
+        self.mock_openai_client.responses.create.return_value = mock_response
+
+        input_data = [
+            {'role': 'user', 'content': 'Weather in London?'},
+            {
+                'role': 'assistant',
+                'content': '',
+                'tool_calls': [
+                    {
+                        'id': 'call_abc',
+                        'type': 'function',
+                        'function': {
+                            'name': 'get_weather',
+                            'arguments': '{"location":"London"}',
+                        },
+                    }
+                ],
+            },
+            {
+                'type': 'function_call_output',
+                'call_id': 'call_abc',
+                'status': 'completed',
+                'output': '{"temperature":21}',
+            },
+        ]
+
+        self.adapter.create_response(
+            model='gpt-4.1',
+            input=input_data,
+            previous_response_id='resp_previous',
+        )
+
+        call_kwargs = self.mock_openai_client.responses.create.call_args.kwargs
+        assert call_kwargs['previous_response_id'] == 'resp_previous'
+        assert call_kwargs['input'] == [
+            {
+                'type': 'function_call_output',
+                'call_id': 'call_abc',
+                'output': '{"temperature":21}',
+            }
+        ]
+
+    def test_create_response_converts_assistant_tool_calls_to_function_call_items(self):
+        mock_response = MagicMock()
+        mock_response.id = 'resp-client-history'
+        mock_response.model = 'gpt-4.1'
+        mock_response.status = 'completed'
+        mock_response.output = []
+        mock_response.output_text = 'done'
+        mock_response.usage = None
+
+        self.mock_openai_client.responses.create.return_value = mock_response
+
+        input_data = [
+            {'role': 'user', 'content': 'Weather in London?'},
+            {
+                'role': 'assistant',
+                'content': '',
+                'tool_calls': [
+                    {
+                        'id': 'call_abc',
+                        'type': 'function',
+                        'function': {
+                            'name': 'get_weather',
+                            'arguments': '{"location":"London"}',
+                        },
+                    }
+                ],
+            },
+            {
+                'type': 'function_call_output',
+                'call_id': 'call_abc',
+                'status': 'completed',
+                'output': '{"temperature":21}',
+            },
+        ]
+
+        self.adapter.create_response(
+            model='gpt-4.1',
+            input=input_data,
+        )
+
+        call_kwargs = self.mock_openai_client.responses.create.call_args.kwargs
+        assert call_kwargs['input'] == [
+            {'role': 'user', 'content': 'Weather in London?'},
+            {
+                'type': 'function_call',
+                'call_id': 'call_abc',
+                'name': 'get_weather',
+                'arguments': '{"location":"London"}',
+            },
+            {
+                'type': 'function_call_output',
+                'call_id': 'call_abc',
+                'output': '{"temperature":21}',
+            },
+        ]

@@ -34,6 +34,12 @@ class OpenAIAdapter:
                         telemetry_execution: Any = None) -> LLMResponse:
         """Llamada a la API de OpenAI y mapeo a estructura común"""
         try:
+            input = self._normalize_input_items(
+                input_items=input,
+                previous_response_id=previous_response_id,
+                context_history=context_history,
+            )
+
             # Handle multimodal input if images are present
             if images or attachments:
                 input = self._prepare_multimodal_input(input, images or [], attachments or [])
@@ -73,6 +79,128 @@ class OpenAIAdapter:
             logging.error(error_message)
 
             raise IAToolkitException(IAToolkitException.ErrorType.LLM_ERROR, error_message)
+
+    def _normalize_input_items(
+        self,
+        input_items: Optional[List[Dict]],
+        previous_response_id: Optional[str] = None,
+        context_history: Optional[List[Dict]] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Normalize our internal history format to the subset accepted by Responses API.
+
+        Important cases:
+        - Assistant messages with `tool_calls` must become top-level `function_call` items.
+        - `function_call_output` items must not include internal-only fields such as `status`.
+        - When continuing from a prior response with `previous_response_id`, tool follow-ups
+          should only append the `function_call_output` items because the previous response
+          already contains the originating user/assistant turns on OpenAI's side.
+        """
+        _ = context_history
+        combined_input: List[Dict[str, Any]] = list(input_items or [])
+
+        has_function_outputs = any(
+            isinstance(item, dict) and item.get("type") == "function_call_output"
+            for item in combined_input
+        )
+
+        normalized_items: List[Dict[str, Any]] = []
+        function_output_items: List[Dict[str, Any]] = []
+
+        for item in combined_input:
+            if not isinstance(item, dict):
+                continue
+
+            item_type = str(item.get("type") or "").strip().lower()
+            if item_type == "function_call_output":
+                call_id = str(item.get("call_id") or "").strip()
+                if not call_id:
+                    continue
+
+                normalized_output = {
+                    "type": "function_call_output",
+                    "call_id": call_id,
+                    "output": item.get("output", ""),
+                }
+                normalized_items.append(normalized_output)
+                function_output_items.append(normalized_output)
+                continue
+
+            if item_type == "function_call":
+                normalized_items.extend(self._normalize_tool_call_items([item]))
+                continue
+
+            role = str(item.get("role") or "").strip().lower()
+            if role == "model":
+                role = "assistant"
+
+            content = item.get("content")
+            tool_calls = self._normalize_tool_call_items(item.get("tool_calls"))
+            if tool_calls:
+                if role == "assistant" and content not in (None, "", []):
+                    normalized_items.append({
+                        "role": role,
+                        "content": content,
+                    })
+                normalized_items.extend(tool_calls)
+                continue
+
+            if role:
+                normalized_items.append({
+                    "role": role,
+                    "content": content,
+                })
+
+        if previous_response_id and has_function_outputs and function_output_items:
+            return function_output_items
+
+        return normalized_items
+
+    @staticmethod
+    def _normalize_tool_call_items(tool_calls: Any) -> List[Dict[str, Any]]:
+        normalized_tool_calls: List[Dict[str, Any]] = []
+        if not isinstance(tool_calls, list):
+            return normalized_tool_calls
+
+        for tool_call in tool_calls:
+            if isinstance(tool_call, dict):
+                function = tool_call.get("function") or {}
+                call_id = str(
+                    tool_call.get("call_id")
+                    or tool_call.get("id")
+                    or ""
+                ).strip()
+                name = str(function.get("name") or tool_call.get("name") or "").strip()
+                arguments = str(function.get("arguments") or tool_call.get("arguments") or "{}")
+            else:
+                function = getattr(tool_call, "function", None)
+                call_id = str(
+                    getattr(tool_call, "call_id", None)
+                    or getattr(tool_call, "id", None)
+                    or ""
+                ).strip()
+                name = str(
+                    getattr(function, "name", None)
+                    or getattr(tool_call, "name", None)
+                    or ""
+                ).strip()
+                arguments = str(
+                    getattr(function, "arguments", None)
+                    or getattr(tool_call, "arguments", None)
+                    or "{}"
+                )
+
+            if not call_id or not name:
+                continue
+
+            normalized_tool_calls.append({
+                "type": "function_call",
+                "call_id": call_id,
+                "name": name,
+                "arguments": arguments,
+            })
+
+        return normalized_tool_calls
 
     @staticmethod
     def _record_telemetry_input(telemetry_execution: Any, payload: Dict[str, Any]) -> None:
