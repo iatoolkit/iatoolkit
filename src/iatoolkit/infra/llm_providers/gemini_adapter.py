@@ -82,6 +82,10 @@ class GeminiAdapter:
                 # "response_modalities": ['TEXT', 'IMAGE']
             }
 
+            tool_config = self._prepare_gemini_tool_config(tool_choice, tools)
+            if tool_config is not None:
+                config_kwargs["tool_config"] = tool_config
+
             if isinstance(text, dict):
                 response_schema = text.get("response_schema")
                 if response_schema is not None:
@@ -94,9 +98,12 @@ class GeminiAdapter:
                 config = types.GenerateContentConfig(**config_kwargs)
             except TypeError as e:
                 # Backward compatibility with older google-genai SDK versions.
-                if "response_schema" in config_kwargs or "response_mime_type" in config_kwargs:
+                if (
+                    "response_schema" in config_kwargs
+                    or "response_mime_type" in config_kwargs
+                ):
                     logging.warning(
-                        "Gemini SDK doesn't support response_schema fields in GenerateContentConfig. "
+                        "Gemini SDK doesn't support one or more advanced GenerateContentConfig fields. "
                         "Falling back to prompt-instruction-only mode: %s",
                         e
                     )
@@ -309,6 +316,34 @@ class GeminiAdapter:
             return [types.Tool(function_declarations=function_declarations)]
 
         return None
+
+    def _prepare_gemini_tool_config(self, tool_choice: str, tools: List[Dict] | None) -> Optional[Any]:
+        tool_names = [
+            str(tool.get("name") or "").strip()
+            for tool in (tools or [])
+            if isinstance(tool, dict) and str(tool.get("name") or "").strip()
+        ]
+        if not tool_names:
+            return None
+
+        normalized_choice = str(tool_choice or "auto").strip().lower() or "auto"
+        function_calling_kwargs: Dict[str, Any] = {}
+
+        if normalized_choice == "auto":
+            function_calling_kwargs["mode"] = "AUTO"
+        elif normalized_choice == "none":
+            function_calling_kwargs["mode"] = "NONE"
+        elif normalized_choice == "required":
+            function_calling_kwargs["mode"] = "ANY"
+        elif normalized_choice in set(tool_names):
+            function_calling_kwargs["mode"] = "ANY"
+            function_calling_kwargs["allowed_function_names"] = [normalized_choice]
+        else:
+            function_calling_kwargs["mode"] = "AUTO"
+
+        return types.ToolConfig(
+            function_calling_config=types.FunctionCallingConfig(**function_calling_kwargs)
+        )
 
     def _prepare_response_schema(self, schema: Any) -> Any:
         """Normalize OpenAI-style JSON schema into a Gemini-compatible schema subset."""

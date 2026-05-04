@@ -267,7 +267,12 @@ def test_llm_query_view_openai_sql_function_call_success():
     assert llm_proxy.calls[0]["model"] == MODEL
     assert llm_proxy.calls[1]["previous_response_id"] == "resp_openai_1"
 
-    function_output_event = llm_proxy.calls[1]["input"][1]
+    assistant_tool_call_event = llm_proxy.calls[1]["input"][1]
+    assert assistant_tool_call_event["role"] == "assistant"
+    assert assistant_tool_call_event["tool_calls"][0]["id"] == "call_sql_1"
+    assert assistant_tool_call_event["tool_calls"][0]["function"]["name"] == "iat_sql_query"
+
+    function_output_event = llm_proxy.calls[1]["input"][2]
     assert function_output_event["type"] == "function_call_output"
     assert function_output_event["call_id"] == "call_sql_1"
     assert json.loads(function_output_event["output"]) == [{"total": 42}]

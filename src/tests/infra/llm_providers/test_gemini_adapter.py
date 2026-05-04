@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 import uuid
 import json
+from types import SimpleNamespace
 
 from iatoolkit.infra.llm_providers.gemini_adapter import GeminiAdapter
 from iatoolkit.infra.llm_response import LLMResponse, ToolCall
@@ -151,6 +152,56 @@ class TestGeminiAdapter:
         assert isinstance(tool_call, ToolCall)
         assert tool_call.name == "get_weather"
         assert tool_call.arguments == json.dumps(func_call_data['args'])
+
+    def test_create_response_maps_required_tool_choice_to_any_mode(self):
+        mock_response = self._create_mock_gemini_response(text_content="ok")
+        self.mock_generative_model.generate_content.return_value = mock_response
+        self.mock_types.FunctionCallingConfig = MagicMock(side_effect=lambda **kwargs: SimpleNamespace(**kwargs))
+        self.mock_types.ToolConfig = MagicMock(side_effect=lambda **kwargs: SimpleNamespace(**kwargs))
+
+        self.adapter.create_response(
+            model="gemini-flash",
+            input=[],
+            tools=[{"type": "function", "name": "get_weather", "description": "", "parameters": {}}],
+            tool_choice="required",
+        )
+
+        config_kwargs = self.mock_types.GenerateContentConfig.call_args.kwargs
+        assert config_kwargs["tool_config"].function_calling_config.mode == "ANY"
+
+    def test_create_response_maps_none_tool_choice_to_none_mode(self):
+        mock_response = self._create_mock_gemini_response(text_content="ok")
+        self.mock_generative_model.generate_content.return_value = mock_response
+        self.mock_types.FunctionCallingConfig = MagicMock(side_effect=lambda **kwargs: SimpleNamespace(**kwargs))
+        self.mock_types.ToolConfig = MagicMock(side_effect=lambda **kwargs: SimpleNamespace(**kwargs))
+
+        self.adapter.create_response(
+            model="gemini-flash",
+            input=[],
+            tools=[{"type": "function", "name": "get_weather", "description": "", "parameters": {}}],
+            tool_choice="none",
+        )
+
+        config_kwargs = self.mock_types.GenerateContentConfig.call_args.kwargs
+        assert config_kwargs["tool_config"].function_calling_config.mode == "NONE"
+
+    def test_create_response_maps_named_tool_choice_to_allowed_function(self):
+        mock_response = self._create_mock_gemini_response(text_content="ok")
+        self.mock_generative_model.generate_content.return_value = mock_response
+        self.mock_types.FunctionCallingConfig = MagicMock(side_effect=lambda **kwargs: SimpleNamespace(**kwargs))
+        self.mock_types.ToolConfig = MagicMock(side_effect=lambda **kwargs: SimpleNamespace(**kwargs))
+
+        self.adapter.create_response(
+            model="gemini-flash",
+            input=[],
+            tools=[{"type": "function", "name": "get_weather", "description": "", "parameters": {}}],
+            tool_choice="get_weather",
+        )
+
+        config_kwargs = self.mock_types.GenerateContentConfig.call_args.kwargs
+        function_calling_config = config_kwargs["tool_config"].function_calling_config
+        assert function_calling_config.mode == "ANY"
+        assert function_calling_config.allowed_function_names == ["get_weather"]
 
     def test_create_response_with_tool_call_args_without_pb(self):
         """Debe soportar args serializados como string JSON."""
