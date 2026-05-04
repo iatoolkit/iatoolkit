@@ -29,6 +29,10 @@ ui:
 
   mon:
     system_status: "System Status"
+    worker_service: "Worker"
+    memory_short: "Mem"
+    cpu_short: "CPU"
+    worker_metrics_unavailable: "Worker service metrics unavailable"
     latency_p95: "Latency (Avg)"
     error_rate: "Error Rate (1h)"
     queue: "Pending Tasks"
@@ -341,6 +345,7 @@ ui:
     last_ingestion: "Last ingestion"
     rag: "RAG"
     detail: "Detail"
+    infrastructure: "Infrastructure"
     toolkit: "Toolkit"
     tasks: "Tasks"
     waiting: "waiting"

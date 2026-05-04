@@ -30,6 +30,10 @@ ui:
 
   mon:
     system_status: "Estado Sistema"
+    worker_service: "Worker"
+    memory_short: "Mem"
+    cpu_short: "CPU"
+    worker_metrics_unavailable: "Métricas del worker no disponibles"
     latency_p95: "Latencia (Prom)"
     error_rate: "Tasa Error (1h)"
     queue: "Tareas Pendientes"
@@ -341,6 +345,7 @@ ui:
     last_ingestion: "Última ingestión"
     rag: "RAG"
     detail: "Detalle"
+    infrastructure: "Infraestructura"
     toolkit: "Toolkit"
     tasks: "Tareas"
     waiting: "esperando"
