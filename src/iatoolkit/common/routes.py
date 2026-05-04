@@ -14,6 +14,7 @@ from iatoolkit.common.exceptions import IAToolkitException
 def register_views(app):
 
     from iatoolkit.views.init_context_api_view import InitContextApiView
+    from iatoolkit.views.invocations_api_view import InvocationsApiView
     from iatoolkit.views.llmquery_api_view import LLMQueryApiView
     from iatoolkit.views.signup_view import SignupView
     from iatoolkit.views.verify_user_view import VerifyAccountView
@@ -108,6 +109,7 @@ def register_views(app):
     # main chat query, used by the JS in the browser (with credentials)
     # can be used also for executing iatoolkit prompts
     app.add_url_rule('/<company_short_name>/api/llm_query', view_func=LLMQueryApiView.as_view('llm_query_api'))
+    app.add_url_rule('/<company_short_name>/api/invocations', view_func=InvocationsApiView.as_view('invocations_api'))
 
     # Categories Endpoint
     app.add_url_rule('/<company_short_name>/api/categories',
