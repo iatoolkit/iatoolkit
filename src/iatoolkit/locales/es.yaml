@@ -1088,6 +1088,8 @@ ui:
     resources_rag_help: "Selecciona las colecciones documentales que este agente podrá consultar."
     resources_memory_hint: "Las tools de memoria usan el scope del usuario actual y no requieren bindings adicionales."
     run_btn: "Ejecutar"
+    playground_delivery_mode_label: "Ejecutar Async"
+    playground_delivery_mode_help: "Encola esta ejecución del playground en lugar de esperar una respuesta sincrónica."
     copy_html_btn: "Copiar HTML"
     copy_json_btn: "Copiar JSON"
     download_json_btn: "Descargar JSON"
