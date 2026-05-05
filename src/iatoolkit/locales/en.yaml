@@ -1085,6 +1085,8 @@ ui:
     resources_rag_help: "Select the document collections this agent can search."
     resources_memory_hint: "Memory tools use the current user scope and do not require extra bindings."
     run_btn: "Run"
+    playground_delivery_mode_label: "Run Async"
+    playground_delivery_mode_help: "Queue this playground run instead of waiting for a synchronous response."
     copy_html_btn: "Copy HTML"
     copy_json_btn: "Copy JSON"
     download_json_btn: "Download JSON"
