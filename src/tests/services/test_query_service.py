@@ -237,7 +237,8 @@ class TestQueryService:
             company_short_name=MOCK_COMPANY_SHORT_NAME,
             user_identifier=MOCK_LOCAL_USER_ID,
             question="Hi",
-            model='gpt-test'
+            model='gpt-test',
+            client_data={"source": "iatoolkit_mcp"},
         )
 
         # Assert
@@ -250,6 +251,7 @@ class TestQueryService:
         assert kwargs['context'] == user_prompt
         assert kwargs['question'] == effective_q
         assert kwargs['previous_response_id'] == 'existing_id'
+        assert kwargs["execution_metadata"]["request_source"] == "iatoolkit_mcp"
         assert kwargs["execution_metadata"]["tool_router"]["selected_system_prompt_keys"] == [
             "query_main", "format_styles"
         ]
