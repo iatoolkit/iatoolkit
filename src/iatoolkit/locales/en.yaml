@@ -54,6 +54,8 @@ ui:
     task_reconciliation_requeued: "Requeued"
     task_reconciliation_normalized: "Normalized"
     task_reconciliation_failed: "Recovered As Failed"
+    source_mcp: "MCP"
+    source_standard_ui: "Standard UI"
 
     inspector:
       title: "Interaction Inspector"
@@ -68,6 +70,7 @@ ui:
       performance: "Performance"
       latency: "Latency"
       tokens: "Total Tokens"
+      source: "Source"
       tools_executed: "Tools Executed"
       no_tools: "No tools used in this session."
       primary_input: "Primary Input"
