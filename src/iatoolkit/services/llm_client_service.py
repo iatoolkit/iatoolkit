@@ -306,7 +306,12 @@ class llmClient:
             combined_stats = self.add_stats(stats, stats_fcall)
             if isinstance(execution_metadata, dict):
                 combined_stats = dict(combined_stats or {})
+                request_source = str(execution_metadata.get("request_source") or "").strip().lower()
+                if request_source:
+                    combined_stats["request_source"] = request_source
                 for key, value in execution_metadata.items():
+                    if key == "request_source":
+                        continue
                     if value is not None:
                         combined_stats[key] = value
 

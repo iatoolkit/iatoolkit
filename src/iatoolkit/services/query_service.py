@@ -1393,6 +1393,9 @@ class QueryService:
             request_metadata = self._resolve_prompt_request_metadata(prompt_output_contract)
 
             execution_metadata = {"tool_router": tool_router_metrics}
+            request_source = str(safe_client_data.get("source") or "").strip().lower() or None
+            if request_source:
+                execution_metadata["request_source"] = request_source
             if memory_lookup_decision.reason:
                 execution_metadata["tool_policy"] = {
                     "tool_choice_override": tool_choice_override,

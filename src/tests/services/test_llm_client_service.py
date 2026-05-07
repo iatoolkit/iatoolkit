@@ -135,6 +135,27 @@ class TestLLMClient:
         assert saved_query.stats["telemetry"]["provider"] == "braintrust"
         assert result["stats"]["telemetry"]["trace_url"] == "https://braintrust.dev/app/trace/123"
 
+    def test_invoke_persists_request_source_in_query_stats(self):
+        self.mock_proxy.create_response.return_value = self.mock_llm_response
+        self.llmquery_repo.add_query.side_effect = lambda query: setattr(query, "id", 42)
+
+        result = self.client.invoke(
+            company=self.company,
+            user_identifier='user1',
+            previous_response_id='prev1',
+            model='gpt-5',
+            question='q',
+            context='c',
+            tools=[],
+            text={},
+            images=[],
+            execution_metadata={"request_source": "iatoolkit_mcp"},
+        )
+
+        saved_query = self.llmquery_repo.add_query.call_args.args[0]
+        assert saved_query.stats["request_source"] == "iatoolkit_mcp"
+        assert result["stats"]["request_source"] == "iatoolkit_mcp"
+
     def test_invoke_forwards_telemetry_request_to_llm_proxy(self):
         self.mock_proxy.create_response.return_value = self.mock_llm_response
         telemetry_request = {
