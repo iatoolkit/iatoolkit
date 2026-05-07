@@ -36,9 +36,11 @@
         <div class="d-flex flex-column flex-md-row align-items-center">
 
             <!-- Fila 2 (Móvil) / Parte 1 de la Columna Derecha (Desktop): ID de Usuario -->
-            <span style="{{ branding.secondary_text_style }}" class="d-none d-md-inline mb-2 mb-md-0">
+            <a href="{{ url_for('account', company_short_name=company_short_name) }}"
+               style="{{ branding.secondary_text_style }} text-decoration: none; color: inherit;"
+               class="d-none d-md-inline mb-2 mb-md-0">
                 {{ user_identifier }}
-            </span>
+            </a>
 
 
             <!-- Separador Vertical (Solo visible en Desktop) -->
@@ -90,6 +92,13 @@
                    class="ms-3 action-icon-style" title="{{ t('ui.tooltips.history') }}"
                    style="color: {{ branding.header_text_color }};">
                     <i class="bi bi-clock-history"></i>
+                </a>
+                <a href="{{ url_for('account', company_short_name=company_short_name) }}"
+                   id="account-button"
+                   class="ms-3 action-icon-style"
+                   title="{{ t('ui.account.title') }}"
+                   style="color: {{ branding.header_text_color }};">
+                    <i class="bi bi-person-circle"></i>
                 </a>
                 <a href="javascript:void(0);"
                    id="memory-button"

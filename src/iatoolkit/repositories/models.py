@@ -153,6 +153,11 @@ class Company(Base):
         back_populates="company",
         cascade="all, delete-orphan",
     )
+    mcp_personal_access_tokens = relationship(
+        "McpPersonalAccessToken",
+        back_populates="company",
+        cascade="all, delete-orphan",
+    )
     memory_items = relationship(
         "MemoryItem",
         back_populates="company",
@@ -693,6 +698,29 @@ class SqlDataset(Base):
 
     company = relationship("Company", back_populates="sql_datasets")
     sql_source = relationship("SqlSource", back_populates="sql_datasets")
+
+    def to_dict(self):
+        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
+
+
+class McpPersonalAccessToken(Base):
+    __tablename__ = "iat_mcp_personal_access_tokens"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_identifier = Column(String, nullable=False, index=True)
+    name = Column(String, nullable=False)
+    token_hash = Column(String(64), nullable=False, unique=True, index=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    revoked_at = Column(DateTime, nullable=True)
+    last_used_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("company_id", "user_identifier", "name", name="uix_mcp_pat_company_user_name"),
+    )
+
+    company = relationship("Company", back_populates="mcp_personal_access_tokens")
 
     def to_dict(self):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
