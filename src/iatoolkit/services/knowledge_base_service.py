@@ -24,6 +24,7 @@ import os
 from typing import List, Optional, Union
 from datetime import datetime
 from injector import inject
+import mimetypes
 
 
 class KnowledgeBaseService:
@@ -660,6 +661,71 @@ class KnowledgeBaseService:
             metadata_match_mode=metadata_match_mode,
         )
         return int(query.order_by(None).count() or 0)
+
+    def get_document_descriptor(
+        self,
+        company_short_name: str,
+        document_id: int,
+        collection_name: str | None = None,
+    ) -> dict:
+        """
+        Resolves a document descriptor suitable for MCP/API download workflows.
+
+        Validates tenant ownership and, when provided, that the document belongs
+        to the requested collection.
+        """
+        if not company_short_name or not document_id:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "company_short_name and document_id are required.",
+            )
+
+        document = self.document_repo.get_by_id(document_id)
+        if not document:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.DOCUMENT_NOT_FOUND,
+                f"Document '{document_id}' not found.",
+            )
+
+        document_company_short_name = str(getattr(getattr(document, "company", None), "short_name", "") or "").strip()
+        if document_company_short_name != company_short_name:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_OPERATION,
+                f"Document '{document_id}' does not belong to company '{company_short_name}'.",
+            )
+
+        normalized_collection_name = str(collection_name or "").strip().lower() or None
+        document_collection_name = str(
+            getattr(getattr(document, "collection_type", None), "name", "") or ""
+        ).strip().lower() or None
+        if normalized_collection_name and document_collection_name != normalized_collection_name:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_OPERATION,
+                f"Document '{document_id}' does not belong to collection '{collection_name}'.",
+            )
+
+        mime_type, _ = mimetypes.guess_type(str(document.filename or "").strip())
+        download_url = None
+        content_available = bool(document.storage_key)
+        if content_available:
+            download_url = self.storage_service.generate_presigned_url(
+                company_short_name,
+                document.storage_key,
+            )
+
+        return {
+            "document_id": document.id,
+            "company_short_name": company_short_name,
+            "collection_name": document_collection_name,
+            "filename": document.filename,
+            "mime_type": mime_type or "application/octet-stream",
+            "storage_key": document.storage_key,
+            "download_url": download_url,
+            "content_available": content_available,
+            "status": document.status.value if hasattr(document.status, "value") else str(document.status),
+            "metadata": document.meta or {},
+            "created_at": document.created_at.isoformat() if document.created_at else None,
+        }
 
     def get_document_content(self, document_id: int) -> tuple[bytes, str]:
         """

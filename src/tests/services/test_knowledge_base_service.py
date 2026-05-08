@@ -12,7 +12,7 @@ from iatoolkit.repositories.vs_repo import VSRepo
 from iatoolkit.services.parsers.parsing_service import ParsingService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.services.profile_service import ProfileService
-from iatoolkit.repositories.models import Company, Document, DocumentStatus
+from iatoolkit.repositories.models import Company, Document, DocumentStatus, CollectionType
 from iatoolkit.services.storage_service import StorageService
 from iatoolkit.services.visual_kb_service import VisualKnowledgeBaseService
 from iatoolkit.services.parsers.contracts import ParseResult, ParsedText
@@ -191,6 +191,47 @@ class TestKnowledgeBaseService:
         self.mock_storage.get_document_content.assert_called_once_with('acme', "path/to/file")
         assert content == expected_bytes
         assert filename == "test.pdf"
+
+    def test_get_document_descriptor_returns_download_metadata(self):
+        mock_doc = Document(id=1, filename="test.pdf", storage_key="path/to/file", meta={"topic": "legal"})
+        mock_doc.company = self.company
+        mock_doc.collection_type = CollectionType(name="contracts")
+        mock_doc.status = DocumentStatus.ACTIVE
+        self.mock_doc_repo.get_by_id.return_value = mock_doc
+        self.mock_storage.generate_presigned_url.return_value = "https://files.example/test.pdf"
+
+        payload = self.service.get_document_descriptor("acme", 1, collection_name="contracts")
+
+        self.mock_storage.generate_presigned_url.assert_called_once_with("acme", "path/to/file")
+        assert payload["document_id"] == 1
+        assert payload["collection_name"] == "contracts"
+        assert payload["filename"] == "test.pdf"
+        assert payload["mime_type"] == "application/pdf"
+        assert payload["download_url"] == "https://files.example/test.pdf"
+        assert payload["content_available"] is True
+        assert payload["metadata"] == {"topic": "legal"}
+
+    def test_get_document_descriptor_rejects_wrong_company(self):
+        other_company = Company(id=2, short_name="other", name="Other")
+        mock_doc = Document(id=1, filename="test.pdf", storage_key="path/to/file")
+        mock_doc.company = other_company
+        self.mock_doc_repo.get_by_id.return_value = mock_doc
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.get_document_descriptor("acme", 1)
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_OPERATION
+
+    def test_get_document_descriptor_rejects_wrong_collection(self):
+        mock_doc = Document(id=1, filename="test.pdf", storage_key="path/to/file")
+        mock_doc.company = self.company
+        mock_doc.collection_type = CollectionType(name="contracts")
+        self.mock_doc_repo.get_by_id.return_value = mock_doc
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.get_document_descriptor("acme", 1, collection_name="invoices")
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_OPERATION
 
     def test_delete_document_success_cleans_storage(self):
         doc = Document(id=1, storage_key="path/key")
