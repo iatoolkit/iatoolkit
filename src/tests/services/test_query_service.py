@@ -926,7 +926,7 @@ class TestQueryService:
         invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
         assert invoke_kwargs["model"] == "gpt-4.1-mini"
 
-    def test_llm_query_request_model_takes_precedence_over_prompt_llm_model(self):
+    def test_llm_query_prompt_llm_model_takes_precedence_over_request_model(self):
         self.mock_tool_service.get_tools_for_llm.return_value = []
         self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt content", "question", [])
         self.mock_context_builder.get_prompt_output_contract.return_value = {
@@ -952,7 +952,7 @@ class TestQueryService:
         )
 
         invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
-        assert invoke_kwargs["model"] == "gpt-5"
+        assert invoke_kwargs["model"] == "gpt-4.1-mini"
 
     def test_llm_query_applies_prompt_request_options_for_openai_provider(self):
         self.mock_tool_service.get_tools_for_llm.return_value = []
