@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 from flask import flash, redirect, render_template, request, url_for
 from flask.views import MethodView
 from injector import inject
@@ -120,6 +122,14 @@ class AccountView(MethodView):
         branding_data = self.branding_service.get_company_branding(company_short_name)
         tokens_result = self.mcp_token_service.list_tokens(company_short_name, session_info["user_identifier"])
         tokens = (tokens_result.get("data") or []) if not tokens_result.get("error") else []
+        mcp_server_url = self._build_mcp_server_url(company_short_name)
+        created_token_connection_snippet = None
+        if created_token:
+            created_token_connection_snippet = self._build_mcp_connection_snippet(
+                company_short_name=company_short_name,
+                mcp_server_url=mcp_server_url,
+                bearer_token=created_token,
+            )
 
         return render_template(
             "account.html",
@@ -130,5 +140,39 @@ class AccountView(MethodView):
             tokens=tokens,
             created_token=created_token,
             created_token_id=created_token_id,
+            mcp_server_url=mcp_server_url,
+            created_token_connection_snippet=created_token_connection_snippet,
             active_section=active_section or self.DEFAULT_SECTION,
+        )
+
+    @staticmethod
+    def _build_mcp_server_url(company_short_name: str) -> str:
+        public_base_url = str(
+            os.getenv("IAT_MCP_PUBLIC_BASE_URL")
+            or os.getenv("MCP_PUBLIC_BASE_URL")
+            or "https://mcp.iatoolkit.com"
+        ).strip()
+        public_base_url = public_base_url.rstrip("/")
+        return f"{public_base_url}/{company_short_name}/mcp/"
+
+    @staticmethod
+    def _build_mcp_connection_snippet(
+        *,
+        company_short_name: str,
+        mcp_server_url: str,
+        bearer_token: str | None = None,
+    ) -> str:
+        resolved_token = bearer_token or "<YOUR_MCP_TOKEN>"
+        return (
+            '{\n'
+            '  "mcpServers": {\n'
+            f'    "{company_short_name}": {{\n'
+            '      "type": "http",\n'
+            f'      "url": "{mcp_server_url}",\n'
+            '      "headers": {\n'
+            f'        "Authorization": "Bearer {resolved_token}"\n'
+            '      }\n'
+            '    }\n'
+            '  }\n'
+            '}'
         )

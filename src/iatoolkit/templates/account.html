@@ -20,34 +20,135 @@
         }
 
         .account-menu {
-            background: color-mix(in srgb, white 92%, var(--brand-primary-color) 8%);
+            background:
+                radial-gradient(
+                    circle at top left,
+                    color-mix(in srgb, var(--brand-primary-color) 11%, white) 0%,
+                    transparent 52%
+                ),
+                linear-gradient(
+                    180deg,
+                    color-mix(in srgb, white 91%, var(--brand-primary-color) 9%) 0%,
+                    color-mix(in srgb, white 97%, var(--brand-primary-color) 3%) 100%
+                );
             backdrop-filter: blur(10px);
             height: 100%;
+            position: relative;
+        }
+
+        .account-menu::after {
+            content: "";
+            position: absolute;
+            inset: 1rem 0.9rem auto;
+            height: 1px;
+            background: linear-gradient(
+                90deg,
+                color-mix(in srgb, var(--brand-primary-color) 30%, white) 0%,
+                transparent 100%
+            );
+            opacity: 0.55;
+            pointer-events: none;
+        }
+
+        .account-menu-header {
+            background: color-mix(in srgb, white 84%, var(--brand-primary-color) 16%);
+            border: 1px solid color-mix(in srgb, var(--brand-primary-color) 16%, white);
+            border-radius: 1.05rem;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+            padding: 1rem 1rem 0.95rem;
+        }
+
+        .account-menu-eyebrow {
+            color: color-mix(in srgb, var(--brand-text-heading-color) 72%, white);
+            font-size: 0.73rem;
+            letter-spacing: 0.12em;
+        }
+
+        .account-menu-heading {
+            color: var(--brand-text-heading-color);
+            font-size: 1rem;
+            font-weight: 700;
         }
 
         .account-menu-link {
-            border: 1px solid transparent;
-            border-radius: 0.9rem;
+            background: rgba(255, 255, 255, 0.46);
+            border: 1px solid color-mix(in srgb, var(--brand-primary-color) 8%, white);
+            border-radius: 1rem;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
             color: var(--brand-text-heading-color);
             display: flex;
             align-items: center;
             gap: 0.75rem;
             font-weight: 600;
-            padding: 0.85rem 1rem;
+            justify-content: space-between;
+            padding: 0.9rem 1rem;
             text-decoration: none;
-            transition: all 0.18s ease-in-out;
+            transition: transform 0.18s ease-in-out, background 0.18s ease-in-out, border-color 0.18s ease-in-out, box-shadow 0.18s ease-in-out;
+        }
+
+        .account-menu-link-main {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.8rem;
+            min-width: 0;
+        }
+
+        .account-menu-link-icon {
+            align-items: center;
+            background: color-mix(in srgb, white 72%, var(--brand-primary-color) 28%);
+            border: 1px solid color-mix(in srgb, var(--brand-primary-color) 18%, white);
+            border-radius: 0.8rem;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+            display: inline-flex;
+            font-size: 0.96rem;
+            height: 2.2rem;
+            justify-content: center;
+            width: 2.2rem;
+        }
+
+        .account-menu-link-label {
+            min-width: 0;
+        }
+
+        .account-menu-link-arrow {
+            color: color-mix(in srgb, var(--brand-text-heading-color) 58%, white);
+            font-size: 0.9rem;
+            opacity: 0.72;
+            transform: translateX(0);
+            transition: transform 0.18s ease-in-out, opacity 0.18s ease-in-out;
         }
 
         .account-menu-link:hover {
             background: color-mix(in srgb, var(--brand-primary-color) 10%, white);
-            border-color: color-mix(in srgb, var(--brand-primary-color) 28%, white);
+            border-color: color-mix(in srgb, var(--brand-primary-color) 26%, white);
+            box-shadow: 0 12px 26px rgba(15, 42, 68, 0.07);
             color: var(--brand-text-heading-color);
+            transform: translateY(-1px);
+        }
+
+        .account-menu-link:hover .account-menu-link-arrow {
+            opacity: 1;
+            transform: translateX(2px);
         }
 
         .account-menu-link.is-active {
-            background: color-mix(in srgb, var(--brand-primary-color) 10%, white);
-            border-color: color-mix(in srgb, var(--brand-primary-color) 24%, white);
+            background: linear-gradient(
+                135deg,
+                color-mix(in srgb, var(--brand-primary-color) 14%, white) 0%,
+                color-mix(in srgb, var(--brand-primary-color) 6%, white) 100%
+            );
+            border-color: color-mix(in srgb, var(--brand-primary-color) 28%, white);
+            box-shadow: 0 16px 32px rgba(15, 42, 68, 0.09);
             color: var(--brand-text-heading-color);
+        }
+
+        .account-menu-link.is-active .account-menu-link-icon {
+            background: color-mix(in srgb, white 48%, var(--brand-primary-color) 52%);
+            border-color: color-mix(in srgb, var(--brand-primary-color) 32%, white);
+        }
+
+        .account-menu-link.is-active .account-menu-link-arrow {
+            opacity: 1;
         }
 
         .account-panel {
@@ -140,6 +241,29 @@
             white-space: pre-wrap;
             word-break: break-word;
         }
+
+        .mcp-snippet-code {
+            background: color-mix(in srgb, white 95%, var(--brand-primary-color) 5%);
+            border: 1px solid color-mix(in srgb, var(--brand-primary-color) 14%, white);
+            border-radius: 0.9rem;
+            color: var(--brand-text-heading-color);
+            font-size: 0.88rem;
+            margin: 0;
+            min-height: 100%;
+            overflow-x: auto;
+            padding: 1rem;
+            white-space: pre;
+        }
+
+        .mcp-server-url {
+            background: color-mix(in srgb, white 95%, var(--brand-primary-color) 5%);
+            border: 1px solid color-mix(in srgb, var(--brand-primary-color) 14%, white);
+            border-radius: 0.9rem;
+            color: var(--brand-text-heading-color);
+            font-size: 0.92rem;
+            padding: 0.85rem 1rem;
+            word-break: break-all;
+        }
     </style>
 
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
@@ -188,20 +312,30 @@
         <div class="row g-0">
             <div class="col-xl-2 col-lg-3 border-end">
                 <div class="account-menu p-4">
-                    <div class="mb-4">
-                        <div class="small text-uppercase fw-semibold text-muted mb-2">{{ t('ui.account.title') }}</div>
+                    <div class="account-menu-header mb-4">
+                        <div class="account-menu-eyebrow text-uppercase fw-semibold mb-2">{{ t('ui.account.title') }}</div>
                     </div>
 
                     <nav class="nav flex-column gap-2">
                         <a href="{{ url_for('account', company_short_name=company_short_name, section='general') }}"
                            class="account-menu-link {% if active_section == 'general' %}is-active{% endif %}">
-                            <i class="bi bi-sliders"></i>
-                            <span>{{ t('ui.account.menu_general') }}</span>
+                            <span class="account-menu-link-main">
+                                <span class="account-menu-link-icon">
+                                    <i class="bi bi-sliders"></i>
+                                </span>
+                                <span class="account-menu-link-label">{{ t('ui.account.menu_general') }}</span>
+                            </span>
+                            <i class="bi bi-chevron-right account-menu-link-arrow"></i>
                         </a>
                         <a href="{{ url_for('account', company_short_name=company_short_name, section='mcp_tokens') }}"
                            class="account-menu-link {% if active_section == 'mcp_tokens' %}is-active{% endif %}">
-                            <i class="bi bi-key"></i>
-                            <span>{{ t('ui.account.menu_mcp_tokens') }}</span>
+                            <span class="account-menu-link-main">
+                                <span class="account-menu-link-icon">
+                                    <i class="bi bi-key"></i>
+                                </span>
+                                <span class="account-menu-link-label">{{ t('ui.account.menu_mcp_tokens') }}</span>
+                            </span>
+                            <i class="bi bi-chevron-right account-menu-link-arrow"></i>
                         </a>
                     </nav>
                 </div>
@@ -216,10 +350,6 @@
                                     <h2 class="mb-2">{{ t('ui.account.general_title') }}</h2>
                                     <p class="text-muted mb-0">{{ t('ui.account.general_description') }}</p>
                                 </div>
-                                <span class="account-tag">
-                                    <i class="bi bi-person-badge"></i>
-                                    {{ t('ui.account.general_tag') }}
-                                </span>
                             </div>
 
                             <div class="row g-3">
@@ -375,7 +505,21 @@
                 </div>
                 <div class="modal-body p-4">
                     <p class="text-muted mb-3">{{ t('ui.account.mcp_token_created_help') }}</p>
-                    <code id="created-token-value" class="d-block token-created-code">{{ created_token }}</code>
+                    <div class="small text-uppercase fw-semibold text-muted mb-2">{{ t('ui.account.mcp_token_created_token_label') }}</div>
+                    <code id="created-token-value" class="d-block token-created-code mb-4">{{ created_token }}</code>
+                    <div class="small text-uppercase fw-semibold text-muted mb-2">{{ t('ui.account.mcp_connection_server_url') }}</div>
+                    <div id="created-token-server-url" class="mcp-server-url mb-4">{{ mcp_server_url }}</div>
+                    <div class="d-flex justify-content-between align-items-center gap-3 mb-2">
+                        <div class="small text-uppercase fw-semibold text-muted">{{ t('ui.account.mcp_token_created_json_label') }}</div>
+                        <button type="button"
+                                class="btn btn-outline-secondary btn-sm"
+                                data-copy-target="created-token-connection-snippet"
+                                data-copy-success="{{ t('ui.account.mcp_connection_json_copy_success') }}"
+                                data-copy-error="{{ t('ui.account.mcp_connection_copy_error') }}">
+                            {{ t('ui.account.mcp_connection_copy_json_button') }}
+                        </button>
+                    </div>
+                    <pre id="created-token-connection-snippet" class="mcp-snippet-code">{{ created_token_connection_snippet }}</pre>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">{{ t('ui.common.close') }}</button>
@@ -392,6 +536,20 @@
 {% block scripts %}
     {{ super() }}
     <script>
+        async function copyTextWithFeedback(value, successMessage, errorMessage) {
+            if (!value) {
+                toastr.error(errorMessage);
+                return;
+            }
+
+            try {
+                await navigator.clipboard.writeText(value);
+                toastr.success(successMessage);
+            } catch (error) {
+                toastr.error(errorMessage);
+            }
+        }
+
         document.querySelectorAll('.local-datetime').forEach(function (element) {
             const rawValue = element.dataset.datetime || '';
             if (!rawValue) {
@@ -422,19 +580,25 @@
             if (copyCreatedTokenButton) {
                 copyCreatedTokenButton.addEventListener('click', async function () {
                     const value = (document.getElementById('created-token-value') || {}).textContent || '';
-                    if (!value) {
-                        toastr.error("{{ t('ui.account.mcp_token_copy_error') }}");
-                        return;
-                    }
-
-                    try {
-                        await navigator.clipboard.writeText(value);
-                        toastr.success("{{ t('ui.account.mcp_token_copy_success') }}");
-                    } catch (error) {
-                        toastr.error("{{ t('ui.account.mcp_token_copy_error') }}");
-                    }
+                    await copyTextWithFeedback(
+                        value,
+                        "{{ t('ui.account.mcp_token_copy_success') }}",
+                        "{{ t('ui.account.mcp_token_copy_error') }}"
+                    );
                 });
             }
+
+            document.querySelectorAll('[data-copy-target]').forEach(function (button) {
+                button.addEventListener('click', async function () {
+                    const target = document.getElementById(button.dataset.copyTarget || '');
+                    const value = target ? (target.textContent || '').trim() : '';
+                    await copyTextWithFeedback(
+                        value,
+                        button.dataset.copySuccess || "{{ t('ui.account.mcp_connection_json_copy_success') }}",
+                        button.dataset.copyError || "{{ t('ui.account.mcp_connection_copy_error') }}"
+                    );
+                });
+            });
         {% endif %}
     </script>
 {% endblock %}

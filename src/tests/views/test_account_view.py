@@ -66,7 +66,10 @@ class TestAccountView:
         assert response.data == b"ACCOUNT_HTML"
         assert mock_render.call_args[0][0] == "account.html"
         assert mock_render.call_args[1]["active_section"] == "general"
+        assert mock_render.call_args[1]["mcp_server_url"] == "https://mcp.iatoolkit.com/acme/mcp/"
+        assert mock_render.call_args[1]["created_token_connection_snippet"] is None
 
+    @patch.dict("os.environ", {"IAT_MCP_PUBLIC_BASE_URL": "https://mcp.example.com/"}, clear=False)
     def test_post_create_token_renders_created_token(self):
         self.mock_mcp_service.create_token.return_value = {
             "data": {
@@ -85,3 +88,5 @@ class TestAccountView:
         assert response.status_code == 200
         assert mock_render.call_args[1]["created_token"] == "iatmcp_created"
         assert mock_render.call_args[1]["active_section"] == "mcp_tokens"
+        assert mock_render.call_args[1]["mcp_server_url"] == "https://mcp.example.com/acme/mcp/"
+        assert '"Authorization": "Bearer iatmcp_created"' in mock_render.call_args[1]["created_token_connection_snippet"]
