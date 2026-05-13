@@ -310,15 +310,32 @@ class TelemetryService:
         execution_metadata: dict | None = None,
         request_metadata: dict | None = None,
     ) -> dict[str, Any]:
+        telemetry_config = self.configuration_service.get_llm_telemetry_config(company_short_name) or {}
+        company_telemetry_enabled = bool(telemetry_config.get("enabled"))
         prompt_options = dict((prompt_output_contract or {}).get("llm_request_options") or {})
-        if prompt_options.get("telemetry_enabled") is not True:
+        prompt_telemetry_requested = prompt_options.get("telemetry_enabled") is True
+        request_source = str((execution_metadata or {}).get("request_source") or "").strip().lower()
+        chat_request = request_source == "chat_ui"
+
+        telemetry_requested = company_telemetry_enabled or prompt_telemetry_requested
+        if not telemetry_requested:
             return {}
 
-        telemetry_config = self.configuration_service.get_llm_telemetry_config(company_short_name) or {}
         provider_name = str(telemetry_config.get("provider") or "").strip().lower()
-        enabled = bool(telemetry_config.get("enabled"))
+        enabled = company_telemetry_enabled
         prompt_name = str((prompt_output_contract or {}).get("prompt_name") or "").strip()
         execution_mode = str((prompt_output_contract or {}).get("execution_mode") or "").strip().lower() or None
+        if chat_request and not execution_mode:
+            execution_mode = "chat"
+
+        agent_name = prompt_name or ("chat" if chat_request else None)
+        execution_name = prompt_name or ("iatoolkit.chat" if chat_request else "iatoolkit.llm_execution")
+        if chat_request:
+            telemetry_scope = "chat"
+        elif prompt_name:
+            telemetry_scope = "prompt"
+        else:
+            telemetry_scope = "query_service"
         request: dict[str, Any] = {
             "requested": True,
             "record_stats": True,
@@ -326,14 +343,16 @@ class TelemetryService:
             "provider": provider_name or None,
             "metadata": {
                 "company": str(company_short_name or "").strip() or None,
-                "agent_name": prompt_name or None,
+                "agent_name": agent_name,
                 "provider": provider,
                 "model": model,
                 "task_id": task_id,
                 "user_identifier": user_identifier,
                 "execution_mode": execution_mode,
+                "request_source": request_source or None,
+                "telemetry_scope": telemetry_scope,
             },
-            "execution_name": prompt_name or "iatoolkit.llm_execution",
+            "execution_name": execution_name,
         }
 
         if isinstance(request_metadata, dict):

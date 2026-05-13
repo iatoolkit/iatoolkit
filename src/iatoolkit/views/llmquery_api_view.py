@@ -37,6 +37,13 @@ class LLMQueryApiView(MethodView):
             if not data:
                 return jsonify({"error": "Invalid JSON body"}), 400
 
+            client_data = data.get('client_data') or {}
+            if not isinstance(client_data, dict):
+                client_data = {}
+            else:
+                client_data = dict(client_data)
+            client_data.setdefault("source", "chat_ui")
+
             # 4. Call the unified query service method.
             result = self.query_service.llm_query(
                 company_short_name=company_short_name,
@@ -47,7 +54,7 @@ class LLMQueryApiView(MethodView):
                 },
                 question=data.get('question', ''),
                 prompt_name=data.get('prompt_name'),
-                client_data=data.get('client_data', {}),
+                client_data=client_data,
                 ignore_history=data.get('ignore_history', False),
                 files=data.get('files', [])
             )

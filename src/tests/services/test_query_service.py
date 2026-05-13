@@ -306,6 +306,34 @@ class TestQueryService:
             "project": "acme-prod",
         }
 
+    def test_llm_query_passes_chat_request_source_to_telemetry_service(self):
+        user_prompt = "User prompt with context"
+        effective_q = "Hi"
+        images = []
+        self.mock_context_builder.build_user_turn_prompt.return_value = (
+            user_prompt, effective_q, images
+        )
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': 'existing_id'}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_context_builder.get_prompt_output_contract.return_value = {}
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'Hello'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            question="Hi",
+            model='gpt-test',
+            client_data={"source": "chat_ui"},
+        )
+
+        self.mock_telemetry_service.resolve_execution_request.assert_called_once()
+        telemetry_kwargs = self.mock_telemetry_service.resolve_execution_request.call_args.kwargs
+        assert telemetry_kwargs["execution_metadata"]["request_source"] == "chat_ui"
+
     def test_llm_query_retries_when_server_side_ignore_history_uses_stale_initial_response_id(self):
         self.model_registry.get_history_type.return_value = "server_side"
         self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "q", [])

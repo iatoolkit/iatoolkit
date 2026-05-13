@@ -64,7 +64,31 @@ class TestLLMQueryApiView:
             llm_request_options={"reasoning_effort": ""},
             question='',
             prompt_name=None,
-            client_data={},
+            client_data={"source": "chat_ui"},
+            ignore_history=False,
+            files=[]
+        )
+
+    def test_api_query_preserves_explicit_client_source(self):
+        self.mock_query.llm_query.return_value = {"answer": "ok"}
+
+        response = self.client.post(
+            self.url,
+            json={
+                "external_user_id": MOCK_EXTERNAL_USER_ID,
+                "client_data": {"source": "iatoolkit_mcp", "foo": "bar"},
+            },
+        )
+
+        assert response.status_code == 200
+        self.mock_query.llm_query.assert_called_once_with(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_EXTERNAL_USER_ID,
+            model='',
+            llm_request_options={"reasoning_effort": ""},
+            question='',
+            prompt_name=None,
+            client_data={"source": "iatoolkit_mcp", "foo": "bar"},
             ignore_history=False,
             files=[]
         )

@@ -39,6 +39,106 @@ class TestTelemetryService:
         assert "company_short_name" not in request["metadata"]
         assert "prompt_name" not in request["metadata"]
 
+    def test_resolve_execution_request_enables_chat_requests_when_company_telemetry_is_global(self):
+        configuration_service = MagicMock()
+        configuration_service.get_llm_telemetry_config.return_value = {
+            "enabled": True,
+            "provider": "braintrust",
+            "braintrust": {
+                "project": "bt-project",
+                "api_key": "BRAINTRUST_API_KEY",
+            },
+        }
+        secret_provider = MagicMock()
+        secret_provider.get_secret.return_value = "secret-value"
+
+        service = TelemetryService(
+            configuration_service=configuration_service,
+            secret_provider=secret_provider,
+        )
+
+        request = service.resolve_execution_request(
+            company_short_name="ent_company_prod",
+            prompt_output_contract={},
+            model="gpt-5",
+            provider="openai",
+            task_id=None,
+            user_identifier="user-1",
+            execution_metadata={"request_source": "chat_ui"},
+        )
+
+        assert request["enabled"] is True
+        assert request["execution_name"] == "iatoolkit.chat"
+        assert request["metadata"]["agent_name"] == "chat"
+        assert request["metadata"]["execution_mode"] == "chat"
+        assert request["metadata"]["request_source"] == "chat_ui"
+        assert request["metadata"]["telemetry_scope"] == "chat"
+
+    def test_resolve_execution_request_uses_prompt_opt_in_when_company_telemetry_disabled(self):
+        configuration_service = MagicMock()
+        configuration_service.get_llm_telemetry_config.return_value = {
+            "enabled": False,
+            "provider": "braintrust",
+            "braintrust": {
+                "project": "bt-project",
+                "api_key": "BRAINTRUST_API_KEY",
+            },
+        }
+        secret_provider = MagicMock()
+        secret_provider.get_secret.return_value = "secret-value"
+
+        service = TelemetryService(
+            configuration_service=configuration_service,
+            secret_provider=secret_provider,
+        )
+
+        request = service.resolve_execution_request(
+            company_short_name="ent_company_prod",
+            prompt_output_contract={
+                "prompt_name": "sales_prompt",
+                "llm_request_options": {"telemetry_enabled": True},
+            },
+            model="gpt-5",
+            provider="openai",
+            task_id=7,
+            user_identifier="user-1",
+        )
+
+        assert request["requested"] is True
+        assert request["disabled_reason"] == "company_disabled"
+        assert request["metadata"]["agent_name"] == "sales_prompt"
+        assert request["metadata"]["telemetry_scope"] == "prompt"
+
+    def test_resolve_execution_request_ignores_chat_source_when_company_telemetry_disabled(self):
+        configuration_service = MagicMock()
+        configuration_service.get_llm_telemetry_config.return_value = {
+            "enabled": False,
+            "provider": "braintrust",
+            "braintrust": {
+                "project": "bt-project",
+                "api_key": "BRAINTRUST_API_KEY",
+            },
+        }
+        secret_provider = MagicMock()
+        secret_provider.get_secret.return_value = "secret-value"
+
+        service = TelemetryService(
+            configuration_service=configuration_service,
+            secret_provider=secret_provider,
+        )
+
+        request = service.resolve_execution_request(
+            company_short_name="ent_company_prod",
+            prompt_output_contract={},
+            model="gpt-5",
+            provider="openai",
+            task_id=None,
+            user_identifier="user-1",
+            execution_metadata={"request_source": "chat_ui"},
+        )
+
+        assert request == {}
+
     def test_finalize_logs_exact_root_input_payload(self):
         bridge = MagicMock()
         span = MagicMock()
