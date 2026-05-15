@@ -113,6 +113,29 @@ class TestCompanyContextService:
         assert result == ""
         assert tables == []
 
+    def test_get_sql_enriched_context_filters_tables_when_source_scope_is_selected(self):
+        self.mock_sql_source_service.list_sources.return_value = [{
+            'database': 'main_db',
+            'include_all_tables': False,
+            'included_tables': ['customers'],
+        }]
+        self.context_service.get_enriched_database_schema = MagicMock(return_value={
+            'customers': {
+                'description': 'Customers table',
+                'columns': [{'name': 'id', 'type': 'INTEGER'}],
+            },
+            'orders': {
+                'description': 'Orders table',
+                'columns': [{'name': 'id', 'type': 'INTEGER'}],
+            },
+        })
+
+        result_context, db_tables = self.context_service._get_sql_enriched_context(self.COMPANY_NAME)
+
+        assert "#### Tabla: `customers`" in result_context
+        assert "#### Tabla: `orders`" not in result_context
+        assert db_tables == [{'db_name': 'main_db', 'table_name': 'customers'}]
+
     def test_get_sql_enriched_context_handles_error(self):
         """
         GIVEN an error occurs during schema retrieval
@@ -158,7 +181,11 @@ class TestCompanyContextService:
         assert full_context.index("SQL_CONTENT") < full_context.index("YAML_EXTRA")
 
         # Verify _get_yaml_schema_context received the tables list to avoid duplication
-        self.context_service._get_yaml_schema_context.assert_called_with(self.COMPANY_NAME, ["users"])
+        self.context_service._get_yaml_schema_context.assert_called_with(
+            self.COMPANY_NAME,
+            ["users"],
+            sql_source_table_scopes={"main_db": None},
+        )
 
     # --- Existing Logic Tests (Still Valid for Helper Methods) ---
 
@@ -403,6 +430,18 @@ class TestCompanyContextService:
 
         # Verify SQL service was NOT called
         self.mock_sql_service.get_database_structure.assert_not_called()
+
+    def test_yaml_context_skips_tables_excluded_from_sql_source_scope(self):
+        self.mock_asset_repo.list_files.return_value = ['main_db-orders.yaml']
+
+        result = self.context_service._get_yaml_schema_context(
+            self.COMPANY_NAME,
+            [],
+            sql_source_table_scopes={'main_db': {'customers'}},
+        )
+
+        assert result == ""
+        self.mock_asset_repo.read_text.assert_not_called()
 
     def test_build_context_with_yaml_schemas(self):
         """

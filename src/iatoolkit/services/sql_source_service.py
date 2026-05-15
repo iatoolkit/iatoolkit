@@ -70,6 +70,26 @@ class SqlSourceService:
         normalized = str(value or "").strip()
         return normalized or None
 
+    @staticmethod
+    def _normalize_included_tables(value) -> list[str]:
+        if value in (None, ""):
+            return []
+        if not isinstance(value, list):
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "included_tables must be a list",
+            )
+
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            table_name = str(item or "").strip()
+            if not table_name or table_name in seen:
+                continue
+            seen.add(table_name)
+            normalized.append(table_name)
+        return normalized
+
     def _validate_source_fields(
         self,
         *,
@@ -133,9 +153,13 @@ class SqlSourceService:
             schema=self._normalize_schema(payload.get("schema")),
             description=self._normalize_optional_text(payload.get("description")),
             bridge_id=bridge_id,
+            include_all_tables=bool(payload.get("include_all_tables", True)),
+            included_tables=self._normalize_included_tables(payload.get("included_tables")),
             source=self._normalize_source(payload.get("source") or SqlSource.SOURCE_USER),
             is_active=bool(payload.get("is_active", True)),
         )
+        if source.include_all_tables:
+            source.included_tables = []
 
         persisted = self.sql_source_repo.create_or_update(source)
         self.refresh_runtime(company_short_name)
@@ -181,11 +205,19 @@ class SqlSourceService:
         if "bridge_id" in payload:
             source.bridge_id = self._normalize_optional_text(payload.get("bridge_id"))
 
+        if "include_all_tables" in payload:
+            source.include_all_tables = bool(payload.get("include_all_tables"))
+
+        if "included_tables" in payload:
+            source.included_tables = self._normalize_included_tables(payload.get("included_tables"))
+
         if "is_active" in payload:
             source.is_active = bool(payload.get("is_active"))
 
         # Once edited via API, ownership moves to USER.
         source.source = SqlSource.SOURCE_USER
+        if bool(getattr(source, "include_all_tables", True)):
+            source.included_tables = []
 
         self._validate_source_fields(
             database=self._normalize_database(source.database),
@@ -270,8 +302,12 @@ class SqlSourceService:
             target.schema = self._normalize_schema(raw.get("schema"))
             target.description = self._normalize_optional_text(raw.get("description"))
             target.bridge_id = bridge_id
+            target.include_all_tables = bool(raw.get("include_all_tables", True))
+            target.included_tables = self._normalize_included_tables(raw.get("included_tables"))
             target.source = SqlSource.SOURCE_YAML
             target.is_active = bool(raw.get("is_active", True))
+            if target.include_all_tables:
+                target.included_tables = []
 
             persisted = self.sql_source_repo.create_or_update(target)
             by_database[database] = persisted
@@ -341,4 +377,3 @@ class SqlSourceService:
             registered += 1
 
         return {"registered": registered, "skipped": skipped}
-

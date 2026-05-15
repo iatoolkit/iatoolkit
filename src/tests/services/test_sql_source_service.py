@@ -58,6 +58,25 @@ class TestSqlSourceService:
 
         assert exc_info.value.error_type == IAToolkitException.ErrorType.DUPLICATE_ENTRY
 
+    def test_create_source_persists_selected_context_tables(self):
+        self.sql_source_repo.get_by_database.return_value = None
+        self.sql_source_repo.create_or_update.side_effect = lambda source: source
+
+        result = self.service.create_source(
+            self.company_short_name,
+            {
+                "database": "wealth",
+                "connection_type": "direct",
+                "connection_string_env": "WEALTH_DATABASE_URI",
+                "include_all_tables": False,
+                "included_tables": ["wealth.clients", "wealth.clients", " wealth.positions "],
+            },
+        )
+
+        assert result["include_all_tables"] is False
+        assert result["included_tables"] == ["wealth.clients", "wealth.positions"]
+        self.sql_service.clear_company_connections.assert_called_once_with(self.company_short_name)
+
     def test_update_source_moves_ownership_to_user(self):
         existing = SqlSource(
             id=33,
@@ -82,6 +101,31 @@ class TestSqlSourceService:
         assert result["description"] == "Updated by GUI"
         assert result["source"] == SqlSource.SOURCE_USER
         self.sql_service.clear_company_connections.assert_called_once_with(self.company_short_name)
+
+    def test_update_source_clears_included_tables_when_switching_back_to_all_tables(self):
+        existing = SqlSource(
+            id=34,
+            company_id=self.company.id,
+            database="wealth",
+            connection_type=SqlSource.CONNECTION_DIRECT,
+            connection_string_env="WEALTH_DATABASE_URI",
+            schema="wealth",
+            include_all_tables=False,
+            included_tables=["wealth.clients"],
+            source=SqlSource.SOURCE_USER,
+            is_active=True,
+        )
+        self.sql_source_repo.get_by_id.return_value = existing
+        self.sql_source_repo.create_or_update.side_effect = lambda source: source
+
+        result = self.service.update_source(
+            self.company_short_name,
+            existing.id,
+            {"include_all_tables": True},
+        )
+
+        assert result["include_all_tables"] is True
+        assert result["included_tables"] == []
 
     def test_sync_from_yaml_upserts_yaml_rows_and_keeps_user_rows(self):
         existing_yaml_keep = SqlSource(

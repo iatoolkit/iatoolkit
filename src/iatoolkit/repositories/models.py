@@ -641,6 +641,8 @@ class SqlSource(Base):
     schema = Column(String, nullable=False, default="public")
     description = Column(Text, nullable=True)
     bridge_id = Column(String, nullable=True)
+    include_all_tables = Column(Boolean, nullable=False, default=True)
+    included_tables = Column(JSON_NATIVE, nullable=False, default=list)
 
     source = Column(String(16), nullable=False, default=SOURCE_YAML)
     is_active = Column(Boolean, nullable=False, default=True)

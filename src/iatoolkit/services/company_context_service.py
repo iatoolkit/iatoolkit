@@ -53,6 +53,7 @@ class CompanyContextService:
         sql_context = ""
         yaml_context = ""
         db_tables = []
+        sql_source_table_scopes = {}
 
         # 1. Context from Markdown (context/*.md)  files
         try:
@@ -65,12 +66,17 @@ class CompanyContextService:
         try:
             sql_context, db_tables = self._get_sql_enriched_context(company_short_name)
             sql_context = sql_context.strip()
+            sql_source_table_scopes = self._get_sql_source_table_scopes(company_short_name)
         except Exception as e:
             logging.warning(f"Could not generate SQL context for '{company_short_name}': {e}")
 
         # 4. Context from residual yaml (schema/*.yaml) files
         try:
-            yaml_schema_context = self._get_yaml_schema_context(company_short_name, db_tables).strip()
+            yaml_schema_context = self._get_yaml_schema_context(
+                company_short_name,
+                db_tables,
+                sql_source_table_scopes=sql_source_table_scopes,
+            ).strip()
             if yaml_schema_context:
                 yaml_context = f"## Esquemas adicionales\n\n{yaml_schema_context}"
         except Exception as e:
@@ -92,6 +98,34 @@ class CompanyContextService:
         except Exception as e:
             logging.warning(f"Could not generate SQL context for '{company_short_name}': {e}")
             return ""
+
+    def _get_sql_source_table_scopes(self, company_short_name: str) -> dict[str, set[str] | None]:
+        scopes: dict[str, set[str] | None] = {}
+        sql_sources = self.sql_source_service.list_sources(company_short_name, include_inactive=False)
+
+        for source in sql_sources:
+            db_name = str(source.get("database") or "").strip()
+            if not db_name:
+                continue
+            scopes[db_name] = self._resolve_allowed_tables_for_source(source)
+        return scopes
+
+    def _resolve_allowed_tables_for_source(self, source: dict) -> set[str] | None:
+        if bool(source.get("include_all_tables", True)):
+            return None
+
+        normalized_tables: set[str] = set()
+        for table_name in source.get("included_tables") or []:
+            normalized_tables.update(self._table_name_candidates(str(table_name or "")))
+        return normalized_tables
+
+    @classmethod
+    def _table_is_allowed(cls, table_name: str, allowed_tables: set[str] | None) -> bool:
+        if allowed_tables is None:
+            return True
+        if not allowed_tables:
+            return False
+        return bool(cls._table_name_candidates(table_name) & allowed_tables)
 
     def _get_sql_enriched_context(self, company_short_name: str, allowed_databases: List[str] | None = None):
         """
@@ -121,11 +155,22 @@ class CompanyContextService:
             if allowed_database_set and db_name not in allowed_database_set:
                 continue
 
+            allowed_tables = self._resolve_allowed_tables_for_source(source)
+
             try:
                 # 1. Get the Enriched Schema (Physical + YAML)
                 enriched_structure = self.get_enriched_database_schema(company_short_name, db_name)
                 if not enriched_structure:
                     continue
+
+                if allowed_tables is not None:
+                    enriched_structure = {
+                        table_name: table_data
+                        for table_name, table_data in enriched_structure.items()
+                        if self._table_is_allowed(table_name, allowed_tables)
+                    }
+                    if not enriched_structure:
+                        continue
 
                 # 2. Build Header for this Database
                 dialect = self.sql_service.get_database_dialect(company_short_name, db_name)
@@ -196,9 +241,15 @@ class CompanyContextService:
         return header + "\n\n---\n\n".join(context_output), db_tables
 
 
-    def _get_yaml_schema_context(self, company_short_name: str, db_tables: List[Dict]) -> str:
+    def _get_yaml_schema_context(
+        self,
+        company_short_name: str,
+        db_tables: List[Dict],
+        sql_source_table_scopes: dict[str, set[str] | None] | None = None,
+    ) -> str:
         # Get context from .yaml schema files using the repository
         yaml_schema_context = ''
+        sql_source_table_scopes = sql_source_table_scopes or {}
 
         try:
             # 1. List yaml files in the schema "folder"
@@ -211,10 +262,15 @@ class CompanyContextService:
                     table_name = f.split('.')[0]
 
                     exists = any(
-                        item["db_name"] == dbname and item["table_name"] == table_name
+                        item["db_name"] == dbname
+                        and bool(self._table_name_candidates(item["table_name"]) & self._table_name_candidates(table_name))
                         for item in db_tables
                     )
                     if exists:
+                        continue
+
+                    allowed_tables = sql_source_table_scopes.get(dbname)
+                    if dbname in sql_source_table_scopes and not self._table_is_allowed(table_name, allowed_tables):
                         continue
 
                 try:
