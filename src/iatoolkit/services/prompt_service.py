@@ -633,20 +633,80 @@ class PromptService:
         self.llm_query_repo.delete_prompt(prompt_db)
 
     def _resolve_system_prompt_capabilities(self, company_short_name: str) -> set[str]:
+        return self._resolve_sql_prompt_capabilities(company_short_name)
+
+    def _resolve_sql_prompt_capabilities(
+        self,
+        company_short_name: str,
+        allowed_sql_databases: list[str] | None = None,
+    ) -> set[str]:
         capabilities: set[str] = set()
         if not company_short_name:
             return capabilities
 
         try:
             db_names = self.sql_service.get_db_names(company_short_name)
-            if isinstance(db_names, list) and db_names:
+            if not isinstance(db_names, list):
+                return capabilities
+
+            allowed_database_set = None
+            if allowed_sql_databases is not None:
+                allowed_database_set = {
+                    str(item or "").strip()
+                    for item in allowed_sql_databases
+                    if str(item or "").strip()
+                }
+                db_names = [db_name for db_name in db_names if db_name in allowed_database_set]
+
+            if db_names:
                 capabilities.add("can_query_sql")
+
+            dialects: set[str] = set()
+            for db_name in db_names:
+                try:
+                    dialect = self.sql_service.get_database_dialect(company_short_name, db_name)
+                except Exception:
+                    continue
+                normalized = str(dialect or "").strip().lower()
+                if normalized:
+                    dialects.add(normalized)
+
+            if len(dialects) == 1:
+                only_dialect = next(iter(dialects))
+                if only_dialect in {"postgresql", "postgres"}:
+                    capabilities.add("can_query_sql_postgres")
+                elif only_dialect == "mysql":
+                    capabilities.add("can_query_sql_mysql")
         except Exception as e:
             logging.debug(
                 "Could not resolve SQL capabilities for company '%s': %s",
                 company_short_name,
                 e,
             )
+
+        return capabilities
+
+    def resolve_system_prompt_capabilities(
+        self,
+        company_short_name: str,
+        base_capabilities: set[str] | list[str] | tuple[str, ...] | None = None,
+        allowed_sql_databases: list[str] | None = None,
+    ) -> set[str]:
+        capabilities = {
+            str(item or "").strip()
+            for item in (base_capabilities or set())
+            if str(item or "").strip()
+        }
+        sql_capabilities = self._resolve_sql_prompt_capabilities(
+            company_short_name,
+            allowed_sql_databases=allowed_sql_databases,
+        )
+
+        if "can_query_sql" in capabilities:
+            capabilities.update(sql_capabilities)
+        else:
+            capabilities.discard("can_query_sql_postgres")
+            capabilities.discard("can_query_sql_mysql")
 
         return capabilities
 

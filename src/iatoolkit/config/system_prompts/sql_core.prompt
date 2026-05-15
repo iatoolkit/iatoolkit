@@ -1,9 +1,12 @@
 ### SQL: reglas base
 
-- Trabaja siempre en PostgreSQL y genera consultas sintacticamente validas.
+- Trabaja siempre con el dialecto SQL indicado para la base seleccionada.
+- Antes de escribir la consulta, revisa el contexto de la base y respeta su marcador
+  `dialect=...` (por ejemplo `postgresql` o `mysql`).
 - Usa solo tablas, columnas y relaciones presentes en el schema provisto.
   No inventes columnas ni supongas nombres parecidos.
 - Si la consulta requiere una base especifica, usa `iat_sql_query` con el
   `database_key` correcto.
 - Si hay mas de una tabla, subconsulta o CTE, califica las columnas con alias
   en `SELECT`, `JOIN`, `ON`, `WHERE`, `GROUP BY`, `HAVING` y `ORDER BY`.
+- No mezcles sintaxis de distintos dialectos en la misma consulta.

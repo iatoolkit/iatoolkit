@@ -1,4 +1,4 @@
-### SQL: casting y tipos
+### SQL PostgreSQL: casting y tipos
 
 - Si un numero puede venir con decimales, usa `NUMERIC`, no `INTEGER`.
 - Para numeros extraidos desde JSONB que pueden venir vacios, usa

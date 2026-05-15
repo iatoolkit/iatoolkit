@@ -128,7 +128,9 @@ class CompanyContextService:
                     continue
 
                 # 2. Build Header for this Database
-                db_context = f"### Base SQL (`database_key`): {db_name}\n"
+                dialect = self.sql_service.get_database_dialect(company_short_name, db_name)
+                dialect_suffix = f" [dialect={dialect}]" if dialect else ""
+                db_context = f"### Base SQL (`database_key`): {db_name}{dialect_suffix}\n"
 
                 # Optional: Add DB description from config if available (useful context)
                 db_desc = source.get('description', '')

@@ -24,6 +24,14 @@ class DatabaseProvider(abc.ABC):
         """
         pass
 
+    @abc.abstractmethod
+    def get_dialect(self) -> str:
+        """
+        Returns the normalized SQL dialect/backend name used by this provider
+        (for example: 'postgresql', 'mysql', 'sqlite').
+        """
+        pass
+
     # --- Execution Methods ---
     @abc.abstractmethod
     def execute_query(self, query: str, commit: bool = False) -> Union[List[Dict[str, Any]], Dict[str, int]]:

@@ -37,8 +37,9 @@ class DatabaseManager(DatabaseProvider):
             database_url = database_url.replace("postgres://", "postgresql://", 1)
 
         self.url = make_url(database_url)
+        self.backend = self.url.get_backend_name()
 
-        if database_url.startswith('sqlite'):
+        if self.backend == 'sqlite':
             raw_engine = create_engine(database_url, echo=False)
         else:
             raw_engine = create_engine(
@@ -50,16 +51,10 @@ class DatabaseManager(DatabaseProvider):
                 pool_recycle=1800,
                 pool_pre_ping=True,
                 pool_use_lifo=True,
-                connect_args={
-                    "keepalives": 1,
-                    "keepalives_idle": 30,
-                    "keepalives_interval": 10,
-                    "keepalives_count": 5,
-                    "connect_timeout": 10,
-                },
+                connect_args=self._build_connect_args(),
                 future=True,
             )
-        translated_schema = None if self.url.get_backend_name() == 'sqlite' else self.schema
+        translated_schema = self.schema if self._is_postgres() else None
         self._engine = raw_engine.execution_options(
             schema_translate_map={ORM_SCHEMA: translated_schema}
         )
@@ -70,14 +65,52 @@ class DatabaseManager(DatabaseProvider):
         self.scoped_session = scoped_session(self.SessionFactory)
 
         # Register pgvector for each new connection
-        backend = self.url.get_backend_name()
-        if backend == 'postgresql' or backend == 'postgres':
+        if self._is_postgres():
             if register_pgvector:
                 event.listen(raw_engine, 'connect', self.on_connect)
 
             # if there is a schema, configure the search_path for each connection
             if self.schema:
                 event.listen(raw_engine, 'checkout', self.set_search_path)
+
+    def _is_postgres(self) -> bool:
+        return self.backend in ('postgresql', 'postgres')
+
+    def _is_mysql(self) -> bool:
+        return self.backend == 'mysql'
+
+    def _build_connect_args(self) -> dict:
+        if self._is_postgres():
+            return {
+                "keepalives": 1,
+                "keepalives_idle": 30,
+                "keepalives_interval": 10,
+                "keepalives_count": 5,
+                "connect_timeout": 10,
+            }
+        if self._is_mysql():
+            return {
+                "connect_timeout": 10,
+            }
+        return {
+            "connect_timeout": 10,
+        }
+
+    def _effective_schema(self) -> str | None:
+        if self.backend == 'sqlite':
+            return None
+
+        if self._is_postgres():
+            return self.schema
+
+        if self._is_mysql():
+            normalized = str(self.schema or "").strip()
+            if normalized and normalized.lower() != "public":
+                return normalized
+            return self.url.database
+
+        normalized = str(self.schema or "").strip()
+        return normalized or None
 
     def set_search_path(self, dbapi_connection, connection_record, connection_proxy):
         # Configure the search_path for this connection
@@ -110,10 +143,12 @@ class DatabaseManager(DatabaseProvider):
     def get_connection(self):
         return self._engine.connect()
 
+    def get_dialect(self) -> str:
+        return str(self.backend or "").strip().lower()
+
     def create_all(self):
         # if there is a schema defined, make sure it exists before creating tables
-        backend = self.url.get_backend_name()
-        if self.schema and (backend == 'postgresql' or backend == 'postgres'):
+        if self.schema and self._is_postgres():
             with self._engine.begin() as conn:
                 conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {self.schema}"))
 
@@ -126,8 +161,7 @@ class DatabaseManager(DatabaseProvider):
             )
 
     def _apply_bootstrap_patches(self) -> list[str]:
-        backend = self.url.get_backend_name()
-        if backend not in ('postgresql', 'postgres'):
+        if not self._is_postgres():
             return []
 
         applied = []
@@ -154,7 +188,7 @@ class DatabaseManager(DatabaseProvider):
         Implementation for Direct SQLAlchemy connection.
         """
         session = self.get_session()
-        if self.schema:
+        if self._is_postgres() and self.schema:
             session.execute(text(f"SET search_path TO {self.schema}"))
 
         result = session.execute(text(query))
@@ -178,14 +212,15 @@ class DatabaseManager(DatabaseProvider):
     def get_database_structure(self) -> dict:
         inspector = inspect(self._engine)
         structure = {}
-        for table in inspector.get_table_names(schema=self.schema):
+        effective_schema = self._effective_schema()
+        for table in inspector.get_table_names(schema=effective_schema):
             columns_data = []
 
             # get columns
             try:
-                columns = inspector.get_columns(table, schema=self.schema)
+                columns = inspector.get_columns(table, schema=effective_schema)
                 # Obtener PKs para marcarlas
-                pks = inspector.get_pk_constraint(table, schema=self.schema).get('constrained_columns', [])
+                pks = inspector.get_pk_constraint(table, schema=effective_schema).get('constrained_columns', [])
 
                 for col in columns:
                     columns_data.append({

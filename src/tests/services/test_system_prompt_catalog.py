@@ -192,6 +192,44 @@ prompts:
     assert [item["key"] for item in html] == ["query_main", "format_styles"]
 
 
+def test_select_entries_by_sql_dialect_capabilities():
+    payload = """
+prompts:
+  - key: sql_core
+    filename: sql_core.prompt
+    section: data_access_rules
+    include:
+      all_capabilities: [can_query_sql]
+  - key: sql_postgres
+    filename: sql_jsonb.prompt
+    section: data_access_rules
+    include:
+      all_capabilities: [can_query_sql_postgres]
+  - key: sql_mysql
+    filename: sql_mysql_json.prompt
+    section: data_access_rules
+    include:
+      all_capabilities: [can_query_sql_mysql]
+"""
+    with patch.object(system_prompt_catalog, "_read_catalog_text", return_value=payload):
+        postgres = system_prompt_catalog.select_system_prompt_entries(
+            {"can_query_sql", "can_query_sql_postgres"},
+            execution_mode="chat",
+        )
+        mysql = system_prompt_catalog.select_system_prompt_entries(
+            {"can_query_sql", "can_query_sql_mysql"},
+            execution_mode="chat",
+        )
+        mixed = system_prompt_catalog.select_system_prompt_entries(
+            {"can_query_sql"},
+            execution_mode="chat",
+        )
+
+    assert [item["key"] for item in postgres] == ["sql_core", "sql_postgres"]
+    assert [item["key"] for item in mysql] == ["sql_core", "sql_mysql"]
+    assert [item["key"] for item in mixed] == ["sql_core"]
+
+
 def test_catalog_loader_is_cached_in_memory():
     payload = """
 prompts:

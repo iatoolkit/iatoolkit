@@ -66,6 +66,9 @@ class TestDatabaseManager:
     def test_remove_session_calls_scoped_session_remove(self):
         self.db_manager.remove_session()
         self.mock_scoped_session.remove.assert_called_once()
+
+    def test_get_dialect_returns_backend_name(self):
+        assert self.db_manager.get_dialect() == "sqlite"
     # --- Tests for Execution Methods (New Interface) ---
 
     def test_execute_query_returns_rows_as_dict(self):
@@ -87,6 +90,18 @@ class TestDatabaseManager:
         # Assert
         assert result == [{'id': 1, 'val': 'a'}, {'id': 2, 'val': 'b'}]
         assert mock_session.execute.call_count >= 1
+
+    def test_execute_query_does_not_set_search_path_for_sqlite(self):
+        mock_session = self.mock_scoped_session
+        mock_result = mock_session.execute.return_value
+        mock_result.returns_rows = True
+        mock_result.keys.return_value = ['id']
+        mock_result.fetchall.return_value = [(1,)]
+
+        self.db_manager.execute_query(query="SELECT 1 AS id")
+
+        executed_sql = [str(call.args[0]) for call in mock_session.execute.call_args_list]
+        assert all("SET search_path" not in statement for statement in executed_sql)
 
     def test_execute_query_no_rows_returns_rowcount(self):
         """

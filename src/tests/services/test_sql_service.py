@@ -142,6 +142,13 @@ class TestSqlService:
         # Assert
         assert set(db_names_A) == {'db_sales', 'db_hr'}
 
+    def test_get_database_dialect_reads_provider_dialect(self):
+        mock_provider = MagicMock(spec=DatabaseProvider)
+        mock_provider.get_dialect.return_value = "mysql"
+        self.service._db_connections[(COMPANY_SHORT_NAME, DB_NAME_SUCCESS)] = mock_provider
+
+        assert self.service.get_database_dialect(COMPANY_SHORT_NAME, DB_NAME_SUCCESS) == "mysql"
+
     @patch('iatoolkit.services.sql_service.DatabaseManager')
     def test_clear_company_connections_removes_only_company_entries(self, MockDatabaseManager):
         config = {'DATABASE_URI': DUMMY_URI}

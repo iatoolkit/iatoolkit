@@ -73,7 +73,10 @@ class ContextBuilderService:
             company_id=company.id,
             company_short_name=company.short_name,
             query_text=query_text,
-            capabilities_override=self._resolve_system_prompt_capabilities(available_tools),
+            capabilities_override=self.prompt_service.resolve_system_prompt_capabilities(
+                company.short_name,
+                self._resolve_system_prompt_capabilities(available_tools),
+            ),
             execution_mode="chat",
             response_mode="chat_compatible",
         )
@@ -179,7 +182,10 @@ class ContextBuilderService:
             company_id=company.id,
             company_short_name=company.short_name,
             query_text=query_text,
-            capabilities_override=self._resolve_system_prompt_capabilities(available_tools),
+            capabilities_override=self.prompt_service.resolve_system_prompt_capabilities(
+                company.short_name,
+                self._resolve_system_prompt_capabilities(available_tools),
+            ),
             execution_mode="chat",
             response_mode="chat_compatible",
         )
@@ -282,15 +288,22 @@ class ContextBuilderService:
             PromptResourceType.RAG_COLLECTION.value,
         )
 
-        capabilities_override = self._resolve_system_prompt_capabilities(enabled_tools)
+        prompt_capabilities = self._resolve_system_prompt_capabilities(enabled_tools)
         if self.SQL_TOOL_NAME in enabled_tool_names and not sql_sources:
-            capabilities_override.discard("can_query_sql")
+            prompt_capabilities.discard("can_query_sql")
+            prompt_capabilities.discard("can_query_sql_postgres")
+            prompt_capabilities.discard("can_query_sql_mysql")
+        prompt_capabilities = self.prompt_service.resolve_system_prompt_capabilities(
+            company.short_name,
+            prompt_capabilities,
+            allowed_sql_databases=sql_sources if self.SQL_TOOL_NAME in enabled_tool_names else None,
+        )
 
         system_prompt_payload = self.prompt_service.get_system_prompt_payload(
             company_id=company.id,
             company_short_name=company.short_name,
             query_text=query_text,
-            capabilities_override=capabilities_override,
+            capabilities_override=prompt_capabilities,
             execution_mode="agent",
             response_mode=str(resolved_contract.get("response_mode") or "chat_compatible").strip().lower() or "chat_compatible",
         )

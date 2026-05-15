@@ -54,6 +54,9 @@ class TestContextBuilderService:
             "content": "System Template",
             "selected_keys": ["core_identity", "memory_usage", "output_basics"],
         }
+        self.mock_prompt_service.resolve_system_prompt_capabilities.return_value = {
+            "can_use_memory",
+        }
         self.mock_tool_service.get_tools_for_llm.return_value = [
             {"name": "iat_memory_search", "description": "Memory search"},
         ]
@@ -100,6 +103,10 @@ class TestContextBuilderService:
             execution_mode="chat",
             response_mode="chat_compatible",
         )
+        self.mock_prompt_service.resolve_system_prompt_capabilities.assert_called_once_with(
+            MOCK_COMPANY_SHORT_NAME,
+            {"can_use_memory"},
+        )
 
     def test_build_system_context_company_not_found(self):
         """Should return None if company does not exist."""
@@ -117,6 +124,7 @@ class TestContextBuilderService:
             "content": "System Template",
             "selected_keys": [],
         }
+        self.mock_prompt_service.resolve_system_prompt_capabilities.return_value = set()
         self.mock_tool_service.get_tools_for_llm.return_value = []
         self.mock_knowledge_base_service.get_collection_descriptors.return_value = []
         self.mock_util.render_prompt_from_string.return_value = "Rendered System Prompt"
@@ -148,6 +156,10 @@ class TestContextBuilderService:
         self.mock_prompt_service.get_system_prompt_payload.return_value = {
             "content": "Agent System Template",
             "selected_keys": ["core_identity", "memory_usage", "sql_core"],
+        }
+        self.mock_prompt_service.resolve_system_prompt_capabilities.return_value = {
+            "can_query_sql",
+            "can_use_memory",
         }
         self.mock_util.render_prompt_from_string.return_value = "Rendered Agent Prompt\n### Memoria personal"
         self.mock_company_context.get_sql_context.return_value = "Filtered SQL Context"
@@ -187,6 +199,11 @@ class TestContextBuilderService:
             capabilities_override={"can_query_sql", "can_use_memory"},
             execution_mode="agent",
             response_mode="chat_compatible",
+        )
+        self.mock_prompt_service.resolve_system_prompt_capabilities.assert_called_once_with(
+            MOCK_COMPANY_SHORT_NAME,
+            {"can_query_sql", "can_use_memory"},
+            allowed_sql_databases=["erp"],
         )
 
     def test_build_user_turn_prompt_basic(self):

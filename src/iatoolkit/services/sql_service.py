@@ -102,6 +102,15 @@ class SqlService:
         """
         return [db for (co, db) in self._db_connections.keys() if co == company_short_name]
 
+    def get_database_dialect(self, company_short_name: str, db_name: str) -> str:
+        provider = self.get_database_provider(company_short_name, db_name)
+        dialect = getattr(provider, "get_dialect", None)
+        if callable(dialect):
+            value = dialect()
+            if isinstance(value, str):
+                return value.strip().lower()
+        return ""
+
     def get_database_provider(self, company_short_name: str, db_name: str) -> DatabaseProvider:
         """
         Retrieves a registered DatabaseProvider instance using the composite key.

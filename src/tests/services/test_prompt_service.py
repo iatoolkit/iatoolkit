@@ -252,6 +252,28 @@ class TestPromptService:
         assert exc_info.value.error_type == IAToolkitException.ErrorType.PROMPT_ERROR
         assert "catalog error" in str(exc_info.value)
 
+    def test_resolve_system_prompt_capabilities_adds_postgres_capability_for_uniform_sql(self):
+        self.mock_sql_service.get_db_names.return_value = ["erp"]
+        self.mock_sql_service.get_database_dialect.return_value = "postgresql"
+
+        capabilities = self.prompt_service.resolve_system_prompt_capabilities(
+            "test_co",
+            {"can_query_sql", "can_use_memory"},
+        )
+
+        assert capabilities == {"can_query_sql", "can_query_sql_postgres", "can_use_memory"}
+
+    def test_resolve_system_prompt_capabilities_keeps_neutral_sql_when_dialects_are_mixed(self):
+        self.mock_sql_service.get_db_names.return_value = ["erp", "crm"]
+        self.mock_sql_service.get_database_dialect.side_effect = ["postgresql", "mysql"]
+
+        capabilities = self.prompt_service.resolve_system_prompt_capabilities(
+            "test_co",
+            {"can_query_sql"},
+        )
+
+        assert capabilities == {"can_query_sql"}
+
     # --- Tests para get_prompt_content ---
 
     def test_get_prompt_content_success(self):

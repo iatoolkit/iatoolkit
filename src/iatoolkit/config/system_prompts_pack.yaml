@@ -106,7 +106,7 @@ prompts:
         - chat
         - agent
       all_capabilities:
-        - can_query_sql
+        - can_query_sql_postgres
   - key: sql_casting
     filename: sql_casting.prompt
     section: data_access_rules
@@ -115,7 +115,7 @@ prompts:
         - chat
         - agent
       all_capabilities:
-        - can_query_sql
+        - can_query_sql_postgres
   - key: sql_aggregation_scope
     filename: sql_aggregation_scope.prompt
     section: data_access_rules
@@ -125,3 +125,21 @@ prompts:
         - agent
       all_capabilities:
         - can_query_sql
+  - key: sql_mysql_json
+    filename: sql_mysql_json.prompt
+    section: data_access_rules
+    include:
+      execution_modes:
+        - chat
+        - agent
+      all_capabilities:
+        - can_query_sql_mysql
+  - key: sql_mysql_casting
+    filename: sql_mysql_casting.prompt
+    section: data_access_rules
+    include:
+      execution_modes:
+        - chat
+        - agent
+      all_capabilities:
+        - can_query_sql_mysql
