@@ -1,0 +1,10 @@
+### SQL MySQL: casting y tipos
+
+- Usa `CAST(... AS SIGNED)` para enteros cuando corresponda.
+- Usa `CAST(... AS DECIMAL(18, 4))` para montos o numeros con decimales.
+- No uses casts de PostgreSQL como `::NUMERIC`, `::INTEGER`, `::DATE` o `::BOOLEAN`.
+- Si un valor JSON puede venir vacio, primero conviertelo a texto con `JSON_UNQUOTE(...)`
+  y luego usa `NULLIF(..., '')` antes del `CAST(...)`.
+- Para fechas en texto usa `STR_TO_DATE(texto, '%d-%m-%Y')` o el formato que
+  corresponda a los datos reales.
+- No uses `TO_DATE(...)`, `date_trunc(...)` ni operadores exclusivos de PostgreSQL.

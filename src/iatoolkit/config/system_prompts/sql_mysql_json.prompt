@@ -1,0 +1,9 @@
+### SQL MySQL: JSON
+
+- Si un campo JSON contiene claves anidadas, usa `JSON_EXTRACT(json_col, '$.campo')`.
+- Si necesitas comparar o proyectar texto desde JSON, usa
+  `JSON_UNQUOTE(JSON_EXTRACT(json_col, '$.campo'))`.
+- No uses operadores de PostgreSQL como `->`, `->>`, `jsonb_each`,
+  `jsonb_array_elements` ni tipos `jsonb`.
+- Si necesitas contar o expandir arrays JSON, usa funciones compatibles con MySQL 8
+  y evita sintaxis especifica de PostgreSQL.
