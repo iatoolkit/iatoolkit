@@ -1,0 +1,2 @@
+ALTER TABLE iatoolkit.iat_prompt
+ADD COLUMN IF NOT EXISTS is_agent_profile BOOLEAN NOT NULL DEFAULT FALSE;
