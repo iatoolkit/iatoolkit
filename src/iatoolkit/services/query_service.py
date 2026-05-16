@@ -472,6 +472,19 @@ class QueryService:
         return execution_mode == "agentic"
 
     @staticmethod
+    def _is_agent_session_execution(
+        *,
+        prompt_name: str | None,
+        client_data: dict | None,
+        prompt_output_contract: dict | None,
+    ) -> bool:
+        if not prompt_name or not isinstance(client_data, dict):
+            return False
+        if str(client_data.get("conversation_runtime") or "").strip().lower() != "agent_session":
+            return False
+        return bool(prompt_output_contract)
+
+    @staticmethod
     def _get_tool_names(tools: list[dict] | None) -> list[str]:
         tool_names: list[str] = []
         for tool in tools or []:
@@ -1087,6 +1100,79 @@ class QueryService:
                                                    current_version)
         return {'rebuild_needed': rebuild_is_needed}
 
+    def prepare_agent_context(
+        self,
+        company_short_name: str,
+        user_identifier: str,
+        prompt_name: str,
+        *,
+        query_text: str | None = None,
+    ) -> dict:
+        if not user_identifier:
+            return {'rebuild_needed': True, 'error': 'Invalid user identifier'}
+        if not prompt_name:
+            return {'rebuild_needed': True, 'error': 'Invalid prompt name'}
+
+        company = self.profile_repo.get_company_by_short_name(company_short_name)
+        if not company:
+            return {'rebuild_needed': True, 'error': f"Company '{company_short_name}' not found"}
+
+        prompt_output_contract = self._resolve_prompt_output_contract(company, prompt_name)
+        if not prompt_output_contract:
+            return {'rebuild_needed': True, 'error': f"Prompt '{prompt_name}' not found"}
+
+        tools = self.tool_service.get_tools_for_llm(company)
+        is_agent_execution = self._is_agentic_execution(prompt_output_contract)
+        tools, _tool_router_metrics = self._apply_prompt_tool_policy(
+            company_short_name=company_short_name,
+            prompt_output_contract=prompt_output_contract,
+            tools=tools,
+            include_forced_tools=not is_agent_execution,
+        )
+
+        validation_error = self._validate_agent_resource_scope(prompt_output_contract, tools)
+        if validation_error:
+            return {'rebuild_needed': True, 'error': validation_error}
+
+        final_system_context, user_profile, selected_system_prompt_keys = self.context_builder.build_agent_system_context(
+            company_short_name=company_short_name,
+            user_identifier=user_identifier,
+            prompt_name=prompt_name,
+            enabled_tools=tools,
+            prompt_output_contract=prompt_output_contract,
+            query_text=query_text,
+        )
+        if not final_system_context:
+            logging.error(
+                "Failed to build agent context for %s/%s prompt=%s",
+                company_short_name,
+                user_identifier,
+                prompt_name,
+            )
+            return {'rebuild_needed': True}
+
+        self.session_context.save_profile_data(company_short_name, user_identifier, user_profile)
+        self.session_context.save_selected_system_prompt_keys(
+            company_short_name,
+            user_identifier,
+            selected_system_prompt_keys if isinstance(selected_system_prompt_keys, list) else [],
+        )
+
+        current_version = self.context_builder.compute_context_version(final_system_context)
+        try:
+            prev_version = self.session_context.get_context_version(company_short_name, user_identifier)
+        except Exception:
+            prev_version = None
+
+        rebuild_is_needed = (prev_version != current_version)
+        self.session_context.save_prepared_context(
+            company_short_name,
+            user_identifier,
+            final_system_context,
+            current_version,
+        )
+        return {'rebuild_needed': rebuild_is_needed}
+
     def set_context_for_llm(self,
                             company_short_name: str,
                             user_identifier: str,
@@ -1144,6 +1230,77 @@ class QueryService:
             # release the lock
             self.session_context.release_lock(lock_key)
 
+    def init_agent_session(
+        self,
+        company_short_name: str,
+        user_identifier: str,
+        prompt_name: str,
+        *,
+        model: str | None = None,
+        query_text: str | None = None,
+    ) -> dict:
+        company = self.profile_repo.get_company_by_short_name(company_short_name)
+        if not company:
+            return {
+                "error": True,
+                "error_message": self.i18n_service.t(
+                    'errors.company_not_found',
+                    company_short_name=company_short_name,
+                ),
+            }
+        prompt_output_contract = self._resolve_prompt_output_contract(company, prompt_name)
+        if not prompt_output_contract:
+            return {
+                "error": True,
+                "error_message": "Prompt not found.",
+            }
+
+        effective_model = self._resolve_model(company_short_name, model, prompt_output_contract)
+        prepare_result = self.prepare_agent_context(
+            company_short_name=company_short_name,
+            user_identifier=user_identifier,
+            prompt_name=prompt_name,
+            query_text=query_text,
+        )
+        if prepare_result.get("error"):
+            return {
+                "error": True,
+                "error_message": str(prepare_result.get("error")),
+            }
+        response = self.set_context_for_llm(
+            company_short_name=company_short_name,
+            user_identifier=user_identifier,
+            model=effective_model,
+        )
+        return response or {}
+
+    def has_live_context(
+        self,
+        company_short_name: str,
+        user_identifier: str,
+        *,
+        model: str | None = None,
+    ) -> bool:
+        if not company_short_name or not user_identifier:
+            return False
+        effective_model = self._resolve_model(company_short_name, model)
+        try:
+            last_response_id = self.session_context.get_last_response_id(
+                company_short_name,
+                user_identifier,
+                model=effective_model or None,
+            )
+            if last_response_id:
+                return True
+            context_history = self.session_context.get_context_history(
+                company_short_name,
+                user_identifier,
+                model=effective_model or None,
+            ) or []
+            return bool(context_history)
+        except Exception:
+            return False
+
     def llm_query(self,
                   company_short_name: str,
                   user_identifier: str,
@@ -1169,6 +1326,11 @@ class QueryService:
 
             # output contract
             prompt_output_contract = self._resolve_prompt_output_contract(company, prompt_name)
+            is_agent_session_execution = self._is_agent_session_execution(
+                prompt_name=prompt_name,
+                client_data=client_data,
+                prompt_output_contract=prompt_output_contract,
+            )
             effective_model = self._resolve_model(company_short_name, model, prompt_output_contract)
             output_schema = self._build_output_text_schema_payload(
                 company_short_name,
@@ -1239,7 +1401,7 @@ class QueryService:
                 user_identifier=user_identifier,
                 client_data=client_data,
                 files=attachment_plan.get("files_for_context", []),
-                prompt_name=prompt_name,
+                prompt_name=None if is_agent_session_execution else prompt_name,
                 question=question
             )
 
@@ -1251,7 +1413,7 @@ class QueryService:
                     contract=prompt_output_contract,
                 )
 
-            is_agent_execution = self._is_agentic_execution(prompt_output_contract)
+            is_agent_execution = self._is_agentic_execution(prompt_output_contract) and not is_agent_session_execution
 
             # get the tools availables for this company
             tools = self.tool_service.get_tools_for_llm(company)
