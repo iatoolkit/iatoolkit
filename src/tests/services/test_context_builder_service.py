@@ -367,6 +367,7 @@ required:
         self.mock_prompt_service.get_prompt_definition.return_value = SimpleNamespace(
             name="employee_prompt",
             execution_mode="agentic",
+            is_agent_profile=True,
             visible_in_chat=False,
             output_schema='{"type":"object","properties":{"employees":{"type":"array"}}}',
             output_schema_yaml=None,
@@ -404,6 +405,7 @@ required:
         assert contract["schema_mode"] == "strict"
         assert contract["response_mode"] == "structured_only"
         assert contract["execution_mode"] == "agentic"
+        assert contract["is_agent_profile"] is True
         assert contract["visible_in_chat"] is False
         assert contract["attachment_mode"] == "native_only"
         assert contract["attachment_parser_provider"] == "basic"
@@ -438,6 +440,7 @@ required:
             llm_model="gpt-4o-mini",
             llm_request_options={"text_verbosity": "low"},
             execution_mode=None,
+            is_agent_profile=None,
             visible_in_chat=None,
             resource_bindings=[],
         )
@@ -447,6 +450,7 @@ required:
         assert contract["prompt_name"] == "employee_prompt"
         assert contract["schema"] is None
         assert contract["execution_mode"] == "conversational"
+        assert contract["is_agent_profile"] is False
         assert contract["visible_in_chat"] is True
         assert contract["attachment_mode"] == "native_only"
         assert contract["attachment_parser_provider"] == "docling"

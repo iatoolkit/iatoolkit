@@ -264,6 +264,36 @@ class TestQueryService:
         # Verificar actualización de historia
         self.mock_history_manager.update_history.assert_called_once()
 
+    def test_llm_query_passes_delivery_channel_for_whatsapp_runtime(self):
+        user_prompt = "User prompt with context"
+        effective_q = "Hi"
+        images = []
+        self.mock_context_builder.build_user_turn_prompt.return_value = (
+            user_prompt, effective_q, images
+        )
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': 'existing_id'}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'Hello'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            question="Hi",
+            model='gpt-test',
+            client_data={
+                "source": "whatsapp",
+                "channel": "whatsapp",
+            },
+        )
+
+        kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert kwargs["execution_metadata"]["request_source"] == "whatsapp"
+        assert kwargs["execution_metadata"]["delivery_channel"] == "whatsapp"
+
     def test_llm_query_forwards_telemetry_request_to_llm_client(self):
         user_prompt = "User prompt with context"
         effective_q = "Hi"
@@ -1676,6 +1706,7 @@ class TestQueryService:
         self.mock_context_builder.get_prompt_output_contract.return_value = {
             "prompt_name": "research_agent",
             "execution_mode": "agentic",
+            "is_agent_profile": False,
             "visible_in_chat": False,
             "schema": None,
             "schema_mode": "best_effort",
@@ -1727,6 +1758,7 @@ class TestQueryService:
         self.mock_context_builder.get_prompt_output_contract.return_value = {
             "prompt_name": "sql_agent",
             "execution_mode": "agentic",
+            "is_agent_profile": False,
             "visible_in_chat": False,
             "schema": None,
             "schema_mode": "best_effort",
@@ -1761,6 +1793,7 @@ class TestQueryService:
         self.mock_context_builder.get_prompt_output_contract.return_value = {
             "prompt_name": "docs_agent",
             "execution_mode": "agentic",
+            "is_agent_profile": False,
             "visible_in_chat": False,
             "schema": None,
             "schema_mode": "best_effort",
@@ -1787,6 +1820,159 @@ class TestQueryService:
         self.mock_history_manager.populate_request_params.assert_not_called()
         self.mock_history_manager.update_history.assert_not_called()
 
+    def test_init_agent_session_prepares_and_sets_context_for_agent_profile(self):
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "collections_agent",
+            "execution_mode": "agentic",
+            "is_agent_profile": True,
+            "visible_in_chat": False,
+            "schema": None,
+            "schema_mode": "best_effort",
+            "response_mode": "chat_compatible",
+            "tool_policy": {
+                "mode": "inherit",
+                "tool_names": [],
+            },
+            "resource_bindings": [],
+        }
+
+        with patch.object(
+            self.service,
+            "prepare_agent_context",
+            return_value={"rebuild_needed": True},
+        ) as mock_prepare_agent_context, patch.object(
+            self.service,
+            "set_context_for_llm",
+            return_value={"response_id": "agent_ctx_123"},
+        ) as mock_set_context_for_llm:
+            result = self.service.init_agent_session(
+                company_short_name=MOCK_COMPANY_SHORT_NAME,
+                user_identifier=MOCK_LOCAL_USER_ID,
+                prompt_name="collections_agent",
+                model="gpt-test",
+                query_text="hola",
+            )
+
+        assert result == {"response_id": "agent_ctx_123"}
+        mock_prepare_agent_context.assert_called_once_with(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="collections_agent",
+            query_text="hola",
+        )
+        mock_set_context_for_llm.assert_called_once_with(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            model="gpt-test",
+        )
+
+    def test_has_live_context_returns_true_from_last_response_or_history(self):
+        self.mock_session_context.get_last_response_id.return_value = "resp_123"
+
+        assert self.service.has_live_context(
+            MOCK_COMPANY_SHORT_NAME,
+            MOCK_LOCAL_USER_ID,
+            model="gpt-test",
+        ) is True
+
+        self.mock_session_context.get_last_response_id.return_value = None
+        self.mock_session_context.get_context_history.return_value = [{"role": "user", "content": "hola"}]
+
+        assert self.service.has_live_context(
+            MOCK_COMPANY_SHORT_NAME,
+            MOCK_LOCAL_USER_ID,
+            model="gpt-test",
+        ) is True
+
+        self.mock_session_context.get_context_history.return_value = []
+
+        assert self.service.has_live_context(
+            MOCK_COMPANY_SHORT_NAME,
+            MOCK_LOCAL_USER_ID,
+            model="gpt-test",
+        ) is False
+
+    def test_llm_query_agent_session_reuses_history_and_skips_prompt_reinjection(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = []
+        self.mock_context_builder.build_user_turn_prompt.return_value = (
+            "customer turn prompt",
+            "de que se trata la oferta",
+            [],
+        )
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "collections_agent",
+            "execution_mode": "agentic",
+            "is_agent_profile": True,
+            "visible_in_chat": False,
+            "schema": None,
+            "schema_mode": "best_effort",
+            "response_mode": "chat_compatible",
+            "tool_policy": {
+                "mode": "inherit",
+                "tool_names": [],
+            },
+            "resource_bindings": [],
+        }
+        self.mock_llm_client.invoke.return_value = {
+            "valid_response": True,
+            "answer": "ok",
+        }
+
+        def populate_side_effect(handle, prompt, ignore_history):
+            assert handle.type != "stateless"
+            handle.request_params = {"previous_response_id": "existing_ctx_123"}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+
+        result = self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="collections_agent",
+            question="de que se trata la oferta",
+            model="gpt-test",
+            client_data={"conversation_runtime": "agent_session"},
+        )
+
+        assert result["valid_response"] is True
+        self.mock_context_builder.build_user_turn_prompt.assert_called_once()
+        build_kwargs = self.mock_context_builder.build_user_turn_prompt.call_args.kwargs
+        assert build_kwargs["prompt_name"] is None
+        self.mock_context_builder.build_agent_system_context.assert_not_called()
+        self.mock_history_manager.populate_request_params.assert_called_once()
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert invoke_kwargs["previous_response_id"] == "existing_ctx_123"
+        assert invoke_kwargs["context"] == "customer turn prompt"
+
+    def test_llm_query_agent_session_requires_prompt_marked_as_agent_profile(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = []
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "q", [])
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "collections_agent",
+            "execution_mode": "agentic",
+            "is_agent_profile": False,
+            "visible_in_chat": False,
+            "schema": None,
+            "schema_mode": "best_effort",
+            "response_mode": "chat_compatible",
+            "tool_policy": {"mode": "inherit", "tool_names": []},
+            "resource_bindings": [],
+        }
+        self.mock_llm_client.invoke.return_value = {"valid_response": True, "answer": "ok"}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="collections_agent",
+            question="de que se trata la oferta",
+            model="gpt-test",
+            client_data={"conversation_runtime": "agent_session"},
+        )
+
+        build_kwargs = self.mock_context_builder.build_user_turn_prompt.call_args.kwargs
+        assert build_kwargs["prompt_name"] == "collections_agent"
+
     def test_preview_prompt_context_agentic_uses_runtime_context(self):
         self.mock_tool_service.get_tools_for_llm.return_value = [
             {"type": "function", "name": "iat_sql_query", "description": "sql", "parameters": {}, "strict": True},
@@ -1797,6 +1983,7 @@ class TestQueryService:
         self.mock_context_builder.get_prompt_output_contract.return_value = {
             "prompt_name": "research_agent",
             "execution_mode": "agentic",
+            "is_agent_profile": True,
             "visible_in_chat": False,
             "schema": None,
             "schema_mode": "best_effort",
@@ -1821,6 +2008,7 @@ class TestQueryService:
         )
 
         assert result["execution_mode"] == "agentic"
+        assert result["is_agent_profile"] is True
         assert result["history_type"] == "stateless"
         assert result["runtime_context"] == "Agent Minimal Context"
         assert result["selected_system_prompt_keys"] == ["core_identity"]
@@ -1840,6 +2028,7 @@ class TestQueryService:
         self.mock_context_builder.get_prompt_output_contract.return_value = {
             "prompt_name": "chat_agent",
             "execution_mode": "conversational",
+            "is_agent_profile": False,
             "visible_in_chat": True,
             "schema": None,
             "schema_mode": "best_effort",

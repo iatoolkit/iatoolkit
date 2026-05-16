@@ -558,6 +558,7 @@ class Prompt(Base):
     active = Column(Boolean, default=True)
     visible_in_chat = Column(Boolean, default=True, nullable=False)
     execution_mode = Column(String, default=PromptExecutionMode.CONVERSATIONAL.value, nullable=False)
+    is_agent_profile = Column(Boolean, default=False, nullable=False)
     order = Column(Integer, nullable=True, default=0)
     category_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_prompt_categories.id', ondelete='SET NULL'), nullable=True)
     custom_fields = Column(JSON, nullable=False, default=[])

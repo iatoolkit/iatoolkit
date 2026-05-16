@@ -21,6 +21,7 @@ class TestPromptService:
         prompt.description = f"{prompt_name} description"
         prompt.category = None
         prompt.visible_in_chat = True
+        prompt.is_agent_profile = False
         prompt.execution_mode = 'conversational'
         prompt.active = active
         prompt.custom_fields = []
@@ -100,6 +101,7 @@ class TestPromptService:
                     'description': 'active_prompt description',
                     'category': None,
                     'visible_in_chat': True,
+                    'is_agent_profile': False,
                     'execution_mode': 'conversational',
                     'active': True,
                     'custom_fields': [],
@@ -385,7 +387,28 @@ class TestPromptService:
 
         saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
         assert saved_prompt.visible_in_chat is True
+        assert saved_prompt.is_agent_profile is False
         assert saved_prompt.execution_mode == 'conversational'
+
+    def test_save_prompt_persists_is_agent_profile_flag(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_category_by_name.return_value = None
+
+        self.prompt_service.save_prompt(
+            'test_co',
+            'collections_agent',
+            {
+                'content': 'Prompt text',
+                'visible_in_chat': False,
+                'execution_mode': 'agentic',
+                'is_agent_profile': True,
+            }
+        )
+
+        saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
+        assert saved_prompt.visible_in_chat is False
+        assert saved_prompt.execution_mode == 'agentic'
+        assert saved_prompt.is_agent_profile is True
 
     def test_save_prompt_persists_structured_output_schema_yaml_and_json(self):
         self.profile_repo.get_company_by_short_name.return_value = self.mock_company

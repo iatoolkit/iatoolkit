@@ -156,6 +156,56 @@ class TestLLMClient:
         assert saved_query.stats["request_source"] == "iatoolkit_mcp"
         assert result["stats"]["request_source"] == "iatoolkit_mcp"
 
+    def test_invoke_formats_whatsapp_answers_as_plaintext(self):
+        self.mock_proxy.create_response.return_value = LLMResponse(
+            id='response_wa', model='gpt-4o', status='completed',
+            output_text=json.dumps({
+                "answer": "<p>Hola Fernando.</p><p>Linea dos<br>Linea tres</p>",
+                "aditional_data": {},
+            }),
+            output=[], usage=Usage(input_tokens=100, output_tokens=50, total_tokens=150)
+        )
+
+        result = self.client.invoke(
+            company=self.company,
+            user_identifier='user1',
+            previous_response_id='prev1',
+            model='gpt-5',
+            question='q',
+            context='c',
+            tools=[],
+            text={},
+            images=[],
+            execution_metadata={"delivery_channel": "whatsapp"},
+        )
+
+        assert result["answer"] == "Hola Fernando.\n\nLinea dos\nLinea tres"
+
+    def test_invoke_keeps_html_for_non_whatsapp_channels(self):
+        self.mock_proxy.create_response.return_value = LLMResponse(
+            id='response_html', model='gpt-4o', status='completed',
+            output_text=json.dumps({
+                "answer": "Hola **Fernando**",
+                "aditional_data": {},
+            }),
+            output=[], usage=Usage(input_tokens=100, output_tokens=50, total_tokens=150)
+        )
+
+        result = self.client.invoke(
+            company=self.company,
+            user_identifier='user1',
+            previous_response_id='prev1',
+            model='gpt-5',
+            question='q',
+            context='c',
+            tools=[],
+            text={},
+            images=[],
+            execution_metadata={"delivery_channel": "chat"},
+        )
+
+        assert result["answer"] == "<p>Hola <strong>Fernando</strong></p>"
+
     def test_invoke_forwards_telemetry_request_to_llm_proxy(self):
         self.mock_proxy.create_response.return_value = self.mock_llm_response
         telemetry_request = {

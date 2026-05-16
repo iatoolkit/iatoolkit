@@ -163,6 +163,7 @@ class LLMQueryRepo:
             if new_prompt.active is not None:
                 prompt.active = new_prompt.active
             prompt.visible_in_chat = bool(getattr(new_prompt, "visible_in_chat", True))
+            prompt.is_agent_profile = bool(getattr(new_prompt, "is_agent_profile", False))
             prompt.execution_mode = (
                 getattr(new_prompt, "execution_mode", None)
                 or prompt.execution_mode
@@ -189,6 +190,8 @@ class LLMQueryRepo:
                 new_prompt.active = True
             if new_prompt.visible_in_chat is None:
                 new_prompt.visible_in_chat = True
+            if new_prompt.is_agent_profile is None:
+                new_prompt.is_agent_profile = False
             if not new_prompt.execution_mode:
                 new_prompt.execution_mode = PromptExecutionMode.CONVERSATIONAL.value
             if not new_prompt.output_schema_mode:

@@ -286,6 +286,11 @@ class QueryService:
                 bool(raw_visible_in_chat)
                 if isinstance(raw_visible_in_chat, bool) else True
             )
+            raw_is_agent_profile = contract.get("is_agent_profile")
+            contract["is_agent_profile"] = (
+                bool(raw_is_agent_profile)
+                if isinstance(raw_is_agent_profile, bool) else False
+            )
             raw_attachment_parser_provider = contract.get("attachment_parser_provider")
             contract["attachment_parser_provider"] = (
                 str(raw_attachment_parser_provider).strip().lower()
@@ -482,7 +487,7 @@ class QueryService:
             return False
         if str(client_data.get("conversation_runtime") or "").strip().lower() != "agent_session":
             return False
-        return bool(prompt_output_contract)
+        return bool(prompt_output_contract) and bool((prompt_output_contract or {}).get("is_agent_profile"))
 
     @staticmethod
     def _get_tool_names(tools: list[dict] | None) -> list[str]:
@@ -1254,6 +1259,11 @@ class QueryService:
                 "error": True,
                 "error_message": "Prompt not found.",
             }
+        if not bool(prompt_output_contract.get("is_agent_profile")):
+            return {
+                "error": True,
+                "error_message": "Prompt is not marked as an agent profile.",
+            }
 
         effective_model = self._resolve_model(company_short_name, model, prompt_output_contract)
         prepare_result = self.prepare_agent_context(
@@ -1556,10 +1566,18 @@ class QueryService:
             text_payload.update(text_overrides or {})
             request_metadata = self._resolve_prompt_request_metadata(prompt_output_contract)
 
+            safe_client_data = client_data if isinstance(client_data, dict) else {}
             execution_metadata = {"tool_router": tool_router_metrics}
-            request_source = str((client_data if isinstance(client_data, dict) else {}).get("source") or "").strip().lower() or None
+            request_source = str(safe_client_data.get("source") or "").strip().lower() or None
             if request_source:
                 execution_metadata["request_source"] = request_source
+            communication_context = safe_client_data.get("_communication")
+            communication_channel = ""
+            if isinstance(communication_context, dict):
+                communication_channel = str(communication_context.get("channel") or "").strip().lower()
+            delivery_channel = str(safe_client_data.get("channel") or communication_channel or "").strip().lower() or None
+            if delivery_channel:
+                execution_metadata["delivery_channel"] = delivery_channel
             if memory_lookup_decision.reason:
                 execution_metadata["tool_policy"] = {
                     "tool_choice_override": tool_choice_override,
@@ -1790,6 +1808,7 @@ class QueryService:
             return {
                 "prompt_name": prompt_name,
                 "execution_mode": prompt_output_contract.get("execution_mode") or "conversational",
+                "is_agent_profile": bool(prompt_output_contract.get("is_agent_profile", False)),
                 "visible_in_chat": bool(prompt_output_contract.get("visible_in_chat", True)),
                 "response_mode": prompt_output_contract.get("response_mode") or "chat_compatible",
                 "history_type": history_type,

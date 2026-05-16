@@ -1217,6 +1217,8 @@ ui:
     desc_placeholder: "Describe this prompt..."
     vars_label: "Input Variables"
     execution_mode_label: "Execution Mode"
+    agent_profile_label: "Agent profile"
+    agent_profile_help: "Mark this agent to govern persistent conversations such as WhatsApp, campaigns, or collections."
     active_label: "Active"
     output_type_label: "Output Type"
     output_type_free_text: "Free text"

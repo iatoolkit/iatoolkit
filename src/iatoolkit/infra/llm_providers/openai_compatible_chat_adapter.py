@@ -129,7 +129,7 @@ class OpenAICompatibleChatAdapter:
                 self.provider_label,
                 len(messages),
             )
-            response = self.client.chat.completions.create(**call_kwargs)
+            response = self._create_chat_completion(call_kwargs)
 
             return self._map_chat_completion_response(response)
 
@@ -151,6 +151,37 @@ class OpenAICompatibleChatAdapter:
     def _extend_call_kwargs(self, call_kwargs: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
         _ = call_kwargs
         _ = kwargs
+
+    def _create_chat_completion(self, call_kwargs: Dict[str, Any]) -> Any:
+        try:
+            return self.client.chat.completions.create(**call_kwargs)
+        except Exception as ex:
+            retry_call_kwargs = self._build_retry_without_tool_choice_kwargs(call_kwargs, ex)
+            if retry_call_kwargs is None:
+                raise
+
+            logging.warning(
+                "[%sAdapter] Provider rejected tool_choice for model '%s'; retrying without tool_choice.",
+                self.provider_label,
+                call_kwargs.get("model"),
+            )
+            return self.client.chat.completions.create(**retry_call_kwargs)
+
+    @staticmethod
+    def _build_retry_without_tool_choice_kwargs(
+        call_kwargs: Dict[str, Any],
+        ex: Exception,
+    ) -> Optional[Dict[str, Any]]:
+        if "tool_choice" not in call_kwargs:
+            return None
+
+        error_message = str(ex or "").lower()
+        if "does not support this tool_choice" not in error_message:
+            return None
+
+        retry_call_kwargs = dict(call_kwargs)
+        retry_call_kwargs.pop("tool_choice", None)
+        return retry_call_kwargs
 
     def _apply_reasoning_request_options(
         self,

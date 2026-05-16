@@ -125,6 +125,8 @@ class ContextBuilderService:
             visible_in_chat = raw_visible_in_chat
         else:
             visible_in_chat = True
+        raw_is_agent_profile = getattr(prompt_obj, "is_agent_profile", None)
+        is_agent_profile = bool(raw_is_agent_profile) if isinstance(raw_is_agent_profile, bool) else False
 
         resource_bindings: list[dict] = []
         for binding in getattr(prompt_obj, "resource_bindings", []) or []:
@@ -142,6 +144,7 @@ class ContextBuilderService:
         return {
             "prompt_name": prompt_obj.name,
             "visible_in_chat": visible_in_chat,
+            "is_agent_profile": is_agent_profile,
             "execution_mode": execution_mode,
             "schema": schema,
             "schema_yaml": prompt_obj.output_schema_yaml,

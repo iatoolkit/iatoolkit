@@ -15,6 +15,7 @@ import markdown2
 import os
 import logging
 import json
+from html import unescape
 from iatoolkit.common.exceptions import IAToolkitException
 import threading
 import re
@@ -357,7 +358,10 @@ class llmClient:
 
             result = {
                 'valid_response': decoded_response.get('status', False),
-                'answer': self.format_html(decoded_response.get('answer', '')),
+                'answer': self.format_answer(
+                    decoded_response.get('answer', ''),
+                    execution_metadata=execution_metadata,
+                ),
                 'stats': combined_stats,
                 'answer_format': decoded_response.get('answer_format', ''),
                 'error_message': decoded_response.get('error_message', ''),
@@ -881,6 +885,12 @@ class llmClient:
         3.  **NO** respondas al usuario con este mensaje de error. Tu ÚNICA acción debe ser volver a llamar a la herramienta con la solución.
         """
 
+    def format_answer(self, answer: str, execution_metadata: Optional[Dict[str, Any]] = None):
+        delivery_channel = str((execution_metadata or {}).get("delivery_channel") or "").strip().lower()
+        if delivery_channel == "whatsapp":
+            return self.format_plaintext(answer)
+        return self.format_html(answer)
+
     def format_html(self, answer: str):
         if not answer:
             return ""
@@ -891,6 +901,23 @@ class llmClient:
 
         html_answer = markdown2.markdown(answer).replace("\n", "")
         return html_answer
+
+    def format_plaintext(self, answer: str):
+        if not answer:
+            return ""
+
+        normalized = str(answer)
+        normalized = re.sub(r"<\s*br\s*/?\s*>", "\n", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"</\s*p\s*>", "\n\n", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"</\s*div\s*>", "\n", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"<\s*li\s*>", "- ", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"</\s*li\s*>", "\n", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"<[^>]+>", "", normalized)
+        normalized = unescape(normalized)
+        normalized = normalized.replace("\r\n", "\n").replace("\r", "\n")
+        normalized = re.sub(r"[ \t]+\n", "\n", normalized)
+        normalized = re.sub(r"\n{3,}", "\n\n", normalized)
+        return normalized.strip()
 
     def count_tokens(self, text, history = []):
         content = (text or "") + json.dumps(history)

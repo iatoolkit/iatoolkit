@@ -677,6 +677,11 @@ class ConfigurationService:
                 add_error(f"prompts[{i}].visible_in_chat", "Must be a boolean.")
                 continue
 
+            is_agent_profile = prompt.get("is_agent_profile")
+            if is_agent_profile is not None and not isinstance(is_agent_profile, bool):
+                add_error(f"prompts[{i}].is_agent_profile", "Must be a boolean.")
+                continue
+
             if prompt_cat and prompt_cat not in category_set:
                 add_error(f"prompts[{i}]", f"Category '{prompt_cat}' is not defined in 'prompt_categories'.")
 

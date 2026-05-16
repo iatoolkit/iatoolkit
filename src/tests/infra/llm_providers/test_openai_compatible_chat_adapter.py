@@ -56,3 +56,24 @@ class TestOpenAICompatibleChatAdapter:
 
         call_kwargs = self.mock_client.chat.completions.create.call_args.kwargs
         assert call_kwargs["reasoning"] == {"effort": "medium"}
+
+    def test_create_response_retries_without_tool_choice_when_provider_rejects_it(self):
+        self.mock_client.chat.completions.create.side_effect = [
+            Exception("Error code: 400 - deepseek-reasoner does not support this tool_choice"),
+            self._create_mock_response(),
+        ]
+
+        self.adapter.create_response(
+            model="oss-model",
+            input=[{"role": "user", "content": "Hello"}],
+            tools=[{"type": "function", "function": {"name": "search_web"}}],
+            tool_choice="required",
+        )
+
+        assert self.mock_client.chat.completions.create.call_count == 2
+        first_call_kwargs = self.mock_client.chat.completions.create.call_args_list[0].kwargs
+        second_call_kwargs = self.mock_client.chat.completions.create.call_args_list[1].kwargs
+
+        assert first_call_kwargs["tool_choice"] == "required"
+        assert first_call_kwargs["tools"] == second_call_kwargs["tools"]
+        assert "tool_choice" not in second_call_kwargs

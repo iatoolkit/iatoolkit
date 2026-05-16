@@ -1220,6 +1220,8 @@ ui:
     desc_placeholder: "Describe este prompt..."
     vars_label: "Variables de Entrada"
     execution_mode_label: "Modo de ejecución"
+    agent_profile_label: "Agent profile"
+    agent_profile_help: "Marca este agente para gobernar conversaciones persistentes como WhatsApp, campañas o cobranza."
     active_label: "Activo"
     output_type_label: "Tipo de Salida"
     output_type_free_text: "Texto libre"

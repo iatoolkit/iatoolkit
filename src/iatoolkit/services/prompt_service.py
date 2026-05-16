@@ -101,6 +101,19 @@ class PromptService:
 
         return True
 
+    def _normalize_is_agent_profile(self, is_agent_profile) -> bool:
+        if isinstance(is_agent_profile, bool):
+            return is_agent_profile
+
+        if isinstance(is_agent_profile, str):
+            candidate = is_agent_profile.strip().lower()
+            if candidate in {"true", "1", "yes", "on"}:
+                return True
+            if candidate in {"false", "0", "no", "off"}:
+                return False
+
+        return False
+
     def _normalize_output_schema_mode(self, output_schema_mode: str | None) -> str:
         candidate = str(output_schema_mode or self.OUTPUT_SCHEMA_MODE_BEST_EFFORT).strip().lower()
         allowed = {
@@ -485,6 +498,7 @@ class PromptService:
                             'description': p.description,
                             'category': p.category.name if p.category else None,
                             'visible_in_chat': bool(getattr(p, 'visible_in_chat', True)),
+                            'is_agent_profile': bool(getattr(p, 'is_agent_profile', False)),
                             'execution_mode': (
                                 str(getattr(p, 'execution_mode', None) or self.EXECUTION_MODE_CONVERSATIONAL)
                                 .strip()
@@ -593,6 +607,7 @@ class PromptService:
             category_id=category_id,
             active=data.get('active', True),
             visible_in_chat=self._normalize_visible_in_chat(data.get('visible_in_chat')),
+            is_agent_profile=self._normalize_is_agent_profile(data.get('is_agent_profile')),
             execution_mode=self._normalize_execution_mode(data.get('execution_mode')),
             filename=f"{prompt_name.lower().replace(' ', '_')}.prompt",
             custom_fields=data.get('custom_fields', []),
@@ -845,6 +860,7 @@ class PromptService:
                     category_id=category_obj.id if category_obj else None,
                     active=prompt_data.get('active', True),
                     visible_in_chat=self._normalize_visible_in_chat(prompt_data.get('visible_in_chat')),
+                    is_agent_profile=self._normalize_is_agent_profile(prompt_data.get('is_agent_profile')),
                     execution_mode=self._normalize_execution_mode(prompt_data.get('execution_mode')),
                     filename=filename,
                     custom_fields=prompt_data.get('custom_fields', []),

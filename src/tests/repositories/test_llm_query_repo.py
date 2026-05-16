@@ -212,6 +212,7 @@ class TestLLMQueryRepo:
             active=True,
             order=5,
             visible_in_chat=True,
+            is_agent_profile=False,
             execution_mode=PromptExecutionMode.CONVERSATIONAL.value,
             custom_fields=[{'label': 'lbl'}]
         )
@@ -224,6 +225,7 @@ class TestLLMQueryRepo:
         assert result.active is True
         assert result.order == 5
         assert result.visible_in_chat is True
+        assert result.is_agent_profile is False
         assert result.execution_mode == PromptExecutionMode.CONVERSATIONAL.value
         assert result.custom_fields == [{'label': 'lbl'}]
 
@@ -242,6 +244,7 @@ class TestLLMQueryRepo:
             filename="new.txt",
             order=10,
             visible_in_chat=False,
+            is_agent_profile=True,
             execution_mode=PromptExecutionMode.AGENTIC.value,
             custom_fields=[{'key': 'val'}]
         )
@@ -257,6 +260,7 @@ class TestLLMQueryRepo:
         assert result.order == 10
         assert result.active is True
         assert result.visible_in_chat is False
+        assert result.is_agent_profile is True
         assert result.execution_mode == PromptExecutionMode.AGENTIC.value
         assert result.custom_fields == [{'key': 'val'}]
 
