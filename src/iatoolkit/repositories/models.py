@@ -36,6 +36,12 @@ class PromptExecutionMode(str, enum.Enum):
     AGENTIC = "agentic"
 
 
+class PromptAgentRole(str, enum.Enum):
+    WORKSPACE_CHAT = "workspace_chat"
+    CHANNELS = "channels"
+    OPERATIONS = "operations"
+
+
 class PromptResourceType(str, enum.Enum):
     SQL_SOURCE = "sql_source"
     RAG_COLLECTION = "rag_collection"
@@ -556,9 +562,8 @@ class Prompt(Base):
     description = Column(String, nullable=False)
     filename = Column(String, nullable=False)
     active = Column(Boolean, default=True)
-    visible_in_chat = Column(Boolean, default=True, nullable=False)
+    agent_role = Column(String, default=PromptAgentRole.WORKSPACE_CHAT.value, nullable=False)
     execution_mode = Column(String, default=PromptExecutionMode.CONVERSATIONAL.value, nullable=False)
-    is_agent_profile = Column(Boolean, default=False, nullable=False)
     order = Column(Integer, nullable=True, default=0)
     category_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_prompt_categories.id', ondelete='SET NULL'), nullable=True)
     custom_fields = Column(JSON, nullable=False, default=[])

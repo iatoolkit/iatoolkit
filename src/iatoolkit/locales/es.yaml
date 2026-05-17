@@ -408,7 +408,7 @@ ui:
     tab_executions: "Ejecuciones"
     template_label: "Mensaje inicial"
     template_help: "Este template se renderiza por contacto al activar la campaña. Puedes usar variables como {{ full_name }}, {{ company_name }} o {{ source.producto }}."
-    template_placeholder: "Hola {{ full_name }}, te escribimos de {{ company_name }} para contarte una oferta disponible."
+    template_placeholder: "Puedes usar variables como {{ full_name }}, {{ email }}, {{ phone_number }}, {{ government_id }}, {{ external_contact_key }}, {{ company_name }}, {{ company_short_name }}, {{ metadata.* }} y {{ source.* }}"
     audience_title: "Audiencia"
     audience_help: "Carga un CSV, mapea columnas básicas y convierte las filas en contactos listos para activar por WhatsApp."
     audience_empty: "Todavía no hay audiencia cargada."

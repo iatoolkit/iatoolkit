@@ -1706,8 +1706,7 @@ class TestQueryService:
         self.mock_context_builder.get_prompt_output_contract.return_value = {
             "prompt_name": "research_agent",
             "execution_mode": "agentic",
-            "is_agent_profile": False,
-            "visible_in_chat": False,
+            "agent_role": "operations",
             "schema": None,
             "schema_mode": "best_effort",
             "response_mode": "chat_compatible",
@@ -1758,8 +1757,7 @@ class TestQueryService:
         self.mock_context_builder.get_prompt_output_contract.return_value = {
             "prompt_name": "sql_agent",
             "execution_mode": "agentic",
-            "is_agent_profile": False,
-            "visible_in_chat": False,
+            "agent_role": "operations",
             "schema": None,
             "schema_mode": "best_effort",
             "response_mode": "chat_compatible",
@@ -1793,8 +1791,7 @@ class TestQueryService:
         self.mock_context_builder.get_prompt_output_contract.return_value = {
             "prompt_name": "docs_agent",
             "execution_mode": "agentic",
-            "is_agent_profile": False,
-            "visible_in_chat": False,
+            "agent_role": "operations",
             "schema": None,
             "schema_mode": "best_effort",
             "response_mode": "chat_compatible",
@@ -1824,8 +1821,7 @@ class TestQueryService:
         self.mock_context_builder.get_prompt_output_contract.return_value = {
             "prompt_name": "collections_agent",
             "execution_mode": "agentic",
-            "is_agent_profile": True,
-            "visible_in_chat": False,
+            "agent_role": "channels",
             "schema": None,
             "schema_mode": "best_effort",
             "response_mode": "chat_compatible",
@@ -1902,8 +1898,7 @@ class TestQueryService:
         self.mock_context_builder.get_prompt_output_contract.return_value = {
             "prompt_name": "collections_agent",
             "execution_mode": "agentic",
-            "is_agent_profile": True,
-            "visible_in_chat": False,
+            "agent_role": "channels",
             "schema": None,
             "schema_mode": "best_effort",
             "response_mode": "chat_compatible",
@@ -1945,14 +1940,13 @@ class TestQueryService:
         assert invoke_kwargs["previous_response_id"] == "existing_ctx_123"
         assert invoke_kwargs["context"] == "customer turn prompt"
 
-    def test_llm_query_agent_session_requires_prompt_marked_as_agent_profile(self):
+    def test_llm_query_agent_session_requires_channel_capable_role(self):
         self.mock_tool_service.get_tools_for_llm.return_value = []
         self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "q", [])
         self.mock_context_builder.get_prompt_output_contract.return_value = {
             "prompt_name": "collections_agent",
             "execution_mode": "agentic",
-            "is_agent_profile": False,
-            "visible_in_chat": False,
+            "agent_role": "operations",
             "schema": None,
             "schema_mode": "best_effort",
             "response_mode": "chat_compatible",
@@ -1983,8 +1977,7 @@ class TestQueryService:
         self.mock_context_builder.get_prompt_output_contract.return_value = {
             "prompt_name": "research_agent",
             "execution_mode": "agentic",
-            "is_agent_profile": True,
-            "visible_in_chat": False,
+            "agent_role": "operations",
             "schema": None,
             "schema_mode": "best_effort",
             "response_mode": "chat_compatible",
@@ -2008,7 +2001,7 @@ class TestQueryService:
         )
 
         assert result["execution_mode"] == "agentic"
-        assert result["is_agent_profile"] is True
+        assert result["agent_role"] == "operations"
         assert result["history_type"] == "stateless"
         assert result["runtime_context"] == "Agent Minimal Context"
         assert result["selected_system_prompt_keys"] == ["core_identity"]
@@ -2028,8 +2021,7 @@ class TestQueryService:
         self.mock_context_builder.get_prompt_output_contract.return_value = {
             "prompt_name": "chat_agent",
             "execution_mode": "conversational",
-            "is_agent_profile": False,
-            "visible_in_chat": True,
+            "agent_role": "workspace_chat",
             "schema": None,
             "schema_mode": "best_effort",
             "response_mode": "chat_compatible",

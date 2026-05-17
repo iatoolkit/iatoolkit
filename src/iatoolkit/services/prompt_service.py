@@ -14,6 +14,7 @@ from iatoolkit.services.configuration_service import ConfigurationService
 from collections import defaultdict
 from iatoolkit.repositories.models import (
     Prompt,
+    PromptAgentRole,
     PromptCategory,
     Company,
     PromptExecutionMode,
@@ -48,6 +49,9 @@ class PromptService:
     TOOL_POLICY_MODE_EXPLICIT = "explicit"
     EXECUTION_MODE_CONVERSATIONAL = PromptExecutionMode.CONVERSATIONAL.value
     EXECUTION_MODE_AGENTIC = PromptExecutionMode.AGENTIC.value
+    AGENT_ROLE_WORKSPACE_CHAT = PromptAgentRole.WORKSPACE_CHAT.value
+    AGENT_ROLE_CHANNELS = PromptAgentRole.CHANNELS.value
+    AGENT_ROLE_OPERATIONS = PromptAgentRole.OPERATIONS.value
     DEFAULT_CATEGORY_LABEL = "General"
 
     @inject
@@ -85,34 +89,43 @@ class PromptService:
             )
         return self.EXECUTION_MODE_CONVERSATIONAL
 
-    def _normalize_visible_in_chat(
+    def _normalize_agent_role(
         self,
-        visible_in_chat,
-    ) -> bool:
-        if isinstance(visible_in_chat, bool):
-            return visible_in_chat
+        agent_role: str | None,
+    ) -> str:
+        candidate = str(agent_role or "").strip().lower()
+        allowed = {
+            self.AGENT_ROLE_WORKSPACE_CHAT,
+            self.AGENT_ROLE_CHANNELS,
+            self.AGENT_ROLE_OPERATIONS,
+        }
+        if candidate in allowed:
+            return candidate
 
-        if isinstance(visible_in_chat, str):
-            candidate = visible_in_chat.strip().lower()
-            if candidate in {"true", "1", "yes", "on"}:
-                return True
-            if candidate in {"false", "0", "no", "off"}:
-                return False
+        if candidate:
+            logging.warning(
+                "Unsupported agent_role '%s'. Falling back to '%s'.",
+                agent_role,
+                self.AGENT_ROLE_WORKSPACE_CHAT,
+            )
+        return self.AGENT_ROLE_WORKSPACE_CHAT
 
-        return True
+    @classmethod
+    def execution_mode_for_agent_role(cls, agent_role: str | None) -> str:
+        normalized = str(agent_role or "").strip().lower()
+        if normalized == cls.AGENT_ROLE_WORKSPACE_CHAT:
+            return cls.EXECUTION_MODE_CONVERSATIONAL
+        return cls.EXECUTION_MODE_AGENTIC
 
-    def _normalize_is_agent_profile(self, is_agent_profile) -> bool:
-        if isinstance(is_agent_profile, bool):
-            return is_agent_profile
+    @classmethod
+    def is_workspace_chat_role(cls, agent_role: str | None) -> bool:
+        normalized = str(agent_role or "").strip().lower()
+        return normalized == cls.AGENT_ROLE_WORKSPACE_CHAT
 
-        if isinstance(is_agent_profile, str):
-            candidate = is_agent_profile.strip().lower()
-            if candidate in {"true", "1", "yes", "on"}:
-                return True
-            if candidate in {"false", "0", "no", "off"}:
-                return False
-
-        return False
+    @classmethod
+    def is_channel_role(cls, agent_role: str | None) -> bool:
+        normalized = str(agent_role or "").strip().lower()
+        return normalized == cls.AGENT_ROLE_CHANNELS
 
     def _normalize_output_schema_mode(self, output_schema_mode: str | None) -> str:
         candidate = str(output_schema_mode or self.OUTPUT_SCHEMA_MODE_BEST_EFFORT).strip().lower()
@@ -466,7 +479,7 @@ class PromptService:
                 all_prompts = [
                     prompt for prompt in all_prompts
                     if bool(getattr(prompt, 'active', True))
-                    and bool(getattr(prompt, 'visible_in_chat', True))
+                    and self.is_workspace_chat_role(getattr(prompt, 'agent_role', None))
                 ]
 
             # group by category
@@ -497,8 +510,9 @@ class PromptService:
                             'prompt': p.name,
                             'description': p.description,
                             'category': p.category.name if p.category else None,
-                            'visible_in_chat': bool(getattr(p, 'visible_in_chat', True)),
-                            'is_agent_profile': bool(getattr(p, 'is_agent_profile', False)),
+                            'agent_role': self._normalize_agent_role(
+                                getattr(p, 'agent_role', None)
+                            ),
                             'execution_mode': (
                                 str(getattr(p, 'execution_mode', None) or self.EXECUTION_MODE_CONVERSATIONAL)
                                 .strip()
@@ -599,6 +613,9 @@ class PromptService:
         tool_policy = self._normalize_tool_policy(data.get("tool_policy"))
 
         # 2. update the prompt in the database
+        agent_role = self._normalize_agent_role(data.get('agent_role'))
+        execution_mode = self.execution_mode_for_agent_role(agent_role)
+
         new_prompt = Prompt(
             company_id=company.id,
             name=prompt_name,
@@ -606,9 +623,8 @@ class PromptService:
             order=data.get('order', 1),
             category_id=category_id,
             active=data.get('active', True),
-            visible_in_chat=self._normalize_visible_in_chat(data.get('visible_in_chat')),
-            is_agent_profile=self._normalize_is_agent_profile(data.get('is_agent_profile')),
-            execution_mode=self._normalize_execution_mode(data.get('execution_mode')),
+            agent_role=agent_role,
+            execution_mode=execution_mode,
             filename=f"{prompt_name.lower().replace(' ', '_')}.prompt",
             custom_fields=data.get('custom_fields', []),
             output_schema=output_schema,
@@ -852,6 +868,7 @@ class PromptService:
                 filename = f"{prompt_name}.prompt"
                 normalized_schema = StructuredOutputService.normalize_schema(prompt_data.get("output_schema"))
 
+                agent_role = self._normalize_agent_role(prompt_data.get('agent_role'))
                 new_prompt = Prompt(
                     company_id=company.id,
                     name=prompt_name,
@@ -859,9 +876,8 @@ class PromptService:
                     order=prompt_data.get('order'),
                     category_id=category_obj.id if category_obj else None,
                     active=prompt_data.get('active', True),
-                    visible_in_chat=self._normalize_visible_in_chat(prompt_data.get('visible_in_chat')),
-                    is_agent_profile=self._normalize_is_agent_profile(prompt_data.get('is_agent_profile')),
-                    execution_mode=self._normalize_execution_mode(prompt_data.get('execution_mode')),
+                    agent_role=agent_role,
+                    execution_mode=self.execution_mode_for_agent_role(agent_role),
                     filename=filename,
                     custom_fields=prompt_data.get('custom_fields', []),
                     output_schema=normalized_schema,

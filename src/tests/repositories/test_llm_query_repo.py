@@ -5,7 +5,7 @@
 
 from iatoolkit.repositories.database_manager import DatabaseManager
 from iatoolkit.repositories.models import (LLMQuery, Tool, Company,
-                                           Prompt, PromptCategory, PromptExecutionMode)
+                                           Prompt, PromptAgentRole, PromptCategory, PromptExecutionMode)
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from datetime import datetime, timedelta
 
@@ -211,8 +211,7 @@ class TestLLMQueryRepo:
             filename='file.prompt',
             active=True,
             order=5,
-            visible_in_chat=True,
-            is_agent_profile=False,
+            agent_role=PromptAgentRole.WORKSPACE_CHAT.value,
             execution_mode=PromptExecutionMode.CONVERSATIONAL.value,
             custom_fields=[{'label': 'lbl'}]
         )
@@ -224,8 +223,7 @@ class TestLLMQueryRepo:
         assert result.description == "an intelligent prompt"
         assert result.active is True
         assert result.order == 5
-        assert result.visible_in_chat is True
-        assert result.is_agent_profile is False
+        assert result.agent_role == PromptAgentRole.WORKSPACE_CHAT.value
         assert result.execution_mode == PromptExecutionMode.CONVERSATIONAL.value
         assert result.custom_fields == [{'label': 'lbl'}]
 
@@ -243,8 +241,7 @@ class TestLLMQueryRepo:
             description="New Desc",
             filename="new.txt",
             order=10,
-            visible_in_chat=False,
-            is_agent_profile=True,
+            agent_role=PromptAgentRole.CHANNELS.value,
             execution_mode=PromptExecutionMode.AGENTIC.value,
             custom_fields=[{'key': 'val'}]
         )
@@ -259,8 +256,7 @@ class TestLLMQueryRepo:
         assert result.filename == "new.txt"
         assert result.order == 10
         assert result.active is True
-        assert result.visible_in_chat is False
-        assert result.is_agent_profile is True
+        assert result.agent_role == PromptAgentRole.CHANNELS.value
         assert result.execution_mode == PromptExecutionMode.AGENTIC.value
         assert result.custom_fields == [{'key': 'val'}]
 
@@ -487,9 +483,9 @@ class TestLLMQueryRepo:
         """Test get_prompts returns all prompts for a company."""
         # Create active and inactive prompts for the same company
         prompt1 = Prompt(name="p1", company_id=self.company.id, description="d1", filename="f1",
-                         visible_in_chat=True, execution_mode=PromptExecutionMode.CONVERSATIONAL.value)
+                         agent_role=PromptAgentRole.WORKSPACE_CHAT.value, execution_mode=PromptExecutionMode.CONVERSATIONAL.value)
         prompt2 = Prompt(name="p2", company_id=self.company.id, description="d2", filename="f2",
-                         visible_in_chat=True, execution_mode=PromptExecutionMode.CONVERSATIONAL.value)
+                         agent_role=PromptAgentRole.WORKSPACE_CHAT.value, execution_mode=PromptExecutionMode.CONVERSATIONAL.value)
         self.session.add_all([prompt1, prompt2])
         self.session.commit()
 
@@ -514,7 +510,7 @@ class TestLLMQueryRepo:
 
         # Create a prompt for the main company
         p1 = Prompt(name="p1", company_id=self.company.id, description="d1", filename="f1",
-                    visible_in_chat=True, execution_mode=PromptExecutionMode.CONVERSATIONAL.value)
+                    agent_role=PromptAgentRole.WORKSPACE_CHAT.value, execution_mode=PromptExecutionMode.CONVERSATIONAL.value)
 
         # Prompt for another company
         other_company = Company(name="Other", short_name="other")
@@ -522,7 +518,7 @@ class TestLLMQueryRepo:
         self.session.commit()
 
         p2 = Prompt(name="p2", company_id=other_company.id, description="d2", filename="f2",
-                    visible_in_chat=True, execution_mode=PromptExecutionMode.CONVERSATIONAL.value)
+                    agent_role=PromptAgentRole.WORKSPACE_CHAT.value, execution_mode=PromptExecutionMode.CONVERSATIONAL.value)
 
         # Hidden prompt should be filtered out by the default chat-facing query
         p3 = Prompt(
@@ -530,7 +526,7 @@ class TestLLMQueryRepo:
             company_id=self.company.id,
             description="sys",
             filename="sys",
-            visible_in_chat=False,
+            agent_role=PromptAgentRole.CHANNELS.value,
             execution_mode=PromptExecutionMode.AGENTIC.value,
         )
 
@@ -548,7 +544,7 @@ class TestLLMQueryRepo:
             company_id=self.company.id,
             description="d1",
             filename="f1",
-            visible_in_chat=True,
+            agent_role=PromptAgentRole.WORKSPACE_CHAT.value,
             execution_mode=PromptExecutionMode.CONVERSATIONAL.value,
         )
         p2 = Prompt(
@@ -556,7 +552,7 @@ class TestLLMQueryRepo:
             company_id=self.company.id,
             description="d2",
             filename="f2",
-            visible_in_chat=False,
+            agent_role=PromptAgentRole.CHANNELS.value,
             execution_mode=PromptExecutionMode.AGENTIC.value,
         )
         p3 = Prompt(
@@ -564,7 +560,7 @@ class TestLLMQueryRepo:
             company_id=self.company.id,
             description="legacy",
             filename="f3",
-            visible_in_chat=False,
+            agent_role=PromptAgentRole.OPERATIONS.value,
             execution_mode="conversational",
         )
         self.session.add_all([p1, p2, p3])

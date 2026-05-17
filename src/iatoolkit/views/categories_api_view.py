@@ -51,6 +51,7 @@ class CategoriesApiView(MethodView):
             # 3. Gather Categories
             response_data = {
                 "prompt_execution_modes": list(self.SUPPORTED_PROMPT_EXECUTION_MODES),
+                "prompt_agent_roles": list(self.SUPPORTED_PROMPT_AGENT_ROLES),
                 "prompt_categories": [],
                 "collection_types": [],
                 "collection_type_details": [],
@@ -130,4 +131,9 @@ class CategoriesApiView(MethodView):
     SUPPORTED_PROMPT_EXECUTION_MODES = [
         "conversational",
         "agentic",
+    ]
+    SUPPORTED_PROMPT_AGENT_ROLES = [
+        "workspace_chat",
+        "operations",
+        "channels",
     ]

@@ -632,6 +632,11 @@ class ConfigurationService:
 
         category_set = set(categories_config)
         allowed_execution_modes = {"conversational", "agentic"}
+        allowed_agent_roles = {
+            "workspace_chat",
+            "channels",
+            "operations",
+        }
         allowed_output_schema_modes = {"best_effort", "strict"}
         allowed_output_response_modes = {"chat_compatible", "structured_only"}
         allowed_attachment_modes = {"extracted_only", "native_only", "native_plus_extracted"}
@@ -672,14 +677,12 @@ class ConfigurationService:
                 )
                 continue
 
-            visible_in_chat = prompt.get("visible_in_chat")
-            if visible_in_chat is not None and not isinstance(visible_in_chat, bool):
-                add_error(f"prompts[{i}].visible_in_chat", "Must be a boolean.")
-                continue
-
-            is_agent_profile = prompt.get("is_agent_profile")
-            if is_agent_profile is not None and not isinstance(is_agent_profile, bool):
-                add_error(f"prompts[{i}].is_agent_profile", "Must be a boolean.")
+            agent_role = str(prompt.get("agent_role", "") or "").strip().lower()
+            if agent_role and agent_role not in allowed_agent_roles:
+                add_error(
+                    f"prompts[{i}].agent_role",
+                    f"Unsupported agent_role '{agent_role}'. Must be one of: {sorted(allowed_agent_roles)}.",
+                )
                 continue
 
             if prompt_cat and prompt_cat not in category_set:

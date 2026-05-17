@@ -281,15 +281,16 @@ class QueryService:
             if normalized_execution_mode not in {"conversational", "agentic"}:
                 normalized_execution_mode = "conversational"
             contract["execution_mode"] = normalized_execution_mode
-            raw_visible_in_chat = contract.get("visible_in_chat")
-            contract["visible_in_chat"] = (
-                bool(raw_visible_in_chat)
-                if isinstance(raw_visible_in_chat, bool) else True
+            raw_agent_role = contract.get("agent_role")
+            normalized_agent_role = (
+                str(raw_agent_role).strip().lower()
+                if raw_agent_role is not None else "workspace_chat"
             )
-            raw_is_agent_profile = contract.get("is_agent_profile")
-            contract["is_agent_profile"] = (
-                bool(raw_is_agent_profile)
-                if isinstance(raw_is_agent_profile, bool) else False
+            if normalized_agent_role not in {"workspace_chat", "channels", "operations"}:
+                normalized_agent_role = "workspace_chat"
+            contract["agent_role"] = normalized_agent_role
+            contract["execution_mode"] = (
+                "conversational" if normalized_agent_role == "workspace_chat" else "agentic"
             )
             raw_attachment_parser_provider = contract.get("attachment_parser_provider")
             contract["attachment_parser_provider"] = (
@@ -477,6 +478,16 @@ class QueryService:
         return execution_mode == "agentic"
 
     @staticmethod
+    def _is_workspace_chat_role(agent_role: str | None) -> bool:
+        normalized = str(agent_role or "").strip().lower()
+        return normalized == "workspace_chat"
+
+    @staticmethod
+    def _is_channel_role(agent_role: str | None) -> bool:
+        normalized = str(agent_role or "").strip().lower()
+        return normalized == "channels"
+
+    @staticmethod
     def _is_agent_session_execution(
         *,
         prompt_name: str | None,
@@ -487,7 +498,9 @@ class QueryService:
             return False
         if str(client_data.get("conversation_runtime") or "").strip().lower() != "agent_session":
             return False
-        return bool(prompt_output_contract) and bool((prompt_output_contract or {}).get("is_agent_profile"))
+        return bool(prompt_output_contract) and QueryService._is_channel_role(
+            (prompt_output_contract or {}).get("agent_role")
+        )
 
     @staticmethod
     def _get_tool_names(tools: list[dict] | None) -> list[str]:
@@ -1259,10 +1272,10 @@ class QueryService:
                 "error": True,
                 "error_message": "Prompt not found.",
             }
-        if not bool(prompt_output_contract.get("is_agent_profile")):
+        if not self._is_channel_role(prompt_output_contract.get("agent_role")):
             return {
                 "error": True,
-                "error_message": "Prompt is not marked as an agent profile.",
+                "error_message": "Prompt role does not allow channel sessions.",
             }
 
         effective_model = self._resolve_model(company_short_name, model, prompt_output_contract)
@@ -1808,8 +1821,7 @@ class QueryService:
             return {
                 "prompt_name": prompt_name,
                 "execution_mode": prompt_output_contract.get("execution_mode") or "conversational",
-                "is_agent_profile": bool(prompt_output_contract.get("is_agent_profile", False)),
-                "visible_in_chat": bool(prompt_output_contract.get("visible_in_chat", True)),
+                "agent_role": prompt_output_contract.get("agent_role") or "workspace_chat",
                 "response_mode": prompt_output_contract.get("response_mode") or "chat_compatible",
                 "history_type": history_type,
                 "provider": provider,

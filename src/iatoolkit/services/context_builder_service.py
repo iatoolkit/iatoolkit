@@ -120,13 +120,13 @@ class ContextBuilderService:
 
         raw_execution_mode = str(getattr(prompt_obj, "execution_mode", "") or "").strip().lower()
         execution_mode = raw_execution_mode if raw_execution_mode in {"conversational", "agentic"} else "conversational"
-        raw_visible_in_chat = getattr(prompt_obj, "visible_in_chat", None)
-        if isinstance(raw_visible_in_chat, bool):
-            visible_in_chat = raw_visible_in_chat
-        else:
-            visible_in_chat = True
-        raw_is_agent_profile = getattr(prompt_obj, "is_agent_profile", None)
-        is_agent_profile = bool(raw_is_agent_profile) if isinstance(raw_is_agent_profile, bool) else False
+        raw_agent_role = str(getattr(prompt_obj, "agent_role", "") or "").strip().lower()
+        agent_role = (
+            raw_agent_role
+            if raw_agent_role in {"workspace_chat", "channels", "operations"}
+            else "workspace_chat"
+        )
+        execution_mode = "conversational" if agent_role == "workspace_chat" else "agentic"
 
         resource_bindings: list[dict] = []
         for binding in getattr(prompt_obj, "resource_bindings", []) or []:
@@ -143,8 +143,7 @@ class ContextBuilderService:
 
         return {
             "prompt_name": prompt_obj.name,
-            "visible_in_chat": visible_in_chat,
-            "is_agent_profile": is_agent_profile,
+            "agent_role": agent_role,
             "execution_mode": execution_mode,
             "schema": schema,
             "schema_yaml": prompt_obj.output_schema_yaml,
