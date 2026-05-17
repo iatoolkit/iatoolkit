@@ -286,7 +286,7 @@ class QueryService:
                 str(raw_agent_role).strip().lower()
                 if raw_agent_role is not None else "workspace_chat"
             )
-            if normalized_agent_role not in {"workspace_chat", "channels", "operations"}:
+            if normalized_agent_role not in {"workspace_chat", "workspace_agent", "channels", "operations"}:
                 normalized_agent_role = "workspace_chat"
             contract["agent_role"] = normalized_agent_role
             contract["execution_mode"] = (
@@ -480,7 +480,7 @@ class QueryService:
     @staticmethod
     def _is_workspace_chat_role(agent_role: str | None) -> bool:
         normalized = str(agent_role or "").strip().lower()
-        return normalized == "workspace_chat"
+        return normalized in {"workspace_chat", "workspace_agent"}
 
     @staticmethod
     def _is_channel_role(agent_role: str | None) -> bool:

@@ -529,14 +529,21 @@ class TestLLMQueryRepo:
             agent_role=PromptAgentRole.CHANNELS.value,
             execution_mode=PromptExecutionMode.AGENTIC.value,
         )
+        p4 = Prompt(
+            name="workspace_agent_prompt",
+            company_id=self.company.id,
+            description="ops",
+            filename="ops",
+            agent_role=PromptAgentRole.WORKSPACE_AGENT.value,
+            execution_mode=PromptExecutionMode.AGENTIC.value,
+        )
 
-        self.session.add_all([p1, p2, p3])
+        self.session.add_all([p1, p2, p3, p4])
         self.session.commit()
 
         prompts = self.repo.get_prompts(self.company)
 
-        assert len(prompts) == 1
-        assert prompts[0].name == "p1"
+        assert {prompt.name for prompt in prompts} == {"p1", "workspace_agent_prompt"}
 
     def test_get_prompts_include_all_returns_hidden_and_agentic_prompts(self):
         p1 = Prompt(

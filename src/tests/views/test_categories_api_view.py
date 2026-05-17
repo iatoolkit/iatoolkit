@@ -79,6 +79,7 @@ class TestCategoriesView:
 
         assert "prompt_execution_modes" in data
         assert data["prompt_execution_modes"] == ["conversational", "agentic"]
+        assert data["prompt_agent_roles"] == ["workspace_chat", "operations", "workspace_agent", "channels"]
 
         assert "prompt_categories" in data
         assert "Sales" in data["prompt_categories"]

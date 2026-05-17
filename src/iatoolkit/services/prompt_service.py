@@ -50,6 +50,7 @@ class PromptService:
     EXECUTION_MODE_CONVERSATIONAL = PromptExecutionMode.CONVERSATIONAL.value
     EXECUTION_MODE_AGENTIC = PromptExecutionMode.AGENTIC.value
     AGENT_ROLE_WORKSPACE_CHAT = PromptAgentRole.WORKSPACE_CHAT.value
+    AGENT_ROLE_WORKSPACE_AGENT = PromptAgentRole.WORKSPACE_AGENT.value
     AGENT_ROLE_CHANNELS = PromptAgentRole.CHANNELS.value
     AGENT_ROLE_OPERATIONS = PromptAgentRole.OPERATIONS.value
     DEFAULT_CATEGORY_LABEL = "General"
@@ -96,6 +97,7 @@ class PromptService:
         candidate = str(agent_role or "").strip().lower()
         allowed = {
             self.AGENT_ROLE_WORKSPACE_CHAT,
+            self.AGENT_ROLE_WORKSPACE_AGENT,
             self.AGENT_ROLE_CHANNELS,
             self.AGENT_ROLE_OPERATIONS,
         }
@@ -120,7 +122,10 @@ class PromptService:
     @classmethod
     def is_workspace_chat_role(cls, agent_role: str | None) -> bool:
         normalized = str(agent_role or "").strip().lower()
-        return normalized == cls.AGENT_ROLE_WORKSPACE_CHAT
+        return normalized in {
+            cls.AGENT_ROLE_WORKSPACE_CHAT,
+            cls.AGENT_ROLE_WORKSPACE_AGENT,
+        }
 
     @classmethod
     def is_channel_role(cls, agent_role: str | None) -> bool:

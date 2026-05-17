@@ -2057,6 +2057,39 @@ class TestQueryService:
             query_text="quien soy yo",
         )
 
+    def test_preview_prompt_context_workspace_agent_uses_agentic_runtime(self):
+        self.mock_tool_service.get_tools_for_llm.return_value = []
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt body", "quien soy yo", [])
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "workspace_ops_agent",
+            "execution_mode": "conversational",
+            "agent_role": "workspace_agent",
+            "schema": None,
+            "schema_mode": "best_effort",
+            "response_mode": "chat_compatible",
+            "tool_policy": {
+                "mode": "inherit",
+                "tool_names": [],
+            },
+            "resource_bindings": [],
+        }
+        self.mock_context_builder.build_agent_system_context.return_value = (
+            "Agent Runtime Context",
+            {"id": MOCK_LOCAL_USER_ID},
+            ["core_identity"],
+        )
+
+        result = self.service.preview_prompt_context(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="workspace_ops_agent",
+        )
+
+        assert result["agent_role"] == "workspace_agent"
+        assert result["execution_mode"] == "agentic"
+        assert result["history_type"] == "stateless"
+        self.mock_context_builder.build_agent_system_context.assert_called_once()
+
     def test_preview_chat_context_returns_built_context(self):
         self.mock_tool_service.get_tools_for_llm.return_value = [
             {"type": "function", "name": "crm_lookup", "description": "crm", "parameters": {}, "strict": True},

@@ -135,5 +135,6 @@ class CategoriesApiView(MethodView):
     SUPPORTED_PROMPT_AGENT_ROLES = [
         "workspace_chat",
         "operations",
+        "workspace_agent",
         "channels",
     ]

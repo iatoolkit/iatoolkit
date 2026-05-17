@@ -123,7 +123,7 @@ class ContextBuilderService:
         raw_agent_role = str(getattr(prompt_obj, "agent_role", "") or "").strip().lower()
         agent_role = (
             raw_agent_role
-            if raw_agent_role in {"workspace_chat", "channels", "operations"}
+            if raw_agent_role in {"workspace_chat", "workspace_agent", "channels", "operations"}
             else "workspace_chat"
         )
         execution_mode = "conversational" if agent_role == "workspace_chat" else "agentic"

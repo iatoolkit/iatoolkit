@@ -634,6 +634,7 @@ class ConfigurationService:
         allowed_execution_modes = {"conversational", "agentic"}
         allowed_agent_roles = {
             "workspace_chat",
+            "workspace_agent",
             "channels",
             "operations",
         }

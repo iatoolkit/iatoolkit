@@ -425,6 +425,29 @@ required:
             }
         ]
 
+    def test_get_prompt_output_contract_derives_workspace_agent_as_agentic(self):
+        self.mock_prompt_service.get_prompt_definition.return_value = SimpleNamespace(
+            name="workspace_ops_prompt",
+            execution_mode="conversational",
+            agent_role="workspace_agent",
+            output_schema=None,
+            output_schema_yaml=None,
+            output_schema_mode=None,
+            output_response_mode=None,
+            attachment_mode=None,
+            attachment_parser_provider=None,
+            attachment_fallback=None,
+            llm_model=None,
+            llm_request_options=None,
+            tool_policy=None,
+            resource_bindings=[],
+        )
+
+        contract = self.service.get_prompt_output_contract(self.mock_company, "workspace_ops_prompt")
+
+        assert contract["agent_role"] == "workspace_agent"
+        assert contract["execution_mode"] == "agentic"
+
     def test_get_prompt_output_contract_returns_attachment_policy_even_without_schema(self):
         self.mock_prompt_service.get_prompt_definition.return_value = SimpleNamespace(
             name="employee_prompt",

@@ -151,7 +151,10 @@ class LLMQueryRepo:
             return self.session.query(Prompt).filter(
                 Prompt.company_id == company.id,
                 Prompt.active.is_(True),
-                Prompt.agent_role == PromptAgentRole.WORKSPACE_CHAT.value,
+                Prompt.agent_role.in_([
+                    PromptAgentRole.WORKSPACE_CHAT.value,
+                    PromptAgentRole.WORKSPACE_AGENT.value,
+                ]),
             ).all()
 
     def create_or_update_prompt(self, new_prompt: Prompt):
@@ -169,9 +172,9 @@ class LLMQueryRepo:
                 or PromptAgentRole.WORKSPACE_CHAT.value
             )
             prompt.execution_mode = (
-                getattr(new_prompt, "execution_mode", None)
-                or prompt.execution_mode
-                or PromptExecutionMode.CONVERSATIONAL.value
+                PromptExecutionMode.CONVERSATIONAL.value
+                if prompt.agent_role == PromptAgentRole.WORKSPACE_CHAT.value
+                else PromptExecutionMode.AGENTIC.value
             )
             prompt.filename = new_prompt.filename
             prompt.custom_fields = new_prompt.custom_fields
@@ -195,7 +198,11 @@ class LLMQueryRepo:
             if not new_prompt.agent_role:
                 new_prompt.agent_role = PromptAgentRole.WORKSPACE_CHAT.value
             if not new_prompt.execution_mode:
-                new_prompt.execution_mode = PromptExecutionMode.CONVERSATIONAL.value
+                new_prompt.execution_mode = (
+                    PromptExecutionMode.CONVERSATIONAL.value
+                    if new_prompt.agent_role == PromptAgentRole.WORKSPACE_CHAT.value
+                    else PromptExecutionMode.AGENTIC.value
+                )
             if not new_prompt.output_schema_mode:
                 new_prompt.output_schema_mode = "best_effort"
             if not new_prompt.output_response_mode:

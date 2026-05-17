@@ -38,6 +38,7 @@ class PromptExecutionMode(str, enum.Enum):
 
 class PromptAgentRole(str, enum.Enum):
     WORKSPACE_CHAT = "workspace_chat"
+    WORKSPACE_AGENT = "workspace_agent"
     CHANNELS = "channels"
     OPERATIONS = "operations"
 

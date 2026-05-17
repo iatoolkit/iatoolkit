@@ -405,6 +405,23 @@ class TestPromptService:
         assert saved_prompt.agent_role == 'channels'
         assert saved_prompt.execution_mode == 'agentic'
 
+    def test_save_prompt_persists_workspace_agent_as_agentic(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_category_by_name.return_value = None
+
+        self.prompt_service.save_prompt(
+            'test_co',
+            'workspace_ops_agent',
+            {
+                'content': 'Prompt text',
+                'agent_role': 'workspace_agent',
+            }
+        )
+
+        saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
+        assert saved_prompt.agent_role == 'workspace_agent'
+        assert saved_prompt.execution_mode == 'agentic'
+
     def test_save_prompt_persists_structured_output_schema_yaml_and_json(self):
         self.profile_repo.get_company_by_short_name.return_value = self.mock_company
         self.llm_query_repo.get_category_by_name.return_value = None
