@@ -509,6 +509,144 @@ class TestLLMClient:
             },
         ]
 
+    def test_invoke_records_tool_child_span_for_successful_dispatch(self):
+        dispatcher_mock = MagicMock()
+        dispatcher_mock.dispatch.return_value = {
+            "status": "ok",
+            "api_key": "super-secret",
+            "__native_attachments__": [
+                {"name": "sales.csv", "mime_type": "text/csv", "base64": "U0FNUExF"}
+            ],
+        }
+
+        injector_mock = MagicMock()
+        injector_mock.get.return_value = dispatcher_mock
+
+        toolkit_mock = MagicMock()
+        toolkit_mock.get_injector.return_value = injector_mock
+
+        telemetry_execution = MagicMock()
+        tool_span = MagicMock()
+        telemetry_execution.start_child_span.return_value = tool_span
+        telemetry_execution.build_stats.return_value = None
+        self.telemetry_service_mock.start_execution.return_value = telemetry_execution
+
+        fake_images = [{'name': 'x.png', 'base64': '...'}]
+
+        with patch('iatoolkit.current_iatoolkit', return_value=toolkit_mock):
+            tool_call = ToolCall('call1', 'function_call', 'test_func', '{"a": 1}')
+            response_with_tools = LLMResponse('r1', 'gpt-4o', 'completed', '', [tool_call], Usage(10, 5, 15))
+            self.mock_proxy.create_response.side_effect = [response_with_tools, self.mock_llm_response]
+
+            self.client.invoke(
+                company=self.company,
+                user_identifier='user1',
+                previous_response_id='prev1',
+                model='gpt-5',
+                question='q',
+                context='c',
+                tools=[{}],
+                text={},
+                images=fake_images,
+                execution_metadata={"request_source": "chat_ui"},
+            )
+
+        start_event = telemetry_execution.start_child_span.call_args.kwargs["event"]
+        assert start_event["metadata"]["tool_name"] == "test_func"
+        assert start_event["metadata"]["request_source"] == "chat_ui"
+        assert start_event["input"]["arguments"]["request_images"] == {
+            "count": 1,
+            "content": "[OMITTED_IMAGES]",
+        }
+
+        finish_event = telemetry_execution.log_child_span.call_args.args[1]
+        assert finish_event["metadata"]["status"] == "completed"
+        assert finish_event["metadata"]["output_type"] == "dict"
+        assert finish_event["metadata"]["attachments_count"] == 1
+        assert finish_event["output"]["preview"]["status"] == "ok"
+        assert finish_event["output"]["preview"]["api_key"] == "[REDACTED]"
+        telemetry_execution.end_child_span.assert_called_once_with(tool_span)
+
+    def test_invoke_records_tool_child_span_error_when_dispatch_fails(self):
+        dispatcher_mock = MagicMock()
+        dispatcher_mock.dispatch.side_effect = Exception("boom")
+
+        injector_mock = MagicMock()
+        injector_mock.get.return_value = dispatcher_mock
+
+        toolkit_mock = MagicMock()
+        toolkit_mock.get_injector.return_value = injector_mock
+
+        telemetry_execution = MagicMock()
+        tool_span = MagicMock()
+        telemetry_execution.start_child_span.return_value = tool_span
+        telemetry_execution.build_stats.return_value = None
+        self.telemetry_service_mock.start_execution.return_value = telemetry_execution
+
+        with patch('iatoolkit.current_iatoolkit', return_value=toolkit_mock):
+            tool_call = ToolCall('call1', 'function_call', 'test_func', '{"a": 1}')
+            response_with_tools = LLMResponse('r1', 'gpt-4o', 'completed', '', [tool_call], Usage(10, 5, 15))
+            self.mock_proxy.create_response.return_value = response_with_tools
+
+            with pytest.raises(IAToolkitException, match="Dispatch error en tool test_func"):
+                self.client.invoke(
+                    company=self.company,
+                    user_identifier='user1',
+                    previous_response_id='prev1',
+                    model='gpt-5',
+                    question='q',
+                    context='c',
+                    tools=[{}],
+                    text={},
+                    images=[],
+                )
+
+        finish_event = telemetry_execution.log_child_span.call_args.args[1]
+        assert finish_event["metadata"]["status"] == "error"
+        assert "Dispatch error en tool test_func" in finish_event["metadata"]["error_message"]
+        telemetry_execution.end_child_span.assert_called_once_with(tool_span)
+
+    def test_invoke_records_tool_child_span_for_sql_retry_generation(self):
+        dispatcher_mock = MagicMock()
+        dispatcher_mock.dispatch.side_effect = IAToolkitException(
+            IAToolkitException.ErrorType.DATABASE_ERROR,
+            "syntax error near FROM",
+        )
+
+        injector_mock = MagicMock()
+        injector_mock.get.return_value = dispatcher_mock
+
+        toolkit_mock = MagicMock()
+        toolkit_mock.get_injector.return_value = injector_mock
+
+        telemetry_execution = MagicMock()
+        tool_span = MagicMock()
+        telemetry_execution.start_child_span.return_value = tool_span
+        telemetry_execution.build_stats.return_value = None
+        self.telemetry_service_mock.start_execution.return_value = telemetry_execution
+
+        with patch('iatoolkit.current_iatoolkit', return_value=toolkit_mock):
+            tool_call = ToolCall('call1', 'function_call', 'run_sql', '{"query": "select * from sales"}')
+            response_with_tools = LLMResponse('r1', 'gpt-4o', 'completed', '', [tool_call], Usage(10, 5, 15))
+            self.mock_proxy.create_response.side_effect = [response_with_tools, self.mock_llm_response]
+
+            self.client.invoke(
+                company=self.company,
+                user_identifier='user1',
+                previous_response_id='prev1',
+                model='gpt-5',
+                question='q',
+                context='c',
+                tools=[{}],
+                text={},
+                images=[],
+            )
+
+        finish_event = telemetry_execution.log_child_span.call_args.args[1]
+        assert finish_event["metadata"]["status"] == "retry_generated"
+        assert "ERROR DE EJECUCIÓN DE HERRAMIENTA" in finish_event["output"]["preview"]
+        telemetry_execution.end_child_span.assert_called_once_with(tool_span)
+
     def test_invoke_passes_native_attachments_to_llm_proxy(self):
         self.mock_proxy.create_response.return_value = self.mock_llm_response
         native_attachments = [

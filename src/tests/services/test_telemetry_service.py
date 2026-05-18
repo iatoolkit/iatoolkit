@@ -180,3 +180,56 @@ class TestTelemetryService:
                 {"model": "gpt-5", "input": [{"type": "function_call_output", "output": "ok"}]},
             ]
         }
+
+    def test_child_span_helpers_delegate_to_bridge(self):
+        bridge = MagicMock()
+        span = MagicMock()
+        child_span = MagicMock()
+        bridge.start_span.return_value = child_span
+        execution = TelemetryExecution(
+            enabled=True,
+            bridge=bridge,
+            span=span,
+        )
+
+        returned_span = execution.start_child_span(
+            name="tool.test_func",
+            span_type="tool",
+            event={"metadata": {"tool_name": "test_func"}},
+        )
+        execution.log_child_span(returned_span, {"metadata": {"status": "completed"}})
+        execution.end_child_span(returned_span)
+
+        assert returned_span is child_span
+        bridge.start_span.assert_called_once_with(
+            span,
+            name="tool.test_func",
+            span_type="tool",
+            event={"metadata": {"tool_name": "test_func"}},
+        )
+        bridge.log_span.assert_called_once_with(
+            child_span,
+            {"metadata": {"status": "completed"}},
+        )
+        bridge.end_span.assert_called_once_with(child_span)
+
+    def test_child_span_helpers_are_noop_when_disabled(self):
+        bridge = MagicMock()
+        span = MagicMock()
+        execution = TelemetryExecution(
+            enabled=False,
+            bridge=bridge,
+            span=span,
+        )
+
+        child_span = execution.start_child_span(
+            name="tool.test_func",
+            event={"metadata": {"tool_name": "test_func"}},
+        )
+        execution.log_child_span(MagicMock(), {"metadata": {"status": "completed"}})
+        execution.end_child_span(MagicMock())
+
+        assert child_span is None
+        bridge.start_span.assert_not_called()
+        bridge.log_span.assert_not_called()
+        bridge.end_span.assert_not_called()

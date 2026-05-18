@@ -27,6 +27,10 @@ from iatoolkit.services.structured_output_service import StructuredOutputService
 from iatoolkit.services.telemetry_service import NoopTelemetryService
 
 CONTEXT_ERROR_MESSAGE = 'Tu consulta supera el límite de contexto, utiliza el boton de recarga de contexto.'
+TELEMETRY_MAX_STRING_LENGTH = 1000
+TELEMETRY_MAX_COLLECTION_ITEMS = 20
+TELEMETRY_MAX_DEPTH = 4
+TELEMETRY_REDACTED_VALUE = "[REDACTED]"
 
 class llmClient:
     _llm_clients_cache = {}      # class attribute, for the clients cache
@@ -121,6 +125,7 @@ class llmClient:
         text_payload = request_params["text"]
         reasoning_payload = request_params["reasoning"]
         telemetry_execution = self.telemetry_service.start_execution(telemetry_request)
+        request_source = str((execution_metadata or {}).get("request_source") or "").strip().lower()
 
         try:
             start_time = time.time()
@@ -209,58 +214,105 @@ class llmClient:
                         raise
                     logging.debug(f"[Dispatcher] Parsed args = {args}")
 
+                    tool_call_id = str(getattr(tool_call, "call_id", "") or "").strip()
+                    tool_span = None
+                    tool_status = None
+                    tool_result_for_telemetry = None
+                    tool_error_message = None
+                    tool_output_type = None
+                    tool_attachments_count = 0
+                    tool_elapsed_seconds = 0.0
+
                     try:
                         call_kwargs = dict(args)
                         if images:
                             call_kwargs["request_images"] = images
 
-                        result = self.dispatcher.dispatch(
-                            company_short_name=company.short_name,
-                            function_name=function_name,
-                            user_identifier=user_identifier,
-                            **call_kwargs
+                        tool_span = telemetry_execution.start_child_span(
+                            name=f"tool.{function_name}",
+                            span_type="tool",
+                            event=self._build_tool_telemetry_start_event(
+                                company_short_name=company.short_name,
+                                function_name=function_name,
+                                call_id=tool_call_id,
+                                args=call_kwargs,
+                                request_source=request_source,
+                            ),
                         )
-                        force_tool_name = None
-                    except IAToolkitException as e:
-                        if (e.error_type == IAToolkitException.ErrorType.DATABASE_ERROR and
-                            sql_retry_count < self.MAX_SQL_RETRIES):
-                            sql_retry_count += 1
-                            sql_query_with_error = args.get('query', 'No se pudo extraer la consulta.')
-                            original_db_error = str(e.__cause__) if e.__cause__ else str(e)
 
-                            logging.warning(
-                                    f"Error de SQL capturado, intentando corregir con el LLM (Intento {sql_retry_count}/{self.MAX_SQL_RETRIES}).")
-                            result = self._create_sql_retry_prompt(function_name, sql_query_with_error, original_db_error)
+                        try:
+                            result = self.dispatcher.dispatch(
+                                company_short_name=company.short_name,
+                                function_name=function_name,
+                                user_identifier=user_identifier,
+                                **call_kwargs
+                            )
+                            force_tool_name = None
+                            tool_status = "completed"
+                        except IAToolkitException as e:
+                            if (e.error_type == IAToolkitException.ErrorType.DATABASE_ERROR and
+                                sql_retry_count < self.MAX_SQL_RETRIES):
+                                sql_retry_count += 1
+                                sql_query_with_error = args.get('query', 'No se pudo extraer la consulta.')
+                                original_db_error = str(e.__cause__) if e.__cause__ else str(e)
 
-                            # force the next call to be this function
-                            force_tool_name = function_name
-                        else:
-                            error_message = f"**LLM_DISPATCHER** error en dispatch para tool: '{function_name}': {str(e)}"
+                                logging.warning(
+                                        f"Error de SQL capturado, intentando corregir con el LLM (Intento {sql_retry_count}/{self.MAX_SQL_RETRIES}).")
+                                result = self._create_sql_retry_prompt(function_name, sql_query_with_error, original_db_error)
+
+                                # force the next call to be this function
+                                force_tool_name = function_name
+                                tool_status = "retry_generated"
+                            else:
+                                error_message = f"**LLM_DISPATCHER** error en dispatch para tool: '{function_name}': {str(e)}"
+                                tool_status = "error"
+                                tool_error_message = error_message
+                                raise IAToolkitException(IAToolkitException.ErrorType.CALL_ERROR, error_message)
+                        except Exception as e:
+                            error_message = f"Dispatch error en tool {function_name} con args {args} -******- {str(e)}"
+                            tool_status = "error"
+                            tool_error_message = error_message
                             raise IAToolkitException(IAToolkitException.ErrorType.CALL_ERROR, error_message)
-                    except Exception as e:
-                        error_message = f"Dispatch error en tool {function_name} con args {args} -******- {str(e)}"
-                        raise IAToolkitException(IAToolkitException.ErrorType.CALL_ERROR, error_message)
 
-                    result, tool_native_attachments = self._split_tool_result_and_native_attachments(result)
-                    active_attachments = self._merge_native_attachments(active_attachments, tool_native_attachments)
+                        result, tool_native_attachments = self._split_tool_result_and_native_attachments(result)
+                        active_attachments = self._merge_native_attachments(active_attachments, tool_native_attachments)
+                        tool_result_for_telemetry = result
+                        tool_output_type = type(result).__name__
+                        tool_attachments_count = len(tool_native_attachments or [])
 
-                    # add the return value into the list of messages
-                    input_messages.append({
-                        "type": "function_call_output",
-                        "call_id": tool_call.call_id,
-                        "status": "completed",
-                        "output": self._serialize_tool_output(result)
-                    })
-                    history_messages.append({
-                        "type": "function_call_output",
-                        "call_id": tool_call.call_id,
-                        "status": "completed",
-                        "output": self._serialize_tool_output(result),
-                    })
-                    function_calls = True
+                        # add the return value into the list of messages
+                        input_messages.append({
+                            "type": "function_call_output",
+                            "call_id": tool_call.call_id,
+                            "status": "completed",
+                            "output": self._serialize_tool_output(result)
+                        })
+                        history_messages.append({
+                            "type": "function_call_output",
+                            "call_id": tool_call.call_id,
+                            "status": "completed",
+                            "output": self._serialize_tool_output(result),
+                        })
+                        function_calls = True
+                    finally:
+                        tool_elapsed_seconds = time.time() - fcall_time
+                        telemetry_execution.log_child_span(
+                            tool_span,
+                            self._build_tool_telemetry_finish_event(
+                                function_name=function_name,
+                                call_id=tool_call_id,
+                                status=tool_status,
+                                elapsed_seconds=tool_elapsed_seconds,
+                                result=tool_result_for_telemetry,
+                                error_message=tool_error_message,
+                                output_type=tool_output_type,
+                                attachments_count=tool_attachments_count,
+                            ),
+                        )
+                        telemetry_execution.end_child_span(tool_span)
 
                     # log the function call parameters and execution time in secs
-                    elapsed = time.time() - fcall_time
+                    elapsed = tool_elapsed_seconds
                     f_call_identity = {function_name:args, 'time': f'{elapsed:.1f}' }
                     f_calls.append(f_call_identity)
                     f_call_time += elapsed
@@ -305,6 +357,8 @@ class llmClient:
             stats['model'] = model
 
             combined_stats = self.add_stats(stats, stats_fcall)
+            combined_stats["tool_call_count"] = len(f_calls)
+            combined_stats["tool_time_ms_total"] = int(round(f_call_time * 1000))
             if isinstance(execution_metadata, dict):
                 combined_stats = dict(combined_stats or {})
                 request_source = str(execution_metadata.get("request_source") or "").strip().lower()
@@ -344,6 +398,8 @@ class llmClient:
                     "total_tokens": combined_stats.get("total_tokens"),
                     "response_time": combined_stats.get("response_time"),
                     "sql_retry_count": combined_stats.get("sql_retry_count"),
+                    "tool_call_count": combined_stats.get("tool_call_count"),
+                    "tool_time_ms_total": combined_stats.get("tool_time_ms_total"),
                 },
             )
             telemetry_stats = telemetry_execution.build_stats()
@@ -478,6 +534,156 @@ class llmClient:
             merged.append(attachment)
 
         return merged
+
+    @staticmethod
+    def _build_tool_telemetry_start_event(
+        company_short_name: str,
+        function_name: str,
+        call_id: str,
+        args: dict[str, Any],
+        request_source: str = "",
+    ) -> dict[str, Any]:
+        metadata = {
+            "company": company_short_name,
+            "tool_name": function_name,
+        }
+        if call_id:
+            metadata["call_id"] = call_id
+        if request_source:
+            metadata["request_source"] = request_source
+
+        return {
+            "metadata": metadata,
+            "input": {
+                "arguments": llmClient._sanitize_tool_payload_for_telemetry(args),
+            },
+        }
+
+    @staticmethod
+    def _build_tool_telemetry_finish_event(
+        function_name: str,
+        call_id: str,
+        status: Optional[str],
+        elapsed_seconds: float,
+        result: Any = None,
+        error_message: Optional[str] = None,
+        output_type: Optional[str] = None,
+        attachments_count: int = 0,
+    ) -> dict[str, Any]:
+        metadata: dict[str, Any] = {
+            "tool_name": function_name,
+            "status": status or "unknown",
+            "elapsed_ms": int(round(max(elapsed_seconds, 0.0) * 1000)),
+        }
+        if call_id:
+            metadata["call_id"] = call_id
+        if output_type:
+            metadata["output_type"] = output_type
+        if attachments_count:
+            metadata["attachments_count"] = attachments_count
+        if error_message:
+            metadata["error_message"] = llmClient._truncate_telemetry_string(str(error_message))
+
+        event: dict[str, Any] = {"metadata": metadata}
+        if result is not None:
+            event["output"] = {
+                "preview": llmClient._sanitize_tool_payload_for_telemetry(result, parent_key="output"),
+            }
+        return event
+
+    @staticmethod
+    def _sanitize_tool_payload_for_telemetry(
+        value: Any,
+        *,
+        parent_key: str = "",
+        depth: int = 0,
+    ) -> Any:
+        if depth >= TELEMETRY_MAX_DEPTH:
+            return "[TRUNCATED_DEPTH]"
+
+        if isinstance(value, dict):
+            sanitized: dict[str, Any] = {}
+            items = list(value.items())
+            for index, (key, item) in enumerate(items):
+                if index >= TELEMETRY_MAX_COLLECTION_ITEMS:
+                    sanitized["__truncated_items__"] = len(items) - TELEMETRY_MAX_COLLECTION_ITEMS
+                    break
+
+                key_str = str(key)
+                key_name = key_str.strip().lower()
+                if llmClient._is_sensitive_telemetry_key(key_name):
+                    sanitized[key_str] = TELEMETRY_REDACTED_VALUE
+                    continue
+
+                if key_name in {"request_images", "images"} and isinstance(item, list):
+                    sanitized[key_str] = {"count": len(item), "content": "[OMITTED_IMAGES]"}
+                    continue
+
+                if key_name in {"attachments", "native_attachments", "request_attachments"} and isinstance(item, list):
+                    sanitized[key_str] = {"count": len(item), "content": "[OMITTED_ATTACHMENTS]"}
+                    continue
+
+                sanitized[key_str] = llmClient._sanitize_tool_payload_for_telemetry(
+                    item,
+                    parent_key=key_name,
+                    depth=depth + 1,
+                )
+            return sanitized
+
+        if isinstance(value, (list, tuple, set)):
+            items = list(value)
+            sanitized_items = [
+                llmClient._sanitize_tool_payload_for_telemetry(item, parent_key=parent_key, depth=depth + 1)
+                for item in items[:TELEMETRY_MAX_COLLECTION_ITEMS]
+            ]
+            if len(items) > TELEMETRY_MAX_COLLECTION_ITEMS:
+                sanitized_items.append(f"[TRUNCATED_ITEMS:{len(items) - TELEMETRY_MAX_COLLECTION_ITEMS}]")
+            return sanitized_items
+
+        if isinstance(value, (bytes, bytearray)):
+            return f"[BINARY:{len(value)} bytes]"
+
+        if isinstance(value, str):
+            if llmClient._looks_like_base64(value) or parent_key in {"base64", "data"}:
+                return "[REDACTED_BINARY_TEXT]"
+            return llmClient._truncate_telemetry_string(value)
+
+        if isinstance(value, (int, float, bool)) or value is None:
+            return value
+
+        return llmClient._truncate_telemetry_string(str(value))
+
+    @staticmethod
+    def _is_sensitive_telemetry_key(key_name: str) -> bool:
+        if not key_name:
+            return False
+
+        return any(
+            marker in key_name
+            for marker in (
+                "api_key",
+                "apikey",
+                "secret",
+                "password",
+                "token",
+                "authorization",
+                "credential",
+            )
+        )
+
+    @staticmethod
+    def _looks_like_base64(value: str) -> bool:
+        candidate = str(value or "").strip()
+        if len(candidate) < 256 or len(candidate) % 4 != 0:
+            return False
+        return bool(re.fullmatch(r"[A-Za-z0-9+/=\s]+", candidate))
+
+    @staticmethod
+    def _truncate_telemetry_string(value: str, max_length: int = TELEMETRY_MAX_STRING_LENGTH) -> str:
+        text = str(value or "")
+        if len(text) <= max_length:
+            return text
+        return f"{text[:max_length]}...[truncated]"
 
     @staticmethod
     def _build_history_messages_from_response(response) -> list[dict]:

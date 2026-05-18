@@ -30,14 +30,57 @@ class TelemetryExecution:
     _input_payloads: list[Any] = field(default_factory=list)
     _finalized: bool = False
 
+    @staticmethod
+    def _clone_payload(payload: Any) -> Any:
+        try:
+            return copy.deepcopy(payload)
+        except Exception:
+            return payload
+
     def record_input(self, payload: Any) -> None:
         if payload is None or self._finalized:
             return
 
+        self._input_payloads.append(self._clone_payload(payload))
+
+    def start_child_span(
+        self,
+        *,
+        name: str,
+        event: dict[str, Any] | None = None,
+        span_type: str = "task",
+    ) -> Any | None:
+        if self._finalized or not self.enabled or not self.span or not self.bridge:
+            return None
+
         try:
-            self._input_payloads.append(copy.deepcopy(payload))
-        except Exception:
-            self._input_payloads.append(payload)
+            return self.bridge.start_span(
+                self.span,
+                name=str(name or "iatoolkit.child"),
+                span_type=str(span_type or "task"),
+                event=self._clone_payload(event or {}),
+            )
+        except Exception as exc:
+            logging.debug("Telemetry child span start failed: %s", exc)
+            return None
+
+    def log_child_span(self, child_span: Any, event: dict[str, Any] | None) -> None:
+        if self._finalized or not self.enabled or not self.bridge or not child_span or not event:
+            return
+
+        try:
+            self.bridge.log_span(child_span, self._clone_payload(event))
+        except Exception as exc:
+            logging.debug("Telemetry child span log failed: %s", exc)
+
+    def end_child_span(self, child_span: Any) -> None:
+        if not self.enabled or not self.bridge or not child_span:
+            return
+
+        try:
+            self.bridge.end_span(child_span)
+        except Exception as exc:
+            logging.debug("Telemetry child span end failed: %s", exc)
 
     def build_input_payload(self) -> Any | None:
         if not self._input_payloads:

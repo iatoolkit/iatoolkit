@@ -333,13 +333,17 @@ class ContextBuilderService:
                 collection_names=rag_collections,
             )
 
+        company_context_blocks = self.company_context_service.get_company_context_blocks(company_short_name)
+
         final_system_context = self._join_context_sections(
             rendered_sections.get("identity"),
+            company_context_blocks.get("markdown_context"),
             rendered_sections.get("conversation_rules"),
             rendered_sections.get("retrieval_guidance"),
             collection_context,
             rendered_sections.get("data_access_rules"),
             sql_context,
+            company_context_blocks.get("yaml_context"),
             rendered_sections.get("output_contract"),
         )
 
