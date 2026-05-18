@@ -150,6 +150,7 @@ class TestPromptService:
             query_text=None,
             execution_mode="chat",
             response_mode="chat_compatible",
+            agent_role=None,
         )
 
     @patch('iatoolkit.services.prompt_service.build_system_prompt_payload')
@@ -176,6 +177,7 @@ class TestPromptService:
             query_text=None,
             execution_mode="chat",
             response_mode="chat_compatible",
+            agent_role=None,
         )
 
     @patch('iatoolkit.services.prompt_service.build_system_prompt_payload')
@@ -203,6 +205,7 @@ class TestPromptService:
             query_text="dame una tabla html",
             execution_mode="chat",
             response_mode="chat_compatible",
+            agent_role=None,
         )
 
     @patch('iatoolkit.services.prompt_service.build_system_prompt_payload')
@@ -231,6 +234,32 @@ class TestPromptService:
             query_text="usa sql",
             execution_mode="chat",
             response_mode="chat_compatible",
+            agent_role=None,
+        )
+
+    @patch('iatoolkit.services.prompt_service.build_system_prompt_payload')
+    def test_get_system_prompt_payload_forwards_agent_role(self, mock_build_payload):
+        mock_build_payload.return_value = {
+            "content": "Contenido base",
+            "selected_keys": ["query_main"],
+            "sections": [{"section": "identity", "content": "Contenido base", "selected_keys": ["query_main"]}],
+        }
+
+        payload = self.prompt_service.get_system_prompt_payload(
+            company_id=1,
+            company_short_name="test_co",
+            execution_mode="agent",
+            response_mode="chat_compatible",
+            agent_role="channels",
+        )
+
+        assert payload["selected_keys"] == ["query_main"]
+        mock_build_payload.assert_called_once_with(
+            set(),
+            query_text=None,
+            execution_mode="agent",
+            response_mode="chat_compatible",
+            agent_role="channels",
         )
 
     def test_get_system_prompt_payload_raises_when_company_does_not_exist(self):

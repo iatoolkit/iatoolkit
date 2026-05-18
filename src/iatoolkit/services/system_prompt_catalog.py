@@ -110,6 +110,7 @@ def _normalize_include_rule(value: Any, index: int) -> dict:
             "any_patterns": [],
             "execution_modes": [],
             "response_modes": [],
+            "agent_roles": [],
         }
 
     if not isinstance(value, dict):
@@ -124,6 +125,7 @@ def _normalize_include_rule(value: Any, index: int) -> dict:
             "any_patterns",
             "execution_modes",
             "response_modes",
+            "agent_roles",
         }
     ]
     if unknown_keys:
@@ -144,10 +146,24 @@ def _normalize_include_rule(value: Any, index: int) -> dict:
         index=index,
         allowed_values={"chat_compatible", "structured_only"},
     )
-    if not all_capabilities and not any_capabilities and not any_patterns and not execution_modes and not response_modes:
+    agent_roles = _normalize_mode_list(
+        value.get("agent_roles"),
+        field_name="agent_roles",
+        index=index,
+        allowed_values={"workspace_chat", "workspace_agent", "channels", "operations"},
+    )
+    if (
+        not all_capabilities
+        and not any_capabilities
+        and not any_patterns
+        and not execution_modes
+        and not response_modes
+        and not agent_roles
+    ):
         raise ValueError(
             f"prompts[{index}].include must define at least one of "
-            "'all_capabilities', 'any_capabilities', 'any_patterns', 'execution_modes', or 'response_modes'"
+            "'all_capabilities', 'any_capabilities', 'any_patterns', 'execution_modes', "
+            "'response_modes', or 'agent_roles'"
         )
 
     return {
@@ -157,6 +173,7 @@ def _normalize_include_rule(value: Any, index: int) -> dict:
         "any_patterns": any_patterns,
         "execution_modes": execution_modes,
         "response_modes": response_modes,
+        "agent_roles": agent_roles,
     }
 
 
@@ -227,6 +244,7 @@ def _matches_include_rule(
     query_text: str | None = None,
     execution_mode: str | None = None,
     response_mode: str | None = None,
+    agent_role: str | None = None,
 ) -> bool:
     if rule.get("type") == "always":
         return True
@@ -236,9 +254,11 @@ def _matches_include_rule(
     any_patterns = rule.get("any_patterns") or []
     execution_modes = rule.get("execution_modes") or []
     response_modes = rule.get("response_modes") or []
+    agent_roles = rule.get("agent_roles") or []
 
     normalized_execution_mode = str(execution_mode or "").strip().lower()
     normalized_response_mode = str(response_mode or "").strip().lower()
+    normalized_agent_role = str(agent_role or "").strip().lower()
 
     if execution_modes:
         if not normalized_execution_mode or normalized_execution_mode not in execution_modes:
@@ -246,6 +266,10 @@ def _matches_include_rule(
 
     if response_modes:
         if not normalized_response_mode or normalized_response_mode not in response_modes:
+            return False
+
+    if agent_roles:
+        if not normalized_agent_role or normalized_agent_role not in agent_roles:
             return False
 
     if all_capabilities and not set(all_capabilities).issubset(capabilities):
@@ -269,6 +293,7 @@ def select_system_prompt_entries(
     query_text: str | None = None,
     execution_mode: str | None = None,
     response_mode: str | None = None,
+    agent_role: str | None = None,
 ) -> list[dict]:
     capability_set = {item for item in (capabilities or []) if isinstance(item, str) and item.strip()}
     selected: list[dict] = []
@@ -281,6 +306,7 @@ def select_system_prompt_entries(
             query_text=query_text,
             execution_mode=execution_mode,
             response_mode=response_mode,
+            agent_role=agent_role,
         ):
             selected.append(copy.deepcopy(entry))
 
@@ -292,12 +318,14 @@ def build_system_prompt_payload(
     query_text: str | None = None,
     execution_mode: str | None = None,
     response_mode: str | None = None,
+    agent_role: str | None = None,
 ) -> dict:
     selected_entries = select_system_prompt_entries(
         capabilities,
         query_text=query_text,
         execution_mode=execution_mode,
         response_mode=response_mode,
+        agent_role=agent_role,
     )
 
     selected_keys: list[str] = []

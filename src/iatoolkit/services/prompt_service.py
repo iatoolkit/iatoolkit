@@ -772,6 +772,7 @@ class PromptService:
         capabilities_override: set[str] | None = None,
         execution_mode: str | None = None,
         response_mode: str | None = None,
+        agent_role: str | None = None,
     ) -> dict:
         try:
             resolved_short_name = (company_short_name or "").strip()
@@ -796,11 +797,13 @@ class PromptService:
             normalized_response_mode = (
                 str(response_mode or "chat_compatible").strip().lower() or "chat_compatible"
             )
+            normalized_agent_role = str(agent_role or "").strip().lower() or None
             payload = build_system_prompt_payload(
                 capabilities,
                 query_text=query_text,
                 execution_mode=normalized_execution_mode,
                 response_mode=normalized_response_mode,
+                agent_role=normalized_agent_role,
             )
             selected_keys = payload.get("selected_keys")
             if not isinstance(selected_keys, list):

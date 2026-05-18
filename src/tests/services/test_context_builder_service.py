@@ -146,6 +146,8 @@ class TestContextBuilderService:
             {"name": "iat_memory_search", "description": "memory"},
         ]
         prompt_contract = {
+            "agent_role": "channels",
+            "response_mode": "chat_compatible",
             "resource_bindings": [
                 {"resource_type": "sql_source", "resource_key": "erp"},
                 {"resource_type": "rag_collection", "resource_key": "legal"},
@@ -156,12 +158,23 @@ class TestContextBuilderService:
         self.mock_prompt_service.get_system_prompt_payload.return_value = {
             "content": "Agent System Template",
             "selected_keys": ["core_identity", "memory_usage", "sql_core"],
+            "sections": [
+                {"section": "identity", "content": "Agent Identity"},
+                {"section": "business_context", "content": "Channel Business Context"},
+                {"section": "conversation_rules", "content": "Channel Conversation Rules"},
+                {"section": "output_contract", "content": "Channel Output Contract"},
+            ],
         }
         self.mock_prompt_service.resolve_system_prompt_capabilities.return_value = {
             "can_query_sql",
             "can_use_memory",
         }
-        self.mock_util.render_prompt_from_string.return_value = "Rendered Agent Prompt\n### Memoria personal"
+        self.mock_util.render_prompt_from_string.side_effect = [
+            "Agent Identity",
+            "Channel Business Context",
+            "Channel Conversation Rules",
+            "Channel Output Contract",
+        ]
         self.mock_company_context.get_company_context_blocks.return_value = {
             "markdown_context": "Agent Company Context",
             "sql_context": "Ignored shared SQL Context",
@@ -182,18 +195,23 @@ class TestContextBuilderService:
             query_text="explica ventas",
         )
 
+        assert "Channel Business Context" in context
         assert "Agent Company Context" in context
         assert "Filtered SQL Context" in context
         assert "Agent YAML Context" in context
         assert "## Colecciones documentales disponibles" in context
         assert "- legal: Contracts" in context
         assert "- support: Policies" not in context
-        assert "### Memoria personal" in context
-        assert "Rendered Agent Prompt" in context
-        assert context.index("Rendered Agent Prompt") < context.index("Agent Company Context")
-        assert context.index("Agent Company Context") < context.index("## Colecciones documentales disponibles")
+        assert "Channel Conversation Rules" in context
+        assert "Channel Output Contract" in context
+        assert "Agent Identity" in context
+        assert context.index("Agent Identity") < context.index("Channel Business Context")
+        assert context.index("Channel Business Context") < context.index("Agent Company Context")
+        assert context.index("Agent Company Context") < context.index("Channel Conversation Rules")
+        assert context.index("Channel Conversation Rules") < context.index("## Colecciones documentales disponibles")
         assert context.index("## Colecciones documentales disponibles") < context.index("Filtered SQL Context")
         assert context.index("Filtered SQL Context") < context.index("Agent YAML Context")
+        assert context.index("Agent YAML Context") < context.index("Channel Output Contract")
         assert profile == mock_profile
         assert selected_keys == ["core_identity", "memory_usage", "sql_core"]
         self.mock_company_context.get_company_context_blocks.assert_called_once_with(MOCK_COMPANY_SHORT_NAME)
@@ -208,6 +226,7 @@ class TestContextBuilderService:
             capabilities_override={"can_query_sql", "can_use_memory"},
             execution_mode="agent",
             response_mode="chat_compatible",
+            agent_role="channels",
         )
         self.mock_prompt_service.resolve_system_prompt_capabilities.assert_called_once_with(
             MOCK_COMPANY_SHORT_NAME,

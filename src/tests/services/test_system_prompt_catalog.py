@@ -42,6 +42,7 @@ prompts:
                 "any_patterns": [],
                 "execution_modes": [],
                 "response_modes": [],
+                "agent_roles": [],
             },
         },
         {
@@ -55,6 +56,7 @@ prompts:
                 "any_patterns": [],
                 "execution_modes": [],
                 "response_modes": [],
+                "agent_roles": [],
             },
         },
     ]
@@ -161,6 +163,52 @@ prompts:
 
     assert [item["key"] for item in chat] == ["core_identity", "chat_user_profile", "output_basics"]
     assert [item["key"] for item in agent_structured] == ["core_identity"]
+
+
+def test_select_entries_by_agent_role():
+    payload = """
+prompts:
+  - key: core_identity
+    filename: core_identity.prompt
+    section: identity
+    include:
+      execution_modes: [agent]
+  - key: channel_business_identity
+    filename: channel_business_identity.prompt
+    section: business_context
+    include:
+      execution_modes: [agent]
+      agent_roles: [channels]
+  - key: operations_guardrails
+    filename: operations_guardrails.prompt
+    section: conversation_rules
+    include:
+      execution_modes: [agent]
+      agent_roles: [operations]
+"""
+    with patch.object(system_prompt_catalog, "_read_catalog_text", return_value=payload):
+        channels = system_prompt_catalog.select_system_prompt_entries(
+            set(),
+            execution_mode="agent",
+            response_mode="chat_compatible",
+            agent_role="channels",
+        )
+        operations = system_prompt_catalog.select_system_prompt_entries(
+            set(),
+            execution_mode="agent",
+            response_mode="chat_compatible",
+            agent_role="operations",
+        )
+        generic_agent = system_prompt_catalog.select_system_prompt_entries(
+            set(),
+            execution_mode="agent",
+            response_mode="chat_compatible",
+            agent_role="workspace_agent",
+        )
+
+    assert [item["key"] for item in channels] == ["core_identity", "channel_business_identity"]
+    assert [item["key"] for item in operations] == ["core_identity", "operations_guardrails"]
+    assert [item["key"] for item in generic_agent] == ["core_identity"]
 
 
 def test_select_entries_by_query_pattern():

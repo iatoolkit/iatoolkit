@@ -207,6 +207,7 @@ class ContextBuilderService:
 
         final_system_context = self._join_context_sections(
             rendered_sections.get("identity"),
+            rendered_sections.get("business_context"),
             company_context_blocks.get("markdown_context"),
             rendered_sections.get("conversation_rules"),
             rendered_sections.get("retrieval_guidance"),
@@ -308,6 +309,7 @@ class ContextBuilderService:
             capabilities_override=prompt_capabilities,
             execution_mode="agent",
             response_mode=str(resolved_contract.get("response_mode") or "chat_compatible").strip().lower() or "chat_compatible",
+            agent_role=str(resolved_contract.get("agent_role") or "").strip().lower() or None,
         )
         selected_system_prompt_keys = system_prompt_payload.get("selected_keys")
         if not isinstance(selected_system_prompt_keys, list):
@@ -337,6 +339,7 @@ class ContextBuilderService:
 
         final_system_context = self._join_context_sections(
             rendered_sections.get("identity"),
+            rendered_sections.get("business_context"),
             company_context_blocks.get("markdown_context"),
             rendered_sections.get("conversation_rules"),
             rendered_sections.get("retrieval_guidance"),
