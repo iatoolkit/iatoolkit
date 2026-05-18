@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock
 
-from iatoolkit.services.telemetry_service import TelemetryExecution, TelemetryService
+from iatoolkit.services.telemetry_service import BraintrustTelemetryBridge, TelemetryExecution, TelemetryService
 
 
 class TestTelemetryService:
@@ -233,3 +233,30 @@ class TestTelemetryService:
         bridge.start_span.assert_not_called()
         bridge.log_span.assert_not_called()
         bridge.end_span.assert_not_called()
+
+    def test_braintrust_bridge_start_span_expands_input_and_metadata_fields(self):
+        captured = {}
+
+        class FakeParent:
+            def start_span(self, **kwargs):
+                captured.update(kwargs)
+                return "child-span"
+
+        bridge = BraintrustTelemetryBridge()
+
+        child_span = bridge.start_span(
+            FakeParent(),
+            name="tool.test_func",
+            span_type="tool",
+            event={
+                "metadata": {"tool_name": "test_func"},
+                "input": {"arguments": {"a": 1}},
+            },
+        )
+
+        assert child_span == "child-span"
+        assert captured["name"] == "tool.test_func"
+        assert captured["type"] == "tool"
+        assert captured["metadata"] == {"tool_name": "test_func"}
+        assert captured["input"] == {"arguments": {"a": 1}}
+        assert "event" not in captured

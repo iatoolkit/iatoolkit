@@ -286,10 +286,10 @@ class BraintrustTelemetryBridge:
         }
 
         try:
-            return parent.start_span(event=event, **start_kwargs)
+            return parent.start_span(**start_kwargs, **event)
         except TypeError:
             try:
-                return parent.start_span(**start_kwargs, **event)
+                return parent.start_span(event=event, **start_kwargs)
             except TypeError:
                 span = parent.start_span(**start_kwargs)
                 self.log_span(span, event)
