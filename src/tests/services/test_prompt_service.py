@@ -404,6 +404,9 @@ class TestPromptService:
         saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
         assert saved_prompt.agent_role == 'channels'
         assert saved_prompt.execution_mode == 'agentic'
+        assert saved_prompt.output_response_mode == "chat_compatible"
+        assert saved_prompt.output_schema is None
+        assert saved_prompt.output_schema_yaml is None
 
     def test_save_prompt_persists_workspace_agent_as_agentic(self):
         self.profile_repo.get_company_by_short_name.return_value = self.mock_company
@@ -460,6 +463,36 @@ properties:
         assert saved_prompt.attachment_mode == "native_only"
         assert saved_prompt.attachment_parser_provider == "basic"
         assert saved_prompt.attachment_fallback == "fail"
+
+    def test_save_prompt_forces_free_text_output_for_workspace_chat_role(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_category_by_name.return_value = None
+
+        self.prompt_service.save_prompt(
+            'test_co',
+            'chat_prompt',
+            {
+                'content': 'Prompt text',
+                'agent_role': 'workspace_chat',
+                'output_schema_yaml': """
+type: object
+required:
+  - customer_id
+properties:
+  customer_id:
+    type: string
+                """,
+                'output_schema_mode': 'strict',
+                'output_response_mode': 'structured_only',
+            },
+        )
+
+        saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
+        assert saved_prompt.agent_role == 'workspace_chat'
+        assert saved_prompt.output_response_mode == "chat_compatible"
+        assert saved_prompt.output_schema is None
+        assert saved_prompt.output_schema_yaml is None
+        assert saved_prompt.output_schema_mode == "best_effort"
 
     def test_save_prompt_persists_llm_model(self):
         self.profile_repo.get_company_by_short_name.return_value = self.mock_company

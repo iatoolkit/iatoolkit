@@ -1548,6 +1548,42 @@ class TestQueryService:
         assert invoke_kwargs["text"]["response_format"]["json_schema"]["schema"]["required"] == ["doi"]
         assert invoke_kwargs["response_contract"]["provider"] == "openrouter"
 
+    def test_llm_query_forces_free_text_output_for_channel_role_even_if_schema_exists(self):
+        self.mock_configuration_service.get_llm_model_config.return_value = {"provider": "openrouter"}
+        self.mock_tool_service.get_tools_for_llm.return_value = []
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt content", "question", [])
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "channel_prompt",
+            "agent_role": "channels",
+            "schema": {
+                "type": "object",
+                "required": ["doi"],
+                "properties": {
+                    "doi": {"type": ["string", "null"]},
+                },
+            },
+            "schema_mode": "strict",
+            "response_mode": "structured_only",
+        }
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="channel_prompt",
+            model="openai/gpt-5.2"
+        )
+
+        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
+        assert "response_format" not in invoke_kwargs["text"]
+        assert invoke_kwargs["response_contract"] is None
+
     def test_llm_query_forces_memory_search_for_explicit_memory_intent(self):
         self.mock_tool_service.get_tools_for_llm.return_value = [
             {"type": "function", "name": "iat_memory_search", "description": "memory", "parameters": {}, "strict": True},

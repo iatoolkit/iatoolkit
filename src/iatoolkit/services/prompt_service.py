@@ -132,6 +132,14 @@ class PromptService:
         normalized = str(agent_role or "").strip().lower()
         return normalized == cls.AGENT_ROLE_CHANNELS
 
+    @classmethod
+    def should_force_free_text_output(cls, agent_role: str | None) -> bool:
+        normalized = str(agent_role or "").strip().lower()
+        return normalized in {
+            cls.AGENT_ROLE_WORKSPACE_CHAT,
+            cls.AGENT_ROLE_CHANNELS,
+        }
+
     def _normalize_output_schema_mode(self, output_schema_mode: str | None) -> str:
         candidate = str(output_schema_mode or self.OUTPUT_SCHEMA_MODE_BEST_EFFORT).strip().lower()
         allowed = {
@@ -618,8 +626,10 @@ class PromptService:
         tool_policy = self._normalize_tool_policy(data.get("tool_policy"))
 
         # 2. update the prompt in the database
-        agent_role = self._normalize_agent_role(data.get('agent_role'))
+        raw_agent_role = data.get('agent_role')
+        agent_role = self._normalize_agent_role(raw_agent_role)
         execution_mode = self.execution_mode_for_agent_role(agent_role)
+        force_free_text_output = raw_agent_role is not None and self.should_force_free_text_output(agent_role)
 
         new_prompt = Prompt(
             company_id=company.id,
@@ -632,10 +642,18 @@ class PromptService:
             execution_mode=execution_mode,
             filename=f"{prompt_name.lower().replace(' ', '_')}.prompt",
             custom_fields=data.get('custom_fields', []),
-            output_schema=output_schema,
-            output_schema_yaml=output_schema_yaml,
-            output_schema_mode=self._normalize_output_schema_mode(data.get("output_schema_mode")),
-            output_response_mode=self._normalize_output_response_mode(data.get("output_response_mode")),
+            output_schema=None if force_free_text_output else output_schema,
+            output_schema_yaml=None if force_free_text_output else output_schema_yaml,
+            output_schema_mode=(
+                self.OUTPUT_SCHEMA_MODE_BEST_EFFORT
+                if force_free_text_output
+                else self._normalize_output_schema_mode(data.get("output_schema_mode"))
+            ),
+            output_response_mode=(
+                self.OUTPUT_RESPONSE_MODE_CHAT
+                if force_free_text_output
+                else self._normalize_output_response_mode(data.get("output_response_mode"))
+            ),
             attachment_mode=self._normalize_attachment_mode(
                 data.get("attachment_mode", company_default_policy["attachment_mode"])
             ),
@@ -873,7 +891,9 @@ class PromptService:
                 filename = f"{prompt_name}.prompt"
                 normalized_schema = StructuredOutputService.normalize_schema(prompt_data.get("output_schema"))
 
-                agent_role = self._normalize_agent_role(prompt_data.get('agent_role'))
+                raw_agent_role = prompt_data.get('agent_role')
+                agent_role = self._normalize_agent_role(raw_agent_role)
+                force_free_text_output = raw_agent_role is not None and self.should_force_free_text_output(agent_role)
                 new_prompt = Prompt(
                     company_id=company.id,
                     name=prompt_name,
@@ -885,10 +905,22 @@ class PromptService:
                     execution_mode=self.execution_mode_for_agent_role(agent_role),
                     filename=filename,
                     custom_fields=prompt_data.get('custom_fields', []),
-                    output_schema=normalized_schema,
-                    output_schema_yaml=StructuredOutputService.dump_yaml_schema(normalized_schema),
-                    output_schema_mode=self._normalize_output_schema_mode(prompt_data.get("output_schema_mode")),
-                    output_response_mode=self._normalize_output_response_mode(prompt_data.get("output_response_mode")),
+                    output_schema=None if force_free_text_output else normalized_schema,
+                    output_schema_yaml=(
+                        None
+                        if force_free_text_output
+                        else StructuredOutputService.dump_yaml_schema(normalized_schema)
+                    ),
+                    output_schema_mode=(
+                        self.OUTPUT_SCHEMA_MODE_BEST_EFFORT
+                        if force_free_text_output
+                        else self._normalize_output_schema_mode(prompt_data.get("output_schema_mode"))
+                    ),
+                    output_response_mode=(
+                        self.OUTPUT_RESPONSE_MODE_CHAT
+                        if force_free_text_output
+                        else self._normalize_output_response_mode(prompt_data.get("output_response_mode"))
+                    ),
                     attachment_mode=self._normalize_attachment_mode(
                         prompt_data.get("attachment_mode", company_default_policy["attachment_mode"])
                     ),

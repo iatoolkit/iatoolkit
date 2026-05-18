@@ -292,6 +292,10 @@ class QueryService:
             contract["execution_mode"] = (
                 "conversational" if normalized_agent_role == "workspace_chat" else "agentic"
             )
+            if raw_agent_role is not None and normalized_agent_role in {"workspace_chat", "channels"}:
+                contract["response_mode"] = "chat_compatible"
+                contract["schema"] = None
+                contract["schema_mode"] = "best_effort"
             raw_attachment_parser_provider = contract.get("attachment_parser_provider")
             contract["attachment_parser_provider"] = (
                 str(raw_attachment_parser_provider).strip().lower()
