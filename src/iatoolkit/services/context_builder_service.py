@@ -336,7 +336,6 @@ class ContextBuilderService:
             )
 
         company_context_blocks = self.company_context_service.get_company_context_blocks(company_short_name)
-
         final_system_context = self._join_context_sections(
             rendered_sections.get("identity"),
             rendered_sections.get("business_context"),
@@ -470,6 +469,15 @@ class ContextBuilderService:
 
         final_client_data = (user_profile or {}).copy()
         final_client_data.update(client_data)
+        if company is not None:
+            company_name = str(getattr(company, "name", "") or "").strip()
+            company_short_name = str(getattr(company, "short_name", "") or "").strip()
+            if company_name and not str(final_client_data.get("company_name") or "").strip():
+                final_client_data["company_name"] = company_name
+            if company_name and not str(final_client_data.get("company") or "").strip():
+                final_client_data["company"] = company_name
+            if company_short_name and not str(final_client_data.get("company_short_name") or "").strip():
+                final_client_data["company_short_name"] = company_short_name
 
         # Process attached files: extract text content and separate images
         files_context, images = self._process_attachments(files)

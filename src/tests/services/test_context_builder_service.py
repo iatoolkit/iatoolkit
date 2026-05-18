@@ -41,7 +41,7 @@ class TestContextBuilderService:
             util=self.mock_util
         )
 
-        self.mock_company = Company(short_name=MOCK_COMPANY_SHORT_NAME)
+        self.mock_company = Company(short_name=MOCK_COMPANY_SHORT_NAME, name="Acme Consumer")
         self.mock_company.id = 1
         self.mock_profile_repo.get_company_by_short_name.return_value = self.mock_company
 
@@ -271,6 +271,10 @@ class TestContextBuilderService:
         assert "Summarize this: data" in prompt
         assert "Contexto Adicional" in prompt # Should indicate context injection
         self.mock_prompt_service.get_prompt_content.assert_called_with(self.mock_company, prompt_name)
+        render_kwargs = self.mock_util.render_prompt_from_string.call_args.kwargs
+        assert render_kwargs["client_data"]["company_name"] == "Acme Consumer"
+        assert render_kwargs["client_data"]["company"] == "Acme Consumer"
+        assert render_kwargs["client_data"]["company_short_name"] == MOCK_COMPANY_SHORT_NAME
 
     def test_process_attachments_separates_images_and_text(self):
         """Should separate image files from text files and decode text."""
