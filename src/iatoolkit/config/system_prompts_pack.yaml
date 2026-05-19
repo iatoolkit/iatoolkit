@@ -151,6 +151,24 @@ prompts:
         - agent
       all_capabilities:
         - can_query_sql
+  - key: sql_redshift_basics
+    filename: sql_redshift_basics.prompt
+    section: data_access_rules
+    include:
+      execution_modes:
+        - chat
+        - agent
+      all_capabilities:
+        - can_query_sql_redshift
+  - key: sql_redshift_types
+    filename: sql_redshift_types.prompt
+    section: data_access_rules
+    include:
+      execution_modes:
+        - chat
+        - agent
+      all_capabilities:
+        - can_query_sql_redshift
   - key: sql_mysql_json
     filename: sql_mysql_json.prompt
     section: data_access_rules

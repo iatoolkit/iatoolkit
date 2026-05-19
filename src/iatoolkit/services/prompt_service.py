@@ -729,6 +729,8 @@ class PromptService:
                 only_dialect = next(iter(dialects))
                 if only_dialect in {"postgresql", "postgres"}:
                     capabilities.add("can_query_sql_postgres")
+                elif only_dialect == "redshift":
+                    capabilities.add("can_query_sql_redshift")
                 elif only_dialect == "mysql":
                     capabilities.add("can_query_sql_mysql")
         except Exception as e:
@@ -760,6 +762,7 @@ class PromptService:
             capabilities.update(sql_capabilities)
         else:
             capabilities.discard("can_query_sql_postgres")
+            capabilities.discard("can_query_sql_redshift")
             capabilities.discard("can_query_sql_mysql")
 
         return capabilities

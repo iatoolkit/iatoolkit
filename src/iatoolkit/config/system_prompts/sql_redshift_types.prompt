@@ -1,0 +1,12 @@
+### SQL Redshift: tipos, casting y JSON
+
+- Usa `CAST(... AS INTEGER)`, `CAST(... AS DECIMAL(18, 4))`, `CAST(... AS DATE)` o el tipo
+  explicito que corresponda. Evita casts estilo PostgreSQL como `::NUMERIC`, `::INTEGER`
+  o `::DATE`.
+- No uses tipos ni operadores `jsonb` de PostgreSQL como `->`, `->>`, `jsonb_each`
+  o `jsonb_array_elements`.
+- Si hay columnas semiestructuradas, apóyate solo en las funciones o expresiones que el
+  schema y el contexto hagan evidentes. Si no aparecen detalles suficientes, prioriza
+  columnas relacionales normales antes que inventar acceso a JSON.
+- Para fechas y timestamps, usa funciones compatibles con Redshift y evita asumir helpers
+  exclusivos de PostgreSQL si no son necesarios.
