@@ -206,6 +206,7 @@ class TestDatabaseManager:
             # Configure the inspector instance (returned by calling inspect())
             inspector_mock = self.mock_inspect.return_value
             inspector_mock.get_table_names.return_value = ['users', 'orders']
+            inspector_mock.get_view_names.return_value = []
 
             # Mock columns for 'users'
             inspector_mock.get_columns.side_effect = [
@@ -235,6 +236,7 @@ class TestDatabaseManager:
             # Check users structure
             users_cols = structure['users']['columns']
             assert len(users_cols) == 2
+            assert structure['users']['object_type'] == 'table'
             assert users_cols[0]['name'] == 'id'
             assert users_cols[0]['pk'] is True
             assert users_cols[0]['nullable'] is False
@@ -243,7 +245,28 @@ class TestDatabaseManager:
 
             # Verify inspect calls
             inspector_mock.get_table_names.assert_called_with(schema='public')
+            inspector_mock.get_view_names.assert_called_with(schema='public')
             assert inspector_mock.get_columns.call_count == 2
+
+        def test_get_database_structure_includes_views(self):
+            inspector_mock = self.mock_inspect.return_value
+            inspector_mock.get_table_names.return_value = ['users']
+            inspector_mock.get_view_names.return_value = ['active_users']
+            inspector_mock.get_columns.side_effect = [
+                [{'name': 'id', 'type': 'INTEGER', 'nullable': False}],
+                [{'name': 'id', 'type': 'INTEGER', 'nullable': True}],
+            ]
+            inspector_mock.get_pk_constraint.side_effect = [
+                {'constrained_columns': ['id']},
+                {'constrained_columns': []},
+            ]
+
+            structure = self.db_manager.get_database_structure()
+
+            assert structure['users']['object_type'] == 'table'
+            assert structure['active_users']['object_type'] == 'view'
+            assert structure['active_users']['columns'][0]['name'] == 'id'
+            assert structure['active_users']['columns'][0]['pk'] is False
 
         def test_get_database_structure_handles_introspection_error(self):
             """
@@ -254,6 +277,7 @@ class TestDatabaseManager:
             # Arrange
             inspector_mock = self.mock_inspect.return_value
             inspector_mock.get_table_names.return_value = ['broken_table']
+            inspector_mock.get_view_names.return_value = []
             inspector_mock.get_columns.side_effect = Exception("DB Error")
 
             with patch('iatoolkit.repositories.database_manager.logging') as mock_logging:
@@ -262,6 +286,7 @@ class TestDatabaseManager:
 
                 # Assert
                 assert 'broken_table' in structure
+                assert structure['broken_table']['object_type'] == 'table'
                 assert structure['broken_table']['columns'] == []  # Should be empty list on error
 
                 # Check that warning was logged

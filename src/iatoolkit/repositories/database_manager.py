@@ -283,11 +283,42 @@ class DatabaseManager(DatabaseProvider):
         self.get_session().rollback()
 
     # -- schema methods ----
+    @staticmethod
+    def _safe_inspector_name_list(fetcher, schema: str | None) -> list[str]:
+        try:
+            names = fetcher(schema=schema)
+        except Exception as e:
+            logging.warning("Could not list schema objects for schema %s: %s", schema, e)
+            return []
+
+        if not isinstance(names, list):
+            return []
+
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in names:
+            name = str(item or "").strip()
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            normalized.append(name)
+        return normalized
+
     def get_database_structure(self) -> dict:
         inspector = inspect(self._engine)
         structure = {}
         effective_schema = self._effective_schema()
-        for table in inspector.get_table_names(schema=effective_schema):
+        schema_objects: list[tuple[str, str]] = []
+        schema_objects.extend(
+            (table_name, "table")
+            for table_name in self._safe_inspector_name_list(inspector.get_table_names, effective_schema)
+        )
+        schema_objects.extend(
+            (view_name, "view")
+            for view_name in self._safe_inspector_name_list(inspector.get_view_names, effective_schema)
+        )
+
+        for table, object_type in schema_objects:
             columns_data = []
 
             # get columns
@@ -307,6 +338,7 @@ class DatabaseManager(DatabaseProvider):
                 logging.warning(f"Could not inspect columns for table {table}: {e}")
 
             structure[table] = {
+                "object_type": object_type,
                 "columns": columns_data
             }
 
