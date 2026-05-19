@@ -52,10 +52,11 @@ class SqlService:
         """Default factory for standard SQLAlchemy connections."""
         uri = config.get('db_uri') or config.get('DATABASE_URI')
         schema = config.get('schema')
+        timeout = config.get('timeout')
         if not uri:
             raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR,
                                      "Missing db_uri for direct connection")
-        return DatabaseManager(uri, schema=schema, register_pgvector=False)
+        return DatabaseManager(uri, schema=schema, register_pgvector=False, timeout=timeout)
 
     def register_database(self, company_short_name: str, db_name: str, config: dict):
         """

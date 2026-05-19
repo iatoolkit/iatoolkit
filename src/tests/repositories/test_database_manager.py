@@ -69,6 +69,42 @@ class TestDatabaseManager:
 
     def test_get_dialect_returns_backend_name(self):
         assert self.db_manager.get_dialect() == "sqlite"
+
+    def test_redshift_uses_native_connector_timeout_and_sanitizes_url(self):
+        db_manager = DatabaseManager(
+            "redshift+redshift_connector://user:pass@example.com:5439/dev?sslmode=require&timeout=15"
+        )
+
+        assert db_manager.get_dialect() == "redshift"
+        self.mock_create_engine.assert_called_with(
+            "redshift+redshift_connector://user:pass@example.com:5439/dev?sslmode=require",
+            echo=False,
+            pool_size=10,
+            max_overflow=20,
+            pool_timeout=30,
+            pool_recycle=1800,
+            pool_pre_ping=True,
+            pool_use_lifo=True,
+            connect_args={"timeout": 15},
+            future=True,
+        )
+
+    def test_redshift_sets_search_path_only_for_non_public_schema(self):
+        redshift_manager = DatabaseManager(
+            "redshift+redshift_connector://user:pass@example.com:5439/dev",
+            schema="analytics",
+        )
+        mock_session = self.mock_scoped_session
+        mock_result = mock_session.execute.return_value
+        mock_result.returns_rows = True
+        mock_result.keys.return_value = ["id"]
+        mock_result.fetchall.return_value = [(1,)]
+
+        redshift_manager.execute_query(query="SELECT 1 AS id")
+
+        executed_sql = [str(call.args[0]) for call in mock_session.execute.call_args_list]
+        assert executed_sql[0] == "SET search_path TO analytics, public"
+        assert executed_sql[1] == "SELECT 1 AS id"
     # --- Tests for Execution Methods (New Interface) ---
 
     def test_execute_query_returns_rows_as_dict(self):

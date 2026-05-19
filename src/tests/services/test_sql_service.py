@@ -53,14 +53,20 @@ class TestSqlService:
         config = {
             'connection_type': 'direct',
             'DATABASE_URI': DUMMY_URI,
-            'schema': 'an_schema'
+            'schema': 'an_schema',
+            'timeout': 25,
         }
 
         # Act
         self.service.register_database(COMPANY_SHORT_NAME, DB_NAME_SUCCESS, config)
 
         # Assert
-        MockDatabaseManager.assert_called_once_with(DUMMY_URI, schema='an_schema', register_pgvector=False)
+        MockDatabaseManager.assert_called_once_with(
+            DUMMY_URI,
+            schema='an_schema',
+            register_pgvector=False,
+            timeout=25,
+        )
 
         expected_key = (COMPANY_SHORT_NAME, DB_NAME_SUCCESS)
         assert expected_key in self.service._db_connections
