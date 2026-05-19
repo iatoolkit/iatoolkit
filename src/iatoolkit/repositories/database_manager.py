@@ -5,6 +5,7 @@
 
 # database_manager.py
 from sqlalchemy import create_engine, event, inspect, text
+from sqlalchemy.dialects import registry
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.engine.url import make_url
 from iatoolkit.repositories.models import Base, ORM_SCHEMA
@@ -17,12 +18,14 @@ import logging
 class DatabaseManager(DatabaseProvider):
     _POSTGRES_BOOTSTRAP_PATCHES = (
     )
+    _DEFAULT_CONNECT_TIMEOUT = 10
 
     @inject
     def __init__(self,
                  database_url: str,
                  schema: str = 'public',
-                 register_pgvector: bool = True):
+                 register_pgvector: bool = True,
+                 timeout: int | None = None):
         """
         Inicializa el gestor de la base de datos.
         :param database_url: URL de la base de datos.
@@ -31,6 +34,7 @@ class DatabaseManager(DatabaseProvider):
         """
 
         self.schema = schema
+        self.timeout = self._normalize_timeout(timeout)
 
         # FIX HEROKU: replace postgres:// by postgresql:// for compatibility with SQLAlchemy 1.4+
         if database_url and database_url.startswith("postgres://"):
@@ -38,12 +42,15 @@ class DatabaseManager(DatabaseProvider):
 
         self.url = make_url(database_url)
         self.backend = self.url.get_backend_name()
+        if self._is_redshift():
+            self._ensure_redshift_dialect_registered()
+        self.engine_url = self._build_engine_url()
 
         if self.backend == 'sqlite':
-            raw_engine = create_engine(database_url, echo=False)
+            raw_engine = create_engine(self.engine_url, echo=False)
         else:
             raw_engine = create_engine(
-                database_url,
+                self.engine_url,
                 echo=False,
                 pool_size=10,  # per worker
                 max_overflow=20,
@@ -58,6 +65,7 @@ class DatabaseManager(DatabaseProvider):
         self._engine = raw_engine.execution_options(
             schema_translate_map={ORM_SCHEMA: translated_schema}
         )
+        self.engine = self._engine
         self.SessionFactory = sessionmaker(bind=self._engine,
                                            autoflush=False,
                                            autocommit=False,
@@ -76,24 +84,82 @@ class DatabaseManager(DatabaseProvider):
     def _is_postgres(self) -> bool:
         return self.backend in ('postgresql', 'postgres')
 
+    def _is_redshift(self) -> bool:
+        return self.backend == 'redshift'
+
     def _is_mysql(self) -> bool:
         return self.backend == 'mysql'
 
+    @classmethod
+    def _normalize_timeout(cls, timeout: int | str | None) -> int:
+        if timeout is None:
+            return cls._DEFAULT_CONNECT_TIMEOUT
+
+        try:
+            normalized = int(timeout)
+        except (TypeError, ValueError):
+            return cls._DEFAULT_CONNECT_TIMEOUT
+
+        return normalized if normalized > 0 else cls._DEFAULT_CONNECT_TIMEOUT
+
+    def _resolve_timeout(self) -> int:
+        if self.timeout != self._DEFAULT_CONNECT_TIMEOUT:
+            return self.timeout
+
+        for query_key in ("timeout", "connect_timeout"):
+            value = self.url.query.get(query_key)
+            if value is None:
+                continue
+            return self._normalize_timeout(value)
+
+        return self.timeout
+
+    def _build_engine_url(self):
+        normalized_url = self.url
+        if self._is_redshift():
+            normalized_url = self.url.difference_update_query(["timeout", "connect_timeout"])
+
+        return normalized_url.render_as_string(hide_password=False)
+
+    @staticmethod
+    def _ensure_redshift_dialect_registered():
+        try:
+            # Avoid relying solely on SQLAlchemy entrypoint discovery. In long-lived
+            # processes, the plugin registry may not notice a dialect installed later.
+            registry.register(
+                "redshift",
+                "sqlalchemy_redshift.dialect",
+                "RedshiftDialect_psycopg2",
+            )
+            registry.register(
+                "redshift.redshift_connector",
+                "sqlalchemy_redshift.dialect",
+                "RedshiftDialect_redshift_connector",
+            )
+        except Exception as e:
+            logging.debug("Unable to pre-register Redshift SQLAlchemy dialects: %s", e)
+
     def _build_connect_args(self) -> dict:
+        resolved_timeout = self._resolve_timeout()
+
         if self._is_postgres():
             return {
                 "keepalives": 1,
                 "keepalives_idle": 30,
                 "keepalives_interval": 10,
                 "keepalives_count": 5,
-                "connect_timeout": 10,
+                "connect_timeout": resolved_timeout,
+            }
+        if self._is_redshift():
+            return {
+                "timeout": resolved_timeout,
             }
         if self._is_mysql():
             return {
-                "connect_timeout": 10,
+                "connect_timeout": resolved_timeout,
             }
         return {
-            "connect_timeout": 10,
+            "connect_timeout": resolved_timeout,
         }
 
     def _effective_schema(self) -> str | None:
@@ -102,6 +168,10 @@ class DatabaseManager(DatabaseProvider):
 
         if self._is_postgres():
             return self.schema
+
+        if self._is_redshift():
+            normalized = str(self.schema or "").strip()
+            return normalized or "public"
 
         if self._is_mysql():
             normalized = str(self.schema or "").strip()
@@ -190,6 +260,10 @@ class DatabaseManager(DatabaseProvider):
         session = self.get_session()
         if self._is_postgres() and self.schema:
             session.execute(text(f"SET search_path TO {self.schema}"))
+        elif self._is_redshift():
+            normalized_schema = str(self.schema or "").strip()
+            if normalized_schema and normalized_schema.lower() != "public":
+                session.execute(text(f"SET search_path TO {normalized_schema}, public"))
 
         result = session.execute(text(query))
         if commit:

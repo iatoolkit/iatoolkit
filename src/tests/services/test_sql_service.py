@@ -53,14 +53,20 @@ class TestSqlService:
         config = {
             'connection_type': 'direct',
             'DATABASE_URI': DUMMY_URI,
-            'schema': 'an_schema'
+            'schema': 'an_schema',
+            'timeout': 25,
         }
 
         # Act
         self.service.register_database(COMPANY_SHORT_NAME, DB_NAME_SUCCESS, config)
 
         # Assert
-        MockDatabaseManager.assert_called_once_with(DUMMY_URI, schema='an_schema', register_pgvector=False)
+        MockDatabaseManager.assert_called_once_with(
+            DUMMY_URI,
+            schema='an_schema',
+            register_pgvector=False,
+            timeout=25,
+        )
 
         expected_key = (COMPANY_SHORT_NAME, DB_NAME_SUCCESS)
         assert expected_key in self.service._db_connections
@@ -121,6 +127,31 @@ class TestSqlService:
 
         assert exc_info.value.error_type == IAToolkitException.ErrorType.DATABASE_ERROR
         assert f"Database '{DB_NAME_UNREGISTERED}' is not registered" in str(exc_info.value)
+
+    def test_get_database_provider_rehydrates_from_catalog_on_cache_miss(self):
+        mock_provider = MagicMock(spec=DatabaseProvider)
+        mock_sql_source_service = MagicMock()
+
+        def ensure_side_effect(company_short_name, db_name):
+            self.service._db_connections[(company_short_name, db_name)] = mock_provider
+            return True
+
+        mock_sql_source_service.ensure_runtime_registration.side_effect = ensure_side_effect
+
+        mock_injector = MagicMock()
+        mock_injector.get.return_value = mock_sql_source_service
+
+        mock_toolkit = MagicMock()
+        mock_toolkit.get_injector.return_value = mock_injector
+
+        with patch('iatoolkit.core.current_iatoolkit', return_value=mock_toolkit):
+            provider = self.service.get_database_provider(COMPANY_SHORT_NAME, DB_NAME_SUCCESS)
+
+        assert provider == mock_provider
+        mock_sql_source_service.ensure_runtime_registration.assert_called_once_with(
+            COMPANY_SHORT_NAME,
+            DB_NAME_SUCCESS,
+        )
 
     def test_get_db_names_filters_by_company(self):
         """

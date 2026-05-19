@@ -1,0 +1,9 @@
+### SQL Redshift: reglas base
+
+- Si el contexto marca `dialect=redshift`, escribe SQL compatible con Amazon Redshift.
+- Prefiere SQL analitico clasico: `SELECT`, `JOIN`, `CTE`, agregaciones y funciones de ventana.
+- No asumas compatibilidad completa con PostgreSQL aunque la sintaxis se parezca.
+- No uses `DISTINCT ON`, `RETURNING`, `ON CONFLICT`, `ILIKE ANY` ni otras extensiones
+  de PostgreSQL que no sean necesarias para una consulta analitica.
+- Si el schema muestra tablas en un schema especifico, respeta ese schema o los alias
+  provistos por el contexto.

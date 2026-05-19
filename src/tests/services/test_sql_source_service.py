@@ -271,3 +271,47 @@ class TestSqlSourceService:
         second_cfg = self.sql_service.register_database.call_args_list[1][0][2]
         assert second_cfg["connection_type"] == SqlSource.CONNECTION_BRIDGE
         assert second_cfg["bridge_id"] == "bridge-01"
+
+    def test_ensure_runtime_registration_registers_active_direct_source(self):
+        source = SqlSource(
+            company_id=self.company.id,
+            database="wealth",
+            connection_type=SqlSource.CONNECTION_DIRECT,
+            connection_string_env="WEALTH_DATABASE_URI",
+            schema="analytics",
+            source=SqlSource.SOURCE_USER,
+            is_active=True,
+        )
+        self.sql_source_repo.get_by_database.return_value = source
+        self.secret_provider.get_secret.return_value = "postgresql://user:pwd@localhost/wealth"
+
+        def register_side_effect(_company_short_name, database_name, _config):
+            self.sql_service.get_db_names.return_value = [database_name]
+
+        self.sql_service.register_database.side_effect = register_side_effect
+
+        result = self.service.ensure_runtime_registration(self.company_short_name, "wealth")
+
+        assert result is True
+        self.sql_source_repo.get_by_database.assert_called_once_with(self.company.id, "wealth")
+        self.sql_service.register_database.assert_called_once()
+        cfg = self.sql_service.register_database.call_args[0][2]
+        assert cfg["db_uri"].startswith("postgresql://")
+        assert cfg["schema"] == "analytics"
+
+    def test_ensure_runtime_registration_skips_inactive_source(self):
+        source = SqlSource(
+            company_id=self.company.id,
+            database="wealth",
+            connection_type=SqlSource.CONNECTION_DIRECT,
+            connection_string_env="WEALTH_DATABASE_URI",
+            schema="analytics",
+            source=SqlSource.SOURCE_USER,
+            is_active=False,
+        )
+        self.sql_source_repo.get_by_database.return_value = source
+
+        result = self.service.ensure_runtime_registration(self.company_short_name, "wealth")
+
+        assert result is False
+        self.sql_service.register_database.assert_not_called()

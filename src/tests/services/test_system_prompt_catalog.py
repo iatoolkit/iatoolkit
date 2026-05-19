@@ -253,6 +253,11 @@ prompts:
     section: data_access_rules
     include:
       all_capabilities: [can_query_sql_postgres]
+  - key: sql_redshift
+    filename: sql_redshift_basics.prompt
+    section: data_access_rules
+    include:
+      all_capabilities: [can_query_sql_redshift]
   - key: sql_mysql
     filename: sql_mysql_json.prompt
     section: data_access_rules
@@ -262,6 +267,10 @@ prompts:
     with patch.object(system_prompt_catalog, "_read_catalog_text", return_value=payload):
         postgres = system_prompt_catalog.select_system_prompt_entries(
             {"can_query_sql", "can_query_sql_postgres"},
+            execution_mode="chat",
+        )
+        redshift = system_prompt_catalog.select_system_prompt_entries(
+            {"can_query_sql", "can_query_sql_redshift"},
             execution_mode="chat",
         )
         mysql = system_prompt_catalog.select_system_prompt_entries(
@@ -274,6 +283,7 @@ prompts:
         )
 
     assert [item["key"] for item in postgres] == ["sql_core", "sql_postgres"]
+    assert [item["key"] for item in redshift] == ["sql_core", "sql_redshift"]
     assert [item["key"] for item in mysql] == ["sql_core", "sql_mysql"]
     assert [item["key"] for item in mixed] == ["sql_core"]
 

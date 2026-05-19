@@ -29,15 +29,18 @@ class TestDatabaseManager:
                                        return_value=self.mock_scoped_session)
         patcher_metadata = patch('iatoolkit.repositories.database_manager.Base.metadata', self.mock_base_metadata)
         patcher_inspect = patch('iatoolkit.repositories.database_manager.inspect', self.mock_inspect)
+        patcher_registry_register = patch('iatoolkit.repositories.database_manager.registry.register')
 
         self.patchers.extend(
-            [patcher_engine, patcher_sessionmaker, patcher_scoped_session, patcher_metadata, patcher_inspect])
+            [patcher_engine, patcher_sessionmaker, patcher_scoped_session, patcher_metadata, patcher_inspect,
+             patcher_registry_register])
 
         # Inicia todos los patches y almacena los mocks retornados si es necesario
         self.mock_create_engine = patcher_engine.start()
         self.mock_sessionmaker_function = patcher_sessionmaker.start()
         self.mock_scoped_session_function = patcher_scoped_session.start()
         self.mock_inspect = patcher_inspect.start()
+        self.mock_registry_register = patcher_registry_register.start()
         patcher_metadata.start()
 
         self.db_manager = DatabaseManager(self.database_url)
@@ -69,6 +72,52 @@ class TestDatabaseManager:
 
     def test_get_dialect_returns_backend_name(self):
         assert self.db_manager.get_dialect() == "sqlite"
+
+    def test_redshift_uses_native_connector_timeout_and_sanitizes_url(self):
+        db_manager = DatabaseManager(
+            "redshift+redshift_connector://user:pass@example.com:5439/dev?sslmode=require&timeout=15"
+        )
+
+        assert db_manager.get_dialect() == "redshift"
+        self.mock_registry_register.assert_any_call(
+            "redshift",
+            "sqlalchemy_redshift.dialect",
+            "RedshiftDialect_psycopg2",
+        )
+        self.mock_registry_register.assert_any_call(
+            "redshift.redshift_connector",
+            "sqlalchemy_redshift.dialect",
+            "RedshiftDialect_redshift_connector",
+        )
+        self.mock_create_engine.assert_called_with(
+            "redshift+redshift_connector://user:pass@example.com:5439/dev?sslmode=require",
+            echo=False,
+            pool_size=10,
+            max_overflow=20,
+            pool_timeout=30,
+            pool_recycle=1800,
+            pool_pre_ping=True,
+            pool_use_lifo=True,
+            connect_args={"timeout": 15},
+            future=True,
+        )
+
+    def test_redshift_sets_search_path_only_for_non_public_schema(self):
+        redshift_manager = DatabaseManager(
+            "redshift+redshift_connector://user:pass@example.com:5439/dev",
+            schema="analytics",
+        )
+        mock_session = self.mock_scoped_session
+        mock_result = mock_session.execute.return_value
+        mock_result.returns_rows = True
+        mock_result.keys.return_value = ["id"]
+        mock_result.fetchall.return_value = [(1,)]
+
+        redshift_manager.execute_query(query="SELECT 1 AS id")
+
+        executed_sql = [str(call.args[0]) for call in mock_session.execute.call_args_list]
+        assert executed_sql[0] == "SET search_path TO analytics, public"
+        assert executed_sql[1] == "SELECT 1 AS id"
     # --- Tests for Execution Methods (New Interface) ---
 
     def test_execute_query_returns_rows_as_dict(self):

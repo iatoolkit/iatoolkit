@@ -295,6 +295,7 @@ class ContextBuilderService:
         if self.SQL_TOOL_NAME in enabled_tool_names and not sql_sources:
             prompt_capabilities.discard("can_query_sql")
             prompt_capabilities.discard("can_query_sql_postgres")
+            prompt_capabilities.discard("can_query_sql_redshift")
             prompt_capabilities.discard("can_query_sql_mysql")
         prompt_capabilities = self.prompt_service.resolve_system_prompt_capabilities(
             company.short_name,
