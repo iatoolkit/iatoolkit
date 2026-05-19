@@ -233,6 +233,33 @@ data_sources:
 - `timeout` (optional passthrough for provider implementations).
 - Additional metadata keys (for example `description`) may be present and used by context generation.
 
+### Redshift notes
+
+For Amazon Redshift, use the SQLAlchemy Redshift dialect with the native AWS driver:
+
+```yaml
+data_sources:
+  sql:
+    - database: warehouse
+      connection_type: direct
+      connection_string_secret_ref: REDSHIFT_URI
+      schema: public
+      timeout: 10
+      description: Amazon Redshift warehouse
+```
+
+With a secret like:
+
+```text
+redshift+redshift_connector://user:password@cluster.region.redshift.amazonaws.com:5439/warehouse?sslmode=require
+```
+
+Notes:
+
+- Keep `timeout` in the `sql_source` config, not inside the DBURI query string.
+- For Redshift-backed sources, prefer `redshift+redshift_connector://...` over `postgresql+psycopg2://...`.
+- PostgreSQL-specific features such as `pgvector` and `jsonb` operators are not assumed for Redshift prompts.
+
 ## 4.8 `connectors`
 
 ```yaml
