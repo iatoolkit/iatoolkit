@@ -5,5 +5,8 @@
 - No asumas compatibilidad completa con PostgreSQL aunque la sintaxis se parezca.
 - No uses `DISTINCT ON`, `RETURNING`, `ON CONFLICT`, `ILIKE ANY` ni otras extensiones
   de PostgreSQL que no sean necesarias para una consulta analitica.
+- Si usas varias funciones `LISTAGG(... ) WITHIN GROUP` en la misma sentencia, todas deben
+  usar exactamente el mismo `ORDER BY`. Si necesitas ordenamientos distintos para cada
+  lista, separa cada `LISTAGG` en CTEs o subconsultas diferentes y luego haz `JOIN`.
 - Si el schema muestra tablas en un schema especifico, respeta ese schema o los alias
   provistos por el contexto.
