@@ -36,11 +36,13 @@ class Utility:
             env = Environment(loader=FileSystemLoader(template_dir))
             template = env.get_template(template_file)
 
-            # add all the keys in client_data to kwargs
-            kwargs.update(client_data)
+            # Explicit kwargs should win over client_data to preserve rich objects
+            # such as `company` passed by the caller.
+            render_context = dict(client_data)
+            render_context.update(kwargs)
 
             # render my dynamic prompt
-            prompt = template.render(**kwargs)
+            prompt = template.render(**render_context)
             return prompt
         except Exception as e:
             logging.exception(e)
@@ -72,9 +74,12 @@ class Utility:
             env = Environment(loader=loader)
             template = env.from_string(template_string)
 
-            kwargs.update(client_data)
+            # Explicit kwargs should win over client_data to preserve rich objects
+            # such as `company` passed by the caller.
+            render_context = dict(client_data)
+            render_context.update(kwargs)
 
-            prompt = template.render(**kwargs)
+            prompt = template.render(**render_context)
             return prompt
         except Exception as e:
             logging.exception(e)

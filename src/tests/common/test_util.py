@@ -66,6 +66,18 @@ class TestUtil:
         # Validar que la excepción es la esperada
         assert "a large prompt" == prompt
 
+    def test_render_prompt_from_string_preserves_explicit_kwargs_over_client_data(self):
+        company = MagicMock()
+        company.short_name = "acme"
+
+        prompt = self.util.render_prompt_from_string(
+            template_string="Empresa={{ company.short_name }} nombre={{ company_name }}",
+            client_data={"company": "Acme Consumer", "company_name": "Acme Consumer"},
+            company=company,
+        )
+
+        assert prompt == "Empresa=acme nombre=Acme Consumer"
+
     def test_serialize_datetime(self):
         """Test serialización de datetime"""
         test_datetime = datetime(2024, 1, 1, 12, 0, 0)

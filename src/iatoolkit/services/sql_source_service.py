@@ -329,6 +329,67 @@ class SqlSourceService:
             "skipped": skipped,
         }
 
+    def _build_runtime_config(self, company_short_name: str, src: SqlSource) -> dict | None:
+        db_name = self._normalize_database(src.database)
+        connection_type = self._normalize_connection_type(src.connection_type)
+        schema_name = self._normalize_schema(src.schema)
+
+        db_config = {
+            "database": db_name,
+            "schema": schema_name,
+            "connection_type": connection_type,
+            "bridge_id": self._normalize_optional_text(src.bridge_id),
+        }
+
+        if connection_type == SqlSource.CONNECTION_DIRECT:
+            secret_ref = normalize_secret_ref(src.connection_string_env)
+            db_uri = resolve_secret(self.secret_provider, company_short_name, secret_ref)
+            if not db_uri:
+                logging.error(
+                    "Skipping SQL source '%s' for '%s': missing secret '%s'.",
+                    db_name,
+                    company_short_name,
+                    secret_ref,
+                )
+                return None
+            db_config["db_uri"] = db_uri
+            return db_config
+
+        if connection_type == SqlSource.CONNECTION_BRIDGE:
+            if not db_config.get("bridge_id"):
+                logging.error(
+                    "Skipping SQL source '%s' for '%s': missing bridge_id.",
+                    db_name,
+                    company_short_name,
+                )
+                return None
+            return db_config
+
+        logging.error(
+            "Skipping SQL source '%s' for '%s': unsupported connection_type '%s'.",
+            db_name,
+            company_short_name,
+            connection_type,
+        )
+        return None
+
+    def ensure_runtime_registration(self, company_short_name: str, db_name: str) -> bool:
+        company = self._get_company(company_short_name)
+        normalized_db_name = self._normalize_database(db_name)
+        if not normalized_db_name:
+            return False
+
+        source = self.sql_source_repo.get_by_database(company.id, normalized_db_name)
+        if not source or not bool(getattr(source, "is_active", False)):
+            return False
+
+        db_config = self._build_runtime_config(company_short_name, source)
+        if not db_config:
+            return False
+
+        self.sql_service.register_database(company_short_name, normalized_db_name, db_config)
+        return normalized_db_name in self.sql_service.get_db_names(company_short_name)
+
     def refresh_runtime(self, company_short_name: str) -> dict:
         company = self._get_company(company_short_name)
         self.sql_service.clear_company_connections(company_short_name)
@@ -339,40 +400,10 @@ class SqlSourceService:
 
         for src in active_sources:
             db_name = self._normalize_database(src.database)
-            connection_type = self._normalize_connection_type(src.connection_type)
-            schema_name = self._normalize_schema(src.schema)
-
-            db_config = {
-                "database": db_name,
-                "schema": schema_name,
-                "connection_type": connection_type,
-                "bridge_id": self._normalize_optional_text(src.bridge_id),
-            }
-
-            if connection_type == SqlSource.CONNECTION_DIRECT:
-                secret_ref = normalize_secret_ref(src.connection_string_env)
-                db_uri = resolve_secret(self.secret_provider, company_short_name, secret_ref)
-                if not db_uri:
-                    skipped += 1
-                    logging.error(
-                        "Skipping SQL source '%s' for '%s': missing secret '%s'.",
-                        db_name,
-                        company_short_name,
-                        secret_ref,
-                    )
-                    continue
-                db_config["db_uri"] = db_uri
-
-            elif connection_type == SqlSource.CONNECTION_BRIDGE:
-                if not db_config.get("bridge_id"):
-                    skipped += 1
-                    logging.error(
-                        "Skipping SQL source '%s' for '%s': missing bridge_id.",
-                        db_name,
-                        company_short_name,
-                    )
-                    continue
-
+            db_config = self._build_runtime_config(company_short_name, src)
+            if not db_config:
+                skipped += 1
+                continue
             self.sql_service.register_database(company_short_name, db_name, db_config)
             registered += 1
 

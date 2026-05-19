@@ -112,12 +112,38 @@ class SqlService:
                 return value.strip().lower()
         return ""
 
+    def _hydrate_database_from_catalog(self, company_short_name: str, db_name: str) -> bool:
+        try:
+            from iatoolkit.core import current_iatoolkit
+            from iatoolkit.services.sql_source_service import SqlSourceService
+
+            injector = current_iatoolkit().get_injector()
+            sql_source_service = injector.get(SqlSourceService)
+            return bool(sql_source_service.ensure_runtime_registration(company_short_name, db_name))
+        except Exception as e:
+            logging.debug(
+                "Unable to hydrate SQL source '%s' for '%s' from catalog: %s",
+                db_name,
+                company_short_name,
+                e,
+            )
+            return False
+
     def get_database_provider(self, company_short_name: str, db_name: str) -> DatabaseProvider:
         """
         Retrieves a registered DatabaseProvider instance using the composite key.
         Replaces the old 'get_database_manager'.
         """
         key = (company_short_name, db_name)
+        provider = self._db_connections.get(key)
+        if provider is not None:
+            return provider
+
+        if self._hydrate_database_from_catalog(company_short_name, db_name):
+            provider = self._db_connections.get(key)
+            if provider is not None:
+                return provider
+
         try:
             return self._db_connections[key]
         except KeyError:

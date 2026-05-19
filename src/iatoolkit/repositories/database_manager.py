@@ -5,6 +5,7 @@
 
 # database_manager.py
 from sqlalchemy import create_engine, event, inspect, text
+from sqlalchemy.dialects import registry
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.engine.url import make_url
 from iatoolkit.repositories.models import Base, ORM_SCHEMA
@@ -41,6 +42,8 @@ class DatabaseManager(DatabaseProvider):
 
         self.url = make_url(database_url)
         self.backend = self.url.get_backend_name()
+        if self._is_redshift():
+            self._ensure_redshift_dialect_registered()
         self.engine_url = self._build_engine_url()
 
         if self.backend == 'sqlite':
@@ -117,6 +120,24 @@ class DatabaseManager(DatabaseProvider):
             normalized_url = self.url.difference_update_query(["timeout", "connect_timeout"])
 
         return normalized_url.render_as_string(hide_password=False)
+
+    @staticmethod
+    def _ensure_redshift_dialect_registered():
+        try:
+            # Avoid relying solely on SQLAlchemy entrypoint discovery. In long-lived
+            # processes, the plugin registry may not notice a dialect installed later.
+            registry.register(
+                "redshift",
+                "sqlalchemy_redshift.dialect",
+                "RedshiftDialect_psycopg2",
+            )
+            registry.register(
+                "redshift.redshift_connector",
+                "sqlalchemy_redshift.dialect",
+                "RedshiftDialect_redshift_connector",
+            )
+        except Exception as e:
+            logging.debug("Unable to pre-register Redshift SQLAlchemy dialects: %s", e)
 
     def _build_connect_args(self) -> dict:
         resolved_timeout = self._resolve_timeout()

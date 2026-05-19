@@ -29,15 +29,18 @@ class TestDatabaseManager:
                                        return_value=self.mock_scoped_session)
         patcher_metadata = patch('iatoolkit.repositories.database_manager.Base.metadata', self.mock_base_metadata)
         patcher_inspect = patch('iatoolkit.repositories.database_manager.inspect', self.mock_inspect)
+        patcher_registry_register = patch('iatoolkit.repositories.database_manager.registry.register')
 
         self.patchers.extend(
-            [patcher_engine, patcher_sessionmaker, patcher_scoped_session, patcher_metadata, patcher_inspect])
+            [patcher_engine, patcher_sessionmaker, patcher_scoped_session, patcher_metadata, patcher_inspect,
+             patcher_registry_register])
 
         # Inicia todos los patches y almacena los mocks retornados si es necesario
         self.mock_create_engine = patcher_engine.start()
         self.mock_sessionmaker_function = patcher_sessionmaker.start()
         self.mock_scoped_session_function = patcher_scoped_session.start()
         self.mock_inspect = patcher_inspect.start()
+        self.mock_registry_register = patcher_registry_register.start()
         patcher_metadata.start()
 
         self.db_manager = DatabaseManager(self.database_url)
@@ -76,6 +79,16 @@ class TestDatabaseManager:
         )
 
         assert db_manager.get_dialect() == "redshift"
+        self.mock_registry_register.assert_any_call(
+            "redshift",
+            "sqlalchemy_redshift.dialect",
+            "RedshiftDialect_psycopg2",
+        )
+        self.mock_registry_register.assert_any_call(
+            "redshift.redshift_connector",
+            "sqlalchemy_redshift.dialect",
+            "RedshiftDialect_redshift_connector",
+        )
         self.mock_create_engine.assert_called_with(
             "redshift+redshift_connector://user:pass@example.com:5439/dev?sslmode=require",
             echo=False,
