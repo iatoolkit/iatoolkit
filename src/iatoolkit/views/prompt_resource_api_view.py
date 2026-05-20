@@ -40,6 +40,20 @@ class PromptResourceApiView(MethodView):
 
         return auth_result
 
+    def _require_editor_or_admin_auth(self, company_short_name: str) -> dict | tuple:
+        auth_result = self.auth_service.verify_for_company(company_short_name)
+        if not auth_result.get("success"):
+            status_code = auth_result.get("status_code", 401)
+            if status_code == 403:
+                return jsonify({"error": "Forbidden"}), 403
+            return jsonify(auth_result), status_code
+
+        role = (auth_result.get("user_role") or "").lower()
+        if role not in {"editor", "admin", "owner"}:
+            return jsonify({"error": "Forbidden"}), 403
+
+        return auth_result
+
     @staticmethod
     def _map_error_status(exc: IAToolkitException) -> int:
         error_type = exc.error_type
@@ -56,7 +70,7 @@ class PromptResourceApiView(MethodView):
         return 400
 
     def get(self, company_short_name: str, prompt_name: str):
-        auth = self._require_admin_auth(company_short_name)
+        auth = self._require_editor_or_admin_auth(company_short_name)
         if isinstance(auth, tuple):
             return auth
 
@@ -70,7 +84,7 @@ class PromptResourceApiView(MethodView):
             return jsonify({"error": str(exc)}), 500
 
     def put(self, company_short_name: str, prompt_name: str):
-        auth = self._require_admin_auth(company_short_name)
+        auth = self._require_editor_or_admin_auth(company_short_name)
         if isinstance(auth, tuple):
             return auth
 

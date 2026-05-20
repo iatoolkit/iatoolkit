@@ -78,3 +78,34 @@ class TestPromptResourceApiView:
 
         assert response.status_code == 403
         self.prompt_resource_service.get_prompt_resource_bindings.assert_not_called()
+
+    def test_editor_can_get_prompt_resources(self):
+        self.auth_service.verify_for_company.return_value = {
+            "success": True,
+            "user_identifier": "editor@example.com",
+            "user_role": "editor",
+        }
+        self.prompt_resource_service.get_prompt_resource_bindings.return_value = {
+            "data": {"items": []}
+        }
+
+        response = self.client.get("/acme/api/admin/prompts/research_agent/resources")
+
+        assert response.status_code == 200
+
+    def test_editor_can_put_prompt_resources(self):
+        self.auth_service.verify_for_company.return_value = {
+            "success": True,
+            "user_identifier": "editor@example.com",
+            "user_role": "editor",
+        }
+        self.prompt_resource_service.set_prompt_resource_bindings.return_value = {
+            "data": {"items": []}
+        }
+
+        response = self.client.put(
+            "/acme/api/admin/prompts/research_agent/resources",
+            json={"items": [{"resource_type": "sql_source", "resource_key": "crm"}]},
+        )
+
+        assert response.status_code == 200
