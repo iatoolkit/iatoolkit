@@ -253,7 +253,7 @@ class DatabaseManager(DatabaseProvider):
 
     # -- execution methods ----
 
-    def execute_query(self, query: str, commit: bool = False) -> list[dict] | dict:
+    def execute_query(self, query: str, commit: bool = False, params: dict | None = None) -> list[dict] | dict:
         """
         Implementation for Direct SQLAlchemy connection.
         """
@@ -265,7 +265,7 @@ class DatabaseManager(DatabaseProvider):
             if normalized_schema and normalized_schema.lower() != "public":
                 session.execute(text(f"SET search_path TO {normalized_schema}, public"))
 
-        result = session.execute(text(query))
+        result = session.execute(text(query), params or {})
         if commit:
             session.commit()
 

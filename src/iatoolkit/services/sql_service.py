@@ -164,6 +164,7 @@ class SqlService:
         query = kwargs.get('query')
         format = kwargs.get('format', 'json')
         commit = kwargs.get('commit')
+        params = kwargs.get('params')
 
         if not database_name:
             raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR,
@@ -176,7 +177,13 @@ class SqlService:
 
             # 2. Delegate execution
             # The provider returns a clean List[Dict] or Dict result
-            result_data = provider.execute_query(query=query, commit=commit)
+            execute_kwargs = {
+                "query": query,
+                "commit": commit,
+            }
+            if params is not None:
+                execute_kwargs["params"] = params
+            result_data = provider.execute_query(**execute_kwargs)
 
             # 3. Handle Formatting (Service layer responsibility)
             if format == 'dict':

@@ -34,7 +34,12 @@ class DatabaseProvider(abc.ABC):
 
     # --- Execution Methods ---
     @abc.abstractmethod
-    def execute_query(self, query: str, commit: bool = False) -> Union[List[Dict[str, Any]], Dict[str, int]]:
+    def execute_query(
+        self,
+        query: str,
+        commit: bool = False,
+        params: Dict[str, Any] | None = None,
+    ) -> Union[List[Dict[str, Any]], Dict[str, int]]:
         """
         Executes a query and returns:
          - A list of dicts for SELECT (rows).
