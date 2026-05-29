@@ -62,7 +62,8 @@ class TestHistoryView:
         self.mock_auth.verify_for_company.assert_called_once_with(MOCK_COMPANY_SHORT_NAME)
         self.mock_history_service.get_full_history.assert_called_once_with(
             company_short_name=MOCK_COMPANY_SHORT_NAME,
-            user_identifier=MOCK_USER_IDENTIFIER
+            user_identifier=MOCK_USER_IDENTIFIER,
+            limit=HistoryApiView.HISTORY_MODAL_LIMIT,
         )
 
 

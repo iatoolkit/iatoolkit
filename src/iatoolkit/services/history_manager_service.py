@@ -193,14 +193,14 @@ class HistoryManagerService:
                 break
 
     # --- this is for the history popup in the chat page
-    def get_full_history(self, company_short_name: str, user_identifier: str) -> dict:
+    def get_full_history(self, company_short_name: str, user_identifier: str, limit: int = 100) -> dict:
         """Retrieves the full persisted history from the database."""
         try:
             company = self.profile_repo.get_company_by_short_name(company_short_name)
             if not company:
                 return {"error": self.i18n.t('errors.company_not_found', company_short_name=company_short_name)}
 
-            history = self.llm_query_repo.get_history(company, user_identifier)
+            history = self.llm_query_repo.get_history(company, user_identifier, limit=limit)
             if not history:
                 return {'message': 'empty history', 'history': []}
 

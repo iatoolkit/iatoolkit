@@ -36,10 +36,15 @@ class LLMQueryRepo:
         return query
 
     # get user query history
-    def get_history(self, company: Company, user_identifier: str) -> list[LLMQuery]:
-        return self.session.query(LLMQuery).filter(
-            LLMQuery.user_identifier == user_identifier,
-        ).filter_by(company_id=company.id).order_by(LLMQuery.created_at.desc()).limit(100).all()
+    def get_history(self, company: Company, user_identifier: str, limit: int = 100) -> list[LLMQuery]:
+        return (
+            self.session.query(LLMQuery)
+            .filter(LLMQuery.user_identifier == user_identifier)
+            .filter_by(company_id=company.id)
+            .order_by(LLMQuery.created_at.desc())
+            .limit(limit)
+            .all()
+        )
 
 
     ## --- Tools related methods

@@ -578,7 +578,10 @@ class KnowledgeBaseService:
                 query = query.filter(Document.status == status)
 
         if collection:
-            query = query.join(Document.collection_type).filter(CollectionType.name == collection.lower())
+            normalized_collection = str(collection).strip().lower()
+            query = query.join(Document.collection_type).filter(
+                func.lower(CollectionType.name) == normalized_collection
+            )
 
         if user_identifier:
             query = query.filter(Document.user_identifier.ilike(f"%{user_identifier}%"))

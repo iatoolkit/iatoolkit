@@ -112,8 +112,39 @@ class TestDocumentRepo:
 
         assert result == [10, 20]
 
+    def test_get_collection_ids_by_name_matches_mixed_case_db_names(self):
+        legal = CollectionType(id=10, name="Legal")
+        contracts = CollectionType(id=20, name="Contracts")
+        self.session.query.return_value.join.return_value.filter.return_value.all.return_value = [
+            contracts,
+            legal,
+        ]
+
+        result = self.repo.get_collection_ids_by_name(
+            "acme",
+            ["legal", "CONTRACTS"],
+        )
+
+        assert result == [10, 20]
+
     def test_get_collection_ids_by_name_returns_empty_for_empty_input(self):
         result = self.repo.get_collection_ids_by_name("acme", [])
 
         assert result == []
         self.session.query.assert_not_called()
+
+    def test_get_collection_id_by_name_matches_mixed_case_db_names(self):
+        collection = CollectionType(id=33, name="Legal")
+        self.session.query.return_value.join.return_value.filter.return_value.first.return_value = collection
+
+        result = self.repo.get_collection_id_by_name("acme", "legal")
+
+        assert result == 33
+
+    def test_get_collection_by_name_matches_mixed_case_db_names(self):
+        collection = CollectionType(id=44, name="Invoices")
+        self.session.query.return_value.join.return_value.filter.return_value.first.return_value = collection
+
+        result = self.repo.get_collection_by_name("acme", "invoices")
+
+        assert result == collection

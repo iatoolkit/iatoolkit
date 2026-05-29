@@ -291,6 +291,43 @@ class TestRagApiView:
             metadata_match_mode=None,
         )
 
+    def test_list_files_get_supports_collection_filter_query_param(self):
+        self.mock_kb_service.list_documents.return_value = []
+        self.mock_kb_service.count_documents.return_value = 0
+
+        response = self.client.get(
+            f'/{self.company_short_name}/api/rag/files?collection=Contracts&limit=25&offset=0'
+        )
+
+        assert response.status_code == 200
+
+        self.mock_kb_service.list_documents.assert_called_with(
+            company_short_name=self.company_short_name,
+            status=[],
+            user_identifier=None,
+            filename_keyword=None,
+            collection='Contracts',
+            from_date=None,
+            to_date=None,
+            metadata_key=None,
+            metadata_value=None,
+            metadata_match_mode=None,
+            limit=25,
+            offset=0
+        )
+        self.mock_kb_service.count_documents.assert_called_with(
+            company_short_name=self.company_short_name,
+            status=[],
+            user_identifier=None,
+            filename_keyword=None,
+            collection='Contracts',
+            from_date=None,
+            to_date=None,
+            metadata_key=None,
+            metadata_value=None,
+            metadata_match_mode=None,
+        )
+
     # --- Get File Content Tests ---
 
     def test_get_file_content_success(self):

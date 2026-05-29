@@ -294,11 +294,16 @@ class TestHistoryManager(unittest.TestCase):
         mock_query.to_dict.return_value = {"query": "Hi"}
         self.mock_llm_query_repo.get_history.return_value = [mock_query]
 
-        result = self.manager.get_full_history(self.company_short_name, self.user_identifier)
+        result = self.manager.get_full_history(self.company_short_name, self.user_identifier, limit=25)
 
         self.assertEqual(result['message'], 'history loaded ok')
         self.assertEqual(len(result['history']), 1)
         self.assertEqual(result['history'][0]['query'], "Hi")
+        self.mock_llm_query_repo.get_history.assert_called_once_with(
+            self.mock_company,
+            self.user_identifier,
+            limit=25,
+        )
 
     def test_get_full_history_company_not_found(self):
         self.mock_profile_repo.get_company_by_short_name.return_value = None

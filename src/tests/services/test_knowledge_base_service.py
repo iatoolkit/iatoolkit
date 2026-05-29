@@ -6,6 +6,7 @@
 import pytest
 from unittest.mock import MagicMock
 from types import SimpleNamespace
+from sqlalchemy.sql.elements import BinaryExpression
 from iatoolkit.services.knowledge_base_service import KnowledgeBaseService
 from iatoolkit.repositories.document_repo import DocumentRepo
 from iatoolkit.repositories.vs_repo import VSRepo
@@ -339,6 +340,26 @@ class TestKnowledgeBaseService:
             metadata_filter=None,
             collection_ids=[7, 8],
         )
+
+    def test_build_documents_query_filters_collection_case_insensitively(self):
+        base_query = MagicMock(name="base_query")
+        company_query = MagicMock(name="company_query")
+        collection_query = MagicMock(name="collection_query")
+        self.mock_session.query.return_value = base_query
+        base_query.join.return_value.filter.return_value = company_query
+        company_query.join.return_value.filter.return_value = collection_query
+
+        result = self.service._build_documents_query(
+            company_short_name="acme",
+            collection="Contracts",
+        )
+
+        assert result == collection_query
+        company_query.join.assert_called_once_with(Document.collection_type)
+        filter_expression = company_query.join.return_value.filter.call_args[0][0]
+        assert isinstance(filter_expression, BinaryExpression)
+        assert "lower(" in str(filter_expression).lower()
+        assert getattr(filter_expression.right, "value", None) == "contracts"
 
     def test_search_with_empty_collection_list_does_not_filter(self):
         self.mock_profile_service.get_company_by_short_name.return_value = self.company

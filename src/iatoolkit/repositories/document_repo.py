@@ -9,6 +9,7 @@ from injector import inject
 from iatoolkit.repositories.database_manager import DatabaseManager
 from iatoolkit.common.exceptions import IAToolkitException
 from typing import List, Optional
+from sqlalchemy import func
 
 
 class DocumentRepo:
@@ -54,9 +55,10 @@ class DocumentRepo:
         if not collection_name:
             return None
 
+        normalized_name = collection_name.strip().lower()
         ct = self.session.query(CollectionType).join(Company).filter(
             Company.short_name == company_short_name,
-            CollectionType.name == collection_name.strip().lower()
+            func.lower(CollectionType.name) == normalized_name
         ).first()
         return ct.id if ct else None
 
@@ -77,19 +79,23 @@ class DocumentRepo:
 
         collections = self.session.query(CollectionType).join(Company).filter(
             Company.short_name == company_short_name,
-            CollectionType.name.in_(normalized_names)
+            func.lower(CollectionType.name).in_(normalized_names)
         ).all()
 
-        collection_ids_by_name = {collection.name: collection.id for collection in collections}
+        collection_ids_by_name = {
+            str(collection.name or "").strip().lower(): collection.id
+            for collection in collections
+        }
         return [collection_ids_by_name[name] for name in normalized_names if name in collection_ids_by_name]
 
     def get_collection_by_name(self, company_short_name: str, collection_name: str) -> Optional[CollectionType]:
         if not collection_name:
             return None
 
+        normalized_name = collection_name.strip().lower()
         return self.session.query(CollectionType).join(Company).filter(
             Company.short_name == company_short_name,
-            CollectionType.name == collection_name.strip().lower()
+            func.lower(CollectionType.name) == normalized_name
         ).first()
 
     def get_collection_by_id(self, collection_id) -> Optional[CollectionType]:

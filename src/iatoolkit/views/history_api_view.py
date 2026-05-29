@@ -17,6 +17,7 @@ class HistoryApiView(MethodView):
     Handles requests from the web UI to fetch a user's query history.
     Authentication is based on the active Flask session.
     """
+    HISTORY_MODAL_LIMIT = 50
 
     @inject
     def __init__(self,
@@ -41,7 +42,8 @@ class HistoryApiView(MethodView):
             # The service's signature should now only expect user_identifier.
             response = self.history_service.get_full_history(
                 company_short_name=company_short_name,
-                user_identifier=user_identifier
+                user_identifier=user_identifier,
+                limit=self.HISTORY_MODAL_LIMIT,
             )
 
             if "error" in response:

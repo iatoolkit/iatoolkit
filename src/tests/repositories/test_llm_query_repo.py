@@ -398,6 +398,32 @@ class TestLLMQueryRepo:
         assert history[0].query == "Query 109"  # Newest
         assert history[99].query == "Query 10"   # 100th newest
 
+    def test_get_history_respects_custom_limit(self):
+        """Test get_history applies the limit requested by the caller."""
+        queries = []
+        base_time = datetime(2024, 1, 15, 10, 30, 0)
+        for i in range(12):
+            query = LLMQuery(
+                company_id=self.company.id,
+                user_identifier='user123',
+                query=f"Query {i}",
+                output=f'Output {i}',
+                response={'answer': f'Answer {i}'},
+                answer_time=3,
+                created_at=base_time + timedelta(seconds=i)
+            )
+            queries.append(query)
+
+        for query in queries:
+            self.session.add(query)
+        self.session.commit()
+
+        history = self.repo.get_history(self.company, 'user123', limit=5)
+
+        assert len(history) == 5
+        assert history[0].query == "Query 11"
+        assert history[4].query == "Query 7"
+
     def test_get_history_mixed_user_types(self):
         """Test get_history correctly filters by user type"""
         # Create queries for different user types
