@@ -187,6 +187,29 @@ class TestCompanyContextService:
             sql_source_table_scopes={"main_db": None},
         )
 
+    def test_get_company_context_blocks_can_skip_sql_context(self):
+        self.mock_asset_repo.list_files.side_effect = lambda c, t, extension=None: ['intro.md'] if t == AssetType.CONTEXT else []
+        self.mock_asset_repo.read_text.return_value = "MARKDOWN_CONTENT"
+        self.context_service._get_sql_enriched_context = MagicMock(return_value=("SQL_CONTENT", ["users"]))
+        self.context_service._get_sql_source_table_scopes = MagicMock(return_value={"main_db": None})
+        self.context_service._get_yaml_schema_context = MagicMock(return_value="YAML_EXTRA")
+
+        blocks = self.context_service.get_company_context_blocks(
+            self.COMPANY_NAME,
+            include_sql_context=False,
+        )
+
+        assert blocks["markdown_context"] == "MARKDOWN_CONTENT"
+        assert blocks["sql_context"] == ""
+        assert blocks["yaml_context"] == "## Esquemas adicionales\n\nYAML_EXTRA"
+        self.context_service._get_sql_enriched_context.assert_not_called()
+        self.context_service._get_sql_source_table_scopes.assert_not_called()
+        self.context_service._get_yaml_schema_context.assert_called_once_with(
+            self.COMPANY_NAME,
+            [],
+            sql_source_table_scopes={},
+        )
+
     # --- Existing Logic Tests (Still Valid for Helper Methods) ---
 
     def test_generate_schema_table_valid(self):

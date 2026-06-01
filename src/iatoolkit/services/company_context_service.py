@@ -42,7 +42,7 @@ class CompanyContextService:
             if section
         )
 
-    def get_company_context_blocks(self, company_short_name: str) -> dict[str, str]:
+    def get_company_context_blocks(self, company_short_name: str, *, include_sql_context: bool = True) -> dict[str, str]:
         """
         Builds the full context by aggregating three sources:
         1. Static context files (Markdown).
@@ -61,14 +61,15 @@ class CompanyContextService:
         except Exception as e:
             logging.warning(f"Could not load Markdown context for '{company_short_name}': {e}")
 
-        # 2. Resolve company-specific SQL databases. We collect them first so YAML
-        # context can avoid duplicating table definitions already covered by SQL.
-        try:
-            sql_context, db_tables = self._get_sql_enriched_context(company_short_name)
-            sql_context = sql_context.strip()
-            sql_source_table_scopes = self._get_sql_source_table_scopes(company_short_name)
-        except Exception as e:
-            logging.warning(f"Could not generate SQL context for '{company_short_name}': {e}")
+        # 2. Resolve company-specific SQL databases. MCP can skip this expensive
+        # schema expansion and expose SQL through dedicated schema/query tools.
+        if include_sql_context:
+            try:
+                sql_context, db_tables = self._get_sql_enriched_context(company_short_name)
+                sql_context = sql_context.strip()
+                sql_source_table_scopes = self._get_sql_source_table_scopes(company_short_name)
+            except Exception as e:
+                logging.warning(f"Could not generate SQL context for '{company_short_name}': {e}")
 
         # 4. Context from residual yaml (schema/*.yaml) files
         try:
