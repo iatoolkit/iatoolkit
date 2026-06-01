@@ -37,14 +37,9 @@ class LLMQueryRepo:
 
     # get user query history
     def get_history(self, company: Company, user_identifier: str, limit: int = 100) -> list[LLMQuery]:
-        return (
-            self.session.query(LLMQuery)
-            .filter(LLMQuery.user_identifier == user_identifier)
-            .filter_by(company_id=company.id)
-            .order_by(LLMQuery.created_at.desc())
-            .limit(limit)
-            .all()
-        )
+        return self.session.query(LLMQuery).filter(
+            LLMQuery.user_identifier == user_identifier,
+        ).filter_by(company_id=company.id).order_by(LLMQuery.created_at.desc()).limit(limit).all()
 
 
     ## --- Tools related methods
@@ -195,6 +190,7 @@ class LLMQueryRepo:
             )
             prompt.attachment_fallback = new_prompt.attachment_fallback or prompt.attachment_fallback or "extract"
             prompt.llm_model = new_prompt.llm_model
+            prompt.queue_tier = getattr(new_prompt, "queue_tier", None) or prompt.queue_tier or "default"
             prompt.llm_request_options = dict(new_prompt.llm_request_options or {})
             prompt.tool_policy = dict(new_prompt.tool_policy or {})
         else:
@@ -218,6 +214,8 @@ class LLMQueryRepo:
                 new_prompt.attachment_parser_provider = "basic"
             if not new_prompt.attachment_fallback:
                 new_prompt.attachment_fallback = "extract"
+            if not getattr(new_prompt, "queue_tier", None):
+                new_prompt.queue_tier = "default"
             if new_prompt.llm_request_options is None:
                 new_prompt.llm_request_options = {}
             if new_prompt.tool_policy is None:

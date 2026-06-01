@@ -226,6 +226,7 @@ class TestLLMQueryRepo:
         assert result.agent_role == PromptAgentRole.WORKSPACE_CHAT.value
         assert result.execution_mode == PromptExecutionMode.CONVERSATIONAL.value
         assert result.custom_fields == [{'label': 'lbl'}]
+        assert result.queue_tier == "default"
 
     def test_create_or_update_prompt_updates_existing(self):
         """Test updating an existing prompt."""
@@ -243,7 +244,8 @@ class TestLLMQueryRepo:
             order=10,
             agent_role=PromptAgentRole.CHANNELS.value,
             execution_mode=PromptExecutionMode.AGENTIC.value,
-            custom_fields=[{'key': 'val'}]
+            custom_fields=[{'key': 'val'}],
+            queue_tier="low",
         )
 
         # 3. Actualizar
@@ -259,6 +261,7 @@ class TestLLMQueryRepo:
         assert result.agent_role == PromptAgentRole.CHANNELS.value
         assert result.execution_mode == PromptExecutionMode.AGENTIC.value
         assert result.custom_fields == [{'key': 'val'}]
+        assert result.queue_tier == "low"
 
     def test_create_or_update_prompt_updates_existing_active_flag(self):
         prompt = Prompt(
@@ -284,6 +287,30 @@ class TestLLMQueryRepo:
 
         assert result.id == prompt.id
         assert result.active is False
+
+    def test_create_or_update_prompt_preserves_existing_queue_tier_when_omitted(self):
+        prompt = Prompt(
+            name="p_update_queue_tier",
+            company_id=self.company.id,
+            description="Old Desc",
+            filename="old.txt",
+            queue_tier="low",
+        )
+        self.session.add(prompt)
+        self.session.commit()
+
+        new_prompt_data = Prompt(
+            name="p_update_queue_tier",
+            company_id=self.company.id,
+            description="New Desc",
+            filename="new.txt",
+        )
+
+        result = self.repo.create_or_update_prompt(new_prompt_data)
+        self.session.commit()
+
+        assert result.id == prompt.id
+        assert result.queue_tier == "low"
 
     def test_create_prompt_category(self):
         """Test creating a new prompt category."""

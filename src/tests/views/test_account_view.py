@@ -5,7 +5,7 @@ from flask import Flask
 
 from iatoolkit.services.branding_service import BrandingService
 from iatoolkit.services.i18n_service import I18nService
-from iatoolkit.services.mcp_personal_access_token_service import McpPersonalAccessTokenService
+from iatoolkit.services.mcp_token_service import McpTokenService
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.views.account_view import AccountView
 
@@ -20,7 +20,7 @@ class TestAccountView:
         self.mock_profile_service = MagicMock(spec=ProfileService)
         self.mock_branding_service = MagicMock(spec=BrandingService)
         self.mock_i18n_service = MagicMock(spec=I18nService)
-        self.mock_mcp_service = MagicMock(spec=McpPersonalAccessTokenService)
+        self.mock_mcp_service = MagicMock(spec=McpTokenService)
 
         self.mock_i18n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
         self.mock_profile_service.get_company_by_short_name.return_value = MagicMock()
@@ -29,7 +29,9 @@ class TestAccountView:
             "user_identifier": "user@acme.com",
         }
         self.mock_branding_service.get_company_branding.return_value = {"name": "ACME"}
-        self.mock_mcp_service.list_tokens.return_value = {"data": []}
+        self.mock_mcp_service.list_user_tokens.return_value = {"data": []}
+        self.mock_mcp_service.build_mcp_server_url.side_effect = McpTokenService.build_mcp_server_url
+        self.mock_mcp_service.build_mcp_connection_snippet.side_effect = McpTokenService.build_mcp_connection_snippet
 
         @self.app.route("/<company_short_name>/home", endpoint="home")
         def home(company_short_name):
@@ -71,7 +73,7 @@ class TestAccountView:
 
     @patch.dict("os.environ", {"IAT_MCP_PUBLIC_BASE_URL": "https://mcp.example.com/"}, clear=False)
     def test_post_create_token_renders_created_token(self):
-        self.mock_mcp_service.create_token.return_value = {
+        self.mock_mcp_service.create_user_token.return_value = {
             "data": {
                 "token": "iatmcp_created",
             }
@@ -90,3 +92,10 @@ class TestAccountView:
         assert mock_render.call_args[1]["active_section"] == "mcp_tokens"
         assert mock_render.call_args[1]["mcp_server_url"] == "https://mcp.example.com/acme/mcp/"
         assert '"Authorization": "Bearer iatmcp_created"' in mock_render.call_args[1]["created_token_connection_snippet"]
+        self.mock_mcp_service.create_user_token.assert_called_once_with(
+            "acme",
+            "user@acme.com",
+            name="Claude",
+            expires_in_days="30",
+            created_by_identifier="user@acme.com",
+        )

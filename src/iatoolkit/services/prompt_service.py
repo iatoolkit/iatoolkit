@@ -47,6 +47,8 @@ class PromptService:
     TEXT_VERBOSITY_HIGH = "high"
     TOOL_POLICY_MODE_INHERIT = "inherit"
     TOOL_POLICY_MODE_EXPLICIT = "explicit"
+    QUEUE_TIER_DEFAULT = "default"
+    QUEUE_TIER_LOW = "low"
     EXECUTION_MODE_CONVERSATIONAL = PromptExecutionMode.CONVERSATIONAL.value
     EXECUTION_MODE_AGENTIC = PromptExecutionMode.AGENTIC.value
     AGENT_ROLE_WORKSPACE_CHAT = PromptAgentRole.WORKSPACE_CHAT.value
@@ -221,6 +223,16 @@ class PromptService:
             "mode": mode,
             "tool_names": normalized_tool_names,
         }
+
+    def _normalize_queue_tier(self, queue_tier: str | None) -> str:
+        candidate = str(queue_tier or self.QUEUE_TIER_DEFAULT).strip().lower()
+        allowed = {
+            self.QUEUE_TIER_DEFAULT,
+            self.QUEUE_TIER_LOW,
+        }
+        if candidate in allowed:
+            return candidate
+        return self.QUEUE_TIER_DEFAULT
 
     def normalize_tool_policy(self, tool_policy: dict | None) -> dict:
         return self._normalize_tool_policy(tool_policy)
@@ -540,6 +552,9 @@ class PromptService:
                             'attachment_parser_provider': getattr(p, 'attachment_parser_provider', None),
                             'attachment_fallback': p.attachment_fallback,
                             'llm_model': getattr(p, 'llm_model', None),
+                            'queue_tier': self._normalize_queue_tier(
+                                getattr(p, 'queue_tier', None)
+                            ),
                             'llm_request_options': dict(getattr(p, 'llm_request_options', None) or {}),
                             'tool_policy': dict(getattr(p, 'tool_policy', None) or {}),
                         }
@@ -603,6 +618,7 @@ class PromptService:
         if not company:
             raise IAToolkitException(IAToolkitException.ErrorType.INVALID_NAME,
                                      f"Company {company_short_name} not found")
+        existing_prompt = self.get_prompt_definition(company, prompt_name)
 
         # Validate category if present
         category_id = None
@@ -664,6 +680,11 @@ class PromptService:
                 data.get("attachment_fallback", company_default_policy["attachment_fallback"])
             ),
             llm_model=self._normalize_llm_model(company_short_name, data.get("llm_model")),
+            queue_tier=self._normalize_queue_tier(
+                data.get("queue_tier")
+                if "queue_tier" in data
+                else getattr(existing_prompt, "queue_tier", None)
+            ),
             llm_request_options=llm_request_options,
             tool_policy=tool_policy,
         )
@@ -937,6 +958,7 @@ class PromptService:
                         prompt_data.get("attachment_fallback", company_default_policy["attachment_fallback"])
                     ),
                     llm_model=self._normalize_llm_model(company_short_name, prompt_data.get("llm_model")),
+                    queue_tier=self._normalize_queue_tier(prompt_data.get("queue_tier")),
                     llm_request_options=self._normalize_llm_request_options(
                         self._extract_llm_request_options_payload(prompt_data)
                     ),

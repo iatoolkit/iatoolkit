@@ -160,8 +160,8 @@ class Company(Base):
         back_populates="company",
         cascade="all, delete-orphan",
     )
-    mcp_personal_access_tokens = relationship(
-        "McpPersonalAccessToken",
+    mcp_tokens = relationship(
+        "McpToken",
         back_populates="company",
         cascade="all, delete-orphan",
     )
@@ -576,6 +576,7 @@ class Prompt(Base):
     attachment_parser_provider = Column(String, nullable=False, default="basic")
     attachment_fallback = Column(String, nullable=False, default="extract")
     llm_model = Column(String, nullable=True, default=None)
+    queue_tier = Column(String, nullable=False, default="default")
     llm_request_options = Column(JSON_NATIVE, nullable=False, default=dict)
     tool_policy = Column(JSON_NATIVE, nullable=False, default=dict)
     created_at = Column(DateTime, default=datetime.now)
@@ -712,24 +713,36 @@ class SqlDataset(Base):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
 
 
-class McpPersonalAccessToken(Base):
-    __tablename__ = "iat_mcp_personal_access_tokens"
+class McpToken(Base):
+    SUBJECT_TYPE_USER = "user"
+    SUBJECT_TYPE_SERVICE = "service"
+
+    __tablename__ = "iat_mcp_tokens"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     company_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_companies.id", ondelete="CASCADE"), nullable=False, index=True)
-    user_identifier = Column(String, nullable=False, index=True)
+    subject_type = Column(String, nullable=False, index=True, default=SUBJECT_TYPE_USER)
+    subject_identifier = Column(String, nullable=False, index=True)
+    created_by_identifier = Column(String, nullable=False, index=True)
     name = Column(String, nullable=False)
     token_hash = Column(String(64), nullable=False, unique=True, index=True)
+    token_encrypted = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.now, nullable=False)
     expires_at = Column(DateTime, nullable=False)
     revoked_at = Column(DateTime, nullable=True)
     last_used_at = Column(DateTime, nullable=True)
 
     __table_args__ = (
-        UniqueConstraint("company_id", "user_identifier", "name", name="uix_mcp_pat_company_user_name"),
+        UniqueConstraint(
+            "company_id",
+            "subject_type",
+            "subject_identifier",
+            "name",
+            name="uix_mcp_token_company_subject_name",
+        ),
     )
 
-    company = relationship("Company", back_populates="mcp_personal_access_tokens")
+    company = relationship("Company", back_populates="mcp_tokens")
 
     def to_dict(self):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}

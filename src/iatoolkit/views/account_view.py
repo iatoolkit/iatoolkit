@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import os
-
 from flask import flash, redirect, render_template, request, url_for
 from flask.views import MethodView
 from injector import inject
 
 from iatoolkit.services.branding_service import BrandingService
 from iatoolkit.services.i18n_service import I18nService
-from iatoolkit.services.mcp_personal_access_token_service import McpPersonalAccessTokenService
+from iatoolkit.services.mcp_token_service import McpTokenService
 from iatoolkit.services.profile_service import ProfileService
 
 
@@ -22,7 +20,7 @@ class AccountView(MethodView):
         profile_service: ProfileService,
         branding_service: BrandingService,
         i18n_service: I18nService,
-        mcp_token_service: McpPersonalAccessTokenService,
+        mcp_token_service: McpTokenService,
     ):
         self.profile_service = profile_service
         self.branding_service = branding_service
@@ -53,11 +51,12 @@ class AccountView(MethodView):
         active_section = self._resolve_active_section(default=self.TOKENS_SECTION)
         action = str(request.form.get("action") or "").strip()
         if action == "create_token":
-            result = self.mcp_token_service.create_token(
+            result = self.mcp_token_service.create_user_token(
                 company_short_name,
                 user_identifier,
                 name=request.form.get("name"),
                 expires_in_days=request.form.get("expires_in_days"),
+                created_by_identifier=user_identifier,
             )
             if result.get("error"):
                 flash(result["error"], "error")
@@ -67,7 +66,7 @@ class AccountView(MethodView):
                 created_token_id = payload.get("id")
                 flash(self.i18n_service.t("ui.account.mcp_token_created_flash"), "success")
         elif action == "revoke_token":
-            result = self.mcp_token_service.revoke_token(
+            result = self.mcp_token_service.revoke_user_token(
                 company_short_name,
                 user_identifier,
                 token_id=int(request.form.get("token_id") or 0),
@@ -120,12 +119,12 @@ class AccountView(MethodView):
         active_section: str | None = None,
     ):
         branding_data = self.branding_service.get_company_branding(company_short_name)
-        tokens_result = self.mcp_token_service.list_tokens(company_short_name, session_info["user_identifier"])
+        tokens_result = self.mcp_token_service.list_user_tokens(company_short_name, session_info["user_identifier"])
         tokens = (tokens_result.get("data") or []) if not tokens_result.get("error") else []
-        mcp_server_url = self._build_mcp_server_url(company_short_name)
+        mcp_server_url = self.mcp_token_service.build_mcp_server_url(company_short_name)
         created_token_connection_snippet = None
         if created_token:
-            created_token_connection_snippet = self._build_mcp_connection_snippet(
+            created_token_connection_snippet = self.mcp_token_service.build_mcp_connection_snippet(
                 company_short_name=company_short_name,
                 mcp_server_url=mcp_server_url,
                 bearer_token=created_token,
@@ -147,13 +146,7 @@ class AccountView(MethodView):
 
     @staticmethod
     def _build_mcp_server_url(company_short_name: str) -> str:
-        public_base_url = str(
-            os.getenv("IAT_MCP_PUBLIC_BASE_URL")
-            or os.getenv("MCP_PUBLIC_BASE_URL")
-            or "https://mcp.iatoolkit.com"
-        ).strip()
-        public_base_url = public_base_url.rstrip("/")
-        return f"{public_base_url}/{company_short_name}/mcp/"
+        return McpTokenService.build_mcp_server_url(company_short_name)
 
     @staticmethod
     def _build_mcp_connection_snippet(
@@ -162,17 +155,8 @@ class AccountView(MethodView):
         mcp_server_url: str,
         bearer_token: str | None = None,
     ) -> str:
-        resolved_token = bearer_token or "<YOUR_MCP_TOKEN>"
-        return (
-            '{\n'
-            '  "mcpServers": {\n'
-            f'    "{company_short_name}": {{\n'
-            '      "type": "http",\n'
-            f'      "url": "{mcp_server_url}",\n'
-            '      "headers": {\n'
-            f'        "Authorization": "Bearer {resolved_token}"\n'
-            '      }\n'
-            '    }\n'
-            '  }\n'
-            '}'
+        return McpTokenService.build_mcp_connection_snippet(
+            company_short_name=company_short_name,
+            mcp_server_url=mcp_server_url,
+            bearer_token=bearer_token,
         )

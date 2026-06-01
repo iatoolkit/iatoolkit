@@ -31,6 +31,7 @@ class TestPromptService:
         prompt.attachment_parser_provider = 'basic'
         prompt.attachment_fallback = 'extract'
         prompt.llm_model = None
+        prompt.queue_tier = 'default'
         prompt.llm_request_options = {}
         prompt.tool_policy = {}
         return prompt
@@ -110,6 +111,7 @@ class TestPromptService:
                     'attachment_parser_provider': 'basic',
                     'attachment_fallback': 'extract',
                     'llm_model': None,
+                    'queue_tier': 'default',
                     'llm_request_options': {},
                     'tool_policy': {},
                 }],
@@ -448,6 +450,44 @@ class TestPromptService:
         assert saved_prompt.output_schema is None
         assert saved_prompt.output_schema_yaml is None
 
+    def test_save_prompt_persists_queue_tier(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_category_by_name.return_value = None
+
+        self.prompt_service.save_prompt(
+            'test_co',
+            'background_agent',
+            {
+                'content': 'Prompt text',
+                'queue_tier': 'low',
+            }
+        )
+
+        saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
+        assert saved_prompt.queue_tier == 'low'
+
+    def test_save_prompt_preserves_existing_queue_tier_when_payload_omits_it(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_category_by_name.return_value = None
+        self.llm_query_repo.get_prompt_by_name.return_value = Prompt(
+            name='background_agent',
+            company_id=self.mock_company.id,
+            description='existing',
+            filename='background_agent.prompt',
+            queue_tier='low',
+        )
+
+        self.prompt_service.save_prompt(
+            'test_co',
+            'background_agent',
+            {
+                'content': 'Prompt text',
+            }
+        )
+
+        saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
+        assert saved_prompt.queue_tier == 'low'
+
     def test_save_prompt_persists_workspace_agent_as_agentic(self):
         self.profile_repo.get_company_by_short_name.return_value = self.mock_company
         self.llm_query_repo.get_category_by_name.return_value = None
@@ -549,6 +589,40 @@ properties:
 
         saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
         assert saved_prompt.llm_model == 'gpt-4.1-mini'
+
+    def test_save_prompt_persists_queue_tier(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_category_by_name.return_value = None
+
+        self.prompt_service.save_prompt(
+            'test_co',
+            'low_priority_prompt',
+            {
+                'content': 'Prompt text',
+                'queue_tier': 'low',
+            },
+        )
+
+        saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
+        assert saved_prompt.queue_tier == 'low'
+
+    def test_save_prompt_preserves_existing_queue_tier_when_omitted(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_category_by_name.return_value = None
+        existing_prompt = MagicMock(spec=Prompt)
+        existing_prompt.queue_tier = 'low'
+        self.prompt_service.get_prompt_definition = MagicMock(return_value=existing_prompt)
+
+        self.prompt_service.save_prompt(
+            'test_co',
+            'existing_low_prompt',
+            {
+                'content': 'Prompt text',
+            },
+        )
+
+        saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
+        assert saved_prompt.queue_tier == 'low'
 
     def test_save_prompt_persists_llm_request_options(self):
         self.profile_repo.get_company_by_short_name.return_value = self.mock_company
