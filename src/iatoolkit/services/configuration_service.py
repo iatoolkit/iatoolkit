@@ -157,6 +157,10 @@ class ConfigurationService:
         if gateway_id is not None and (not isinstance(gateway_id, str) or not gateway_id.strip()):
             add_error(f"{section}.gateway_id", "Must be a non-empty string.")
 
+        byok_alias = gateway_cfg.get("byok_alias")
+        if byok_alias is not None and (not isinstance(byok_alias, str) or not byok_alias.strip()):
+            add_error(f"{section}.byok_alias", "Must be a non-empty string.")
+
         authenticated_gateway = gateway_cfg.get("authenticated_gateway")
         if authenticated_gateway is not None and not isinstance(authenticated_gateway, bool):
             add_error(f"{section}.authenticated_gateway", "Must be a boolean.")

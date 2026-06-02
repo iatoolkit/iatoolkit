@@ -100,6 +100,7 @@ llm:
     authenticated_gateway: true
     cloudflare_api_token_secret_ref: CLOUDFLARE_API_TOKEN
     credential_mode: provider_key_in_request
+    byok_alias: production
     providers:
       deepseek:
         enabled: true
@@ -137,7 +138,12 @@ llm:
   - `authenticated_gateway` (bool, optional): whether the gateway itself requires a Cloudflare token.
   - `cloudflare_api_token_secret_ref` / `cloudflare_api_token_env` (required when `authenticated_gateway: true`): token source for authenticated gateways.
   - `credential_mode` (optional): `provider_key_in_request` or `cloudflare_managed`.
+  - `byok_alias` (optional): Cloudflare BYOK key alias sent as `cf-aig-byok-alias`.
   - `providers` (object, optional): per-provider overrides for `openai`, `deepseek`, `anthropic`, and `gemini`.
+- Current gateway limitations:
+  - Only `provider_native` mode is implemented.
+  - Runtime support is currently wired for `openai`, `deepseek`, `anthropic`, and `gemini`.
+  - `inference_tools` do not use `llm.gateway`; they keep their existing HTTP configuration.
 - `default_attachment_mode` (optional, default `extracted_only`):
   - `extracted_only`
   - `native_only`
