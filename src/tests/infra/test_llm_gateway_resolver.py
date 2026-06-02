@@ -2,6 +2,7 @@ import os
 from unittest.mock import MagicMock
 
 import pytest
+from injector import Injector
 
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.common.interfaces.secret_provider import SecretProvider
@@ -98,3 +99,14 @@ class TestLLMGatewayResolver:
             mp.setenv("CF_ACCOUNT_ID", "cf-account")
             with pytest.raises(IAToolkitException, match="authenticated_gateway: true"):
                 self.resolver.resolve(self.company_short_name, "openai", "")
+
+    def test_resolver_can_be_constructed_via_injector(self):
+        injector = Injector()
+        injector.binder.bind(ConfigurationService, to=self.config_service_mock)
+        injector.binder.bind(SecretProvider, to=self.secret_provider_mock)
+
+        resolved = injector.get(LLMGatewayResolver)
+
+        assert isinstance(resolved, LLMGatewayResolver)
+        assert resolved.configuration_service is self.config_service_mock
+        assert resolved.secret_provider is self.secret_provider_mock

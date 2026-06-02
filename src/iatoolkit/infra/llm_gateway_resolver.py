@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from injector import inject
+
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.common.interfaces.secret_provider import SecretProvider
 from iatoolkit.common.secret_resolver import resolve_secret
@@ -21,6 +23,7 @@ class LLMGatewayResolver:
     CREDENTIAL_MODE_PROVIDER_KEY = "provider_key_in_request"
     CREDENTIAL_MODE_CLOUDFLARE_MANAGED = "cloudflare_managed"
 
+    @inject
     def __init__(self, configuration_service: ConfigurationService, secret_provider: SecretProvider):
         self.configuration_service = configuration_service
         self.secret_provider = secret_provider
