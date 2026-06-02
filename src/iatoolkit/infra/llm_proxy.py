@@ -17,6 +17,7 @@ from iatoolkit.infra.llm_response import LLMResponse
 from iatoolkit.common.model_registry import ModelRegistry
 from iatoolkit.common.interfaces.secret_provider import SecretProvider
 from iatoolkit.common.secret_resolver import resolve_secret
+from iatoolkit.infra.llm_gateway_resolver import LLMGatewayResolver
 from iatoolkit.services.telemetry_service import NoopTelemetryService
 
 from openai import OpenAI, Timeout         # For OpenAI and xAI (OpenAI-compatible)
@@ -54,6 +55,7 @@ class LLMProxy:
         configuration_service: ConfigurationService,
         model_registry: ModelRegistry,
         secret_provider: SecretProvider,
+        gateway_resolver: LLMGatewayResolver | None = None,
         telemetry_service=None,
     ):
         """
@@ -64,6 +66,10 @@ class LLMProxy:
         self.configuration_service = configuration_service
         self.model_registry = model_registry
         self.secret_provider = secret_provider
+        self.gateway_resolver = gateway_resolver or LLMGatewayResolver(
+            configuration_service=configuration_service,
+            secret_provider=secret_provider,
+        )
         self._telemetry_service = telemetry_service
 
         # adapter cache by (provider, api_key, base_url)
@@ -356,7 +362,7 @@ class LLMProxy:
     def _get_or_create_client(
         self,
         provider: str,
-        api_key: str,
+        api_key: str | None,
         base_url: str = "",
         default_headers: Dict[str, str] | None = None,
         *,
@@ -409,7 +415,7 @@ class LLMProxy:
     def _create_client_for_provider(
         self,
         provider: str,
-        api_key: str,
+        api_key: str | None,
         base_url: str = "",
         default_headers: Dict[str, str] | None = None,
         *,
@@ -432,15 +438,22 @@ class LLMProxy:
 
         if provider == self.PROVIDER_OPENAI:
             # Standard OpenAI client for GPT models
-            return OpenAI(api_key=api_key, timeout=timeout, max_retries=max_retries)
+            return OpenAI(
+                api_key=api_key or "",
+                base_url=base_url or None,
+                timeout=timeout,
+                max_retries=max_retries,
+                default_headers=default_headers or None,
+            )
 
         if provider == self.PROVIDER_XAI:
             # xAI Grok is OpenAI-compatible; we can use the OpenAI client with a different base_url.
             return OpenAI(
-                api_key=api_key,
+                api_key=api_key or "",
                 base_url="https://api.x.ai/v1",
                 timeout=timeout,
                 max_retries=max_retries,
+                default_headers=default_headers or None,
             )
 
         if provider == self.PROVIDER_DEEPSEEK:
@@ -449,10 +462,11 @@ class LLMProxy:
 
             # We use OpenAI client with a DeepSeek base_url:
             return OpenAI(
-                api_key=api_key,
-                base_url="https://api.deepseek.com",
+                api_key=api_key or "",
+                base_url=base_url or "https://api.deepseek.com",
                 timeout=timeout,
                 max_retries=max_retries,
+                default_headers=default_headers or None,
             )
 
         if provider == self.PROVIDER_OPENAI_COMPATIBLE:
@@ -462,10 +476,11 @@ class LLMProxy:
                     "Provider 'openai_compatible' requires a configured base_url."
                 )
             return OpenAI(
-                api_key=api_key,
+                api_key=api_key or "",
                 base_url=base_url,
                 timeout=timeout,
                 max_retries=max_retries,
+                default_headers=default_headers or None,
             )
 
         if provider == self.PROVIDER_OPENROUTER:
@@ -488,7 +503,14 @@ class LLMProxy:
             #
             from google.genai import Client
 
-            return Client(api_key=api_key, http_options={'api_version': 'v1alpha'})
+            gemini_http_options = {"api_version": "v1alpha"}
+            if base_url:
+                gemini_http_options["base_url"] = base_url
+                gemini_http_options["api_version"] = "v1"
+            if default_headers:
+                gemini_http_options["headers"] = dict(default_headers)
+
+            return Client(api_key=api_key, http_options=gemini_http_options)
         if provider == self.PROVIDER_ANTHROPIC:
             try:
                 from anthropic import Anthropic
@@ -498,7 +520,13 @@ class LLMProxy:
                     "Anthropic SDK is not installed. Add 'anthropic' to requirements."
                 ) from ex
 
-            return Anthropic(api_key=api_key)
+            return Anthropic(
+                api_key=api_key,
+                base_url=base_url or None,
+                timeout=timeout,
+                max_retries=max_retries,
+                default_headers=default_headers or None,
+            )
 
         raise IAToolkitException(
             IAToolkitException.ErrorType.MODEL,
@@ -507,10 +535,31 @@ class LLMProxy:
 
     def _get_client_config(self, company_short_name: str, provider: str) -> dict:
         provider_config = self.configuration_service.get_llm_provider_config(company_short_name, provider) or {}
+        provider_api_key = self._get_api_key_from_config(
+            company_short_name,
+            provider,
+            required=False,
+        )
+        gateway_transport = self.gateway_resolver.resolve(
+            company_short_name=company_short_name,
+            provider=provider,
+            provider_api_key=provider_api_key,
+        )
+        if not gateway_transport.get("enabled"):
+            provider_api_key = provider_api_key or self._get_api_key_from_config(
+                company_short_name,
+                provider,
+                required=True,
+            )
+        configured_base_url = self._get_base_url_from_config(company_short_name, provider)
+        configured_headers = self._get_default_headers_from_config(company_short_name, provider)
+        effective_base_url = gateway_transport.get("base_url") or configured_base_url
+        effective_headers = dict(configured_headers)
+        effective_headers.update(gateway_transport.get("default_headers") or {})
         return {
-            "api_key": self._get_api_key_from_config(company_short_name, provider),
-            "base_url": self._get_base_url_from_config(company_short_name, provider),
-            "default_headers": self._get_default_headers_from_config(company_short_name, provider),
+            "api_key": gateway_transport.get("api_key", provider_api_key) if gateway_transport.get("enabled") else provider_api_key,
+            "base_url": effective_base_url,
+            "default_headers": effective_headers,
             "connect_timeout_seconds": self._resolve_provider_float(
                 provider_config,
                 ("connect_timeout_seconds",),
@@ -604,7 +653,7 @@ class LLMProxy:
     # -------------------------------------------------------------------------
     # Configuration helpers
     # -------------------------------------------------------------------------
-    def _get_api_key_from_config(self, company_short_name: str, provider: str) -> str:
+    def _get_api_key_from_config(self, company_short_name: str, provider: str, *, required: bool = True) -> str:
         """
         Read the LLM API key from company configuration and environment variables.
 
@@ -634,6 +683,8 @@ class LLMProxy:
             env_var_name = llm_config["api-key"]
 
         if not env_var_name:
+            if not required:
+                return ""
             raise IAToolkitException(
                 IAToolkitException.ErrorType.API_KEY,
                 f"Company '{company_short_name}' doesn't have an API key configured "
@@ -648,6 +699,8 @@ class LLMProxy:
         )
 
         if not api_key_value:
+            if not required:
+                return ""
             raise IAToolkitException(
                 IAToolkitException.ErrorType.API_KEY,
                 f"Environment variable '{env_var_name}' for company '{company_short_name}' "
