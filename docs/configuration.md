@@ -91,6 +91,21 @@ llm:
       base_url_env: OSS_LLM_BASE_URL
       disable_tools: false
 
+  gateway:
+    enabled: true
+    vendor: cloudflare
+    mode: provider_native
+    gateway_id: primary-gateway
+    account_id_secret_ref: CLOUDFLARE_ACCOUNT_ID
+    authenticated_gateway: true
+    cloudflare_api_token_secret_ref: CLOUDFLARE_API_TOKEN
+    credential_mode: provider_key_in_request
+    providers:
+      deepseek:
+        enabled: true
+      gemini:
+        credential_mode: cloudflare_managed
+
   # Attachment defaults (applies to prompt and non-prompt llm_query flows)
   default_attachment_mode: extracted_only
   default_attachment_fallback: extract
@@ -113,6 +128,16 @@ llm:
 - `provider_api_keys` (object, required): map `provider -> secret_ref`.
 - `available_models` (list, optional): for UI selector (`id`, `label`, `description`). Each entry can also declare `provider` to route models whose provider cannot be inferred reliably from the model id.
 - `providers` (object, optional): provider-specific runtime settings. `openai_compatible` currently supports `base_url`, `base_url_env`, or `base_url_secret_ref`. It also supports `disable_tools: true` as a compatibility workaround for endpoints that expose chat completions but do not support automatic tool calling.
+- `gateway` (object, optional): outbound LLM gateway settings. The current built-in gateway vendor is `cloudflare`, and the current mode is `provider_native`.
+  - `enabled` (bool, optional): turns the gateway on or off.
+  - `vendor` (string, required when enabled): currently `cloudflare`.
+  - `mode` (string, required when enabled): currently `provider_native`.
+  - `gateway_id` (string, required when enabled): Cloudflare AI Gateway identifier.
+  - `account_id` / `account_id_secret_ref` / `account_id_env` (one required when enabled): Cloudflare account id source.
+  - `authenticated_gateway` (bool, optional): whether the gateway itself requires a Cloudflare token.
+  - `cloudflare_api_token_secret_ref` / `cloudflare_api_token_env` (required when `authenticated_gateway: true`): token source for authenticated gateways.
+  - `credential_mode` (optional): `provider_key_in_request` or `cloudflare_managed`.
+  - `providers` (object, optional): per-provider overrides for `openai`, `deepseek`, `anthropic`, and `gemini`.
 - `default_attachment_mode` (optional, default `extracted_only`):
   - `extracted_only`
   - `native_only`
