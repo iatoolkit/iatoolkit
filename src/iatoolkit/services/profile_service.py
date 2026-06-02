@@ -316,6 +316,9 @@ class ProfileService:
             persisted = False
             user_by_google_sub = self.profile_repo.get_user_by_google_sub(google_identity.subject)
 
+            provisioning_outcome = "existing_google_subject"
+            policy_metadata = {}
+
             if user_by_google_sub:
                 logging.debug(
                     "Google login matched existing google_sub. company=%s email=%s user_id=%s",
@@ -357,6 +360,7 @@ class ProfileService:
                         email,
                     )
                     first_name, last_name = self._resolve_google_names(email, google_identity)
+                    provisioning_outcome = "new_google_user"
                     user = User(
                         email=email,
                         password=None,
@@ -381,7 +385,15 @@ class ProfileService:
                     email=email,
                     invite_token=None,
                 )
+                policy_metadata = dict(policy_decision.metadata or {})
                 if not policy_decision.allowed:
+                    logging.info(
+                        "Google login blocked by signup policy. company=%s email=%s policy=%s metadata=%s",
+                        company_short_name,
+                        email,
+                        policy_metadata.get("policy_mode") or "unknown",
+                        policy_metadata,
+                    )
                     if policy_decision.reason_message:
                         message = policy_decision.reason_message
                     elif policy_decision.reason_key:
@@ -394,6 +406,7 @@ class ProfileService:
                         "reason_code": "SIGNUP_NOT_ALLOWED",
                     }
                 user.companies.append(company)
+                provisioning_outcome = "company_associated" if user.id is not None else provisioning_outcome
                 persisted = True
 
             if user.id is None:
@@ -403,6 +416,7 @@ class ProfileService:
                     email,
                 )
                 self.profile_repo.create_user(user)
+                provisioning_outcome = "created_and_associated"
             elif persisted:
                 logging.debug(
                     "Google login saving existing user updates. company=%s email=%s user_id=%s",
@@ -411,6 +425,15 @@ class ProfileService:
                     user.id,
                 )
                 self.profile_repo.save_user(user)
+
+            logging.info(
+                "Google login provisioning success. company=%s email=%s outcome=%s policy_mode=%s metadata=%s",
+                company_short_name,
+                email,
+                provisioning_outcome,
+                (policy_metadata.get("policy_mode") or "existing_membership"),
+                policy_metadata,
+            )
 
             user_role = self.profile_repo.get_user_role_in_company(company.id, user.id)
             return self._build_session_user_profile(user, company, user_role)
