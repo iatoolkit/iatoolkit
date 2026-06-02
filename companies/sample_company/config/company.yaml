@@ -45,6 +45,22 @@ llm:
   providers:
     openai_compatible:
       base_url_env: OSS_LLM_BASE_URL
+  # Optional Cloudflare AI Gateway integration for supported providers.
+  # gateway:
+  #   enabled: true
+  #   vendor: cloudflare
+  #   mode: provider_native
+  #   gateway_id: primary-gateway
+  #   account_id_secret_ref: CLOUDFLARE_ACCOUNT_ID
+  #   authenticated_gateway: true
+  #   cloudflare_api_token_secret_ref: CLOUDFLARE_API_TOKEN
+  #   credential_mode: provider_key_in_request
+  #   byok_alias: production
+  #   providers:
+  #     deepseek:
+  #       enabled: true
+  #     gemini:
+  #       credential_mode: cloudflare_managed
 data_sources:
   sql:
   - database: sample_db

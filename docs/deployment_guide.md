@@ -149,6 +149,13 @@ You will need to set all the variables required by IAToolkit and your specific c
 - SAMPLE_DATABASE_URI (for your company's external database)
 Any other keys referenced in your company.yaml (e.g., BREVO_API_KEY, AWS_ACCESS_KEY_ID).
 
+If you enable `llm.gateway` with Cloudflare AI Gateway, also configure:
+- `CLOUDFLARE_ACCOUNT_ID` (or whichever secret reference name you use for `account_id_secret_ref`)
+- `CLOUDFLARE_API_TOKEN` when `authenticated_gateway: true`
+- Provider API keys such as `OPENAI_API_KEY`, `DEEP_SEEK_API_KEY`, `ANTHROPIC_API_KEY`, or `GEMINI_API_KEY` when `credential_mode: provider_key_in_request`
+
+If you use `credential_mode: cloudflare_managed`, the upstream provider key is expected to be stored in Cloudflare BYOK and the application only sends the Cloudflare gateway token.
+
 ## 5. Deploying the Application
 
 - Commit your code to your private Git repository.
@@ -499,7 +506,6 @@ curl -X POST \
   "model": "text-embedding-3-small"
 }
 ```
-
 
 
 

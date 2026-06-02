@@ -98,6 +98,133 @@ class ConfigurationService:
                     "Must be one of: ['latency', 'price', 'throughput'], or a dictionary."
                 )
 
+    @staticmethod
+    def _validate_llm_gateway_entry(
+        add_error,
+        section: str,
+        gateway_cfg,
+        *,
+        allow_providers: bool,
+        require_complete_config: bool,
+    ) -> None:
+        if not isinstance(gateway_cfg, dict):
+            add_error(section, "Must be a dictionary.")
+            return
+
+        allowed_gateway_providers = {"openai", "deepseek", "anthropic", "gemini"}
+        allowed_gateway_modes = {"provider_native"}
+        allowed_gateway_vendors = {"cloudflare"}
+        allowed_credential_modes = {"provider_key_in_request", "cloudflare_managed"}
+        secret_ref_keys = (
+            "account_id",
+            "account_id_secret_ref",
+            "account_id_env",
+            "cloudflare_api_token_secret_ref",
+            "cloudflare_api_token_env",
+        )
+
+        enabled = gateway_cfg.get("enabled")
+        if enabled is not None and not isinstance(enabled, bool):
+            add_error(f"{section}.enabled", "Must be a boolean.")
+
+        vendor = gateway_cfg.get("vendor")
+        normalized_vendor = ""
+        if vendor is not None:
+            if not isinstance(vendor, str) or not vendor.strip():
+                add_error(f"{section}.vendor", "Must be a non-empty string.")
+            else:
+                normalized_vendor = vendor.strip().lower()
+                if normalized_vendor not in allowed_gateway_vendors:
+                    add_error(
+                        f"{section}.vendor",
+                        f"Unsupported vendor '{normalized_vendor}'. Must be one of: {sorted(allowed_gateway_vendors)}.",
+                    )
+
+        mode = gateway_cfg.get("mode")
+        normalized_mode = ""
+        if mode is not None:
+            if not isinstance(mode, str) or not mode.strip():
+                add_error(f"{section}.mode", "Must be a non-empty string.")
+            else:
+                normalized_mode = mode.strip().lower()
+                if normalized_mode not in allowed_gateway_modes:
+                    add_error(
+                        f"{section}.mode",
+                        f"Unsupported value '{normalized_mode}'. Must be one of: {sorted(allowed_gateway_modes)}.",
+                    )
+
+        gateway_id = gateway_cfg.get("gateway_id")
+        if gateway_id is not None and (not isinstance(gateway_id, str) or not gateway_id.strip()):
+            add_error(f"{section}.gateway_id", "Must be a non-empty string.")
+
+        byok_alias = gateway_cfg.get("byok_alias")
+        if byok_alias is not None and (not isinstance(byok_alias, str) or not byok_alias.strip()):
+            add_error(f"{section}.byok_alias", "Must be a non-empty string.")
+
+        authenticated_gateway = gateway_cfg.get("authenticated_gateway")
+        if authenticated_gateway is not None and not isinstance(authenticated_gateway, bool):
+            add_error(f"{section}.authenticated_gateway", "Must be a boolean.")
+
+        credential_mode = gateway_cfg.get("credential_mode")
+        if credential_mode is not None:
+            if not isinstance(credential_mode, str) or not credential_mode.strip():
+                add_error(f"{section}.credential_mode", "Must be a non-empty string.")
+            elif credential_mode.strip().lower() not in allowed_credential_modes:
+                add_error(
+                    f"{section}.credential_mode",
+                    "Unsupported value. Must be 'provider_key_in_request' or 'cloudflare_managed'.",
+                )
+
+        if allow_providers:
+            providers_cfg = gateway_cfg.get("providers")
+            if providers_cfg is not None and not isinstance(providers_cfg, dict):
+                add_error(f"{section}.providers", "Must be a dictionary.")
+            elif isinstance(providers_cfg, dict):
+                for provider_name, provider_gateway_cfg in providers_cfg.items():
+                    normalized_provider_name = str(provider_name or "").strip().lower()
+                    if normalized_provider_name not in allowed_gateway_providers:
+                        add_error(
+                            f"{section}.providers.{provider_name}",
+                            (
+                                f"Unsupported provider '{normalized_provider_name}'. "
+                                f"Must be one of: {sorted(allowed_gateway_providers)}."
+                            ),
+                        )
+                        continue
+                    ConfigurationService._validate_llm_gateway_entry(
+                        add_error,
+                        f"{section}.providers.{normalized_provider_name}",
+                        provider_gateway_cfg,
+                        allow_providers=False,
+                        require_complete_config=False,
+                    )
+        elif "providers" in gateway_cfg:
+            add_error(f"{section}.providers", "Nested provider overrides are not supported here.")
+
+        is_enabled = gateway_cfg.get("enabled") is True
+        if require_complete_config and is_enabled and not normalized_vendor:
+            add_error(f"{section}.vendor", "Missing required key: 'vendor'.")
+        if require_complete_config and is_enabled and not normalized_mode:
+            add_error(f"{section}.mode", "Missing required key: 'mode'.")
+        if require_complete_config and is_enabled and not str(gateway_cfg.get("gateway_id") or "").strip():
+            add_error(f"{section}.gateway_id", "Missing required key: 'gateway_id'.")
+        if require_complete_config and is_enabled and not any(
+            str(gateway_cfg.get(key) or "").strip() for key in secret_ref_keys[:3]
+        ):
+            add_error(
+                f"{section}.account_id",
+                "One of 'account_id', 'account_id_secret_ref', or 'account_id_env' is required when enabled.",
+            )
+        if is_enabled and gateway_cfg.get("authenticated_gateway") is True:
+            if not any(str(gateway_cfg.get(key) or "").strip() for key in secret_ref_keys[3:]):
+                add_error(
+                    f"{section}.cloudflare_api_token_secret_ref",
+                    (
+                        "One of 'cloudflare_api_token_secret_ref' or 'cloudflare_api_token_env' "
+                        "is required when 'authenticated_gateway' is true."
+                    ),
+                )
+
     def load_configuration(self, company_short_name: str):
         """
         Main entry point for configuring a company instance.
@@ -581,6 +708,16 @@ class ConfigurationService:
                                             "llm.telemetry.braintrust.api_url",
                                             "Must be an absolute HTTP or HTTPS URL.",
                                         )
+
+            gateway_cfg = config.get("llm", {}).get("gateway")
+            if gateway_cfg is not None:
+                self._validate_llm_gateway_entry(
+                    add_error,
+                    "llm.gateway",
+                    gateway_cfg,
+                    allow_providers=True,
+                    require_complete_config=True,
+                )
 
         # 3. Embedding Provider
         if isinstance(config.get("embedding_provider"), dict):
@@ -1218,6 +1355,35 @@ class ConfigurationService:
 
         provider_cfg = providers_cfg.get(candidate)
         return dict(provider_cfg) if isinstance(provider_cfg, dict) else {}
+
+    def get_llm_gateway_config(self, company_short_name: str, provider: str | None = None) -> dict:
+        self._ensure_config_loaded(company_short_name)
+        llm_config = self._loaded_configs[company_short_name].get("llm") or {}
+        gateway_cfg = llm_config.get("gateway")
+        if not isinstance(gateway_cfg, dict):
+            return {}
+
+        resolved_gateway_cfg = {
+            key: value
+            for key, value in gateway_cfg.items()
+            if key != "providers"
+        }
+
+        candidate = str(provider or "").strip().lower()
+        if not candidate:
+            return dict(resolved_gateway_cfg)
+
+        provider_overrides = gateway_cfg.get("providers")
+        if not isinstance(provider_overrides, dict):
+            return dict(resolved_gateway_cfg)
+
+        provider_gateway_cfg = provider_overrides.get(candidate)
+        if not isinstance(provider_gateway_cfg, dict):
+            return dict(resolved_gateway_cfg)
+
+        merged_gateway_cfg = dict(resolved_gateway_cfg)
+        merged_gateway_cfg.update(provider_gateway_cfg)
+        return merged_gateway_cfg
 
     def get_llm_telemetry_config(self, company_short_name: str) -> dict:
         self._ensure_config_loaded(company_short_name)

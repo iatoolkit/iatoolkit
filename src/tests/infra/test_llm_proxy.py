@@ -25,6 +25,7 @@ class TestLLMProxy:
         )
         self.config_service_mock.get_llm_model_config.return_value = None
         self.config_service_mock.get_llm_provider_config.return_value = {}
+        self.config_service_mock.get_llm_gateway_config.return_value = {}
         self.config_service_mock.get_llm_request_defaults.return_value = {}
 
         # Empresa base
@@ -112,7 +113,13 @@ class TestLLMProxy:
             client1 = self.proxy._get_or_create_client(LLMProxy.PROVIDER_OPENAI, api_key)
             client2 = self.proxy._get_or_create_client(LLMProxy.PROVIDER_OPENAI, api_key)
 
-        self.mock_openai_class.assert_called_once_with(api_key="val", timeout=ANY, max_retries=0)
+        self.mock_openai_class.assert_called_once_with(
+            api_key="val",
+            base_url=None,
+            timeout=ANY,
+            max_retries=0,
+            default_headers=None,
+        )
         timeout = self.mock_openai_class.call_args.kwargs["timeout"]
         assert timeout.connect == 10.0
         assert timeout.read == 300.0
@@ -240,6 +247,7 @@ class TestLLMProxy:
             base_url="https://oss.example.com/v1",
             timeout=ANY,
             max_retries=0,
+            default_headers=None,
         )
         timeout = self.mock_openai_class.call_args.kwargs["timeout"]
         assert timeout.connect == 10.0
@@ -320,7 +328,13 @@ class TestLLMProxy:
         with patch.dict(os.environ, {"KEY": "val"}, clear=True):
             self.proxy._get_or_create_adapter(LLMProxy.PROVIDER_OPENAI, self.company_short_name)
 
-        self.mock_openai_class.assert_called_once_with(api_key="val", timeout=ANY, max_retries=1)
+        self.mock_openai_class.assert_called_once_with(
+            api_key="val",
+            base_url=None,
+            timeout=ANY,
+            max_retries=1,
+            default_headers=None,
+        )
         timeout = self.mock_openai_class.call_args.kwargs["timeout"]
         assert timeout.connect == 7.0
         assert timeout.read == 123.0
@@ -629,6 +643,129 @@ class TestLLMProxy:
             "require_parameters": True,
             "sort": "latency",
         }
+
+    def test_get_client_config_applies_cloudflare_gateway_for_openai(self):
+        self.config_service_mock.get_configuration.return_value = {
+            "provider_api_keys": {"openai": "OPENAI_KEY"}
+        }
+        self.config_service_mock.get_llm_gateway_config.return_value = {
+            "enabled": True,
+            "vendor": "cloudflare",
+            "mode": "provider_native",
+            "gateway_id": "primary-gateway",
+            "account_id_secret_ref": "CF_ACCOUNT_ID",
+            "authenticated_gateway": True,
+            "cloudflare_api_token_secret_ref": "CF_API_TOKEN",
+            "credential_mode": "provider_key_in_request",
+        }
+
+        with patch.dict(
+            os.environ,
+            {
+                "OPENAI_KEY": "sk-openai",
+                "CF_ACCOUNT_ID": "cf-account",
+                "CF_API_TOKEN": "cf-token",
+            },
+            clear=True,
+        ):
+            client_config = self.proxy._get_client_config(self.company_short_name, LLMProxy.PROVIDER_OPENAI)
+
+        assert client_config["api_key"] == "sk-openai"
+        assert client_config["base_url"] == (
+            "https://gateway.ai.cloudflare.com/v1/cf-account/primary-gateway/openai"
+        )
+        assert client_config["default_headers"] == {
+            "cf-aig-authorization": "Bearer cf-token",
+        }
+
+    def test_get_client_config_allows_cloudflare_managed_credentials_for_openai(self):
+        self.config_service_mock.get_configuration.return_value = {
+            "provider_api_keys": {"openai": "OPENAI_KEY"}
+        }
+        self.config_service_mock.get_llm_gateway_config.return_value = {
+            "enabled": True,
+            "vendor": "cloudflare",
+            "mode": "provider_native",
+            "gateway_id": "primary-gateway",
+            "account_id_secret_ref": "CF_ACCOUNT_ID",
+            "authenticated_gateway": True,
+            "cloudflare_api_token_secret_ref": "CF_API_TOKEN",
+            "credential_mode": "cloudflare_managed",
+        }
+
+        with patch.dict(
+            os.environ,
+            {
+                "CF_ACCOUNT_ID": "cf-account",
+                "CF_API_TOKEN": "cf-token",
+            },
+            clear=True,
+        ):
+            client_config = self.proxy._get_client_config(self.company_short_name, LLMProxy.PROVIDER_OPENAI)
+
+        assert client_config["api_key"] == ""
+        assert client_config["base_url"] == (
+            "https://gateway.ai.cloudflare.com/v1/cf-account/primary-gateway/openai"
+        )
+        assert client_config["default_headers"]["cf-aig-authorization"] == "Bearer cf-token"
+
+    def test_get_client_config_rejects_cloudflare_managed_without_authenticated_gateway(self):
+        self.config_service_mock.get_configuration.return_value = {
+            "provider_api_keys": {"openai": "OPENAI_KEY"}
+        }
+        self.config_service_mock.get_llm_gateway_config.return_value = {
+            "enabled": True,
+            "vendor": "cloudflare",
+            "mode": "provider_native",
+            "gateway_id": "primary-gateway",
+            "account_id_secret_ref": "CF_ACCOUNT_ID",
+            "authenticated_gateway": False,
+            "credential_mode": "cloudflare_managed",
+        }
+
+        with patch.dict(os.environ, {"CF_ACCOUNT_ID": "cf-account"}, clear=True):
+            with pytest.raises(IAToolkitException, match="authenticated_gateway: true"):
+                self.proxy._get_client_config(self.company_short_name, LLMProxy.PROVIDER_OPENAI)
+
+    def test_create_response_routes_deepseek_through_cloudflare_gateway(self):
+        self.model_registry_mock.get_provider.return_value = "deepseek"
+        self.config_service_mock.get_configuration.return_value = {
+            "provider_api_keys": {"deepseek": "DEEPSEEK_KEY"}
+        }
+        self.config_service_mock.get_llm_gateway_config.return_value = {
+            "enabled": True,
+            "vendor": "cloudflare",
+            "mode": "provider_native",
+            "gateway_id": "primary-gateway",
+            "account_id_secret_ref": "CF_ACCOUNT_ID",
+            "authenticated_gateway": True,
+            "cloudflare_api_token_secret_ref": "CF_API_TOKEN",
+            "credential_mode": "provider_key_in_request",
+        }
+
+        with patch.dict(
+            os.environ,
+            {
+                "DEEPSEEK_KEY": "sk-deepseek",
+                "CF_ACCOUNT_ID": "cf-account",
+                "CF_API_TOKEN": "cf-token",
+            },
+            clear=True,
+        ):
+            self.proxy.create_response(
+                company_short_name=self.company_short_name,
+                model="deepseek-v4-pro",
+                input=[],
+            )
+
+        self.mock_deepseek_adapter_instance.create_response.assert_called_once()
+        self.mock_openai_class.assert_called_once_with(
+            api_key="sk-deepseek",
+            base_url="https://gateway.ai.cloudflare.com/v1/cf-account/primary-gateway/deepseek",
+            timeout=ANY,
+            max_retries=0,
+            default_headers={"cf-aig-authorization": "Bearer cf-token"},
+        )
 
     def test_clear_runtime_cache_clears_adapter_and_client_caches(self):
         self.proxy.adapters = {(LLMProxy.PROVIDER_OPENAI, "key", ""): MagicMock()}

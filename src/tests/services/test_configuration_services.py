@@ -776,6 +776,55 @@ class TestConfigurationService:
         errors = self.service.validate_configuration(self.COMPANY_NAME)
         assert errors == []
 
+    def test_validate_configuration_accepts_cloudflare_gateway_config(self):
+        valid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        valid_config["llm"]["gateway"] = {
+            "enabled": True,
+            "vendor": "cloudflare",
+            "mode": "provider_native",
+            "gateway_id": "primary-gateway",
+            "account_id_secret_ref": "CLOUDFLARE_ACCOUNT_ID",
+            "authenticated_gateway": True,
+            "cloudflare_api_token_secret_ref": "CLOUDFLARE_API_TOKEN",
+            "credential_mode": "provider_key_in_request",
+            "providers": {
+                "deepseek": {
+                    "enabled": True,
+                    "credential_mode": "cloudflare_managed",
+                }
+            },
+        }
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = valid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert errors == []
+
+    def test_validate_configuration_rejects_cloudflare_gateway_without_required_fields(self):
+        invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        invalid_config["llm"]["gateway"] = {
+            "enabled": True,
+            "vendor": "cloudflare",
+            "mode": "provider_native",
+            "providers": {
+                "openrouter": {
+                    "enabled": True,
+                }
+            },
+        }
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = invalid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+
+        assert any("llm.gateway.gateway_id" in e for e in errors)
+        assert any("llm.gateway.account_id" in e for e in errors)
+        assert any("llm.gateway.providers.openrouter" in e for e in errors)
+
     def test_validate_configuration_accepts_openrouter_model_routing_config(self):
         valid_config = copy.deepcopy(MOCK_VALID_CONFIG)
         valid_config["llm"]["available_models"].append({
@@ -921,6 +970,30 @@ class TestConfigurationService:
         assert model_config["provider"] == "openrouter"
         assert provider_config["base_url"] == "https://openrouter.ai/api/v1"
         assert provider_config["http_referer"] == "https://example.com/iatoolkit"
+
+    def test_get_llm_gateway_config_merges_provider_overrides(self):
+        self.service._loaded_configs[self.COMPANY_NAME] = copy.deepcopy(MOCK_VALID_CONFIG)
+        self.service._loaded_configs[self.COMPANY_NAME]["llm"]["gateway"] = {
+            "enabled": True,
+            "vendor": "cloudflare",
+            "mode": "provider_native",
+            "gateway_id": "primary-gateway",
+            "account_id_secret_ref": "CLOUDFLARE_ACCOUNT_ID",
+            "credential_mode": "provider_key_in_request",
+            "providers": {
+                "deepseek": {
+                    "credential_mode": "cloudflare_managed",
+                }
+            },
+        }
+
+        default_gateway_config = self.service.get_llm_gateway_config(self.COMPANY_NAME)
+        deepseek_gateway_config = self.service.get_llm_gateway_config(self.COMPANY_NAME, "deepseek")
+
+        assert default_gateway_config["credential_mode"] == "provider_key_in_request"
+        assert "providers" not in default_gateway_config
+        assert deepseek_gateway_config["credential_mode"] == "cloudflare_managed"
+        assert deepseek_gateway_config["gateway_id"] == "primary-gateway"
 
     def test_get_llm_model_config_preserves_openrouter_model_routing_config(self):
         self.service._loaded_configs[self.COMPANY_NAME] = copy.deepcopy(MOCK_VALID_CONFIG)
