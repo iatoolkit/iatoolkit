@@ -183,11 +183,7 @@ class GoogleLoginCallbackView(BaseLoginView):
         if not isinstance(pending_states, dict):
             pending_states = {}
 
-        pending_state = pending_states.pop(state, None)
-        if pending_states:
-            SessionManager.set('google_oauth_states', pending_states)
-        else:
-            SessionManager.remove('google_oauth_states')
+        pending_state = pending_states.get(state)
 
         company_short_name = (pending_state or {}).get('company_short_name')
         current_lang = (pending_state or {}).get('lang') or request.args.get('lang') or 'en'
@@ -214,6 +210,12 @@ class GoogleLoginCallbackView(BaseLoginView):
             )
             flash(self.i18n_service.t('errors.auth.google_login_failed'), 'error')
             return redirect(url_for('home', company_short_name=company_short_name, lang=current_lang))
+
+        pending_states.pop(state, None)
+        if pending_states:
+            SessionManager.set('google_oauth_states', pending_states)
+        else:
+            SessionManager.remove('google_oauth_states')
 
         redirect_uri = url_for(
             'login_google_callback',

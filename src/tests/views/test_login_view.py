@@ -292,6 +292,27 @@ class TestLoginView:
         assert f"/{self.company_short_name}/home?lang=en" in resp.headers["Location"]
 
     @patch("iatoolkit.views.login_view.SessionManager")
+    def test_google_login_callback_preserves_state_for_oauth_error_retry(self, mock_session_manager):
+        pending_states = {
+            "oauth-state": {
+                "nonce": "oauth-nonce",
+                "company_short_name": self.company_short_name,
+                "lang": "en",
+            }
+        }
+        mock_session_manager.get.return_value = pending_states
+
+        resp = self.client.get(
+            "/auth/google/callback?state=oauth-state&error=access_denied"
+        )
+
+        assert resp.status_code == 302
+        assert f"/{self.company_short_name}/home?lang=en" in resp.headers["Location"]
+        self.auth_service.login_google_user.assert_not_called()
+        mock_session_manager.set.assert_not_called()
+        mock_session_manager.remove.assert_not_called()
+
+    @patch("iatoolkit.views.login_view.SessionManager")
     def test_google_login_callback_rejects_invalid_state(self, mock_session_manager):
         mock_session_manager.get.return_value = {}
 
