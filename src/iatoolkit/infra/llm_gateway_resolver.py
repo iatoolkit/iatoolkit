@@ -46,7 +46,7 @@ class LLMGatewayResolver:
                 f"Unsupported llm.gateway vendor '{vendor}'.",
             )
 
-        mode = str(gateway_cfg.get("mode") or "").strip().lower()
+        mode = str(gateway_cfg.get("mode") or "provider_native").strip().lower()
         if mode != "provider_native":
             raise IAToolkitException(
                 IAToolkitException.ErrorType.CONFIG_ERROR,

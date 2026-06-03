@@ -24,6 +24,7 @@ from openai import OpenAI, Timeout         # For OpenAI and xAI (OpenAI-compatib
 
 from typing import Dict, List, Any, Tuple
 import threading
+import logging
 from injector import inject
 
 
@@ -140,6 +141,21 @@ class LLMProxy:
 
         # Delegate to the adapter (OpenAI, Gemini, DeepSeek, xAI, Anthropic, etc.)
         return adapter.create_response(model=model, input=input, **request_kwargs)
+
+    def describe_transport(self, company_short_name: str, model: str) -> str:
+        provider = self._resolve_provider_for_company_model(
+            company_short_name=company_short_name,
+            model=model,
+        )
+        gateway_cfg = self.configuration_service.get_llm_gateway_config(company_short_name, provider) or {}
+        if not isinstance(gateway_cfg, dict) or gateway_cfg.get("enabled") is not True:
+            return "direct"
+
+        vendor = str(gateway_cfg.get("vendor") or "").strip().lower()
+        mode = str(gateway_cfg.get("mode") or "provider_native").strip().lower() or "provider_native"
+        if not vendor:
+            return "direct"
+        return f"{vendor}/{mode}"
 
     # -------------------------------------------------------------------------
     # Provider resolution
@@ -545,6 +561,15 @@ class LLMProxy:
             provider=provider,
             provider_api_key=provider_api_key,
         )
+        if gateway_transport.get("enabled"):
+            logging.info(
+                "LLM gateway enabled for company='%s' provider='%s' vendor='%s' mode='%s' credential_mode='%s'",
+                company_short_name,
+                provider,
+                gateway_transport.get("vendor"),
+                gateway_transport.get("mode"),
+                gateway_transport.get("credential_mode"),
+            )
         if not gateway_transport.get("enabled"):
             provider_api_key = provider_api_key or self._get_api_key_from_config(
                 company_short_name,

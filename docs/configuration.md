@@ -94,7 +94,6 @@ llm:
   gateway:
     enabled: true
     vendor: cloudflare
-    mode: provider_native
     gateway_id: primary-gateway
     account_id_secret_ref: CLOUDFLARE_ACCOUNT_ID
     authenticated_gateway: true
@@ -132,7 +131,7 @@ llm:
 - `gateway` (object, optional): outbound LLM gateway settings. The current built-in gateway vendor is `cloudflare`, and the current mode is `provider_native`.
   - `enabled` (bool, optional): turns the gateway on or off.
   - `vendor` (string, required when enabled): currently `cloudflare`.
-  - `mode` (string, required when enabled): currently `provider_native`.
+  - `mode` (string, optional): defaults to `provider_native`. This is currently the only supported mode.
   - `gateway_id` (string, required when enabled): Cloudflare AI Gateway identifier.
   - `account_id` / `account_id_secret_ref` / `account_id_env` (one required when enabled): Cloudflare account id source.
   - `authenticated_gateway` (bool, optional): whether the gateway itself requires a Cloudflare token.

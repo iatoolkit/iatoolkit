@@ -130,13 +130,18 @@ class llmClient:
         try:
             start_time = time.time()
             reasoning_mode = str((reasoning_payload or {}).get("effort") or "none").strip().lower() or "none"
+            transport_mode = self.llm_proxy.describe_transport(company.short_name, model)
             logging.info(
-                "calling llm model '%s' with %s tokens...and %s images...and %s native attachments...and reasoning mode '%s'...",
+                (
+                    "calling llm model '%s' with %s tokens...and %s images...and %s native attachments..."
+                    "and reasoning mode '%s'...and transport '%s'..."
+                ),
                 model,
                 self.count_tokens(context, context_history),
                 len(images),
                 len(attachments),
                 reasoning_mode,
+                transport_mode,
             )
 
             # this is the first call to the LLM on the iteration

@@ -141,10 +141,11 @@ class ConfigurationService:
                     )
 
         mode = gateway_cfg.get("mode")
-        normalized_mode = ""
+        normalized_mode = "provider_native"
         if mode is not None:
             if not isinstance(mode, str) or not mode.strip():
                 add_error(f"{section}.mode", "Must be a non-empty string.")
+                normalized_mode = ""
             else:
                 normalized_mode = mode.strip().lower()
                 if normalized_mode not in allowed_gateway_modes:
@@ -204,8 +205,6 @@ class ConfigurationService:
         is_enabled = gateway_cfg.get("enabled") is True
         if require_complete_config and is_enabled and not normalized_vendor:
             add_error(f"{section}.vendor", "Missing required key: 'vendor'.")
-        if require_complete_config and is_enabled and not normalized_mode:
-            add_error(f"{section}.mode", "Missing required key: 'mode'.")
         if require_complete_config and is_enabled and not str(gateway_cfg.get("gateway_id") or "").strip():
             add_error(f"{section}.gateway_id", "Missing required key: 'gateway_id'.")
         if require_complete_config and is_enabled and not any(
