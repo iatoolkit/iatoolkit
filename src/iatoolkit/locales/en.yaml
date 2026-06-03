@@ -24,6 +24,7 @@ ui:
     active_users: "Active Users"
     conversations: "Conversations"
     tasks: "Agents"
+    mcp_invocations: "MCP Invocations"
     tokens: "Token Usage"
     activity_trends: "Activity Trends"
 
