@@ -109,13 +109,18 @@ class StorageService:
                         company_short_name: str,
                         file_content: bytes,
                         filename: str,
-                        mime_type: str) -> str:
+                        mime_type: str,
+                        key_prefix: str | None = None) -> str:
         """
         Uploads a generic document via the configured connector.
         """
         try:
             unique_id = uuid.uuid4()
-            storage_key = f"companies/{company_short_name}/documents/{unique_id}/{filename}"
+            normalized_prefix = str(key_prefix or "").strip().strip("/")
+            if normalized_prefix:
+                storage_key = f"{normalized_prefix}/{unique_id}/{filename}"
+            else:
+                storage_key = f"companies/{company_short_name}/documents/{unique_id}/{filename}"
 
             connector = self._get_connector(company_short_name)
             connector.upload_file(
