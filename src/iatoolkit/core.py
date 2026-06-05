@@ -23,6 +23,7 @@ import logging
 import os
 
 from iatoolkit import __version__ as IATOOLKIT_VERSION
+from iatoolkit.runtime_logging import configure_runtime_logging, install_flask_request_logging
 from iatoolkit.services.configuration_service import ConfigurationService
 
 # global variable for the unique instance of IAToolkit
@@ -168,6 +169,7 @@ class IAToolkit:
         request-global variables, such as language.
         """
         injector = self._injector
+        install_flask_request_logging(self.app)
 
         @self.app.before_request
         def set_request_language():
@@ -179,18 +181,7 @@ class IAToolkit:
             language_service.get_current_language()
 
     def _setup_logging(self):
-        # Lee el nivel de log desde una variable de entorno, con 'INFO' como valor por defecto.
-        log_level_name = os.getenv('LOG_LEVEL', 'INFO').upper()
-        log_level = getattr(logging, log_level_name, logging.INFO)
-
-        logging.basicConfig(
-            level=log_level,
-            format="%(asctime)s - IATOOLKIT - %(name)s - %(levelname)s - %(message)s",
-            handlers=[logging.StreamHandler()],
-            force=True
-        )
-
-        logging.getLogger("httpx").setLevel(logging.WARNING)
+        configure_runtime_logging()
 
     def _register_routes(self):
         """Registers routes by passing the configured injector."""

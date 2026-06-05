@@ -14,10 +14,12 @@ sys.path.insert(0, src_path)
 from dotenv import load_dotenv
 from iatoolkit.core import IAToolkit
 from iatoolkit.company_registry import register_company
+from iatoolkit.runtime_logging import configure_runtime_logging
 from companies.sample_company.sample_company import SampleCompany
 
 # load environment variables
 load_dotenv(override=True)
+configure_runtime_logging()
 
 def create_app():
     # IMPORTANT: companies must be registered before creating the IAToolkit
