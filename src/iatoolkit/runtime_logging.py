@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 import time
+from urllib.parse import urlsplit
 
 LOG_FORMAT = "%(asctime)s - IATOOLKIT - %(name)s - %(levelname)s - %(message)s"
 LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
@@ -46,6 +47,9 @@ def install_flask_request_logging(app) -> None:
 
     @app.after_request
     def _log_request(response):
+        if not _should_log_request(request, response):
+            return response
+
         started_at = getattr(g, "_iatoolkit_request_started_at", None)
         latency_ms = "-"
         if started_at is not None:
@@ -129,6 +133,60 @@ def _runtime_loggers() -> list[logging.Logger]:
         if str(name).startswith(("gunicorn", "iatoolkit", "iat_enterprise", "rq")):
             logger_names.add(str(name))
     return [logging.getLogger(name) for name in sorted(logger_names)]
+
+
+def _should_log_request(request, response) -> bool:
+    method = (request.method or "").upper()
+    path = _normalized_path(request.path)
+    endpoint = str(request.endpoint or "")
+
+    if method in {"GET", "HEAD"}:
+        if not _parse_bool_env("IATOOLKIT_LOG_STATIC_REQUESTS", default=False):
+            if endpoint in {"static", "iat_enterprise_static.static"}:
+                return False
+            if path.startswith("/static/") or _has_static_extension(path):
+                return False
+            if path in {"/favicon.ico", "/robots.txt", "/apple-touch-icon.png"}:
+                return False
+
+        if not _parse_bool_env("IATOOLKIT_LOG_MONITORING_REQUESTS", default=False):
+            if "/api/monitoring/" in path:
+                return False
+
+    return True
+
+
+def _has_static_extension(path: str) -> bool:
+    return path.endswith(
+        (
+            ".css",
+            ".js",
+            ".mjs",
+            ".map",
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".gif",
+            ".svg",
+            ".ico",
+            ".webp",
+            ".woff",
+            ".woff2",
+            ".ttf",
+            ".eot",
+        )
+    )
+
+
+def _parse_bool_env(name: str, *, default: bool) -> bool:
+    raw_value = (os.getenv(name) or "").strip().lower()
+    if not raw_value:
+        return default
+    return raw_value in {"1", "true", "yes", "on"}
+
+
+def _normalized_path(path: str) -> str:
+    return urlsplit(path or "/").path or "/"
 
 
 def _request_path(request) -> str:
