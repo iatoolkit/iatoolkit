@@ -1704,7 +1704,6 @@ ui:
     bindings_help: "Conecta tools MCP con entidades internas de IAToolkit, como agentes, fuentes SQL y colecciones."
     settings_title: "Conexión y configuración"
     settings_help: "Administra la habilitación del servidor MCP, auth interactiva y opciones operativas del tenant."
-    settings_status_title: "Resumen de configuración"
     connection_title: "Conexión"
     connection_description: "La URL pública del servidor MCP no cambia; esta pantalla controla qué se expone y cómo se administra."
     server_url: "URL del servidor"
