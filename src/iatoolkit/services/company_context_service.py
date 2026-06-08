@@ -30,8 +30,11 @@ class CompanyContextService:
         self.sql_source_service = sql_source_service
         self.asset_repo = asset_repo
 
-    def get_company_context(self, company_short_name: str) -> str:
-        blocks = self.get_company_context_blocks(company_short_name)
+    def get_company_context(self, company_short_name: str, *, selected_context_files: List[str] | None = None) -> str:
+        blocks = self.get_company_context_blocks(
+            company_short_name,
+            selected_context_files=selected_context_files,
+        )
         return "\n\n---\n\n".join(
             section
             for section in (
@@ -42,7 +45,13 @@ class CompanyContextService:
             if section
         )
 
-    def get_company_context_blocks(self, company_short_name: str, *, include_sql_context: bool = True) -> dict[str, str]:
+    def get_company_context_blocks(
+        self,
+        company_short_name: str,
+        *,
+        include_sql_context: bool = True,
+        selected_context_files: List[str] | None = None,
+    ) -> dict[str, str]:
         """
         Builds the full context by aggregating three sources:
         1. Static context files (Markdown).
@@ -57,7 +66,10 @@ class CompanyContextService:
 
         # 1. Context from Markdown (context/*.md)  files
         try:
-            md_context = self._get_static_file_context(company_short_name).strip()
+            md_context = self._get_static_file_context(
+                company_short_name,
+                selected_filenames=selected_context_files,
+            ).strip()
         except Exception as e:
             logging.warning(f"Could not load Markdown context for '{company_short_name}': {e}")
 
@@ -88,6 +100,38 @@ class CompanyContextService:
             "sql_context": sql_context,
             "yaml_context": yaml_context,
         }
+
+    def list_context_files(self, company_short_name: str) -> list[dict]:
+        files = []
+        for filename in self._list_context_markdown_filenames(company_short_name):
+            title = ""
+            preview = ""
+            try:
+                content = self.asset_repo.read_text(company_short_name, AssetType.CONTEXT, filename)
+            except Exception as e:
+                logging.warning(f"Error reading context file {filename}: {e}")
+                content = ""
+
+            for raw_line in str(content or "").splitlines():
+                line = raw_line.strip()
+                if not line:
+                    continue
+                if not title and line.startswith("#"):
+                    title = line.lstrip("#").strip()
+                    continue
+                if not preview:
+                    preview = line
+                if title and preview:
+                    break
+
+            files.append(
+                {
+                    "filename": filename,
+                    "title": title or filename,
+                    "preview": preview,
+                }
+            )
+        return files
 
     def get_sql_context(self, company_short_name: str, allowed_databases: List[str] | None = None) -> str:
         try:
@@ -370,16 +414,15 @@ class CompanyContextService:
         return "\n".join(output)
 
 
-    def _get_static_file_context(self, company_short_name: str) -> str:
+    def _get_static_file_context(self, company_short_name: str, *, selected_filenames: List[str] | None = None) -> str:
         # Get context from .md files using the repository
         static_context = ''
 
         try:
-            # 1. List markdown files in the context "folder"
-            # Note: The repo handles where this folder actually is (FS or DB)
-            md_files = self.asset_repo.list_files(company_short_name, AssetType.CONTEXT, extension='.md')
-
-            for filename in md_files:
+            for filename in self._resolve_context_filenames(
+                company_short_name,
+                selected_filenames=selected_filenames,
+            ):
                 try:
                     # 2. Read content
                     content = self.asset_repo.read_text(company_short_name, AssetType.CONTEXT, filename)
@@ -392,6 +435,37 @@ class CompanyContextService:
             logging.warning(f"Error listing context files for {company_short_name}: {e}")
 
         return static_context
+
+    def _list_context_markdown_filenames(self, company_short_name: str) -> list[str]:
+        try:
+            md_files = self.asset_repo.list_files(company_short_name, AssetType.CONTEXT, extension='.md')
+        except Exception as e:
+            logging.warning(f"Error listing context files for {company_short_name}: {e}")
+            return []
+        normalized_files = []
+        for filename in md_files or []:
+            value = str(filename or "").strip()
+            if value and value not in normalized_files:
+                normalized_files.append(value)
+        return sorted(normalized_files)
+
+    def _resolve_context_filenames(
+        self,
+        company_short_name: str,
+        *,
+        selected_filenames: List[str] | None = None,
+    ) -> list[str]:
+        available_files = self._list_context_markdown_filenames(company_short_name)
+        if selected_filenames is None:
+            return available_files
+
+        allowed_files = set(available_files)
+        ordered_selection = []
+        for filename in selected_filenames or []:
+            value = str(filename or "").strip()
+            if value and value in allowed_files and value not in ordered_selection:
+                ordered_selection.append(value)
+        return ordered_selection
 
     @staticmethod
     def _normalize_identifier(value: str) -> str:

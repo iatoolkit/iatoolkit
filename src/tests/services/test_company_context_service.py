@@ -210,6 +210,38 @@ class TestCompanyContextService:
             sql_source_table_scopes={},
         )
 
+    def test_get_company_context_uses_selected_markdown_files_in_requested_order(self):
+        self.mock_asset_repo.list_files.side_effect = lambda c, t, extension=None: ['b.md', 'a.md', 'c.md'] if t == AssetType.CONTEXT else []
+        self.mock_asset_repo.read_text.side_effect = lambda company, asset_type, filename: {
+            'a.md': 'AAA',
+            'b.md': 'BBB',
+            'c.md': 'CCC',
+        }[filename]
+        self.context_service._get_sql_enriched_context = MagicMock(return_value=("", []))
+        self.context_service._get_yaml_schema_context = MagicMock(return_value="")
+
+        blocks = self.context_service.get_company_context_blocks(
+            self.COMPANY_NAME,
+            include_sql_context=False,
+            selected_context_files=['c.md', 'a.md', 'missing.md', 'a.md'],
+        )
+
+        assert blocks["markdown_context"] == "CCC\nAAA"
+
+    def test_list_context_files_returns_title_and_preview(self):
+        self.mock_asset_repo.list_files.side_effect = lambda c, t, extension=None: ['general.md'] if t == AssetType.CONTEXT else []
+        self.mock_asset_repo.read_text.return_value = "# Titulo principal\n\nLinea descriptiva.\nSegunda linea."
+
+        items = self.context_service.list_context_files(self.COMPANY_NAME)
+
+        assert items == [
+            {
+                "filename": "general.md",
+                "title": "Titulo principal",
+                "preview": "Linea descriptiva.",
+            }
+        ]
+
     # --- Existing Logic Tests (Still Valid for Helper Methods) ---
 
     def test_generate_schema_table_valid(self):
