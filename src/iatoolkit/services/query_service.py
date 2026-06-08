@@ -44,6 +44,7 @@ class QueryService:
         "previous_response_not_found",
         "previous response with id",
     )
+    _STAGE_LOG_THRESHOLD_MS = 250
 
     @inject
     def __init__(self,
@@ -1341,7 +1342,37 @@ class QueryService:
                   files: list = []
                   ) -> dict:
         try:
+            stage_started_at = time.time()
+            request_source = None
+
+            logging.debug(
+                "llm_query entered company=%s prompt=%s task_id=%s",
+                company_short_name,
+                prompt_name or "-",
+                task_id if task_id is not None else "-",
+            )
+
+            def log_stage(stage_name: str):
+                elapsed_ms = int(round((time.time() - stage_started_at) * 1000))
+                if elapsed_ms < self._STAGE_LOG_THRESHOLD_MS:
+                    return
+                logging.debug(
+                    "llm_query stage company=%s prompt=%s stage=%s elapsed_ms=%s task_id=%s source=%s",
+                    company_short_name,
+                    prompt_name or "-",
+                    stage_name,
+                    elapsed_ms,
+                    task_id if task_id is not None else "-",
+                    request_source or "-",
+                )
+
             company = self.profile_repo.get_company_by_short_name(short_name=company_short_name)
+            logging.debug(
+                "llm_query company_resolved company=%s prompt=%s found=%s",
+                company_short_name,
+                prompt_name or "-",
+                bool(company),
+            )
             if not company:
                 return {"error": True,
                         "error_message": self.i18n_service.t('errors.company_not_found',
@@ -1353,6 +1384,7 @@ class QueryService:
 
             # output contract
             prompt_output_contract = self._resolve_prompt_output_contract(company, prompt_name)
+            log_stage("prompt_output_contract")
             is_agent_session_execution = self._is_agent_session_execution(
                 prompt_name=prompt_name,
                 client_data=client_data,
@@ -1364,6 +1396,7 @@ class QueryService:
                 effective_model,
                 prompt_output_contract,
             )
+            log_stage("output_contract_and_model")
 
             # attachment policy
             provider = self._get_provider(company_short_name, effective_model)
@@ -1395,6 +1428,7 @@ class QueryService:
                     files=files or [],
                     policy=effective_attachment_policy,
                 )
+            log_stage("attachment_plan")
 
             logging.debug(
                 "Attachment plan task=%s prompt='%s' provider=%s policy=%s total_files=%s files_for_context=%s native_attachments=%s native_names=%s context_names=%s",
@@ -1431,6 +1465,7 @@ class QueryService:
                 prompt_name=None if is_agent_session_execution else prompt_name,
                 question=question
             )
+            log_stage("build_user_turn_prompt")
 
             if prompt_output_contract.get("schema") and (
                 not output_schema or provider in ("gemini", "deepseek", "openai_compatible")
@@ -1444,12 +1479,14 @@ class QueryService:
 
             # get the tools availables for this company
             tools = self.tool_service.get_tools_for_llm(company)
+            log_stage("load_tools")
             tools, tool_router_metrics = self._apply_prompt_tool_policy(
                 company_short_name=company_short_name,
                 prompt_output_contract=prompt_output_contract,
                 tools=tools,
                 include_forced_tools=not is_agent_execution,
             )
+            log_stage("apply_prompt_tool_policy")
             if tool_router_metrics is None:
                 tools, tool_router_metrics = self._select_tools_for_llm_with_metrics(
                     company_short_name=company_short_name,
@@ -1458,12 +1495,14 @@ class QueryService:
                     question=effective_question,
                     tools=tools,
                 )
+                log_stage("tool_router")
             else:
                 user_turn_prompt = self._append_effective_tools_instruction(
                     user_turn_prompt,
                     tools,
                     explicit_only=True,
                 )
+                log_stage("append_effective_tools_instruction")
 
             # --- History Management (Strategy Pattern) ---
             if is_agent_execution:
@@ -1485,12 +1524,14 @@ class QueryService:
                 )
                 if error_response:
                     return error_response
+                log_stage("ensure_valid_history")
 
             memory_lookup_decision = self.memory_lookup_policy_service.resolve(
                 question=effective_question,
                 tools=tools,
                 tool_router_metrics=tool_router_metrics,
             )
+            log_stage("memory_lookup_policy")
             tool_choice_override = memory_lookup_decision.tool_choice_override
             user_turn_prompt = self._append_memory_search_instruction(
                 user_turn_prompt,
@@ -1528,6 +1569,7 @@ class QueryService:
                 selected_system_prompt_keys = self._normalize_selected_system_prompt_keys(
                     selected_system_prompt_keys
                 )
+                log_stage("build_agent_system_context")
             else:
                 selected_system_prompt_keys = []
                 try:
@@ -1564,6 +1606,7 @@ class QueryService:
                             e,
                         )
                         selected_system_prompt_keys = []
+                log_stage("resolve_system_prompt_keys")
 
             if selected_system_prompt_keys:
                 tool_router_metrics = dict(tool_router_metrics or {})
@@ -1637,6 +1680,7 @@ class QueryService:
                 execution_metadata=execution_metadata,
                 request_metadata=request_metadata,
             )
+            log_stage("prepare_invoke")
 
             response, history_handle = self._invoke_with_history_recovery(
                 company=company,
@@ -1660,6 +1704,7 @@ class QueryService:
                 history_handle=history_handle,
                 ignore_history=ignore_history,
             )
+            log_stage("invoke_with_history_recovery")
 
             if not response.get('valid_response'):
                 response['error'] = True

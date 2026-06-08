@@ -89,7 +89,18 @@ class ContextBuilderService:
         if not company or not prompt_name:
             return {}
 
+        logging.debug(
+            "prompt_output_contract start company=%s prompt=%s",
+            getattr(company, "short_name", "-"),
+            prompt_name,
+        )
         prompt_obj = self.prompt_service.get_prompt_definition(company, prompt_name)
+        logging.debug(
+            "prompt_output_contract prompt_definition company=%s prompt=%s found=%s",
+            getattr(company, "short_name", "-"),
+            prompt_name,
+            bool(prompt_obj),
+        )
         if not prompt_obj:
             return {}
 
@@ -140,6 +151,13 @@ class ContextBuilderService:
                 "binding_order": int(getattr(binding, "binding_order", 0) or 0),
                 "metadata_json": dict(getattr(binding, "metadata_json", None) or {}),
             })
+
+        logging.debug(
+            "prompt_output_contract resolved company=%s prompt=%s resource_bindings=%s",
+            getattr(company, "short_name", "-"),
+            prompt_name,
+            len(resource_bindings),
+        )
 
         return {
             "prompt_name": prompt_obj.name,
