@@ -214,6 +214,10 @@ class FakeLLMProxy:
         self.responses = responses
         self.calls = []
 
+    def describe_transport(self, company_short_name, model):
+        _ = (company_short_name, model)
+        return "fake"
+
     def create_response(self, **kwargs):
         self.calls.append(kwargs)
         return self.responses[len(self.calls) - 1]

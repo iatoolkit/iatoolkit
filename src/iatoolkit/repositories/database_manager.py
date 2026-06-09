@@ -19,6 +19,7 @@ class DatabaseManager(DatabaseProvider):
     _POSTGRES_BOOTSTRAP_PATCHES = (
     )
     _DEFAULT_CONNECT_TIMEOUT = 60
+    MAX_RESULT_ROWS = 1000
 
     @inject
     def __init__(self,
@@ -42,6 +43,7 @@ class DatabaseManager(DatabaseProvider):
 
         self.url = make_url(database_url)
         self.backend = self.url.get_backend_name()
+        self.statement_timeout_seconds = self._resolve_statement_timeout(timeout)
         if self._is_redshift():
             self._ensure_redshift_dialect_registered()
         self.engine_url = self._build_engine_url()
@@ -113,6 +115,13 @@ class DatabaseManager(DatabaseProvider):
             return self._normalize_timeout(value)
 
         return self.timeout
+
+    def _resolve_statement_timeout(self, timeout: int | str | None) -> int | None:
+        explicit_timeout = timeout is not None
+        url_timeout_present = any(self.url.query.get(key) is not None for key in ("timeout", "connect_timeout"))
+        if not explicit_timeout and not url_timeout_present:
+            return None
+        return self._resolve_timeout()
 
     def _build_engine_url(self):
         normalized_url = self.url
@@ -216,6 +225,15 @@ class DatabaseManager(DatabaseProvider):
     def get_dialect(self) -> str:
         return str(self.backend or "").strip().lower()
 
+    def _apply_statement_timeout(self, session) -> None:
+        if not self._is_postgres():
+            return
+        if self.statement_timeout_seconds is None:
+            return
+
+        timeout_ms = max(int(self.statement_timeout_seconds * 1000), 1)
+        session.execute(text(f"SET LOCAL statement_timeout = {timeout_ms}"))
+
     def create_all(self):
         # if there is a schema defined, make sure it exists before creating tables
         if self.schema and self._is_postgres():
@@ -264,6 +282,7 @@ class DatabaseManager(DatabaseProvider):
             normalized_schema = str(self.schema or "").strip()
             if normalized_schema and normalized_schema.lower() != "public":
                 session.execute(text(f"SET search_path TO {normalized_schema}, public"))
+        self._apply_statement_timeout(session)
 
         result = session.execute(text(query), params or {})
         if commit:
@@ -272,7 +291,12 @@ class DatabaseManager(DatabaseProvider):
         if result.returns_rows:
             # Convert SQLAlchemy rows to list of dicts immediately
             cols = result.keys()
-            return [dict(zip(cols, row)) for row in result.fetchall()]
+            rows = result.fetchmany(self.MAX_RESULT_ROWS + 1)
+            if len(rows) > self.MAX_RESULT_ROWS:
+                raise ValueError(
+                    f"Query returned more than {self.MAX_RESULT_ROWS} rows. Refine the query with filters or LIMIT."
+                )
+            return [dict(zip(cols, row)) for row in rows]
 
         return {'rowcount': result.rowcount}
 

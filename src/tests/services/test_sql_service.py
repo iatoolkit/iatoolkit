@@ -213,13 +213,16 @@ class TestSqlService:
         # Act
         result_json = self.service.exec_sql(company_short_name=COMPANY_SHORT_NAME,
                                             database_key=DB_NAME_SUCCESS,
-                                            query="SELECT * FROM users")
+                                            query="SELECT * FROM users",
+                                            commit=True)
 
         # Assert
         # 1. Verify delegation
         mock_provider.execute_query.assert_called_once_with(
-                    query="SELECT * FROM users",
-            commit=None)
+            query="SELECT * FROM users",
+            commit=False,
+        )
+        mock_provider.remove_session.assert_called_once()
 
         # 2. Verify serialization
         expected_json = json.dumps(db_data)
@@ -259,7 +262,7 @@ class TestSqlService:
         """
         GIVEN a provider that raises an exception during execution
         WHEN exec_sql is called
-        THEN it should attempt rollback on the provider and re-raise as IAToolkitException.
+        THEN it should clean up the provider session and re-raise as IAToolkitException.
         """
         # Arrange
         mock_provider = MockDatabaseManager.return_value
@@ -278,5 +281,72 @@ class TestSqlService:
         assert exc_info.value.error_type == IAToolkitException.ErrorType.DATABASE_ERROR
         assert "Connection lost" in str(exc_info.value)
 
-        # Verify rollback called on provider
+        # Verify provider session cleanup
+        mock_provider.remove_session.assert_called_once()
+
+    @patch('iatoolkit.services.sql_service.DatabaseManager')
+    def test_exec_sql_rejects_blocked_statement(self, MockDatabaseManager):
+        mock_provider = MockDatabaseManager.return_value
+        config = {'DATABASE_URI': DUMMY_URI}
+        self.service.register_database(COMPANY_SHORT_NAME, DB_NAME_SUCCESS, config)
+
+        with pytest.raises(IAToolkitException) as exc_info:
+            self.service.exec_sql(
+                company_short_name=COMPANY_SHORT_NAME,
+                database_key=DB_NAME_SUCCESS,
+                query="UP/* hidden */DATE users SET name = 'Mallory'",
+            )
+
+        assert exc_info.value.error_type == IAToolkitException.ErrorType.DATABASE_ERROR
+        assert "Blocked SQL keyword detected: UPDATE." in str(exc_info.value)
+        mock_provider.execute_query.assert_not_called()
+
+    @patch('iatoolkit.services.sql_service.DatabaseManager')
+    def test_exec_sql_rejects_multiple_statements(self, MockDatabaseManager):
+        mock_provider = MockDatabaseManager.return_value
+        config = {'DATABASE_URI': DUMMY_URI}
+        self.service.register_database(COMPANY_SHORT_NAME, DB_NAME_SUCCESS, config)
+
+        with pytest.raises(IAToolkitException) as exc_info:
+            self.service.exec_sql(
+                company_short_name=COMPANY_SHORT_NAME,
+                database_key=DB_NAME_SUCCESS,
+                query="SELECT * FROM users; SELECT * FROM orders",
+            )
+
+        assert "Only a single read-only SQL statement is allowed." in str(exc_info.value)
+        mock_provider.execute_query.assert_not_called()
+
+    @patch('iatoolkit.services.sql_service.DatabaseManager')
+    def test_exec_sql_allows_read_only_with_query(self, MockDatabaseManager):
+        mock_provider = MockDatabaseManager.return_value
+        mock_provider.execute_query.return_value = [{'id': 1}]
+        config = {'DATABASE_URI': DUMMY_URI}
+        self.service.register_database(COMPANY_SHORT_NAME, DB_NAME_SUCCESS, config)
+
+        result_json = self.service.exec_sql(
+            company_short_name=COMPANY_SHORT_NAME,
+            database_key=DB_NAME_SUCCESS,
+            query="WITH recent AS (SELECT 1 AS id) SELECT id FROM recent",
+        )
+
+        assert result_json == json.dumps([{'id': 1}])
+        mock_provider.execute_query.assert_called_once_with(
+            query="WITH recent AS (SELECT 1 AS id) SELECT id FROM recent",
+            commit=False,
+        )
+
+    def test_exec_sql_falls_back_to_rollback_when_provider_has_no_remove_session(self):
+        mock_provider = MagicMock(spec=DatabaseProvider)
+        mock_provider.execute_query.return_value = [{'id': 1}]
+        self.service._db_connections[(COMPANY_SHORT_NAME, DB_NAME_SUCCESS)] = mock_provider
+        self.service._db_schemas[(COMPANY_SHORT_NAME, DB_NAME_SUCCESS)] = 'public'
+
+        result_json = self.service.exec_sql(
+            company_short_name=COMPANY_SHORT_NAME,
+            database_key=DB_NAME_SUCCESS,
+            query="SELECT 1 AS id",
+        )
+
+        assert result_json == json.dumps([{'id': 1}])
         mock_provider.rollback.assert_called_once()

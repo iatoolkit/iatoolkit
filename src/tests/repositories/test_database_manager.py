@@ -111,7 +111,7 @@ class TestDatabaseManager:
         mock_result = mock_session.execute.return_value
         mock_result.returns_rows = True
         mock_result.keys.return_value = ["id"]
-        mock_result.fetchall.return_value = [(1,)]
+        mock_result.fetchmany.return_value = [(1,)]
 
         redshift_manager.execute_query(query="SELECT 1 AS id")
 
@@ -131,7 +131,7 @@ class TestDatabaseManager:
         mock_result = mock_session.execute.return_value
         mock_result.returns_rows = True
         mock_result.keys.return_value = ['id', 'val']
-        mock_result.fetchall.return_value = [(1, 'a'), (2, 'b')]
+        mock_result.fetchmany.return_value = [(1, 'a'), (2, 'b')]
 
         # Act
         result = self.db_manager.execute_query(query="SELECT * FROM t")
@@ -145,7 +145,7 @@ class TestDatabaseManager:
         mock_result = mock_session.execute.return_value
         mock_result.returns_rows = True
         mock_result.keys.return_value = ['id']
-        mock_result.fetchall.return_value = [(1,)]
+        mock_result.fetchmany.return_value = [(1,)]
 
         self.db_manager.execute_query(query="SELECT 1 AS id")
 
@@ -169,6 +169,38 @@ class TestDatabaseManager:
 
         # Assert
         assert result == {'rowcount': 5}
+
+    def test_execute_query_rejects_result_sets_over_limit(self):
+        mock_session = self.mock_scoped_session
+        mock_result = mock_session.execute.return_value
+        mock_result.returns_rows = True
+        mock_result.keys.return_value = ['id']
+        self.db_manager.MAX_RESULT_ROWS = 2
+        mock_result.fetchmany.return_value = [(1,), (2,), (3,)]
+
+        with pytest.raises(ValueError) as exc_info:
+            self.db_manager.execute_query(query="SELECT * FROM t")
+
+        assert "Query returned more than 2 rows" in str(exc_info.value)
+
+    def test_postgres_applies_statement_timeout_when_explicit(self):
+        with patch("iatoolkit.repositories.database_manager.event.listen"):
+            postgres_manager = DatabaseManager(
+                "postgresql://user:pass@example.com:5432/app",
+                timeout=15,
+            )
+        mock_session = self.mock_scoped_session
+        mock_result = mock_session.execute.return_value
+        mock_result.returns_rows = True
+        mock_result.keys.return_value = ['id']
+        mock_result.fetchmany.return_value = [(1,)]
+
+        postgres_manager.execute_query(query="SELECT 1 AS id")
+
+        executed_sql = [str(call.args[0]) for call in mock_session.execute.call_args_list]
+        assert executed_sql[0] == "SET search_path TO public"
+        assert executed_sql[1] == "SET LOCAL statement_timeout = 15000"
+        assert executed_sql[2] == "SELECT 1 AS id"
 
     def test_execute_query_with_commit(self):
         """

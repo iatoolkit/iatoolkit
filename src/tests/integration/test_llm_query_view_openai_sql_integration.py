@@ -148,6 +148,10 @@ class FakeLLMProxy:
         self.responses = responses
         self.calls = []
 
+    def describe_transport(self, company_short_name, model):
+        _ = (company_short_name, model)
+        return "fake"
+
     def create_response(self, **kwargs):
         self.calls.append(kwargs)
         return self.responses[len(self.calls) - 1]
@@ -262,7 +266,7 @@ def test_llm_query_view_openai_sql_function_call_success():
     assert payload["response_id"] == "resp_openai_2"
     assert "Hay 42 registros" in payload["answer"]
 
-    assert db_provider.executed == [("SELECT 42 AS total", None)]
+    assert db_provider.executed == [("SELECT 42 AS total", False)]
     assert len(llm_proxy.calls) == 2
     assert llm_proxy.calls[0]["model"] == MODEL
     assert llm_proxy.calls[1]["previous_response_id"] == "resp_openai_1"

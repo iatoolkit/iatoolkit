@@ -12,6 +12,7 @@ from injector import inject, singleton
 from typing import Callable
 import json
 import logging
+import re
 
 
 @singleton
@@ -20,6 +21,20 @@ class SqlService:
     Manages database connections and executes SQL statements.
     It maintains a cache of named DatabaseManager instances to avoid reconnecting.
     """
+    MAX_QUERY_ROWS = 1000
+    _ALLOWED_QUERY_PREFIXES = ("SELECT", "WITH")
+    _BLOCKED_SQL_PATTERN = re.compile(
+        r"\b(?:INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|MERGE|CALL|COPY|GRANT|REVOKE|"
+        r"BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE|VACUUM|ANALYZE|CLUSTER|REFRESH|"
+        r"EXEC(?:UTE)?|DO|SET|RESET|USE|PRAGMA|ATTACH|DETACH|REINDEX|LOCK|UNLOCK|INTO)\b",
+        re.IGNORECASE,
+    )
+    _SINGLE_QUOTED_LITERAL_RE = re.compile(r"'(?:''|[^'])*'")
+    _DOUBLE_QUOTED_LITERAL_RE = re.compile(r'"(?:""|[^"])*"')
+    _BACKTICK_LITERAL_RE = re.compile(r"`[^`]*`")
+    _BRACKET_LITERAL_RE = re.compile(r"\[[^\]]*\]")
+    _BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
+    _LINE_COMMENT_RE = re.compile(r"--[^\r\n]*")
 
     @inject
     def __init__(self,
@@ -155,6 +170,86 @@ class SqlService:
                 f"Database '{db_name}' is not registered for this company."
             )
 
+    @classmethod
+    def _sanitize_sql_for_validation(cls, query: str) -> str:
+        sanitized = str(query or "")
+        for pattern in (
+            cls._SINGLE_QUOTED_LITERAL_RE,
+            cls._DOUBLE_QUOTED_LITERAL_RE,
+            cls._BACKTICK_LITERAL_RE,
+            cls._BRACKET_LITERAL_RE,
+        ):
+            sanitized = pattern.sub(" ", sanitized)
+        sanitized = cls._BLOCK_COMMENT_RE.sub("", sanitized)
+        sanitized = cls._LINE_COMMENT_RE.sub("", sanitized)
+        return re.sub(r"\s+", " ", sanitized).strip()
+
+    def _assert_read_only_query(self, query: str) -> str:
+        normalized_query = str(query or "").strip()
+        if not normalized_query:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.DATABASE_ERROR,
+                "SQL query is required.",
+            )
+
+        sanitized = self._sanitize_sql_for_validation(normalized_query)
+        if not sanitized:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.DATABASE_ERROR,
+                "SQL query is required.",
+            )
+        if ";" in sanitized:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.DATABASE_ERROR,
+                "Only a single read-only SQL statement is allowed.",
+            )
+
+        upper_sanitized = sanitized.upper()
+        blocked_match = self._BLOCKED_SQL_PATTERN.search(upper_sanitized)
+        if blocked_match:
+            blocked_keyword = blocked_match.group(0).upper()
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.DATABASE_ERROR,
+                f"Blocked SQL keyword detected: {blocked_keyword}.",
+            )
+
+        if not upper_sanitized.startswith(self._ALLOWED_QUERY_PREFIXES):
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.DATABASE_ERROR,
+                "Only read-only SELECT statements are allowed.",
+            )
+        if upper_sanitized.startswith("WITH") and not re.search(r"\bSELECT\b", upper_sanitized):
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.DATABASE_ERROR,
+                "WITH queries must resolve to a read-only SELECT statement.",
+            )
+
+        return normalized_query
+
+    def _enforce_result_row_limit(self, result_data):
+        if isinstance(result_data, list) and len(result_data) > self.MAX_QUERY_ROWS:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.DATABASE_ERROR,
+                f"Query returned more than {self.MAX_QUERY_ROWS} rows. Refine the query with filters or LIMIT.",
+            )
+
+    @staticmethod
+    def _cleanup_provider_execution(provider: DatabaseProvider):
+        remove_session = getattr(provider, "remove_session", None)
+        if callable(remove_session):
+            try:
+                remove_session()
+                return
+            except Exception as exc:
+                logging.debug("Failed to remove SQL provider session: %s", exc)
+
+        rollback = getattr(provider, "rollback", None)
+        if callable(rollback):
+            try:
+                rollback()
+            except Exception as exc:
+                logging.debug("Failed to rollback SQL provider session: %s", exc)
+
     def exec_sql(self, company_short_name: str, **kwargs):
         """
         Executes a raw SQL statement against a registered database provider.
@@ -163,27 +258,32 @@ class SqlService:
         database_name = kwargs.get('database_key')
         query = kwargs.get('query')
         format = kwargs.get('format', 'json')
-        commit = kwargs.get('commit')
         params = kwargs.get('params')
+        provider = None
+        cleanup_required = False
 
         if not database_name:
             raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR,
                                      'missing database_name in call to exec_sql')
+        if kwargs.get('commit'):
+            logging.warning("Ignoring commit=True for read-only SQL execution against '%s'.", database_name)
 
         try:
             # 1. Get the abstract provider (could be Direct or Bridge)
             provider = self.get_database_provider(company_short_name, database_name)
-            db_schema = self._db_schemas[(company_short_name, database_name)]
+            safe_query = self._assert_read_only_query(query)
 
             # 2. Delegate execution
             # The provider returns a clean List[Dict] or Dict result
             execute_kwargs = {
-                "query": query,
-                "commit": commit,
+                "query": safe_query,
+                "commit": False,
             }
             if params is not None:
                 execute_kwargs["params"] = params
+            cleanup_required = True
             result_data = provider.execute_query(**execute_kwargs)
+            self._enforce_result_row_limit(result_data)
 
             # 3. Handle Formatting (Service layer responsibility)
             if format == 'dict':
@@ -195,14 +295,6 @@ class SqlService:
         except IAToolkitException:
             raise
         except Exception as e:
-            # Attempt rollback if supported/needed
-            try:
-                provider = self.get_database_provider(company_short_name, database_name)
-                if provider:
-                    provider.rollback()
-            except Exception:
-                pass
-
             error_message = str(e)
             if 'timed out' in str(e):
                 error_message = self.i18n_service.t('errors.timeout')
@@ -210,6 +302,9 @@ class SqlService:
             logging.error(f"Error executing SQL statement: {error_message}")
             raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR,
                                      error_message) from e
+        finally:
+            if provider is not None and cleanup_required:
+                self._cleanup_provider_execution(provider)
 
     def commit(self, company_short_name: str, database_name: str):
         """
