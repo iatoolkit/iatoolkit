@@ -101,7 +101,7 @@ class InferenceService:
             payload["parameters"] = parameters
 
         # 4. Execute Call
-        logging.debug(f"Called inference tool {tool_name} with model {model_id}.")
+        logging.info("Calling inference tool %s with model %s.", tool_name, model_id)
         response_data = self._call_endpoint(
             endpoint_url,
             api_key,

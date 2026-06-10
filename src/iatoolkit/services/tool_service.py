@@ -26,6 +26,7 @@ from iatoolkit.services.system_tools import (
     get_system_tools_catalog_source,
     get_system_tool_force_include_capabilities,
 )
+from iatoolkit.services.tool_output_contract import clone_output_contract, normalize_output_contract
 from iatoolkit import current_iatoolkit
 
 
@@ -382,7 +383,8 @@ class ToolService:
             return text
         return f"[{text}]({url})"
 
-    def _validate_tool_contract(self, tool_type: str, execution_config):
+    def _validate_tool_contract(self, tool_type: str, execution_config, output_contract=None):
+        normalize_output_contract(output_contract)
         if tool_type != Tool.TYPE_HTTP:
             return
 
@@ -587,6 +589,7 @@ class ToolService:
             "description",
             "parameters",
             "execution_config",
+            "output_contract",
             "tool_type",
             "source",
             "is_active",
@@ -640,6 +643,7 @@ class ToolService:
                     name=function['function_name'],
                     description=function['description'],
                     parameters=function['parameters'],
+                    output_contract=clone_output_contract(function.get("output_contract")),
                     tool_type=Tool.TYPE_SYSTEM,
                     source=Tool.SOURCE_SYSTEM,
                     is_active=True,
@@ -680,6 +684,7 @@ class ToolService:
             and bool(tool.is_active)
             and tool.description == definition.get("description")
             and (tool.parameters or {}) == (definition.get("parameters") or {})
+            and (tool.output_contract or {}) == (definition.get("output_contract") or {})
         )
 
     def _system_tools_catalog_has_drift(
@@ -738,6 +743,7 @@ class ToolService:
                     name=function_name,
                     description=function.get("description"),
                     parameters=function.get("parameters") or {},
+                    output_contract=clone_output_contract(function.get("output_contract")),
                     tool_type=Tool.TYPE_SYSTEM,
                     source=Tool.SOURCE_SYSTEM,
                     is_active=True,
@@ -831,6 +837,7 @@ class ToolService:
                     name=name,
                     description=tool_data['description'],
                     parameters=tool_data['params'],
+                    output_contract=clone_output_contract(tool_data.get('output_contract')),
 
                     tool_type=Tool.TYPE_NATIVE,
                     source=Tool.SOURCE_YAML,
@@ -887,7 +894,8 @@ class ToolService:
 
         tool_type = tool_data.get('tool_type', Tool.TYPE_NATIVE)
         execution_config = tool_data.get('execution_config')
-        self._validate_tool_contract(tool_type, execution_config)
+        output_contract = normalize_output_contract(tool_data.get('output_contract'))
+        self._validate_tool_contract(tool_type, execution_config, output_contract)
 
         new_tool = Tool(
             company_id=company.id,
@@ -895,6 +903,7 @@ class ToolService:
             description=tool_data['description'],
             parameters=tool_data.get('parameters', {"type": "object", "properties": {}}),
             execution_config=execution_config,
+            output_contract=output_contract,
             tool_type=tool_type,
             source=Tool.SOURCE_USER,
             is_active=tool_data.get('is_active', True)
@@ -939,7 +948,9 @@ class ToolService:
 
         effective_tool_type = tool_data.get('tool_type', tool.tool_type)
         effective_execution_config = tool_data.get('execution_config', tool.execution_config)
-        self._validate_tool_contract(effective_tool_type, effective_execution_config)
+        existing_output_contract = clone_output_contract(tool.output_contract) if isinstance(tool.output_contract, dict) else None
+        effective_output_contract = normalize_output_contract(tool_data.get('output_contract', existing_output_contract))
+        self._validate_tool_contract(effective_tool_type, effective_execution_config, effective_output_contract)
 
         # Update fields
         if 'name' in tool_data:
@@ -950,6 +961,8 @@ class ToolService:
             tool.parameters = tool_data['parameters']
         if 'execution_config' in tool_data:
             tool.execution_config = tool_data['execution_config']
+        if 'output_contract' in tool_data:
+            tool.output_contract = effective_output_contract
         if 'tool_type' in tool_data:
             tool.tool_type = tool_data['tool_type']
         if 'is_active' in tool_data:

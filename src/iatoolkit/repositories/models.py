@@ -254,6 +254,7 @@ class Tool(Base):
     description = Column(Text, nullable=False)
     parameters = Column(JSON, nullable=False)
     execution_config = Column(JSON_NATIVE, nullable=True)
+    output_contract = Column(JSON_NATIVE, nullable=True)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.now)
 

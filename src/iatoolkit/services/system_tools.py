@@ -6,6 +6,8 @@ from typing import Any
 
 import yaml
 
+from iatoolkit.services.tool_output_contract import clone_output_contract, normalize_output_contract
+
 
 SYSTEM_TOOLS_CONFIG_PACKAGE = "iatoolkit.config"
 SYSTEM_TOOLS_CONFIG_FILENAME = "system_tools_pack.yaml"
@@ -59,6 +61,8 @@ def _validate_system_tool_entry(entry: dict, index: int) -> dict:
         "description": description,
         "parameters": copy.deepcopy(parameters),
     }
+    if entry.get("output_contract") is not None:
+        normalized["output_contract"] = clone_output_contract(normalize_output_contract(entry.get("output_contract")))
     if normalized_routing is not None:
         normalized["routing"] = normalized_routing
     if normalized_routing_profile is not None:

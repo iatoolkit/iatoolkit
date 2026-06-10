@@ -189,6 +189,50 @@ class TestLLMQueryRepo:
         assert updated.id == created.id
         assert updated.execution_config["request"]["timeout_ms"] == 15000
 
+    def test_create_or_update_tool_persists_output_contract(self):
+        new_tool = Tool(
+            name="image_tool",
+            company_id=self.company.id,
+            description="Generates an image",
+            parameters={"type": "object"},
+            output_contract={
+                "kind": "image",
+                "mime_type": "image/png",
+                "transport": "signed_url",
+                "url_field": "image_url",
+            },
+            tool_type=Tool.TYPE_INFERENCE,
+            source=Tool.SOURCE_USER,
+        )
+
+        created = self.repo.create_or_update_tool(new_tool)
+        self.session.commit()
+
+        assert created.output_contract["kind"] == "image"
+        assert created.output_contract["url_field"] == "image_url"
+
+        updated_tool_data = Tool(
+            name="image_tool",
+            company_id=self.company.id,
+            description="Generates an image v2",
+            parameters={"type": "object"},
+            output_contract={
+                "kind": "image",
+                "mime_type": "image/png",
+                "transport": "inline_base64",
+                "base64_field": "image_base64",
+            },
+            tool_type=Tool.TYPE_INFERENCE,
+            source=Tool.SOURCE_USER,
+        )
+
+        updated = self.repo.create_or_update_tool(updated_tool_data)
+        self.session.commit()
+
+        assert updated.id == created.id
+        assert updated.output_contract["transport"] == "inline_base64"
+        assert updated.output_contract["base64_field"] == "image_base64"
+
     def test_delete_system_tools(self):
         """Test deleting only system tools."""
         t1 = Tool(name="s1", tool_type=Tool.TYPE_SYSTEM, description="s", parameters={})

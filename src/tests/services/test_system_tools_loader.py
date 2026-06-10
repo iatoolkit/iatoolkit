@@ -87,6 +87,52 @@ tools:
     ]
 
 
+def test_parse_system_tools_catalog_accepts_output_contract():
+    payload = """
+tools:
+  - function_name: custom_tool
+    description: Custom description
+    output_contract:
+      kind: image
+      mime_type: image/png
+      transport: signed_url
+      url_field: image_url
+    parameters:
+      type: object
+      properties: {}
+      required: []
+"""
+    result = system_tools._parse_system_tools_catalog(payload)
+    assert result == [
+        {
+            "function_name": "custom_tool",
+            "description": "Custom description",
+            "output_contract": {
+                "kind": "image",
+                "mime_type": "image/png",
+                "transport": "signed_url",
+                "url_field": "image_url",
+            },
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        }
+    ]
+
+
+def test_parse_system_tools_catalog_rejects_invalid_output_contract():
+    payload = """
+tools:
+  - function_name: custom_tool
+    description: Custom description
+    output_contract:
+      kind: image
+    parameters:
+      type: object
+"""
+    with pytest.raises(Exception) as excinfo:
+        system_tools._parse_system_tools_catalog(payload)
+    assert "output_contract.transport is required" in str(excinfo.value)
+
+
 def test_parse_system_tools_catalog_rejects_unknown_routing_keys():
     payload = """
 tools:

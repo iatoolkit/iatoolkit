@@ -120,6 +120,7 @@ class LLMQueryRepo:
             tool.description = new_tool.description
             tool.parameters = new_tool.parameters
             tool.execution_config = new_tool.execution_config
+            tool.output_contract = new_tool.output_contract
             tool.tool_type = new_tool.tool_type
             tool.source = new_tool.source
             if new_tool.is_active is not None:

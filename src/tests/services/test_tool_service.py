@@ -122,7 +122,21 @@ class TestToolService:
         self.service.system_handlers["sys_1"] = MagicMock()
 
         # Mock the system definitions imported in service
-        with patch('iatoolkit.services.tool_service.SYSTEM_TOOLS_DEFINITIONS', [{'function_name': 'sys_1', 'description': 'd', 'parameters': {}}]):
+        with patch(
+            'iatoolkit.services.tool_service.SYSTEM_TOOLS_DEFINITIONS',
+            [{
+                'function_name': 'sys_1',
+                'description': 'd',
+                'parameters': {},
+                'output_contract': {
+                    'kind': 'file',
+                    'mime_type': 'application/pdf',
+                    'transport': 'signed_url',
+                    'url_field': 'download_link',
+                    'filename_field': 'filename',
+                },
+            }],
+        ):
             # Act
             self.service.register_system_tools()
 
@@ -134,6 +148,7 @@ class TestToolService:
             assert created_tool.tool_type == Tool.TYPE_SYSTEM
             assert created_tool.source == Tool.SOURCE_SYSTEM
             assert created_tool.is_active is True
+            assert created_tool.output_contract["kind"] == "file"
 
             self.mock_llm_query_repo.commit.assert_called_once()
 
@@ -191,6 +206,7 @@ class TestToolService:
         existing_tool.name = "iat_sql_query"
         existing_tool.description = "d"
         existing_tool.parameters = {"type": "object"}
+        existing_tool.output_contract = None
         existing_tool.tool_type = Tool.TYPE_SYSTEM
         existing_tool.company_id = None
         existing_tool.source = Tool.SOURCE_SYSTEM
@@ -213,6 +229,7 @@ class TestToolService:
         changed_tool.name = "iat_sql_query"
         changed_tool.description = "old"
         changed_tool.parameters = {"type": "object"}
+        changed_tool.output_contract = None
         changed_tool.tool_type = Tool.TYPE_SYSTEM
         changed_tool.company_id = None
         changed_tool.source = Tool.SOURCE_SYSTEM
@@ -222,6 +239,7 @@ class TestToolService:
         removed_tool.name = "legacy_system_tool"
         removed_tool.description = "legacy"
         removed_tool.parameters = {"type": "object"}
+        removed_tool.output_contract = None
         removed_tool.tool_type = Tool.TYPE_SYSTEM
         removed_tool.company_id = None
         removed_tool.source = Tool.SOURCE_SYSTEM
@@ -244,6 +262,78 @@ class TestToolService:
         assert updated_tool.description == "new"
         assert removed_tool.is_active is False
         self.mock_llm_query_repo.commit.assert_called_once()
+
+    def test_create_tool_normalizes_output_contract(self):
+        payload = {
+            "name": "generate_banner",
+            "description": "Generate banner image",
+            "tool_type": Tool.TYPE_INFERENCE,
+            "output_contract": {
+                "kind": "image",
+                "mime_type": "image/png",
+                "transport": "signed_url",
+                "url_field": "image_url",
+            },
+        }
+        self.mock_llm_query_repo.get_tool_definition.return_value = None
+        created_tool = MagicMock()
+        created_tool.to_dict.return_value = payload
+        self.mock_llm_query_repo.add_tool.return_value = created_tool
+
+        self.service.create_tool(self.company_short_name, payload)
+
+        args = self.mock_llm_query_repo.add_tool.call_args[0][0]
+        assert args.output_contract == {
+            "kind": "image",
+            "mime_type": "image/png",
+            "transport": "signed_url",
+            "url_field": "image_url",
+        }
+
+    def test_create_tool_rejects_invalid_output_contract(self):
+        self.mock_llm_query_repo.get_tool_definition.return_value = None
+
+        with pytest.raises(IAToolkitException) as excinfo:
+            self.service.create_tool(
+                self.company_short_name,
+                {
+                    "name": "generate_banner",
+                    "description": "Generate banner image",
+                    "tool_type": Tool.TYPE_INFERENCE,
+                    "output_contract": {"kind": "image"},
+                },
+            )
+
+        assert excinfo.value.error_type == IAToolkitException.ErrorType.INVALID_PARAMETER
+        assert "output_contract.transport is required" in excinfo.value.message
+
+    def test_update_tool_persists_output_contract(self):
+        existing_tool = MagicMock(spec=Tool)
+        existing_tool.tool_type = Tool.TYPE_INFERENCE
+        existing_tool.execution_config = None
+        existing_tool.output_contract = None
+        existing_tool.source = Tool.SOURCE_USER
+        self.mock_llm_query_repo.get_tool_by_id.return_value = existing_tool
+
+        self.service.update_tool(
+            self.company_short_name,
+            1,
+            {
+                "output_contract": {
+                    "kind": "video",
+                    "mime_type": "video/mp4",
+                    "transport": "signed_url",
+                    "url_field": "video_url",
+                }
+            },
+        )
+
+        assert existing_tool.output_contract == {
+            "kind": "video",
+            "mime_type": "video/mp4",
+            "transport": "signed_url",
+            "url_field": "video_url",
+        }
 
     def test_sync_company_tools_logic(self):
         """
