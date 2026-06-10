@@ -19,7 +19,7 @@ def configure_runtime_logging() -> None:
     log_level = _runtime_log_level()
 
     _ensure_stdout_handler(logging.getLogger(), formatter, log_level)
-    _ensure_stdout_handler(logging.getLogger(RUNTIME_LOGGER_NAME), formatter, log_level)
+    logging.getLogger(RUNTIME_LOGGER_NAME).propagate = True
     _preserve_stdout_handler_across_basic_config(formatter)
 
     seen_handlers: set[int] = set()
