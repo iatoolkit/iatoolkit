@@ -318,6 +318,25 @@ class TestSqlService:
         mock_provider.execute_query.assert_not_called()
 
     @patch('iatoolkit.services.sql_service.DatabaseManager')
+    def test_exec_sql_allows_single_statement_with_trailing_semicolon(self, MockDatabaseManager):
+        mock_provider = MockDatabaseManager.return_value
+        mock_provider.execute_query.return_value = [{'id': 1}]
+        config = {'DATABASE_URI': DUMMY_URI}
+        self.service.register_database(COMPANY_SHORT_NAME, DB_NAME_SUCCESS, config)
+
+        result_json = self.service.exec_sql(
+            company_short_name=COMPANY_SHORT_NAME,
+            database_key=DB_NAME_SUCCESS,
+            query="SELECT 1 AS id;",
+        )
+
+        assert result_json == json.dumps([{'id': 1}])
+        mock_provider.execute_query.assert_called_once_with(
+            query="SELECT 1 AS id;",
+            commit=False,
+        )
+
+    @patch('iatoolkit.services.sql_service.DatabaseManager')
     def test_exec_sql_allows_read_only_with_query(self, MockDatabaseManager):
         mock_provider = MockDatabaseManager.return_value
         mock_provider.execute_query.return_value = [{'id': 1}]

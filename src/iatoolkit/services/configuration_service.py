@@ -247,10 +247,6 @@ class ConfigurationService:
             # 5. Register Knowledge base information
             self._register_knowledge_base(company_short_name, config)
 
-            # 6. Sync SQL source catalog from YAML to DB.
-            # Runtime registration is resolved from DB entries.
-            self._sync_sql_sources(company_short_name, config)
-
         # Keep runtime cache aligned with the latest loaded configuration.
         self._loaded_configs[company_short_name] = config or {}
 
@@ -388,7 +384,6 @@ class ConfigurationService:
                               config: dict = None):
         """
         Resolves runtime SQL registrations from the SQL source catalog table.
-        YAML data_sources are synchronized into the catalog before refresh.
 
         Public method: Can be called externally after initialization (e.g. by Enterprise)
         to re-register sources once new factories (like 'bridge') are available.
@@ -401,8 +396,6 @@ class ConfigurationService:
 
         if not config:
             return
-
-        self._sync_sql_sources(company_short_name, config or {})
 
         from iatoolkit import current_iatoolkit
         from iatoolkit.services.sql_source_service import SqlSourceService

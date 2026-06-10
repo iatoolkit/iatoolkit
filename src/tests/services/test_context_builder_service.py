@@ -198,7 +198,7 @@ class TestContextBuilderService:
         assert "Channel Business Context" in context
         assert "Agent Company Context" in context
         assert "Filtered SQL Context" in context
-        assert "Agent YAML Context" in context
+        assert "Agent YAML Context" not in context
         assert "## Colecciones documentales disponibles" in context
         assert "- legal: Contracts" in context
         assert "- support: Policies" not in context
@@ -210,11 +210,14 @@ class TestContextBuilderService:
         assert context.index("Agent Company Context") < context.index("Channel Conversation Rules")
         assert context.index("Channel Conversation Rules") < context.index("## Colecciones documentales disponibles")
         assert context.index("## Colecciones documentales disponibles") < context.index("Filtered SQL Context")
-        assert context.index("Filtered SQL Context") < context.index("Agent YAML Context")
-        assert context.index("Agent YAML Context") < context.index("Channel Output Contract")
+        assert context.index("Filtered SQL Context") < context.index("Channel Output Contract")
         assert profile == mock_profile
         assert selected_keys == ["core_identity", "memory_usage", "sql_core"]
-        self.mock_company_context.get_company_context_blocks.assert_called_once_with(MOCK_COMPANY_SHORT_NAME)
+        self.mock_company_context.get_company_context_blocks.assert_called_once_with(
+            MOCK_COMPANY_SHORT_NAME,
+            include_sql_context=False,
+            include_yaml_context=False,
+        )
         self.mock_company_context.get_sql_context.assert_called_once_with(
             MOCK_COMPANY_SHORT_NAME,
             allowed_databases=["erp"],

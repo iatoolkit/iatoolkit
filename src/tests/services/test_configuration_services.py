@@ -199,10 +199,7 @@ class TestConfigurationService:
             prompt_list=MOCK_VALID_CONFIG['prompts']['prompt_list'],
             categories_config=MOCK_VALID_CONFIG['prompts']['prompt_categories']
         )
-        mock_sql_source_service.sync_from_yaml.assert_called_once_with(
-            self.COMPANY_NAME,
-            MOCK_VALID_CONFIG["data_sources"]["sql"],
-        )
+        mock_sql_source_service.sync_from_yaml.assert_not_called()
 
     def test_get_configuration_uses_cache_on_second_call(self):
         """
@@ -288,7 +285,21 @@ class TestConfigurationService:
             prompt_list=[],
             categories_config=[]
         )
-        mock_sql_source_service.sync_from_yaml.assert_called_once_with('minimal_co', [])
+        mock_sql_source_service.sync_from_yaml.assert_not_called()
+
+    @patch('iatoolkit.current_iatoolkit')
+    def test_register_data_sources_refreshes_runtime_without_yaml_sync(self, mock_current_iatoolkit):
+        mock_injector = Mock()
+        mock_current_iatoolkit.return_value.get_injector.return_value = mock_injector
+        mock_sql_source_service = Mock()
+        mock_sql_source_service.refresh_runtime.return_value = {"registered": 1, "skipped": 0}
+        mock_injector.get.return_value = mock_sql_source_service
+        self.service._loaded_configs[self.COMPANY_NAME] = copy.deepcopy(MOCK_VALID_CONFIG)
+
+        self.service.register_data_sources(self.COMPANY_NAME)
+
+        mock_sql_source_service.sync_from_yaml.assert_not_called()
+        mock_sql_source_service.refresh_runtime.assert_called_once_with(self.COMPANY_NAME)
 
     # --- New Tests for Update and Validation ---
 

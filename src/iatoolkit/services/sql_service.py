@@ -198,13 +198,19 @@ class SqlService:
                 IAToolkitException.ErrorType.DATABASE_ERROR,
                 "SQL query is required.",
             )
-        if ";" in sanitized:
+        sanitized_without_trailing_semicolon = re.sub(r";+\s*$", "", sanitized).strip()
+        if not sanitized_without_trailing_semicolon:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.DATABASE_ERROR,
+                "SQL query is required.",
+            )
+        if ";" in sanitized_without_trailing_semicolon:
             raise IAToolkitException(
                 IAToolkitException.ErrorType.DATABASE_ERROR,
                 "Only a single read-only SQL statement is allowed.",
             )
 
-        upper_sanitized = sanitized.upper()
+        upper_sanitized = sanitized_without_trailing_semicolon.upper()
         blocked_match = self._BLOCKED_SQL_PATTERN.search(upper_sanitized)
         if blocked_match:
             blocked_keyword = blocked_match.group(0).upper()

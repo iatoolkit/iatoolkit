@@ -50,6 +50,7 @@ class CompanyContextService:
         company_short_name: str,
         *,
         include_sql_context: bool = True,
+        include_yaml_context: bool = True,
         selected_context_files: List[str] | None = None,
     ) -> dict[str, str]:
         """
@@ -83,17 +84,18 @@ class CompanyContextService:
             except Exception as e:
                 logging.warning(f"Could not generate SQL context for '{company_short_name}': {e}")
 
-        # 4. Context from residual yaml (schema/*.yaml) files
-        try:
-            yaml_schema_context = self._get_yaml_schema_context(
-                company_short_name,
-                db_tables,
-                sql_source_table_scopes=sql_source_table_scopes,
-            ).strip()
-            if yaml_schema_context:
-                yaml_context = f"## Esquemas adicionales\n\n{yaml_schema_context}"
-        except Exception as e:
-            logging.warning(f"Could not load Yaml context for '{company_short_name}': {e}")
+        # 3. Context from residual yaml (schema/*.yaml) files
+        if include_yaml_context:
+            try:
+                yaml_schema_context = self._get_yaml_schema_context(
+                    company_short_name,
+                    db_tables,
+                    sql_source_table_scopes=sql_source_table_scopes,
+                ).strip()
+                if yaml_schema_context:
+                    yaml_context = f"## Esquemas adicionales\n\n{yaml_schema_context}"
+            except Exception as e:
+                logging.warning(f"Could not load Yaml context for '{company_short_name}': {e}")
 
         return {
             "markdown_context": md_context,

@@ -210,6 +210,24 @@ class TestCompanyContextService:
             sql_source_table_scopes={},
         )
 
+    def test_get_company_context_blocks_can_skip_yaml_context(self):
+        self.mock_asset_repo.list_files.side_effect = lambda c, t, extension=None: ['intro.md'] if t == AssetType.CONTEXT else []
+        self.mock_asset_repo.read_text.return_value = "MARKDOWN_CONTENT"
+        self.context_service._get_sql_enriched_context = MagicMock(return_value=("", []))
+        self.context_service._get_yaml_schema_context = MagicMock(return_value="YAML_EXTRA")
+
+        blocks = self.context_service.get_company_context_blocks(
+            self.COMPANY_NAME,
+            include_sql_context=False,
+            include_yaml_context=False,
+        )
+
+        assert blocks["markdown_context"] == "MARKDOWN_CONTENT"
+        assert blocks["sql_context"] == ""
+        assert blocks["yaml_context"] == ""
+        self.context_service._get_sql_enriched_context.assert_not_called()
+        self.context_service._get_yaml_schema_context.assert_not_called()
+
     def test_get_company_context_uses_selected_markdown_files_in_requested_order(self):
         self.mock_asset_repo.list_files.side_effect = lambda c, t, extension=None: ['b.md', 'a.md', 'c.md'] if t == AssetType.CONTEXT else []
         self.mock_asset_repo.read_text.side_effect = lambda company, asset_type, filename: {

@@ -354,7 +354,11 @@ class ContextBuilderService:
                 collection_names=rag_collections,
             )
 
-        company_context_blocks = self.company_context_service.get_company_context_blocks(company_short_name)
+        company_context_blocks = self.company_context_service.get_company_context_blocks(
+            company_short_name,
+            include_sql_context=False,
+            include_yaml_context=False,
+        )
         final_system_context = self._join_context_sections(
             rendered_sections.get("identity"),
             rendered_sections.get("business_context"),
@@ -364,7 +368,6 @@ class ContextBuilderService:
             collection_context,
             rendered_sections.get("data_access_rules"),
             sql_context,
-            company_context_blocks.get("yaml_context"),
             rendered_sections.get("output_contract"),
         )
 
