@@ -50,7 +50,11 @@ class HttpToolService:
         url = self._render_path_params(url, request_cfg, input_data)
         self._validate_target_url(company_short_name, execution_config, url)
 
-        headers = dict(request_cfg.get("headers") or {})
+        headers = self._resolve_request_headers(
+            company_short_name=company_short_name,
+            request_cfg=request_cfg,
+            url=url,
+        )
         self._apply_auth(company_short_name, execution_config, headers, params)
 
         json_payload = self._build_json_payload(request_cfg, input_data)
@@ -88,6 +92,93 @@ class HttpToolService:
             IAToolkitException.ErrorType.INVALID_PARAMETER,
             f"HTTP method '{method}' is not supported"
         )
+
+    def _resolve_request_headers(self,
+                                 company_short_name: str,
+                                 request_cfg: dict,
+                                 url: str) -> dict:
+        company_params = self.config_service.get_configuration(company_short_name, "parameters") or {}
+        http_tools_cfg = company_params.get("http_tools") or {}
+        host = (urlparse(url).hostname or "").strip().lower()
+
+        merged_headers = {}
+        self._merge_headers_case_insensitive(
+            merged_headers,
+            self._build_builtin_default_headers(company_short_name),
+            field_name="builtin_default_headers",
+        )
+        self._merge_headers_case_insensitive(
+            merged_headers,
+            http_tools_cfg.get("default_headers"),
+            field_name="parameters.http_tools.default_headers",
+        )
+
+        host_headers_cfg = http_tools_cfg.get("host_headers")
+        if host_headers_cfg is not None:
+            if not isinstance(host_headers_cfg, dict):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "parameters.http_tools.host_headers must be a JSON object"
+                )
+            for host_pattern, headers in host_headers_cfg.items():
+                if not isinstance(host_pattern, str) or not host_pattern.strip():
+                    raise IAToolkitException(
+                        IAToolkitException.ErrorType.INVALID_PARAMETER,
+                        "parameters.http_tools.host_headers keys must be non-empty strings"
+                    )
+                if self._host_matches_pattern(host, host_pattern.strip().lower()):
+                    self._merge_headers_case_insensitive(
+                        merged_headers,
+                        headers,
+                        field_name=f"parameters.http_tools.host_headers.{host_pattern}",
+                    )
+
+        self._merge_headers_case_insensitive(
+            merged_headers,
+            request_cfg.get("headers"),
+            field_name="execution_config.request.headers",
+        )
+        return merged_headers
+
+    @staticmethod
+    def _build_builtin_default_headers(company_short_name: str) -> dict:
+        return {
+            "User-Agent": f"IAToolkit-HTTPTool/1.0 (company={company_short_name})",
+        }
+
+    def _merge_headers_case_insensitive(self,
+                                        target: dict,
+                                        headers: dict | None,
+                                        field_name: str) -> None:
+        if headers is None:
+            return
+        if not isinstance(headers, dict):
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                f"{field_name} must be a JSON object"
+            )
+
+        existing_keys = {str(key).lower(): key for key in target.keys()}
+        for raw_key, raw_value in headers.items():
+            if not isinstance(raw_key, str) or not raw_key.strip():
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    f"{field_name} must contain non-empty string header names"
+                )
+            if raw_value is None:
+                continue
+            if not isinstance(raw_value, str):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    f"{field_name} must contain string header values"
+                )
+            normalized_key = raw_key.strip()
+            lookup_key = normalized_key.lower()
+            existing_key = existing_keys.get(lookup_key)
+            if existing_key and existing_key != normalized_key:
+                target.pop(existing_key, None)
+            target[normalized_key] = raw_value
+            existing_keys[lookup_key] = normalized_key
 
     def _validate_target_url(self, company_short_name: str, execution_config: dict, url: str):
         parsed = urlparse(url)

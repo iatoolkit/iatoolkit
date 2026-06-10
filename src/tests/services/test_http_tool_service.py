@@ -81,6 +81,115 @@ class TestHttpToolService:
         assert kwargs["json_dict"] == {"customer_id": 7, "amount": 10.5}
         assert result["data"] == {"ok": True}
 
+    def test_execute_applies_builtin_user_agent_header(self):
+        self.call_service.get.return_value = ({"ok": True}, 200)
+
+        self.service.execute(
+            company_short_name="acme",
+            tool_name="http_status",
+            execution_config={
+                "version": 1,
+                "request": {
+                    "method": "GET",
+                    "url": "https://api.example.com/status"
+                }
+            },
+            input_data={}
+        )
+
+        _, kwargs = self.call_service.get.call_args
+        assert kwargs["headers"]["User-Agent"] == "IAToolkit-HTTPTool/1.0 (company=acme)"
+
+    def test_execute_applies_company_default_headers(self):
+        self.config_service.get_configuration.return_value = {
+            "http_tools": {
+                "default_headers": {
+                    "User-Agent": "TenantBot/1.0 (ops@example.com)",
+                    "Accept-Language": "es"
+                }
+            }
+        }
+        self.call_service.get.return_value = ({"ok": True}, 200)
+
+        self.service.execute(
+            company_short_name="acme",
+            tool_name="http_wiki",
+            execution_config={
+                "version": 1,
+                "request": {
+                    "method": "GET",
+                    "url": "https://es.wikipedia.org/w/api.php"
+                }
+            },
+            input_data={}
+        )
+
+        _, kwargs = self.call_service.get.call_args
+        assert kwargs["headers"]["User-Agent"] == "TenantBot/1.0 (ops@example.com)"
+        assert kwargs["headers"]["Accept-Language"] == "es"
+
+    def test_execute_applies_host_specific_headers(self):
+        self.config_service.get_configuration.return_value = {
+            "http_tools": {
+                "host_headers": {
+                    "*.wikipedia.org": {
+                        "User-Agent": "WikiBot/1.0 (ops@example.com)",
+                        "Accept-Language": "es"
+                    }
+                }
+            }
+        }
+        self.call_service.get.return_value = ({"ok": True}, 200)
+
+        self.service.execute(
+            company_short_name="acme",
+            tool_name="http_wiki",
+            execution_config={
+                "version": 1,
+                "request": {
+                    "method": "GET",
+                    "url": "https://es.wikipedia.org/w/api.php"
+                }
+            },
+            input_data={}
+        )
+
+        _, kwargs = self.call_service.get.call_args
+        assert kwargs["headers"]["User-Agent"] == "WikiBot/1.0 (ops@example.com)"
+        assert kwargs["headers"]["Accept-Language"] == "es"
+
+    def test_execute_tool_headers_override_company_headers_case_insensitively(self):
+        self.config_service.get_configuration.return_value = {
+            "http_tools": {
+                "default_headers": {
+                    "User-Agent": "TenantBot/1.0 (ops@example.com)",
+                    "Accept-Language": "es"
+                }
+            }
+        }
+        self.call_service.get.return_value = ({"ok": True}, 200)
+
+        self.service.execute(
+            company_short_name="acme",
+            tool_name="http_wiki",
+            execution_config={
+                "version": 1,
+                "request": {
+                    "method": "GET",
+                    "url": "https://es.wikipedia.org/w/api.php",
+                    "headers": {
+                        "user-agent": "PerToolBot/2.0 (dev@example.com)"
+                    }
+                }
+            },
+            input_data={}
+        )
+
+        _, kwargs = self.call_service.get.call_args
+        assert kwargs["headers"]["user-agent"] == "PerToolBot/2.0 (dev@example.com)"
+        assert "User-Agent" not in kwargs["headers"]
+        assert kwargs["headers"]["Accept-Language"] == "es"
+
     def test_execute_missing_mapped_body_parameter_raises(self):
         with pytest.raises(IAToolkitException) as exc:
             self.service.execute(
@@ -224,3 +333,26 @@ class TestHttpToolService:
 
         assert result["status"] == "success"
         self.call_service.get.assert_called_once()
+
+    def test_execute_rejects_invalid_company_default_headers(self):
+        self.config_service.get_configuration.return_value = {
+            "http_tools": {
+                "default_headers": ["bad"]
+            }
+        }
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.execute(
+                company_short_name="acme",
+                tool_name="http_wiki",
+                execution_config={
+                    "version": 1,
+                    "request": {
+                        "method": "GET",
+                        "url": "https://es.wikipedia.org/w/api.php"
+                    }
+                },
+                input_data={}
+            )
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_PARAMETER
