@@ -580,7 +580,7 @@ class LLMProxy:
             provider_api_key=provider_api_key,
         )
         if gateway_transport.get("enabled"):
-            logging.info(
+            logging.debug(
                 "LLM gateway enabled for company='%s' provider='%s' vendor='%s' mode='%s' credential_mode='%s'",
                 company_short_name,
                 provider,
