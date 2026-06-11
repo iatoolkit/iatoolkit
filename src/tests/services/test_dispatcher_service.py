@@ -21,6 +21,15 @@ import base64
 class MockSampleCompany(BaseCompany):
     def handle_request(self, tag: str, params: dict) -> dict: return {"result": "sample_company_response"}
 
+    def native_with_user_identifier(self, payload: str, user_identifier: str) -> dict:
+        return {"payload": payload, "user_identifier": user_identifier}
+
+    def native_with_kwargs(self, payload: str, **kwargs) -> dict:
+        return {"payload": payload, "kwargs": kwargs}
+
+    def native_without_user_identifier(self, payload: str) -> dict:
+        return {"payload": payload}
+
     def register_cli_commands(self, app): pass
 
 
@@ -110,6 +119,54 @@ class TestDispatcher:
         # El dispatcher solo pasa kwargs al método nativo, no el nombre de la herramienta
         self.mock_sample_company_instance.handle_request.assert_called_once_with(key='a value')
         assert result == {"result": "sample_company_response"}
+
+    def test_dispatch_native_tool_injects_user_identifier_when_method_declares_it(self):
+        mock_tool_def = MagicMock(spec=Tool)
+        mock_tool_def.tool_type = Tool.TYPE_NATIVE
+        self.mock_tool_service.get_tool_definition.return_value = mock_tool_def
+
+        result = self.dispatcher.dispatch(
+            "sample",
+            "native_with_user_identifier",
+            user_identifier="user@example.com",
+            payload="hello",
+        )
+
+        assert result == {
+            "payload": "hello",
+            "user_identifier": "user@example.com",
+        }
+
+    def test_dispatch_native_tool_injects_user_identifier_when_method_accepts_kwargs(self):
+        mock_tool_def = MagicMock(spec=Tool)
+        mock_tool_def.tool_type = Tool.TYPE_NATIVE
+        self.mock_tool_service.get_tool_definition.return_value = mock_tool_def
+
+        result = self.dispatcher.dispatch(
+            "sample",
+            "native_with_kwargs",
+            user_identifier="user@example.com",
+            payload="hello",
+        )
+
+        assert result == {
+            "payload": "hello",
+            "kwargs": {"user_identifier": "user@example.com"},
+        }
+
+    def test_dispatch_native_tool_skips_user_identifier_when_method_does_not_accept_it(self):
+        mock_tool_def = MagicMock(spec=Tool)
+        mock_tool_def.tool_type = Tool.TYPE_NATIVE
+        self.mock_tool_service.get_tool_definition.return_value = mock_tool_def
+
+        result = self.dispatcher.dispatch(
+            "sample",
+            "native_without_user_identifier",
+            user_identifier="user@example.com",
+            payload="hello",
+        )
+
+        assert result == {"payload": "hello"}
 
     def test_dispatch_invalid_company(self):
         """Tests that dispatch raises an exception for an unconfigured company."""

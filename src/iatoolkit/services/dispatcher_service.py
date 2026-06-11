@@ -8,6 +8,7 @@ from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.services.inference_service import InferenceService
 from iatoolkit.common.util import Utility
 from injector import inject
+import inspect
 import logging
 
 
@@ -37,6 +38,22 @@ class Dispatcher:
             self.llmquery_repo.rollback()
         except Exception as rollback_error:
             logging.warning(f"Dispatcher rollback failed: {rollback_error}")
+
+    @staticmethod
+    def _native_method_accepts_user_identifier(method) -> bool:
+        """Returns True when a native tool can safely receive user_identifier."""
+        try:
+            signature = inspect.signature(method)
+        except (TypeError, ValueError):
+            return False
+
+        if "user_identifier" in signature.parameters:
+            return True
+
+        return any(
+            parameter.kind == inspect.Parameter.VAR_KEYWORD
+            for parameter in signature.parameters.values()
+        )
 
     @property
     def tool_service(self):
@@ -145,7 +162,10 @@ class Dispatcher:
                     )
 
                 # Execute the method directly in the company class
-                return method(**kwargs)
+                native_kwargs = dict(kwargs)
+                if user_identifier and self._native_method_accepts_user_identifier(method):
+                    native_kwargs["user_identifier"] = user_identifier
+                return method(**native_kwargs)
 
             except IAToolkitException as e:
                 self._safe_rollback()
