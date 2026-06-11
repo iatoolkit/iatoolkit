@@ -23,6 +23,7 @@ from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.infra.call_service import CallServiceClient
 from iatoolkit.services.inference_service import InferenceService
 from iatoolkit.common.interfaces.secret_provider import SecretProvider
+from iatoolkit.infra.llm_gateway_resolver import LLMGatewayResolver
 
 class TestEmbeddingService:
     """
@@ -98,8 +99,17 @@ class TestEmbeddingService:
             lambda _company, key_name, default=None: {
                 "OPENAI_KEY": "fake-openai-key",
                 "CUSTOM_KEY": "fake-custom-key",
+                "CF_ACCOUNT_ID": "cf-account-id",
+                "CF_API_TOKEN": "cf-token",
             }.get(key_name, default)
         )
+        self.mock_gateway_resolver = MagicMock(spec=LLMGatewayResolver)
+        self.mock_gateway_resolver.resolve.return_value = {
+            "enabled": False,
+            "api_key": "fake-openai-key",
+            "base_url": "",
+            "default_headers": {},
+        }
 
         # Instantiate the classes under test
         self.client_factory = EmbeddingClientFactory(
@@ -107,6 +117,7 @@ class TestEmbeddingService:
             call_service=self.mock_call_service,
             inference_service=self.mock_inference_service,
             secret_provider=self.mock_secret_provider,
+            gateway_resolver=self.mock_gateway_resolver,
         )
         self.embedding_service = EmbeddingService(client_factory=self.client_factory,
                                                   profile_repo=self.mock_profile_repo,
@@ -137,7 +148,40 @@ class TestEmbeddingService:
 
         # Assert
         assert isinstance(wrapper, OpenAIClientWrapper)
-        mock_openai_client_class.assert_called_once_with(api_key='fake-openai-key')
+        mock_openai_client_class.assert_called_once_with(
+            api_key='fake-openai-key',
+            base_url=None,
+            default_headers=None,
+        )
+        assert wrapper.model == 'openai-model'
+        self.mock_gateway_resolver.resolve.assert_called_once_with(
+            company_short_name='company_openai',
+            provider='openai',
+            provider_api_key='fake-openai-key',
+        )
+
+    def test_factory_routes_openai_embeddings_through_cloudflare_gateway(self, mocker):
+        mock_openai_client_class = mocker.patch('iatoolkit.services.embedding_service.OpenAI')
+        self.mock_gateway_resolver.resolve.return_value = {
+            "enabled": True,
+            "api_key": "",
+            "base_url": "https://gateway.ai.cloudflare.com/v1/cf-account-id/default/openai",
+            "default_headers": {
+                "cf-aig-authorization": "Bearer cf-token",
+            },
+            "vendor": "cloudflare",
+            "mode": "provider_native",
+            "credential_mode": "cloudflare_managed",
+        }
+
+        wrapper = self.client_factory.get_client('company_openai')
+
+        assert isinstance(wrapper, OpenAIClientWrapper)
+        mock_openai_client_class.assert_called_once_with(
+            api_key='',
+            base_url='https://gateway.ai.cloudflare.com/v1/cf-account-id/default/openai',
+            default_headers={"cf-aig-authorization": "Bearer cf-token"},
+        )
         assert wrapper.model == 'openai-model'
 
     def test_factory_creates_custom_class_wrapper(self, mocker):

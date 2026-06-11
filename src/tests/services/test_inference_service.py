@@ -145,7 +145,11 @@ class TestEmbeddingService:
 
         # Assert
         assert isinstance(wrapper, OpenAIClientWrapper)
-        mock_openai_client_class.assert_called_once_with(api_key='fake-openai-key')
+        mock_openai_client_class.assert_called_once_with(
+            api_key='fake-openai-key',
+            base_url=None,
+            default_headers=None,
+        )
         assert wrapper.model == 'openai-model'
 
     def test_factory_creates_custom_class_wrapper(self, mocker):

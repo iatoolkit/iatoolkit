@@ -13,6 +13,7 @@ from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.infra.call_service import CallServiceClient
+from iatoolkit.infra.llm_gateway_resolver import LLMGatewayResolver
 from iatoolkit.services.inference_service import InferenceService
 import logging
 import importlib
@@ -168,11 +169,16 @@ class EmbeddingClientFactory:
                  config_service: ConfigurationService,
                  call_service: CallServiceClient,
                  inference_service: InferenceService,
-                 secret_provider: SecretProvider):
+                 secret_provider: SecretProvider,
+                 gateway_resolver: LLMGatewayResolver | None = None):
         self.config_service = config_service
         self.call_service = call_service
         self.inference_service = inference_service
         self.secret_provider = secret_provider
+        self.gateway_resolver = gateway_resolver or LLMGatewayResolver(
+            configuration_service=config_service,
+            secret_provider=secret_provider,
+        )
         self._clients = {}  # Cache for storing initialized client wrappers
 
     def get_client(self, company_short_name: str, model_type: str = 'text') -> EmbeddingClientWrapper:
@@ -270,9 +276,12 @@ class EmbeddingClientFactory:
             )
 
         elif provider == 'openai':
-            api_key = self._get_api_key_from_config(company_short_name, embedding_config)
-
-            client = OpenAI(api_key=api_key)
+            client_config = self._get_openai_client_config(company_short_name, embedding_config)
+            client = OpenAI(
+                api_key=client_config["api_key"],
+                base_url=client_config["base_url"] or None,
+                default_headers=client_config["default_headers"] or None,
+            )
             if not model:
                 model='text-embedding-ada-002'
             wrapper = OpenAIClientWrapper(client, model, dimensions)
@@ -292,16 +301,69 @@ class EmbeddingClientFactory:
         for key in keys_to_clear:
             self._clients.pop(key, None)
 
-    def _get_api_key_from_config(self, company_short_name: str, embedding_config: dict):
+    def _get_openai_client_config(self, company_short_name: str, embedding_config: dict) -> dict:
+        provider_api_key = self._get_api_key_from_config(
+            company_short_name,
+            embedding_config,
+            required=False,
+        )
+        gateway_transport = self.gateway_resolver.resolve(
+            company_short_name=company_short_name,
+            provider="openai",
+            provider_api_key=provider_api_key,
+        )
+        if gateway_transport.get("enabled"):
+            logging.debug(
+                "Embedding gateway enabled for company='%s' provider='openai' vendor='%s' mode='%s' credential_mode='%s' base_url='%s' headers=%s",
+                company_short_name,
+                gateway_transport.get("vendor"),
+                gateway_transport.get("mode"),
+                gateway_transport.get("credential_mode"),
+                gateway_transport.get("base_url"),
+                self._summarize_headers(gateway_transport.get("default_headers")),
+            )
+            return {
+                "api_key": gateway_transport.get("api_key", provider_api_key) or "",
+                "base_url": gateway_transport.get("base_url") or "",
+                "default_headers": dict(gateway_transport.get("default_headers") or {}),
+            }
+
+        resolved_api_key = provider_api_key or self._get_api_key_from_config(
+            company_short_name,
+            embedding_config,
+            required=True,
+        )
+        return {
+            "api_key": resolved_api_key,
+            "base_url": "",
+            "default_headers": {},
+        }
+
+    def _get_api_key_from_config(self, company_short_name: str, embedding_config: dict, *, required: bool = True):
         api_key_ref = embedding_config.get('api_key_secret_ref') or embedding_config.get('api_key_name')
         if not api_key_ref:
-            raise ValueError("Missing configuration for embedding api_key_secret_ref (or legacy api_key_name).")
+            if required:
+                raise ValueError("Missing configuration for embedding api_key_secret_ref (or legacy api_key_name).")
+            return ""
 
         api_key = resolve_secret(self.secret_provider, company_short_name, api_key_ref)
         if not api_key:
-            raise ValueError(f"Secret reference '{api_key_ref}' is not set.")
+            if required:
+                raise ValueError(f"Secret reference '{api_key_ref}' is not set.")
+            return ""
 
         return api_key
+
+    @staticmethod
+    def _summarize_headers(headers: dict | None) -> dict:
+        summarized = {}
+        for key, value in dict(headers or {}).items():
+            normalized_key = str(key or "").strip().lower()
+            if normalized_key in {"authorization", "cf-aig-authorization", "x-api-key"}:
+                summarized[str(key)] = "<redacted>"
+            else:
+                summarized[str(key)] = str(value)
+        return summarized
 
 
 class EmbeddingService:

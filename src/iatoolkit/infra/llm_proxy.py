@@ -414,6 +414,15 @@ class LLMProxy:
 
         with self._clients_cache_lock:
             if cache_key in self._clients_cache:
+                logging.debug(
+                    "Reusing LLM client provider='%s' base_url='%s' connect_timeout=%s read_timeout=%s max_retries=%s headers=%s",
+                    provider,
+                    base_url or "(default)",
+                    connect_timeout_seconds,
+                    read_timeout_seconds,
+                    max_retries,
+                    self._summarize_headers(default_headers),
+                )
                 return self._clients_cache[cache_key]
 
             client = self._create_client_for_provider(
@@ -424,6 +433,15 @@ class LLMProxy:
                 connect_timeout_seconds=connect_timeout_seconds,
                 read_timeout_seconds=read_timeout_seconds,
                 max_retries=max_retries,
+            )
+            logging.debug(
+                "Created LLM client provider='%s' base_url='%s' connect_timeout=%s read_timeout=%s max_retries=%s headers=%s",
+                provider,
+                base_url or "(default)",
+                connect_timeout_seconds,
+                read_timeout_seconds,
+                max_retries,
+                self._summarize_headers(default_headers),
             )
             self._clients_cache[cache_key] = client
             return client
@@ -604,6 +622,17 @@ class LLMProxy:
                 minimum=0,
             ),
         }
+
+    @staticmethod
+    def _summarize_headers(headers: Dict[str, str] | None) -> Dict[str, str]:
+        summarized = {}
+        for key, value in dict(headers or {}).items():
+            normalized_key = str(key or "").strip().lower()
+            if normalized_key in {"authorization", "cf-aig-authorization", "x-api-key"}:
+                summarized[str(key)] = "<redacted>"
+            else:
+                summarized[str(key)] = str(value)
+        return summarized
 
     @classmethod
     def _build_openai_timeout(
