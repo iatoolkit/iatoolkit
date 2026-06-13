@@ -467,7 +467,7 @@ Core/common keys:
 - `user_feedback`:
   - `channel` (used values: `email`, `google_chat`)
   - `destination` (required when `channel: email`)
-- `http_tools.allowed_hosts` (optional list of host patterns used as HTTP-tool allowlist)
+- `http_tools.allowed_hosts` (optional list of host patterns used as HTTP-tool allowlist; private network access still requires per-tool `security.allow_private_network: true`, and those private-network tools do not inherit the company-level allowlist)
 
 Enterprise keys:
 

@@ -384,11 +384,40 @@ Minimum payload for a HTTP tool:
 - `auth`: `none`, `bearer`, `api_key_header`, `api_key_query`, `basic` (by secret references).
 - `response`: `mode`, `extract_path`, `success_status_codes`, `max_response_bytes`.
 - `security.allowed_hosts`: optional per-tool host allowlist.
+- `security.allow_private_network`: optional per-tool opt-in for private network targets.
 
 Security defaults:
-- only absolute HTTPS URLs are allowed.
-- localhost, `.local`, and private/link-local/loopback IP targets are blocked.
+- only absolute HTTPS URLs are allowed by default.
+- private IP targets are blocked unless `security.allow_private_network: true` is set.
+- `http://` URLs are only allowed for private-network tools, and only when the resolved target is private.
+- localhost, loopback, link-local, reserved, multicast, and unspecified IP targets remain blocked.
+- HTTP tools do not follow redirects automatically.
 - you can define company-level allowlist in `parameters.http_tools.allowed_hosts`.
+- when `security.allow_private_network: true` is set, the tool does not inherit the company-level HTTP-tool allowlist. A per-tool `security.allowed_hosts` can still be provided if you want to restrict that specific tool.
+
+Private network example:
+
+```json
+{
+  "name": "http_internal_status",
+  "description": "Fetches status from an internal API",
+  "tool_type": "HTTP",
+  "parameters": {
+    "type": "object",
+    "properties": {}
+  },
+  "execution_config": {
+    "version": 1,
+    "request": {
+      "method": "GET",
+      "url": "http://10.0.0.8:8080/status"
+    },
+    "security": {
+      "allow_private_network": true
+    }
+  }
+}
+```
 
 ### 3.4 Prompts
 

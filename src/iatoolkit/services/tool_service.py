@@ -431,11 +431,50 @@ class ToolService:
                 "execution_config.request.url is required and must be a non-empty string"
             )
 
+        security_cfg = execution_config.get("security")
+        allow_private_network = False
+        if security_cfg is not None:
+            if not isinstance(security_cfg, dict):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.security must be a JSON object"
+                )
+
+            allowed_hosts = security_cfg.get("allowed_hosts")
+            if allowed_hosts is not None:
+                if not isinstance(allowed_hosts, list):
+                    raise IAToolkitException(
+                        IAToolkitException.ErrorType.INVALID_PARAMETER,
+                        "execution_config.security.allowed_hosts must be a list"
+                    )
+                for host in allowed_hosts:
+                    if not isinstance(host, str) or not host.strip():
+                        raise IAToolkitException(
+                            IAToolkitException.ErrorType.INVALID_PARAMETER,
+                            "execution_config.security.allowed_hosts must contain non-empty strings"
+                        )
+
+            allow_private_network_value = security_cfg.get("allow_private_network", False)
+            if not isinstance(allow_private_network_value, bool):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.security.allow_private_network must be a boolean"
+                )
+            allow_private_network = allow_private_network_value
+
         parsed = urlparse(url)
-        if parsed.scheme.lower() != "https" or not parsed.netloc:
+        scheme = parsed.scheme.lower()
+        allowed_schemes = {"https", "http"} if allow_private_network else {"https"}
+        if scheme not in allowed_schemes or not parsed.netloc:
+            message = "execution_config.request.url must be an absolute HTTPS URL"
+            if allow_private_network:
+                message = (
+                    "execution_config.request.url must be an absolute HTTP or HTTPS URL "
+                    "when allow_private_network=true"
+                )
             raise IAToolkitException(
                 IAToolkitException.ErrorType.INVALID_PARAMETER,
-                "execution_config.request.url must be an absolute HTTPS URL"
+                message
             )
 
         timeout_ms = request_cfg.get("timeout_ms")
@@ -543,35 +582,6 @@ class ToolService:
                 raise IAToolkitException(
                     IAToolkitException.ErrorType.INVALID_PARAMETER,
                     "execution_config.response.max_response_bytes must be a positive integer"
-                )
-
-        security_cfg = execution_config.get("security")
-        if security_cfg is not None:
-            if not isinstance(security_cfg, dict):
-                raise IAToolkitException(
-                    IAToolkitException.ErrorType.INVALID_PARAMETER,
-                    "execution_config.security must be a JSON object"
-                )
-
-            allowed_hosts = security_cfg.get("allowed_hosts")
-            if allowed_hosts is not None:
-                if not isinstance(allowed_hosts, list):
-                    raise IAToolkitException(
-                        IAToolkitException.ErrorType.INVALID_PARAMETER,
-                        "execution_config.security.allowed_hosts must be a list"
-                    )
-                for host in allowed_hosts:
-                    if not isinstance(host, str) or not host.strip():
-                        raise IAToolkitException(
-                            IAToolkitException.ErrorType.INVALID_PARAMETER,
-                            "execution_config.security.allowed_hosts must contain non-empty strings"
-                        )
-
-            allow_private_network = security_cfg.get("allow_private_network")
-            if allow_private_network is True:
-                raise IAToolkitException(
-                    IAToolkitException.ErrorType.INVALID_PARAMETER,
-                    "execution_config.security.allow_private_network=true is not supported"
                 )
 
     @staticmethod

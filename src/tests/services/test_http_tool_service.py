@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.common.interfaces.secret_provider import SecretProvider
@@ -280,6 +280,169 @@ class TestHttpToolService:
                     "request": {
                         "method": "GET",
                         "url": "https://10.0.0.8/data"
+                    }
+                },
+                input_data={}
+            )
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.REQUEST_ERROR
+
+    def test_execute_allows_private_ip_target_when_explicitly_enabled_and_allowlisted(self):
+        self.call_service.get.return_value = ({"ok": True}, 200)
+
+        result = self.service.execute(
+            company_short_name="acme",
+            tool_name="http_private",
+            execution_config={
+                "version": 1,
+                "request": {
+                    "method": "GET",
+                    "url": "http://10.0.0.8/data"
+                },
+                "security": {
+                    "allow_private_network": True,
+                    "allowed_hosts": ["10.0.0.8"]
+                }
+            },
+            input_data={}
+        )
+
+        assert result["status"] == "success"
+        _, kwargs = self.call_service.get.call_args
+        assert kwargs["allow_redirects"] is False
+
+    @patch("iatoolkit.services.http_tool_service.socket.getaddrinfo")
+    def test_execute_allows_private_dns_target_when_explicitly_enabled_and_allowlisted(
+            self,
+            mock_getaddrinfo):
+        mock_getaddrinfo.return_value = [
+            (None, None, None, None, ("10.0.0.8", 0))
+        ]
+        self.call_service.get.return_value = ({"ok": True}, 200)
+
+        result = self.service.execute(
+            company_short_name="acme",
+            tool_name="http_private",
+            execution_config={
+                "version": 1,
+                "request": {
+                    "method": "GET",
+                    "url": "http://internal-api.local/data"
+                },
+                "security": {
+                    "allow_private_network": True,
+                    "allowed_hosts": ["internal-api.local"]
+                }
+            },
+            input_data={}
+        )
+
+        assert result["status"] == "success"
+        self.call_service.get.assert_called_once()
+
+    def test_execute_allows_private_ip_target_without_allowed_hosts_when_enabled(self):
+        self.call_service.get.return_value = ({"ok": True}, 200)
+
+        result = self.service.execute(
+            company_short_name="acme",
+            tool_name="http_private",
+            execution_config={
+                "version": 1,
+                "request": {
+                    "method": "GET",
+                    "url": "http://10.0.0.8/data"
+                },
+                "security": {
+                    "allow_private_network": True
+                }
+            },
+            input_data={}
+        )
+
+        assert result["status"] == "success"
+
+    def test_execute_private_network_does_not_inherit_company_allowed_hosts(self):
+        self.config_service.get_configuration.return_value = {
+            "http_tools": {
+                "allowed_hosts": ["api.allowed.com"]
+            }
+        }
+        self.call_service.get.return_value = ({"ok": True}, 200)
+
+        result = self.service.execute(
+            company_short_name="acme",
+            tool_name="http_private",
+            execution_config={
+                "version": 1,
+                "request": {
+                    "method": "GET",
+                    "url": "http://10.0.0.8/data"
+                },
+                "security": {
+                    "allow_private_network": True
+                }
+            },
+            input_data={}
+        )
+
+        assert result["status"] == "success"
+
+    def test_execute_rejects_private_ip_target_outside_tool_allowlist(self):
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.execute(
+                company_short_name="acme",
+                tool_name="http_private",
+                execution_config={
+                    "version": 1,
+                    "request": {
+                        "method": "GET",
+                        "url": "http://10.0.0.8/data"
+                    },
+                    "security": {
+                        "allow_private_network": True,
+                        "allowed_hosts": ["10.0.0.9"]
+                    }
+                },
+                input_data={}
+            )
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.REQUEST_ERROR
+
+    def test_execute_keeps_link_local_blocked_when_private_network_is_enabled(self):
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.execute(
+                company_short_name="acme",
+                tool_name="http_metadata",
+                execution_config={
+                    "version": 1,
+                    "request": {
+                        "method": "GET",
+                        "url": "http://169.254.169.254/latest/meta-data"
+                    },
+                    "security": {
+                        "allow_private_network": True,
+                        "allowed_hosts": ["169.254.169.254"]
+                    }
+                },
+                input_data={}
+            )
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.REQUEST_ERROR
+
+    def test_execute_rejects_public_http_even_when_private_network_is_enabled(self):
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.execute(
+                company_short_name="acme",
+                tool_name="http_public",
+                execution_config={
+                    "version": 1,
+                    "request": {
+                        "method": "GET",
+                        "url": "http://8.8.8.8/data"
+                    },
+                    "security": {
+                        "allow_private_network": True,
+                        "allowed_hosts": ["8.8.8.8"]
                     }
                 },
                 input_data={}

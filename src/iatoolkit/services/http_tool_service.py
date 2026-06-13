@@ -78,15 +78,49 @@ class HttpToolService:
               json_payload: dict | None,
               timeout):
         if method == "GET":
-            return self.call_service.get(url, params=params, headers=headers, timeout=timeout)
+            return self.call_service.get(
+                url,
+                params=params,
+                headers=headers,
+                timeout=timeout,
+                allow_redirects=False,
+            )
         if method == "POST":
-            return self.call_service.post(url, json_dict=json_payload, params=params, headers=headers, timeout=timeout)
+            return self.call_service.post(
+                url,
+                json_dict=json_payload,
+                params=params,
+                headers=headers,
+                timeout=timeout,
+                allow_redirects=False,
+            )
         if method == "PUT":
-            return self.call_service.put(url, json_dict=json_payload, params=params, headers=headers, timeout=timeout)
+            return self.call_service.put(
+                url,
+                json_dict=json_payload,
+                params=params,
+                headers=headers,
+                timeout=timeout,
+                allow_redirects=False,
+            )
         if method == "PATCH":
-            return self.call_service.patch(url, json_dict=json_payload, params=params, headers=headers, timeout=timeout)
+            return self.call_service.patch(
+                url,
+                json_dict=json_payload,
+                params=params,
+                headers=headers,
+                timeout=timeout,
+                allow_redirects=False,
+            )
         if method == "DELETE":
-            return self.call_service.delete(url, json_dict=json_payload, params=params, headers=headers, timeout=timeout)
+            return self.call_service.delete(
+                url,
+                json_dict=json_payload,
+                params=params,
+                headers=headers,
+                timeout=timeout,
+                allow_redirects=False,
+            )
 
         raise IAToolkitException(
             IAToolkitException.ErrorType.INVALID_PARAMETER,
@@ -182,15 +216,35 @@ class HttpToolService:
 
     def _validate_target_url(self, company_short_name: str, execution_config: dict, url: str):
         parsed = urlparse(url)
+        scheme = parsed.scheme.lower()
         host = (parsed.hostname or "").strip().lower()
+        allow_private_network = self._private_network_enabled(execution_config)
+        allowed_hosts = self._resolve_allowed_hosts(
+            company_short_name,
+            execution_config,
+            include_company_defaults=not allow_private_network,
+        )
 
-        if parsed.scheme.lower() != "https" or not host:
+        allowed_schemes = {"https", "http"} if allow_private_network else {"https"}
+        if scheme not in allowed_schemes or not host:
+            message = "HTTP tools require an absolute HTTPS URL"
+            if allow_private_network:
+                message = (
+                    "HTTP tools require an absolute HTTP or HTTPS URL "
+                    "when allow_private_network=true"
+                )
             raise IAToolkitException(
                 IAToolkitException.ErrorType.INVALID_PARAMETER,
-                "HTTP tools require an absolute HTTPS URL"
+                message
             )
 
-        if host == "localhost" or host.endswith(".local"):
+        if allowed_hosts and not self._host_in_allowlist(host, allowed_hosts):
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.REQUEST_ERROR,
+                f"HTTP tool target host '{host}' is not in allowed_hosts"
+            )
+
+        if host == "localhost" or (host.endswith(".local") and not allow_private_network):
             raise IAToolkitException(
                 IAToolkitException.ErrorType.REQUEST_ERROR,
                 f"HTTP tool target host '{host}' is not allowed"
@@ -198,16 +252,35 @@ class HttpToolService:
 
         ip_value = self._to_ip_or_none(host)
         if ip_value:
-            self._assert_public_ip(ip_value)
+            classification = self._assert_allowed_ip(ip_value, allow_private_network)
+            if scheme == "http" and classification != "private":
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.REQUEST_ERROR,
+                    "HTTP scheme is only allowed for private-network HTTP tools"
+                )
         else:
-            self._assert_public_dns_target(host)
+            dns_result = self._assert_dns_target_allowed(host, allow_private_network)
+            if scheme == "http":
+                if not dns_result["resolved"]:
+                    raise IAToolkitException(
+                        IAToolkitException.ErrorType.REQUEST_ERROR,
+                        "HTTP private-network targets must resolve before request"
+                    )
+                if not dns_result["has_private"] or dns_result["has_public"]:
+                    raise IAToolkitException(
+                        IAToolkitException.ErrorType.REQUEST_ERROR,
+                        "HTTP scheme is only allowed for private-network targets"
+                    )
 
-        allowed_hosts = self._resolve_allowed_hosts(company_short_name, execution_config)
-        if allowed_hosts and not self._host_in_allowlist(host, allowed_hosts):
+    @staticmethod
+    def _private_network_enabled(execution_config: dict) -> bool:
+        security_cfg = execution_config.get("security") or {}
+        if not isinstance(security_cfg, dict):
             raise IAToolkitException(
-                IAToolkitException.ErrorType.REQUEST_ERROR,
-                f"HTTP tool target host '{host}' is not in allowed_hosts"
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "execution_config.security must be a JSON object"
             )
+        return security_cfg.get("allow_private_network") is True
 
     @staticmethod
     def _to_ip_or_none(host: str):
@@ -216,14 +289,15 @@ class HttpToolService:
         except ValueError:
             return None
 
-    def _assert_public_dns_target(self, hostname: str):
+    def _assert_dns_target_allowed(self, hostname: str, allow_private_network: bool) -> dict:
         # Best effort DNS check to reduce SSRF risk when DNS resolves to private ranges.
         try:
             entries = socket.getaddrinfo(hostname, None)
         except Exception:
             # If DNS cannot be resolved here, let the outbound request fail naturally.
-            return
+            return {"resolved": False, "has_private": False, "has_public": False}
 
+        result = {"resolved": False, "has_private": False, "has_public": False}
         for entry in entries:
             sockaddr = entry[4]
             if not sockaddr:
@@ -231,12 +305,18 @@ class HttpToolService:
             ip_text = sockaddr[0]
             ip_value = self._to_ip_or_none(ip_text)
             if ip_value:
-                self._assert_public_ip(ip_value)
+                result["resolved"] = True
+                classification = self._assert_allowed_ip(ip_value, allow_private_network)
+                if classification == "private":
+                    result["has_private"] = True
+                else:
+                    result["has_public"] = True
+
+        return result
 
     @staticmethod
-    def _assert_public_ip(ip_value):
-        if (ip_value.is_private or
-                ip_value.is_loopback or
+    def _assert_allowed_ip(ip_value, allow_private_network: bool) -> str:
+        if (ip_value.is_loopback or
                 ip_value.is_link_local or
                 ip_value.is_reserved or
                 ip_value.is_multicast or
@@ -245,12 +325,23 @@ class HttpToolService:
                 IAToolkitException.ErrorType.REQUEST_ERROR,
                 f"HTTP tool target IP '{ip_value}' is not allowed"
             )
+        if ip_value.is_private:
+            if allow_private_network:
+                return "private"
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.REQUEST_ERROR,
+                f"HTTP tool target IP '{ip_value}' is not allowed"
+            )
+        return "public"
 
-    def _resolve_allowed_hosts(self, company_short_name: str, execution_config: dict) -> list[str]:
+    def _resolve_allowed_hosts(self,
+                               company_short_name: str,
+                               execution_config: dict,
+                               include_company_defaults: bool = True) -> list[str]:
         security_cfg = execution_config.get("security") or {}
         allowed_hosts = security_cfg.get("allowed_hosts")
 
-        if allowed_hosts is None:
+        if allowed_hosts is None and include_company_defaults:
             company_params = self.config_service.get_configuration(company_short_name, "parameters") or {}
             http_tools_cfg = company_params.get("http_tools") or {}
             allowed_hosts = http_tools_cfg.get("allowed_hosts")

@@ -40,15 +40,18 @@ class CallServiceClient:
         endpoint: str,
         params: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, str]] = None,
-        timeout: Union[int, float, Tuple[int, int]] = 10
+        timeout: Union[int, float, Tuple[int, int]] = 10,
+        allow_redirects: Optional[bool] = None,
     ):
         try:
-            response = requests.get(
-                endpoint,
-                params=params,
-                headers=self._merge_headers(headers),
-                timeout=self._normalize_timeout(timeout)
-            )
+            request_kwargs = {
+                "params": params,
+                "headers": self._merge_headers(headers),
+                "timeout": self._normalize_timeout(timeout),
+            }
+            if allow_redirects is not None:
+                request_kwargs["allow_redirects"] = allow_redirects
+            response = requests.get(endpoint, **request_kwargs)
         except RequestException as e:
             raise IAToolkitException(IAToolkitException.ErrorType.REQUEST_ERROR, str(e))
         return self._deserialize_response(response)
@@ -60,17 +63,20 @@ class CallServiceClient:
             data: Any = None,  # Nuevo argumento para datos crudos/binarios
             params: Optional[Dict[str, Any]] = None,
             headers: Optional[Dict[str, str]] = None,
-            timeout: Union[int, float, Tuple[int, int]] = 10
+            timeout: Union[int, float, Tuple[int, int]] = 10,
+            allow_redirects: Optional[bool] = None,
     ):
         try:
-            response = requests.post(
-                endpoint,
-                params=params,
-                json=json_dict,
-                data=data,  # Pasamos data a requests
-                headers=self._merge_headers(headers),
-                timeout=self._normalize_timeout(timeout)
-            )
+            request_kwargs = {
+                "params": params,
+                "json": json_dict,
+                "data": data,  # Pasamos data a requests
+                "headers": self._merge_headers(headers),
+                "timeout": self._normalize_timeout(timeout),
+            }
+            if allow_redirects is not None:
+                request_kwargs["allow_redirects"] = allow_redirects
+            response = requests.post(endpoint, **request_kwargs)
         except RequestException as e:
             raise IAToolkitException(IAToolkitException.ErrorType.REQUEST_ERROR, str(e))
 
@@ -82,16 +88,19 @@ class CallServiceClient:
         json_dict: Optional[Dict[str, Any]] = None,
         params: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, str]] = None,
-        timeout: Union[int, float, Tuple[int, int]] = 10
+        timeout: Union[int, float, Tuple[int, int]] = 10,
+        allow_redirects: Optional[bool] = None,
     ):
         try:
-            response = requests.put(
-                endpoint,
-                params=params,
-                json=json_dict,
-                headers=self._merge_headers(headers),
-                timeout=self._normalize_timeout(timeout)
-            )
+            request_kwargs = {
+                "params": params,
+                "json": json_dict,
+                "headers": self._merge_headers(headers),
+                "timeout": self._normalize_timeout(timeout),
+            }
+            if allow_redirects is not None:
+                request_kwargs["allow_redirects"] = allow_redirects
+            response = requests.put(endpoint, **request_kwargs)
         except RequestException as e:
             raise IAToolkitException(IAToolkitException.ErrorType.REQUEST_ERROR, str(e))
         return self._deserialize_response(response)
@@ -102,16 +111,19 @@ class CallServiceClient:
         json_dict: Optional[Dict[str, Any]] = None,
         params: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, str]] = None,
-        timeout: Union[int, float, Tuple[int, int]] = 10
+        timeout: Union[int, float, Tuple[int, int]] = 10,
+        allow_redirects: Optional[bool] = None,
     ):
         try:
-            response = requests.delete(
-                endpoint,
-                params=params,
-                json=json_dict,
-                headers=self._merge_headers(headers),
-                timeout=self._normalize_timeout(timeout)
-            )
+            request_kwargs = {
+                "params": params,
+                "json": json_dict,
+                "headers": self._merge_headers(headers),
+                "timeout": self._normalize_timeout(timeout),
+            }
+            if allow_redirects is not None:
+                request_kwargs["allow_redirects"] = allow_redirects
+            response = requests.delete(endpoint, **request_kwargs)
         except RequestException as e:
             raise IAToolkitException(IAToolkitException.ErrorType.REQUEST_ERROR, str(e))
         return self._deserialize_response(response)
@@ -122,16 +134,19 @@ class CallServiceClient:
         json_dict: Optional[Dict[str, Any]] = None,
         params: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, str]] = None,
-        timeout: Union[int, float, Tuple[int, int]] = 10
+        timeout: Union[int, float, Tuple[int, int]] = 10,
+        allow_redirects: Optional[bool] = None,
     ):
         try:
-            response = requests.patch(
-                endpoint,
-                params=params,
-                json=json_dict,
-                headers=self._merge_headers(headers),
-                timeout=self._normalize_timeout(timeout)
-            )
+            request_kwargs = {
+                "params": params,
+                "json": json_dict,
+                "headers": self._merge_headers(headers),
+                "timeout": self._normalize_timeout(timeout),
+            }
+            if allow_redirects is not None:
+                request_kwargs["allow_redirects"] = allow_redirects
+            response = requests.patch(endpoint, **request_kwargs)
         except RequestException as e:
             raise IAToolkitException(IAToolkitException.ErrorType.REQUEST_ERROR, str(e))
         return self._deserialize_response(response)

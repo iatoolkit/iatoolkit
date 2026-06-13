@@ -44,6 +44,18 @@ class TestCallServiceClient:
         assert status == 200
         assert response == {'result': 'ok'}
 
+    def test_get_can_disable_redirects(self):
+        response, status = self.client.get(self.endpoint, allow_redirects=False)
+        self.mock_get.assert_called_once_with(
+            self.endpoint,
+            headers={'Content-Type': 'application/json'},
+            params=None,
+            timeout=(10, 10.0),
+            allow_redirects=False,
+        )
+        assert status == 200
+        assert response == {'result': 'ok'}
+
     def test_get_failure(self):
         self.mock_get.side_effect = RequestException("Failed GET")
 
@@ -91,4 +103,3 @@ class TestCallServiceClient:
         response, status = self.client.post_files(self.endpoint, files)
         assert status == 200
         assert response == {'result': 'ok'}
-
