@@ -11,10 +11,11 @@ from pathlib import Path
 from injector import inject
 import yaml
 
+from iatoolkit.services.markdown_wiki_service import MarkdownWikiService
 from iatoolkit.services.storage_service import StorageService
 
 
-class MemoryWikiService:
+class MemoryWikiService(MarkdownWikiService):
     SCHEMA_FILENAME = "wiki_schema.md"
     INDEX_FILENAME = "index.md"
     LOG_FILENAME = "log.md"
@@ -22,7 +23,7 @@ class MemoryWikiService:
 
     @inject
     def __init__(self, storage_service: StorageService):
-        self.storage_service = storage_service
+        super().__init__(storage_service=storage_service)
 
     @staticmethod
     def slugify(value: str) -> str:
@@ -133,41 +134,16 @@ class MemoryWikiService:
             payload.get("slug") or payload.get("title"),
         )
         markdown = self.render_page(payload)
-        self.storage_service.upload_bytes(
-            company_short_name=company_short_name,
-            storage_key=storage_key,
-            file_content=markdown.encode("utf-8"),
-            mime_type="text/markdown",
-        )
-        return storage_key
+        return self.write_markdown(company_short_name, storage_key, markdown)
 
     def read_page(self, company_short_name: str, storage_key: str) -> dict:
-        raw = self.storage_service.get_document_content(company_short_name, storage_key)
-        markdown = raw.decode("utf-8", errors="replace")
+        markdown = self.read_markdown(company_short_name, storage_key)
         parsed = self.parse_page(markdown)
         parsed["wiki_path"] = storage_key
         return parsed
 
     def delete_page(self, company_short_name: str, storage_key: str | None) -> None:
-        if not storage_key:
-            return
-        self.storage_service.delete_file(company_short_name, storage_key)
-
-    def write_markdown(self, company_short_name: str, storage_key: str, markdown: str) -> str:
-        self.storage_service.upload_bytes(
-            company_short_name=company_short_name,
-            storage_key=storage_key,
-            file_content=str(markdown or "").encode("utf-8"),
-            mime_type="text/markdown",
-        )
-        return storage_key
-
-    def read_optional_markdown(self, company_short_name: str, storage_key: str) -> str | None:
-        try:
-            raw = self.storage_service.get_document_content(company_short_name, storage_key)
-        except Exception:
-            return None
-        return raw.decode("utf-8", errors="replace")
+        self.delete_markdown(company_short_name, storage_key)
 
     def render_page(self, payload: dict) -> str:
         frontmatter = {
@@ -197,20 +173,9 @@ class MemoryWikiService:
         return "\n".join(body_lines).strip() + "\n"
 
     def parse_page(self, markdown: str) -> dict:
-        content = str(markdown or "")
-        frontmatter = {}
-        body = content
-
-        if content.startswith("---\n"):
-            parts = content.split("\n---\n", 1)
-            if len(parts) == 2:
-                _, remainder = parts
-                yaml_text = content[4: content.find("\n---\n")]
-                try:
-                    frontmatter = yaml.safe_load(yaml_text) or {}
-                except Exception:
-                    frontmatter = {}
-                body = remainder
+        parsed = self.parse_frontmatter_document(markdown)
+        frontmatter = parsed.get("frontmatter") if isinstance(parsed.get("frontmatter"), dict) else {}
+        body = parsed.get("body") or ""
 
         sections = self._parse_sections(body)
         derived_title = frontmatter.get("title")
@@ -264,14 +229,10 @@ class MemoryWikiService:
         return "\n".join(lines).strip() + "\n"
 
     def parse_index(self, markdown: str) -> dict:
-        content = str(markdown or "")
-        if not content.startswith("---\n"):
+        parsed = self.parse_frontmatter_document(markdown)
+        frontmatter = parsed.get("frontmatter") if isinstance(parsed.get("frontmatter"), dict) else {}
+        if not frontmatter:
             return {"generated_at": None, "entries": []}
-        yaml_text = content[4: content.find("\n---\n")] if "\n---\n" in content else ""
-        try:
-            frontmatter = yaml.safe_load(yaml_text) or {}
-        except Exception:
-            frontmatter = {}
         entries = frontmatter.get("entries") or []
         normalized = []
         for entry in entries:
@@ -353,51 +314,16 @@ class MemoryWikiService:
 
     @staticmethod
     def _render_list(items) -> str:
-        normalized = []
-        for item in items or []:
-            text = str(item or "").strip()
-            if text and text not in normalized:
-                normalized.append(text)
-        if not normalized:
-            return "No entries yet."
-        return "\n".join(f"- {item}" for item in normalized)
+        return MarkdownWikiService.render_markdown_list(items, empty_label="No entries yet.")
 
     @staticmethod
     def _render_sources(items) -> str:
-        normalized = []
-        for item in items or []:
-            text = str(item or "").strip()
-            if text and text not in normalized:
-                normalized.append(text)
-        if not normalized:
-            return "No sources yet."
-        return "\n".join(f"- {item}" for item in normalized)
+        return MarkdownWikiService.render_markdown_list(items, empty_label="No sources yet.")
 
     @staticmethod
     def _parse_sections(body: str) -> dict[str, str]:
-        sections: dict[str, str] = {}
-        current_title = None
-        buffer: list[str] = []
-
-        for line in str(body or "").splitlines():
-            if line.startswith("## "):
-                if current_title is not None:
-                    sections[current_title] = "\n".join(buffer).strip()
-                current_title = line[3:].strip()
-                buffer = []
-            else:
-                buffer.append(line)
-
-        if current_title is not None:
-            sections[current_title] = "\n".join(buffer).strip()
-
-        return sections
+        return MarkdownWikiService.parse_sections(body)
 
     @staticmethod
     def _parse_list(content: str | None) -> list[str]:
-        normalized = []
-        for line in str(content or "").splitlines():
-            candidate = re.sub(r"^\s*-\s*", "", line).strip()
-            if candidate and candidate.lower() not in {"no entries yet.", "no sources yet."} and candidate not in normalized:
-                normalized.append(candidate)
-        return normalized
+        return MarkdownWikiService.parse_markdown_list(content)
