@@ -10,10 +10,13 @@ from iatoolkit.common.util import Utility
 from injector import inject
 import inspect
 import logging
+from time import perf_counter
+from uuid import uuid4
 
 
 class Dispatcher:
     USER_SCOPED_SYSTEM_TOOLS = {"iat_memory_search", "iat_memory_get_page"}
+    _tool_execution_hook = None
 
     @inject
     def __init__(self,
@@ -55,6 +58,32 @@ class Dispatcher:
             for parameter in signature.parameters.values()
         )
 
+    @classmethod
+    def register_tool_execution_hook(cls, hook):
+        cls._tool_execution_hook = hook
+
+    @classmethod
+    def clear_tool_execution_hook(cls):
+        cls._tool_execution_hook = None
+
+    def _notify_tool_execution_hook(self, event: str, **payload) -> None:
+        hook = type(self)._tool_execution_hook
+        if not callable(hook):
+            return
+
+        try:
+            hook(event=event, **payload)
+        except IAToolkitException:
+            raise
+        except Exception as exc:
+            logging.warning(
+                "Tool execution hook failed for event=%s company=%s tool=%s: %s",
+                event,
+                payload.get("company_short_name"),
+                payload.get("function_name"),
+                exc,
+            )
+
     @property
     def tool_service(self):
         """Lazy-loads and returns the ToolService instance to avoid circular imports."""
@@ -91,7 +120,14 @@ class Dispatcher:
         return self._company_instances
 
 
-    def dispatch(self, company_short_name: str, function_name: str, user_identifier: str | None = None, **kwargs) -> dict:
+    def dispatch(
+        self,
+        company_short_name: str,
+        function_name: str,
+        user_identifier: str | None = None,
+        _iat_runtime_source: str | None = None,
+        **kwargs,
+    ) -> dict:
         # 1. Consult the Database (Source of Truth) for the tool definition
         tool_def = self.tool_service.get_tool_definition(company_short_name, function_name)
         if not tool_def:
@@ -100,6 +136,65 @@ class Dispatcher:
                 f"Tool '{function_name}' not registered for company '{company_short_name}'"
             )
 
+        execution_id = uuid4().hex
+        self._notify_tool_execution_hook(
+            "before_dispatch",
+            execution_id=execution_id,
+            company_short_name=company_short_name,
+            function_name=function_name,
+            user_identifier=user_identifier,
+            runtime_source=_iat_runtime_source,
+            tool_def=tool_def,
+            arguments=dict(kwargs),
+        )
+        started_at = perf_counter()
+        try:
+            result = self._dispatch_resolved_tool(
+                company_short_name=company_short_name,
+                function_name=function_name,
+                user_identifier=user_identifier,
+                tool_def=tool_def,
+                **kwargs,
+            )
+            self._notify_tool_execution_hook(
+                "after_dispatch",
+                execution_id=execution_id,
+                company_short_name=company_short_name,
+                function_name=function_name,
+                user_identifier=user_identifier,
+                runtime_source=_iat_runtime_source,
+                tool_def=tool_def,
+                arguments=dict(kwargs),
+                status="success",
+                duration_ms=int(round((perf_counter() - started_at) * 1000)),
+                result=result,
+            )
+            return result
+        except Exception as exc:
+            self._notify_tool_execution_hook(
+                "after_dispatch",
+                execution_id=execution_id,
+                company_short_name=company_short_name,
+                function_name=function_name,
+                user_identifier=user_identifier,
+                runtime_source=_iat_runtime_source,
+                tool_def=tool_def,
+                arguments=dict(kwargs),
+                status="error",
+                duration_ms=int(round((perf_counter() - started_at) * 1000)),
+                error=exc,
+            )
+            raise
+
+    def _dispatch_resolved_tool(
+        self,
+        *,
+        company_short_name: str,
+        function_name: str,
+        user_identifier: str | None,
+        tool_def,
+        **kwargs,
+    ) -> dict:
         # 2. Dispatch based on Tool Type
         if tool_def.tool_type == 'SYSTEM':
             # Map to internal handler

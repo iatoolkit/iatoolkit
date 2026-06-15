@@ -188,6 +188,8 @@ class ToolApiView(MethodView):
             result = self.dispatcher.dispatch(
                 company_short_name=company_short_name,
                 function_name=tool_name,
+                user_identifier=auth_result.get("user_identifier"),
+                _iat_runtime_source="api",
                 **call_kwargs
             )
 
@@ -211,6 +213,8 @@ class ToolApiView(MethodView):
             status_code = 404
         elif e.error_type in [IAToolkitException.ErrorType.MISSING_PARAMETER, IAToolkitException.ErrorType.INVALID_PARAMETER]:
             status_code = 400
+        elif e.error_type == IAToolkitException.ErrorType.PERMISSION:
+            status_code = 403
         elif e.error_type in [IAToolkitException.ErrorType.DUPLICATE_ENTRY, IAToolkitException.ErrorType.INVALID_OPERATION]:
             status_code = 409
 

@@ -250,6 +250,7 @@ class llmClient:
                                 company_short_name=company.short_name,
                                 function_name=function_name,
                                 user_identifier=user_identifier,
+                                _iat_runtime_source=request_source,
                                 **call_kwargs
                             )
                             force_tool_name = None
