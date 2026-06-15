@@ -35,6 +35,7 @@ class ToolService:
     HTTP_ALLOWED_BODY_MODES = {"none", "json_map", "full_args"}
     HTTP_ALLOWED_AUTH_TYPES = {"none", "bearer", "api_key_header", "api_key_query", "basic"}
     HTTP_ALLOWED_RESPONSE_MODES = {"json", "text", "raw"}
+    HTTP_ALLOWED_MODEL_OUTPUT_MODES = {"raw", "extract", "map"}
 
     TOOL_EVENT_CREATED = "created"
     TOOL_EVENT_UPDATED = "updated"
@@ -582,6 +583,103 @@ class ToolService:
                 raise IAToolkitException(
                     IAToolkitException.ErrorType.INVALID_PARAMETER,
                     "execution_config.response.max_response_bytes must be a positive integer"
+                )
+
+            self._validate_http_model_output_config(response_cfg.get("model_output"))
+
+    def _validate_http_model_output_config(self, model_output):
+        if model_output is None:
+            return
+        if not isinstance(model_output, dict):
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "execution_config.response.model_output must be a JSON object"
+            )
+
+        allowed_keys = {"mode", "path", "root", "fields", "exclude_nulls", "max_items"}
+        unknown_keys = sorted(key for key in model_output.keys() if key not in allowed_keys)
+        if unknown_keys:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                f"execution_config.response.model_output has unsupported keys: {unknown_keys}"
+            )
+
+        mode = str(model_output.get("mode", "raw")).strip().lower()
+        if mode not in self.HTTP_ALLOWED_MODEL_OUTPUT_MODES:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                f"execution_config.response.model_output.mode must be one of {sorted(self.HTTP_ALLOWED_MODEL_OUTPUT_MODES)}"
+            )
+
+        if mode == "extract":
+            path = model_output.get("path")
+            if not isinstance(path, str) or not path.strip():
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.response.model_output.path is required when mode is 'extract'"
+                )
+
+        if mode == "map":
+            root = model_output.get("root")
+            if root is not None and (not isinstance(root, str) or not root.strip()):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.response.model_output.root must be a non-empty string"
+                )
+
+            fields = model_output.get("fields")
+            if not isinstance(fields, dict) or not fields:
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.response.model_output.fields must be a non-empty object when mode is 'map'"
+                )
+            for field_name, field_config in fields.items():
+                if not isinstance(field_name, str) or not field_name.strip():
+                    raise IAToolkitException(
+                        IAToolkitException.ErrorType.INVALID_PARAMETER,
+                        "execution_config.response.model_output.fields must use non-empty string field names"
+                    )
+                if isinstance(field_config, str):
+                    if not field_config.strip():
+                        raise IAToolkitException(
+                            IAToolkitException.ErrorType.INVALID_PARAMETER,
+                            f"execution_config.response.model_output.fields.{field_name} must be a non-empty path"
+                        )
+                    continue
+                if isinstance(field_config, dict):
+                    path = field_config.get("path")
+                    if not isinstance(path, str) or not path.strip():
+                        raise IAToolkitException(
+                            IAToolkitException.ErrorType.INVALID_PARAMETER,
+                            f"execution_config.response.model_output.fields.{field_name}.path must be a non-empty string"
+                        )
+                    description = field_config.get("description")
+                    if description is not None and not isinstance(description, str):
+                        raise IAToolkitException(
+                            IAToolkitException.ErrorType.INVALID_PARAMETER,
+                            f"execution_config.response.model_output.fields.{field_name}.description must be a string"
+                        )
+                    continue
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    f"execution_config.response.model_output.fields.{field_name} must be a path string or object"
+                )
+
+            exclude_nulls = model_output.get("exclude_nulls")
+            if exclude_nulls is not None and not isinstance(exclude_nulls, bool):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.response.model_output.exclude_nulls must be a boolean"
+                )
+
+            max_items = model_output.get("max_items")
+            if (
+                max_items is not None
+                and (isinstance(max_items, bool) or not isinstance(max_items, int) or max_items <= 0)
+            ):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.response.model_output.max_items must be a positive integer"
                 )
 
     @staticmethod

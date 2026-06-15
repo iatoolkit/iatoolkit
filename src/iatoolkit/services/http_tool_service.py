@@ -512,6 +512,8 @@ class HttpToolService:
         if extract_path:
             value = self._extract_path(response_data, str(extract_path))
 
+        value = self._apply_model_output(value, response_cfg.get("model_output"))
+
         if mode == "text" and not isinstance(value, str):
             value = json.dumps(value, ensure_ascii=False, default=str)
 
@@ -553,3 +555,94 @@ class HttpToolService:
                 )
 
         return current
+
+    def _apply_model_output(self, value, model_output):
+        if model_output in (None, {}, ""):
+            return value
+        if not isinstance(model_output, dict):
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "execution_config.response.model_output must be a JSON object"
+            )
+
+        mode = str(model_output.get("mode", "raw")).strip().lower()
+        if mode == "raw":
+            return value
+        if mode == "extract":
+            path = str(model_output.get("path") or "").strip()
+            if not path:
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.response.model_output.path is required when mode is 'extract'"
+                )
+            return self._extract_path(value, path)
+        if mode == "map":
+            return self._apply_mapped_model_output(value, model_output)
+
+        raise IAToolkitException(
+            IAToolkitException.ErrorType.INVALID_PARAMETER,
+            f"Unsupported execution_config.response.model_output.mode '{mode}'"
+        )
+
+    def _apply_mapped_model_output(self, value, model_output: dict):
+        root_path = str(model_output.get("root") or "").strip()
+        source = self._extract_path(value, root_path) if root_path else value
+        fields = model_output.get("fields") or {}
+        if not isinstance(fields, dict) or not fields:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "execution_config.response.model_output.fields must be a non-empty object when mode is 'map'"
+            )
+
+        exclude_nulls = model_output.get("exclude_nulls") is True
+        max_items = model_output.get("max_items")
+
+        if isinstance(source, list):
+            items = (
+                source[:max_items]
+                if isinstance(max_items, int) and not isinstance(max_items, bool) and max_items > 0
+                else source
+            )
+            return [
+                self._map_model_output_item(item, fields, exclude_nulls)
+                for item in items
+            ]
+        if isinstance(source, dict):
+            return self._map_model_output_item(source, fields, exclude_nulls)
+
+        raise IAToolkitException(
+            IAToolkitException.ErrorType.INVALID_PARAMETER,
+            f"Cannot map model_output over type '{type(source).__name__}'"
+        )
+
+    def _map_model_output_item(self, source: dict, fields: dict, exclude_nulls: bool) -> dict:
+        mapped = {}
+        for output_name, field_config in fields.items():
+            path = self._resolve_model_output_field_path(output_name, field_config)
+            found, field_value = self._try_extract_path(source, path)
+            if (not found or field_value is None) and exclude_nulls:
+                continue
+            mapped[output_name] = field_value if found else None
+        return mapped
+
+    @staticmethod
+    def _resolve_model_output_field_path(output_name: str, field_config) -> str:
+        if isinstance(field_config, str):
+            path = field_config.strip()
+        elif isinstance(field_config, dict):
+            path = str(field_config.get("path") or "").strip()
+        else:
+            path = ""
+
+        if not path:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                f"execution_config.response.model_output.fields.{output_name} must define a path"
+            )
+        return path
+
+    def _try_extract_path(self, data, extract_path: str):
+        try:
+            return True, self._extract_path(data, extract_path)
+        except IAToolkitException:
+            return False, None

@@ -307,6 +307,75 @@ class TestToolService:
         assert excinfo.value.error_type == IAToolkitException.ErrorType.INVALID_PARAMETER
         assert "output_contract.transport is required" in excinfo.value.message
 
+    def test_create_http_tool_accepts_model_output_map(self):
+        payload = {
+            "name": "get_customer",
+            "description": "Get customer",
+            "tool_type": Tool.TYPE_HTTP,
+            "execution_config": {
+                "version": 1,
+                "request": {
+                    "method": "GET",
+                    "url": "https://api.example.com/customers/{customer_id}",
+                    "path_params": {"customer_id": "customer_id"},
+                },
+                "response": {
+                    "model_output": {
+                        "mode": "map",
+                        "root": "data.customer",
+                        "fields": {
+                            "customer_id": "id",
+                            "customer_name": "name",
+                            "status": {
+                                "path": "account.status",
+                                "description": "Operational account status",
+                            },
+                        },
+                        "exclude_nulls": True,
+                        "max_items": 10,
+                    }
+                },
+            },
+        }
+        self.mock_llm_query_repo.get_tool_definition.return_value = None
+        created_tool = MagicMock()
+        created_tool.to_dict.return_value = payload
+        self.mock_llm_query_repo.add_tool.return_value = created_tool
+
+        self.service.create_tool(self.company_short_name, payload)
+
+        args = self.mock_llm_query_repo.add_tool.call_args[0][0]
+        assert args.execution_config["response"]["model_output"]["mode"] == "map"
+        assert args.execution_config["response"]["model_output"]["fields"]["customer_name"] == "name"
+
+    def test_create_http_tool_rejects_invalid_model_output_extract(self):
+        self.mock_llm_query_repo.get_tool_definition.return_value = None
+
+        with pytest.raises(IAToolkitException) as excinfo:
+            self.service.create_tool(
+                self.company_short_name,
+                {
+                    "name": "get_customer",
+                    "description": "Get customer",
+                    "tool_type": Tool.TYPE_HTTP,
+                    "execution_config": {
+                        "version": 1,
+                        "request": {
+                            "method": "GET",
+                            "url": "https://api.example.com/customers",
+                        },
+                        "response": {
+                            "model_output": {
+                                "mode": "extract",
+                            }
+                        },
+                    },
+                },
+            )
+
+        assert excinfo.value.error_type == IAToolkitException.ErrorType.INVALID_PARAMETER
+        assert "model_output.path is required" in excinfo.value.message
+
     def test_update_tool_persists_output_contract(self):
         existing_tool = MagicMock(spec=Tool)
         existing_tool.tool_type = Tool.TYPE_INFERENCE

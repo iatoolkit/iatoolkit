@@ -57,6 +57,142 @@ class TestHttpToolService:
         assert result["http_status"] == 200
         assert result["data"] == 99
 
+    def test_execute_applies_model_output_extract(self):
+        self.call_service.get.return_value = ({
+            "status": "ok",
+            "data": {
+                "customer": {
+                    "id": "cus_123",
+                    "name": "Acme S.L.",
+                    "debug": {"trace_id": "abc-999"},
+                }
+            },
+        }, 200)
+
+        result = self.service.execute(
+            company_short_name="acme",
+            tool_name="http_customer",
+            execution_config={
+                "version": 1,
+                "request": {
+                    "method": "GET",
+                    "url": "https://api.example.com/customer"
+                },
+                "response": {
+                    "model_output": {
+                        "mode": "extract",
+                        "path": "data.customer"
+                    }
+                }
+            },
+            input_data={}
+        )
+
+        assert result["data"] == {
+            "id": "cus_123",
+            "name": "Acme S.L.",
+            "debug": {"trace_id": "abc-999"},
+        }
+
+    def test_execute_applies_model_output_map_object(self):
+        self.call_service.get.return_value = ({
+            "status": "ok",
+            "data": {
+                "customer": {
+                    "id": "cus_123",
+                    "name": "Acme S.L.",
+                    "account": {"status": "ACTIVE"},
+                    "billing": {"pendingAmount": 142.3},
+                    "debug": {"trace_id": "abc-999"},
+                }
+            },
+        }, 200)
+
+        result = self.service.execute(
+            company_short_name="acme",
+            tool_name="http_customer",
+            execution_config={
+                "version": 1,
+                "request": {
+                    "method": "GET",
+                    "url": "https://api.example.com/customer"
+                },
+                "response": {
+                    "model_output": {
+                        "mode": "map",
+                        "root": "data.customer",
+                        "fields": {
+                            "customer_id": "id",
+                            "customer_name": "name",
+                            "status": "account.status",
+                            "amount_due": {
+                                "path": "billing.pendingAmount",
+                                "description": "Amount due in EUR"
+                            }
+                        },
+                        "exclude_nulls": True
+                    }
+                }
+            },
+            input_data={}
+        )
+
+        assert result["data"] == {
+            "customer_id": "cus_123",
+            "customer_name": "Acme S.L.",
+            "status": "ACTIVE",
+            "amount_due": 142.3,
+        }
+
+    def test_execute_applies_model_output_map_list_with_limit_and_null_exclusion(self):
+        self.call_service.get.return_value = ({
+            "data": {
+                "items": [
+                    {"id": "a", "name": "Alpha", "meta": {"status": "ACTIVE"}},
+                    {"id": "b", "name": "Beta", "meta": {}},
+                    {"id": "c", "name": "Gamma", "meta": {"status": "BLOCKED"}},
+                ]
+            },
+        }, 200)
+
+        result = self.service.execute(
+            company_short_name="acme",
+            tool_name="http_customers",
+            execution_config={
+                "version": 1,
+                "request": {
+                    "method": "GET",
+                    "url": "https://api.example.com/customers"
+                },
+                "response": {
+                    "model_output": {
+                        "mode": "map",
+                        "root": "data.items",
+                        "fields": {
+                            "customer_id": "id",
+                            "customer_name": "name",
+                            "status": "meta.status",
+                        },
+                        "exclude_nulls": True,
+                        "max_items": 2,
+                    }
+                }
+            },
+            input_data={}
+        )
+
+        assert result["data"] == [
+            {
+                "customer_id": "a",
+                "customer_name": "Alpha",
+                "status": "ACTIVE",
+            },
+            {
+                "customer_id": "b",
+                "customer_name": "Beta",
+            },
+        ]
+
     def test_execute_post_full_args_body(self):
         self.call_service.post.return_value = ({"ok": True}, 200)
 
