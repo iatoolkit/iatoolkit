@@ -138,6 +138,11 @@ class TestHttpToolService:
         )
 
         assert result["data"] == {
+            "id": "cus_123",
+            "name": "Acme S.L.",
+            "account": {"status": "ACTIVE"},
+            "billing": {"pendingAmount": 142.3},
+            "debug": {"trace_id": "abc-999"},
             "customer_id": "cus_123",
             "customer_name": "Acme S.L.",
             "status": "ACTIVE",
@@ -183,14 +188,96 @@ class TestHttpToolService:
 
         assert result["data"] == [
             {
+                "id": "a",
+                "name": "Alpha",
+                "meta": {"status": "ACTIVE"},
                 "customer_id": "a",
                 "customer_name": "Alpha",
                 "status": "ACTIVE",
             },
             {
+                "id": "b",
+                "name": "Beta",
+                "meta": {},
                 "customer_id": "b",
                 "customer_name": "Beta",
             },
+        ]
+
+    def test_execute_applies_model_output_map_exclude_without_fields(self):
+        self.call_service.get.return_value = ({
+            "id": 123,
+            "status": "executed",
+            "client_name": "ACME",
+            "requested_email": "requester@example.com",
+            "assigned_email": "assignee@example.com",
+        }, 200)
+
+        result = self.service.execute(
+            company_short_name="acme",
+            tool_name="http_task",
+            execution_config={
+                "version": 1,
+                "request": {
+                    "method": "GET",
+                    "url": "https://api.example.com/tasks/123"
+                },
+                "response": {
+                    "model_output": {
+                        "mode": "map",
+                        "exclude": ["requested_email", "assigned_email"]
+                    }
+                }
+            },
+            input_data={}
+        )
+
+        assert result["data"] == {
+            "id": 123,
+            "status": "executed",
+            "client_name": "ACME",
+        }
+
+    def test_execute_applies_model_output_include_fields_and_exclude(self):
+        self.call_service.get.return_value = ([
+            {
+                "id": 123,
+                "rut": "12.345.678-9",
+                "status": "executed",
+                "client_name": "ACME",
+                "requested_email": "requester@example.com",
+            }
+        ], 200)
+
+        result = self.service.execute(
+            company_short_name="acme",
+            tool_name="http_tasks",
+            execution_config={
+                "version": 1,
+                "request": {
+                    "method": "GET",
+                    "url": "https://api.example.com/tasks"
+                },
+                "response": {
+                    "model_output": {
+                        "mode": "map",
+                        "include": ["id", "rut", "status"],
+                        "fields": {
+                            "client_tax_id": "rut"
+                        },
+                        "exclude": ["rut"]
+                    }
+                }
+            },
+            input_data={}
+        )
+
+        assert result["data"] == [
+            {
+                "id": 123,
+                "status": "executed",
+                "client_tax_id": "12.345.678-9",
+            }
         ]
 
     def test_execute_post_full_args_body(self):

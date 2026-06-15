@@ -588,13 +588,15 @@ class HttpToolService:
         root_path = str(model_output.get("root") or "").strip()
         source = self._extract_path(value, root_path) if root_path else value
         fields = model_output.get("fields") or {}
-        if not isinstance(fields, dict) or not fields:
+        if not isinstance(fields, dict):
             raise IAToolkitException(
                 IAToolkitException.ErrorType.INVALID_PARAMETER,
-                "execution_config.response.model_output.fields must be a non-empty object when mode is 'map'"
+                "execution_config.response.model_output.fields must be an object"
             )
 
         exclude_nulls = model_output.get("exclude_nulls") is True
+        include_fields = self._normalize_model_output_field_names(model_output.get("include"))
+        exclude_fields = set(self._normalize_model_output_field_names(model_output.get("exclude")))
         max_items = model_output.get("max_items")
 
         if isinstance(source, list):
@@ -604,26 +606,80 @@ class HttpToolService:
                 else source
             )
             return [
-                self._map_model_output_item(item, fields, exclude_nulls)
+                self._map_model_output_item(
+                    item,
+                    fields=fields,
+                    include_fields=include_fields,
+                    exclude_fields=exclude_fields,
+                    exclude_nulls=exclude_nulls,
+                )
                 for item in items
             ]
         if isinstance(source, dict):
-            return self._map_model_output_item(source, fields, exclude_nulls)
+            return self._map_model_output_item(
+                source,
+                fields=fields,
+                include_fields=include_fields,
+                exclude_fields=exclude_fields,
+                exclude_nulls=exclude_nulls,
+            )
 
         raise IAToolkitException(
             IAToolkitException.ErrorType.INVALID_PARAMETER,
             f"Cannot map model_output over type '{type(source).__name__}'"
         )
 
-    def _map_model_output_item(self, source: dict, fields: dict, exclude_nulls: bool) -> dict:
-        mapped = {}
+    def _map_model_output_item(
+        self,
+        source,
+        *,
+        fields: dict,
+        include_fields: list[str],
+        exclude_fields: set[str],
+        exclude_nulls: bool,
+    ) -> dict:
+        if not isinstance(source, dict):
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                f"Cannot map model_output item over type '{type(source).__name__}'"
+            )
+
+        if include_fields:
+            mapped = {}
+            for field_name in include_fields:
+                field_value = source.get(field_name)
+                if field_value is None and exclude_nulls:
+                    continue
+                mapped[field_name] = field_value
+        else:
+            mapped = {
+                field_name: field_value
+                for field_name, field_value in source.items()
+                if not (field_value is None and exclude_nulls)
+            }
+
         for output_name, field_config in fields.items():
             path = self._resolve_model_output_field_path(output_name, field_config)
             found, field_value = self._try_extract_path(source, path)
             if (not found or field_value is None) and exclude_nulls:
                 continue
             mapped[output_name] = field_value if found else None
+
+        for field_name in exclude_fields:
+            mapped.pop(field_name, None)
+
         return mapped
+
+    @staticmethod
+    def _normalize_model_output_field_names(value) -> list[str]:
+        if not isinstance(value, list):
+            return []
+        names = []
+        for item in value:
+            text = str(item or "").strip()
+            if text:
+                names.append(text)
+        return names
 
     @staticmethod
     def _resolve_model_output_field_path(output_name: str, field_config) -> str:

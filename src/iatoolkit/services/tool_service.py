@@ -596,13 +596,35 @@ class ToolService:
                 "execution_config.response.model_output must be a JSON object"
             )
 
-        allowed_keys = {"mode", "path", "root", "fields", "exclude_nulls", "max_items"}
+        allowed_keys = {
+            "mode",
+            "path",
+            "root",
+            "fields",
+            "include",
+            "exclude",
+            "description",
+            "describe",
+            "exclude_nulls",
+            "max_items",
+        }
         unknown_keys = sorted(key for key in model_output.keys() if key not in allowed_keys)
         if unknown_keys:
             raise IAToolkitException(
                 IAToolkitException.ErrorType.INVALID_PARAMETER,
                 f"execution_config.response.model_output has unsupported keys: {unknown_keys}"
             )
+
+        description = model_output.get("description")
+        if description is not None and not isinstance(description, str):
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "execution_config.response.model_output.description must be a string"
+            )
+
+        self._validate_http_model_output_string_list(model_output.get("include"), "include")
+        self._validate_http_model_output_string_list(model_output.get("exclude"), "exclude")
+        self._validate_http_model_output_descriptions(model_output.get("describe"))
 
         mode = str(model_output.get("mode", "raw")).strip().lower()
         if mode not in self.HTTP_ALLOWED_MODEL_OUTPUT_MODES:
@@ -628,42 +650,43 @@ class ToolService:
                 )
 
             fields = model_output.get("fields")
-            if not isinstance(fields, dict) or not fields:
-                raise IAToolkitException(
-                    IAToolkitException.ErrorType.INVALID_PARAMETER,
-                    "execution_config.response.model_output.fields must be a non-empty object when mode is 'map'"
-                )
-            for field_name, field_config in fields.items():
-                if not isinstance(field_name, str) or not field_name.strip():
+            if fields is not None:
+                if not isinstance(fields, dict):
                     raise IAToolkitException(
                         IAToolkitException.ErrorType.INVALID_PARAMETER,
-                        "execution_config.response.model_output.fields must use non-empty string field names"
+                        "execution_config.response.model_output.fields must be an object"
                     )
-                if isinstance(field_config, str):
-                    if not field_config.strip():
+                for field_name, field_config in fields.items():
+                    if not isinstance(field_name, str) or not field_name.strip():
                         raise IAToolkitException(
                             IAToolkitException.ErrorType.INVALID_PARAMETER,
-                            f"execution_config.response.model_output.fields.{field_name} must be a non-empty path"
+                            "execution_config.response.model_output.fields must use non-empty string field names"
                         )
-                    continue
-                if isinstance(field_config, dict):
-                    path = field_config.get("path")
-                    if not isinstance(path, str) or not path.strip():
-                        raise IAToolkitException(
-                            IAToolkitException.ErrorType.INVALID_PARAMETER,
-                            f"execution_config.response.model_output.fields.{field_name}.path must be a non-empty string"
-                        )
-                    description = field_config.get("description")
-                    if description is not None and not isinstance(description, str):
-                        raise IAToolkitException(
-                            IAToolkitException.ErrorType.INVALID_PARAMETER,
-                            f"execution_config.response.model_output.fields.{field_name}.description must be a string"
-                        )
-                    continue
-                raise IAToolkitException(
-                    IAToolkitException.ErrorType.INVALID_PARAMETER,
-                    f"execution_config.response.model_output.fields.{field_name} must be a path string or object"
-                )
+                    if isinstance(field_config, str):
+                        if not field_config.strip():
+                            raise IAToolkitException(
+                                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                                f"execution_config.response.model_output.fields.{field_name} must be a non-empty path"
+                            )
+                        continue
+                    if isinstance(field_config, dict):
+                        path = field_config.get("path")
+                        if not isinstance(path, str) or not path.strip():
+                            raise IAToolkitException(
+                                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                                f"execution_config.response.model_output.fields.{field_name}.path must be a non-empty string"
+                            )
+                        description = field_config.get("description")
+                        if description is not None and not isinstance(description, str):
+                            raise IAToolkitException(
+                                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                                f"execution_config.response.model_output.fields.{field_name}.description must be a string"
+                            )
+                        continue
+                    raise IAToolkitException(
+                        IAToolkitException.ErrorType.INVALID_PARAMETER,
+                        f"execution_config.response.model_output.fields.{field_name} must be a path string or object"
+                    )
 
             exclude_nulls = model_output.get("exclude_nulls")
             if exclude_nulls is not None and not isinstance(exclude_nulls, bool):
@@ -680,6 +703,43 @@ class ToolService:
                 raise IAToolkitException(
                     IAToolkitException.ErrorType.INVALID_PARAMETER,
                     "execution_config.response.model_output.max_items must be a positive integer"
+                )
+
+    @staticmethod
+    def _validate_http_model_output_string_list(value, field_name: str) -> None:
+        if value is None:
+            return
+        if not isinstance(value, list):
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                f"execution_config.response.model_output.{field_name} must be a list"
+            )
+        for index, item in enumerate(value):
+            if not isinstance(item, str) or not item.strip():
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    f"execution_config.response.model_output.{field_name}[{index}] must be a non-empty string"
+                )
+
+    @staticmethod
+    def _validate_http_model_output_descriptions(value) -> None:
+        if value is None:
+            return
+        if not isinstance(value, dict):
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "execution_config.response.model_output.describe must be an object"
+            )
+        for field_name, description in value.items():
+            if not isinstance(field_name, str) or not field_name.strip():
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.response.model_output.describe must use non-empty string field names"
+                )
+            if not isinstance(description, str):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    f"execution_config.response.model_output.describe.{field_name} must be a string"
                 )
 
     @staticmethod
