@@ -84,3 +84,42 @@ class TestTenantKnowledgeWikiService:
         assert page["status"] == "success"
         assert page["page"]["frontmatter"]["owner"] == "ops"
         assert page["page"]["body_text"] == "# Incident Response\n\nEscalate by severity."
+
+    def test_search_pages_ranks_matching_wiki_content(self):
+        root = "companies/acme/knowledge_wikis/sales"
+        self.storage_service.list_files.return_value = [
+            {"path": f"{root}/pricing.md", "name": "pricing.md", "metadata": {}},
+            {"path": f"{root}/handoff.md", "name": "handoff.md", "metadata": {}},
+        ]
+
+        def content_for(company_short_name, storage_key):
+            if storage_key.endswith("pricing.md"):
+                return b"---\ntitle: Discount Policy\ntags: [pricing]\nsummary: Enterprise discount approvals.\n---\n# Discount Policy\n\nFinance approval is required."
+            return b"---\ntitle: Sales Handoff\ntags: [sales]\n---\n# Sales Handoff\n\nSend context to customer success."
+
+        self.storage_service.get_document_content.side_effect = content_for
+        self.service.sync_wiki("acme", wiki_key="sales", root_storage_key=root, name="Sales Wiki")
+
+        result = self.service.search_pages("acme", wiki_key="sales", query="enterprise discount", limit=2)
+
+        assert result["status"] == "success"
+        assert result["count"] == 1
+        assert result["results"][0]["path"] == "pricing.md"
+        assert result["results"][0]["wiki_key"] == "sales"
+
+    def test_lint_reports_missing_metadata_and_broken_internal_links(self):
+        root = "companies/acme/knowledge_wikis/ops"
+        self.storage_service.list_files.return_value = [
+            {"path": f"{root}/runbook.md", "name": "runbook.md", "metadata": {}},
+        ]
+        self.storage_service.get_document_content.return_value = (
+            b"# Runbook\n\nFollow [[missing page]] and [legacy](legacy.md)."
+        )
+        self.service.sync_wiki("acme", wiki_key="ops", root_storage_key=root, name="Ops Wiki")
+
+        result = self.service.lint_wikis("acme", wiki_key="ops")
+
+        assert result["status"] == "success"
+        issue_types = {issue["issue_type"] for issue in result["issues"]}
+        assert "missing_tags" in issue_types
+        assert "broken_internal_link" in issue_types

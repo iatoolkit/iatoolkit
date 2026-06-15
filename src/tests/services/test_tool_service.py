@@ -113,6 +113,55 @@ class TestToolService:
             include_native_attachments=False,
         )
 
+    def test_handle_knowledge_wiki_search_tool_delegates_to_service(self):
+        self.service._knowledge_wiki_service = MagicMock()
+        self.service._knowledge_wiki_service.search_pages.return_value = {"status": "success", "results": []}
+
+        result = self.service._handle_knowledge_wiki_search_tool(
+            company_short_name="my_company",
+            wiki_key="sales",
+            query="discount policy",
+            limit=3,
+        )
+
+        self.service._knowledge_wiki_service.search_pages.assert_called_once_with(
+            company_short_name="my_company",
+            wiki_key="sales",
+            query="discount policy",
+            limit=3,
+        )
+        assert result["status"] == "success"
+
+    def test_handle_knowledge_wiki_get_page_tool_delegates_to_service(self):
+        self.service._knowledge_wiki_service = MagicMock()
+        self.service._knowledge_wiki_service.get_page.return_value = {"status": "success", "page": {"path": "pricing.md"}}
+
+        result = self.service._handle_knowledge_wiki_get_page_tool(
+            company_short_name="my_company",
+            wiki_key="sales",
+            path="pricing.md",
+        )
+
+        self.service._knowledge_wiki_service.get_page.assert_called_once_with(
+            company_short_name="my_company",
+            wiki_key="sales",
+            path="pricing.md",
+        )
+        assert result["status"] == "success"
+
+    def test_runtime_capabilities_include_knowledge_wikis(self):
+        self.service._knowledge_wiki_service = MagicMock()
+        self.service._knowledge_wiki_service.list_wikis.return_value = {
+            "status": "success",
+            "wikis": [{"wiki_key": "sales"}],
+        }
+        self.mock_sql_service.get_db_names.return_value = []
+        self.knowledge_base_service.get_collection_names.return_value = []
+
+        capabilities = self.service._resolve_runtime_tool_capabilities("my_company")
+
+        assert capabilities["has_knowledge_wikis"] is True
+
     def test_register_system_tools_success(self):
         """
         GIVEN a call to register_system_tools

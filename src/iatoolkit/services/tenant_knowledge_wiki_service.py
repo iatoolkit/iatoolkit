@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import unicodedata
 from datetime import datetime
 from pathlib import PurePosixPath
 from typing import Any
@@ -231,6 +232,87 @@ class TenantKnowledgeWikiService:
             },
         }
 
+    def search_pages(
+        self,
+        company_short_name: str,
+        *,
+        query: str,
+        wiki_key: str | None = None,
+        limit: int = 5,
+    ) -> dict:
+        company = self._get_company(company_short_name)
+        if not company:
+            return {"status": "error", "results": [], "error_message": "company not found"}
+        normalized_query = self._normalize_text(query)
+        query_tokens = self._tokenize(query)
+        if wiki_key:
+            wiki = self.knowledge_wiki_repo.get_wiki_by_key(company.id, self.normalize_wiki_key(wiki_key))
+            wikis = [wiki] if wiki else []
+        else:
+            wikis = self.knowledge_wiki_repo.list_wikis(company.id, include_archived=False)
+
+        results = []
+        for wiki in wikis:
+            if not wiki or wiki.status == KnowledgeWikiStatus.ARCHIVED:
+                continue
+            pages = self.knowledge_wiki_repo.list_pages(wiki.id, include_archived=False, limit=1000)
+            for page in pages:
+                if page.status == KnowledgeWikiPageStatus.ARCHIVED:
+                    continue
+                score = self._score_page_match(normalized_query, query_tokens, page)
+                if normalized_query and score <= 0:
+                    continue
+                results.append({
+                    **self.serialize_page(page, include_body=False),
+                    "wiki_key": wiki.wiki_key,
+                    "wiki_name": wiki.name,
+                    "score": round(score if score > 0 else 1.0, 4),
+                })
+
+        results.sort(
+            key=lambda item: (
+                float(item.get("score") or 0),
+                item.get("updated_at") or "",
+                item.get("path") or "",
+            ),
+            reverse=True,
+        )
+        bounded_limit = min(max(int(limit or 5), 1), 25)
+        return {
+            "status": "success",
+            "query": query,
+            "wiki_key": self.normalize_wiki_key(wiki_key) if wiki_key else None,
+            "count": len(results[:bounded_limit]),
+            "results": results[:bounded_limit],
+        }
+
+    def lint_wikis(self, company_short_name: str, *, wiki_key: str | None = None) -> dict:
+        company = self._get_company(company_short_name)
+        if not company:
+            return {"status": "error", "error_message": "company not found"}
+        if wiki_key:
+            wiki = self.knowledge_wiki_repo.get_wiki_by_key(company.id, self.normalize_wiki_key(wiki_key))
+            wikis = [wiki] if wiki else []
+        else:
+            wikis = self.knowledge_wiki_repo.list_wikis(company.id, include_archived=False)
+
+        issues = []
+        checked_pages = 0
+        for wiki in wikis:
+            if not wiki or wiki.status == KnowledgeWikiStatus.ARCHIVED:
+                continue
+            pages = self.knowledge_wiki_repo.list_pages(wiki.id, include_archived=False, limit=1000)
+            checked_pages += len(pages)
+            issues.extend(self._lint_wiki_pages(wiki, pages))
+
+        return {
+            "status": "success",
+            "checked_wikis": len([wiki for wiki in wikis if wiki]),
+            "checked_pages": checked_pages,
+            "issues": issues,
+            "issue_count": len(issues),
+        }
+
     def _get_or_create_wiki(
         self,
         company: Company,
@@ -325,6 +407,116 @@ class TenantKnowledgeWikiService:
         suffix = hashlib.sha1(path.encode("utf-8")).hexdigest()[:8]
         return f"{path_slug[:70]}-{suffix}"
 
+    def _lint_wiki_pages(self, wiki: KnowledgeWiki, pages: list[KnowledgeWikiPage]) -> list[dict]:
+        issues = []
+        title_map: dict[str, list[KnowledgeWikiPage]] = {}
+        targets = set()
+        for page in pages:
+            targets.add(self._normalize_page_path(page.path))
+            targets.add(self.markdown_wiki_service.slugify(page.slug))
+            targets.add(self._normalize_text(page.title))
+            normalized_title = self._normalize_text(page.title)
+            if normalized_title:
+                title_map.setdefault(normalized_title, []).append(page)
+            if not str(page.summary or "").strip():
+                issues.append(self._lint_issue(wiki, page, "missing_summary", "Page has no summary."))
+            if not (page.tags or []):
+                issues.append(self._lint_issue(wiki, page, "missing_tags", "Page has no tags."))
+
+        for title, candidates in title_map.items():
+            if len(candidates) <= 1:
+                continue
+            for page in candidates:
+                issues.append(
+                    self._lint_issue(
+                        wiki,
+                        page,
+                        "duplicate_title",
+                        f"Page title duplicates another page: {title}.",
+                    )
+                )
+
+        for page in pages:
+            for target in self._extract_internal_link_targets(page.body_text or ""):
+                if self._link_target_exists(target, targets):
+                    continue
+                issues.append(
+                    self._lint_issue(
+                        wiki,
+                        page,
+                        "broken_internal_link",
+                        f"Internal link target not found: {target}.",
+                    )
+                )
+        return issues
+
+    @staticmethod
+    def _lint_issue(wiki: KnowledgeWiki, page: KnowledgeWikiPage, issue_type: str, message: str) -> dict:
+        return {
+            "wiki_key": wiki.wiki_key,
+            "page_id": page.id,
+            "path": page.path,
+            "issue_type": issue_type,
+            "message": message,
+        }
+
+    def _extract_internal_link_targets(self, body: str) -> list[str]:
+        targets = []
+        for match in re.findall(r"\[\[([^\]]+)\]\]", str(body or "")):
+            target = match.split("|", 1)[0].strip()
+            if target:
+                targets.append(target)
+        for match in re.findall(r"\[[^\]]+\]\(([^)]+)\)", str(body or "")):
+            target = match.split("#", 1)[0].strip()
+            if not target or re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", target):
+                continue
+            if target.lower().endswith(".md"):
+                targets.append(target)
+        return targets
+
+    def _link_target_exists(self, target: str, targets: set[str]) -> bool:
+        normalized_path = self._normalize_page_path(target)
+        if normalized_path in targets:
+            return True
+        if normalized_path and not normalized_path.endswith(".md") and f"{normalized_path}.md" in targets:
+            return True
+        slug = self.markdown_wiki_service.slugify(target.rsplit(".", 1)[0])
+        if slug in targets:
+            return True
+        return self._normalize_text(target.rsplit(".", 1)[0]) in targets
+
+    def _score_page_match(self, normalized_query: str, query_tokens: set[str], page: KnowledgeWikiPage) -> float:
+        if not normalized_query:
+            return 1.0
+        title = self._normalize_text(page.title)
+        summary = self._normalize_text(page.summary)
+        tags = self._normalize_text(" ".join(page.tags or []))
+        body = self._normalize_text(page.body_text)
+        haystack = f"{title} {summary} {tags} {body}".strip()
+        if not haystack:
+            return 0.0
+
+        score = 0.0
+        if normalized_query in title:
+            score += 8.0
+        if normalized_query in summary:
+            score += 4.0
+        if normalized_query in tags:
+            score += 3.0
+        if normalized_query in body:
+            score += 1.0
+
+        for token in query_tokens:
+            if token in title:
+                score += 3.0
+            if token in summary:
+                score += 2.0
+            if token in tags:
+                score += 2.0
+            if token in body:
+                score += 0.5
+        return score
+
     @staticmethod
     def _normalize_root_storage_key(value: str) -> str:
         return str(value or "").strip().strip("/")
@@ -403,6 +595,17 @@ class TenantKnowledgeWikiService:
             if normalized == status.value:
                 return status
         return KnowledgeWikiPageStatus.PUBLISHED
+
+    @staticmethod
+    def _normalize_text(value: str | None) -> str:
+        normalized = unicodedata.normalize("NFKD", str(value or "").strip().lower())
+        normalized = "".join(char for char in normalized if not unicodedata.combining(char))
+        normalized = re.sub(r"\s+", " ", normalized)
+        return normalized.strip()
+
+    @classmethod
+    def _tokenize(cls, value: str | None) -> set[str]:
+        return set(re.findall(r"[a-z0-9]+", cls._normalize_text(value)))
 
     def _get_company(self, company_short_name: str) -> Company | None:
         return self.profile_repo.get_company_by_short_name(company_short_name)
