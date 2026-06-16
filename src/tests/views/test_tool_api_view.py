@@ -229,6 +229,8 @@ class TestToolApiView:
         self.mock_dispatcher.dispatch.assert_called_with(
             company_short_name=self.MOCK_COMPANY,
             function_name="identity_risk",
+            user_identifier=None,
+            _iat_runtime_source="api",
             document="abc"
         )
 
@@ -254,6 +256,8 @@ class TestToolApiView:
         self.mock_dispatcher.dispatch.assert_called_with(
             company_short_name=self.MOCK_COMPANY,
             function_name="http_orders",
+            user_identifier=None,
+            _iat_runtime_source="api",
             order_id=10
         )
 

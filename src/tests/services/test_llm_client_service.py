@@ -56,7 +56,7 @@ class TestLLMClient:
         # Respuesta mock estándar del LLM
         self.mock_llm_response = LLMResponse(
             id='response_123', model='gpt-4o', status='completed',
-            output_text=json.dumps({"answer": "Test response", "aditional_data": {}}),
+            output_text=json.dumps({"answer": "Test response", "additional_data": {}}),
             output=[], usage=Usage(input_tokens=100, output_tokens=50, total_tokens=150)
         )
 
@@ -81,10 +81,11 @@ class TestLLMClient:
         assert result['valid_response'] is True
         assert 'Test response' in result['answer']
         assert result['response_id'] == 'response_123'
+        assert result["additional_data"] == {}
         assert result['history_messages'] == [
             {
                 "role": "assistant",
-                "content": json.dumps({"answer": "Test response", "aditional_data": {}}),
+                "content": json.dumps({"answer": "Test response", "additional_data": {}}),
             }
         ]
 
@@ -92,6 +93,8 @@ class TestLLMClient:
         assert len(result['content_parts']) > 0
 
         self.llmquery_repo.add_query.assert_called_once()
+        saved_query = self.llmquery_repo.add_query.call_args.args[0]
+        assert saved_query.response["additional_data"] == {}
 
     def test_invoke_persists_telemetry_stats_when_execution_returns_trace(self):
         telemetry_execution = TelemetryExecution(
@@ -161,7 +164,7 @@ class TestLLMClient:
             id='response_wa', model='gpt-4o', status='completed',
             output_text=json.dumps({
                 "answer": "<p>Hola Fernando.</p><p>Linea dos<br>Linea tres</p>",
-                "aditional_data": {},
+                "additional_data": {},
             }),
             output=[], usage=Usage(input_tokens=100, output_tokens=50, total_tokens=150)
         )
@@ -186,7 +189,7 @@ class TestLLMClient:
             id='response_html', model='gpt-4o', status='completed',
             output_text=json.dumps({
                 "answer": "Hola **Fernando**",
-                "aditional_data": {},
+                "additional_data": {},
             }),
             output=[], usage=Usage(input_tokens=100, output_tokens=50, total_tokens=150)
         )
@@ -354,7 +357,7 @@ class TestLLMClient:
 
         mock_response = LLMResponse(
             id='resp_img', model='gpt-4o', status='completed',
-            output_text='{"answer": "Look at this", "aditional_data": {}}',
+            output_text='{"answer": "Look at this", "additional_data": {}}',
             output=[], usage=Usage(10, 10, 20),
             content_parts=[
                 {'type': 'text', 'text': 'Look at this'},
@@ -457,6 +460,7 @@ class TestLLMClient:
             company_short_name='test_company',
             function_name='test_func',
             user_identifier='user1',
+            _iat_runtime_source='',
             request_images=fake_images,
             a=1
         )
@@ -505,7 +509,7 @@ class TestLLMClient:
             },
             {
                 "role": "assistant",
-                "content": json.dumps({"answer": "Test response", "aditional_data": {}}),
+                "content": json.dumps({"answer": "Test response", "additional_data": {}}),
             },
         ]
 
@@ -796,18 +800,91 @@ class TestLLMClient:
             assert decoded['answer_format'] == 'json_fallback'
 
         # Simular una respuesta completa y válida
-        with patch('json.loads', return_value={'answer': 'hola', 'aditional_data': {}}):
+        with patch('json.loads', return_value={'answer': 'hola', 'additional_data': {}}):
             decoded = self.client.decode_response(response)
             assert decoded['status'] is True
             assert decoded['answer'] == 'hola'
             assert decoded['answer_format'] == 'json_string'
+            assert decoded["additional_data"] == {}
+
+    def test_decode_response_accepts_canonical_additional_data(self):
+        response = LLMResponse(
+            'r1',
+            'm1',
+            'completed',
+            json.dumps({"answer": "hola", "additional_data": {"customer_id": "c-1"}}),
+            [],
+            Usage(1, 1, 2),
+        )
+
+        decoded = self.client.decode_response(response)
+
+        assert decoded["status"] is True
+        assert decoded["answer"] == "hola"
+        assert decoded["additional_data"] == {"customer_id": "c-1"}
+
+    def test_decode_response_rescues_legacy_additional_data_from_json_fallback(self):
+        response = LLMResponse(
+            'r1',
+            'm1',
+            'completed',
+            (
+                '{"answer": "<table><tr><td>ok</td></tr></table>", '
+                '"aditional_data": {\'check_list\': false, \'problems\': \'faltan poderes\'}}'
+            ),
+            [],
+            Usage(1, 1, 2),
+        )
+
+        decoded = self.client.decode_response(response)
+
+        assert decoded["status"] is True
+        assert decoded["answer"] == "<table><tr><td>ok</td></tr></table>"
+        assert decoded["answer_format"] == "plaintext_fallback_rescued"
+        assert decoded["additional_data"] == {
+            "check_list": False,
+            "problems": "faltan poderes",
+        }
+
+    def test_decode_response_extracts_embedded_additional_data_from_plaintext(self):
+        response = LLMResponse(
+            'r1',
+            'm1',
+            'completed',
+            (
+                "<ul>\n"
+                "  <li>rut: 76053255-K</li>\n"
+                "  <li>company_name: LONCOTEC S.A.</li>\n"
+                "</ul>\n"
+                '{"additional_data":{"rut":"76053255-K","company_name":"LONCOTEC S.A.",'
+                '"annual_sales":312000000}}'
+            ),
+            [],
+            Usage(1, 1, 2),
+        )
+
+        decoded = self.client.decode_response(response)
+
+        assert decoded["status"] is True
+        assert decoded["answer_format"] == "plaintext"
+        assert decoded["answer"] == (
+            "<ul>\n"
+            "  <li>rut: 76053255-K</li>\n"
+            "  <li>company_name: LONCOTEC S.A.</li>\n"
+            "</ul>"
+        )
+        assert decoded["additional_data"] == {
+            "rut": "76053255-K",
+            "company_name": "LONCOTEC S.A.",
+            "annual_sales": 312000000,
+        }
 
     def test_apply_response_contract_sets_structured_output_on_valid_schema(self):
         decoded = {
             "status": False,
             "output_text": '{"customer_id":"c-100"}',
             "answer": "",
-            "aditional_data": {},
+            "additional_data": {},
             "answer_format": "plaintext",
             "error_message": "legacy error",
         }
@@ -831,19 +908,19 @@ class TestLLMClient:
         assert result["structured_output"]["customer_id"] == "c-100"
         assert result["answer_format"] == "structured_only"
 
-    def test_apply_response_contract_accepts_legacy_answer_with_aditional_data_payload(self):
+    def test_apply_response_contract_accepts_answer_with_additional_data_payload(self):
         decoded = {
             "status": True,
             "output_text": json.dumps({
                 "answer": "ok",
-                "aditional_data": {"customer_id": "c-legacy"},
+                "additional_data": {"customer_id": "c-100"},
             }),
             "parsed_json": {
                 "answer": "ok",
-                "aditional_data": {"customer_id": "c-legacy"},
+                "additional_data": {"customer_id": "c-100"},
             },
             "answer": "ok",
-            "aditional_data": {"customer_id": "c-legacy"},
+            "additional_data": {"customer_id": "c-100"},
             "answer_format": "json_string",
             "error_message": "",
         }
@@ -863,7 +940,7 @@ class TestLLMClient:
 
         assert result["schema_applied"] is True
         assert result["schema_valid"] is True
-        assert result["structured_output"] == {"customer_id": "c-legacy"}
+        assert result["structured_output"] == {"customer_id": "c-100"}
         # Keeps chat-compatible answer but exposes structured payload.
         assert result["answer"] == "ok"
 
@@ -872,7 +949,7 @@ class TestLLMClient:
             "status": True,
             "output_text": '{"score": 10}',
             "answer": "fallback",
-            "aditional_data": {},
+            "additional_data": {},
             "answer_format": "plaintext",
             "error_message": "",
         }
@@ -896,14 +973,14 @@ class TestLLMClient:
             "status": True,
             "output_text": json.dumps({
                 "answer": "{\"sales_2025\":[{\"id\":1,\"country\":\"Chile\",\"sales\":100.5}]}",
-                "aditional_data": {},
+                "additional_data": {},
             }),
             "parsed_json": {
                 "answer": "{\"sales_2025\":[{\"id\":1,\"country\":\"Chile\",\"sales\":100.5}]}",
-                "aditional_data": {},
+                "additional_data": {},
             },
             "answer": "{\"sales_2025\":[{\"id\":1,\"country\":\"Chile\",\"sales\":100.5}]}",
-            "aditional_data": {},
+            "additional_data": {},
             "answer_format": "json_string",
             "error_message": "",
         }
@@ -941,7 +1018,7 @@ class TestLLMClient:
             "status": True,
             "output_text": '{"paper_title":"Study title","authors":["A. One"],"publication_date":"2021","diseases_studied":["depression"],"patient_count":10,"mri_types":["structural_mri"],"brain_atlases":[],"other":"noise"}',
             "answer": "",
-            "aditional_data": {},
+            "additional_data": {},
             "answer_format": "plaintext",
             "error_message": "",
         }
@@ -985,7 +1062,7 @@ class TestLLMClient:
             "status": True,
             "output_text": '{"paper_title":"Study title","other":"noise"}',
             "answer": "",
-            "aditional_data": {},
+            "additional_data": {},
             "answer_format": "plaintext",
             "error_message": "",
         }
@@ -1006,12 +1083,12 @@ class TestLLMClient:
         with pytest.raises(IAToolkitException):
             self.client._apply_response_contract(decoded, contract)
 
-    def test_apply_response_contract_uses_legacy_aditional_data_when_no_contract(self):
+    def test_apply_response_contract_uses_additional_data_when_no_contract(self):
         decoded = {
             "status": True,
-            "output_text": '{"answer":"ok","aditional_data":{"employees":[{"id":1}]}}',
+            "output_text": '{"answer":"ok","additional_data":{"employees":[{"id":1}]}}',
             "answer": "ok",
-            "aditional_data": {"employees": [{"id": 1}]},
+            "additional_data": {"employees": [{"id": 1}]},
             "answer_format": "json_string",
             "error_message": "",
         }
