@@ -80,7 +80,8 @@ class ToolService:
                  pdf_service: PdfService,
                  mail_service: MailService,
                  memory_service=None,
-                 web_search_service=None):
+                 web_search_service=None,
+                 knowledge_wiki_service=None):
         self.llm_query_repo = llm_query_repo
         self.profile_repo = profile_repo
         self.sql_service = sql_service
@@ -92,6 +93,7 @@ class ToolService:
         self.visual_kb_service = visual_kb_service
         self.visual_tool_service = visual_tool_service
         self._web_search_service = web_search_service
+        self._knowledge_wiki_service = knowledge_wiki_service
         self.system_tool_force_include_capabilities = get_system_tool_force_include_capabilities()
 
         # execution mapper for system tools
@@ -105,6 +107,8 @@ class ToolService:
             "iat_document_search": self._handle_document_search_tool,
             "iat_memory_search": self._handle_memory_search_tool,
             "iat_memory_get_page": self._handle_memory_get_page_tool,
+            "iat_knowledge_wiki_search": self._handle_knowledge_wiki_search_tool,
+            "iat_knowledge_wiki_get_page": self._handle_knowledge_wiki_get_page_tool,
             "iat_web_search": self._handle_web_search_tool,
         }
 
@@ -121,6 +125,13 @@ class ToolService:
             from iatoolkit.services.memory_service import MemoryService
             self._memory_service = current_iatoolkit().get_injector().get(MemoryService)
         return self._memory_service
+
+    @property
+    def knowledge_wiki_service(self):
+        if self._knowledge_wiki_service is None:
+            from iatoolkit.services.tenant_knowledge_wiki_service import TenantKnowledgeWikiService
+            self._knowledge_wiki_service = current_iatoolkit().get_injector().get(TenantKnowledgeWikiService)
+        return self._knowledge_wiki_service
 
     @classmethod
     def register_tool_lifecycle_hook(cls, hook):
@@ -303,6 +314,34 @@ class ToolService:
             )
 
         return response
+
+    def _handle_knowledge_wiki_search_tool(
+        self,
+        company_short_name: str,
+        query: str,
+        wiki_key: str | None = None,
+        limit: int = 5,
+        **kwargs,
+    ):
+        return self.knowledge_wiki_service.search_pages(
+            company_short_name=company_short_name,
+            wiki_key=wiki_key,
+            query=query,
+            limit=limit,
+        )
+
+    def _handle_knowledge_wiki_get_page_tool(
+        self,
+        company_short_name: str,
+        wiki_key: str,
+        path: str,
+        **kwargs,
+    ):
+        return self.knowledge_wiki_service.get_page(
+            company_short_name=company_short_name,
+            wiki_key=wiki_key,
+            path=path,
+        )
 
     @staticmethod
     def _serialize_document_chunks(chunks: list[dict]) -> str:
@@ -1256,6 +1295,7 @@ class ToolService:
     def _resolve_runtime_tool_capabilities(self, company_short_name: str) -> dict[str, bool]:
         has_sql_sources = False
         has_kb_collections = False
+        has_knowledge_wikis = False
 
         try:
             has_sql_sources = bool(self.sql_service.get_db_names(company_short_name))
@@ -1267,9 +1307,16 @@ class ToolService:
         except Exception as exc:
             logging.warning("Failed to resolve KB tool capability for %s: %s", company_short_name, exc)
 
+        try:
+            response = self.knowledge_wiki_service.list_wikis(company_short_name)
+            has_knowledge_wikis = bool(response.get("status") == "success" and response.get("wikis"))
+        except Exception as exc:
+            logging.warning("Failed to resolve knowledge wiki tool capability for %s: %s", company_short_name, exc)
+
         return {
             "has_sql_sources": has_sql_sources,
             "has_kb_collections": has_kb_collections,
+            "has_knowledge_wikis": has_knowledge_wikis,
         }
 
 

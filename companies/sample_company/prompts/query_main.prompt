@@ -46,7 +46,7 @@ refiere al **último cliente identificado** en la conversación.
    Para la parte **textual** de tu respuesta, utiliza preferentemente el siguiente formato JSON.
    {
       "answer": "Tu respuesta final al usuario. Usa Markdown para formato (negritas, listas, tablas).",
-      "aditional_data": {}
+      "additional_data": {}
    }
 
 2. **Generación de Imágenes y Contenido Multimodal:**
@@ -55,5 +55,4 @@ refiere al **último cliente identificado** en la conversación.
    - **NO** intentes meter la imagen dentro del JSON.
    - En el campo "answer" del JSON, describe o presenta la imagen que has generado.
    - incluye la imagen como parte multimodal (output_image / file / base64) en la respuesta.
-
 

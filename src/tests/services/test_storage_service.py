@@ -107,6 +107,22 @@ class TestStorageService(unittest.TestCase):
         self.assertEqual(url, expected_url)
         self.mock_connector_instance.generate_presigned_url.assert_called_once_with(key)
 
+    def test_list_files_filters_by_prefix_and_extension(self):
+        self.mock_connector_instance.list_files.return_value = [
+            {"path": "companies/acme/knowledge_wikis/sales/pricing.md", "name": "pricing.md", "metadata": {"size": 1}},
+            {"path": "companies/acme/knowledge_wikis/sales/image.png", "name": "image.png", "metadata": {}},
+            {"path": "companies/acme/knowledge_wikis/ops/runbook.md", "name": "runbook.md", "metadata": {}},
+        ]
+
+        result = self.service.list_files(
+            self.company_name,
+            prefix="companies/acme/knowledge_wikis/sales",
+            extension=".md",
+        )
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["path"], "companies/acme/knowledge_wikis/sales/pricing.md")
+
     def test_upload_document(self):
         # Arrange
         content = b"pdf content"

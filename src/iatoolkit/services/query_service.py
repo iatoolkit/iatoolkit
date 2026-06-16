@@ -832,7 +832,7 @@ class QueryService:
             "### OUTPUT CONTRACT (MANDATORY)\n"
             "Return ONLY one valid JSON object matching this schema.\n"
             "Do not include markdown fences, explanations, or extra text.\n"
-            "Do NOT use wrapper keys like `answer` or `aditional_data`.\n"
+            "Do NOT use wrapper keys like `answer` or `additional_data`.\n"
             "Every required key must be present exactly once.\n"
             "If a required field is unknown and the schema allows null, return null instead of omitting the key.\n"
             "Ignore any previous output-format instruction that conflicts with this contract.\n"

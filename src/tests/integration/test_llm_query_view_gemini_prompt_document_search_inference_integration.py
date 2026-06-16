@@ -310,7 +310,7 @@ def test_prompt_execution_with_gemini_document_search_and_inference_embeddings()
         output_text=json.dumps(
             {
                 "answer": "Según el manual de seguridad, se exige casco y guantes.",
-                "aditional_data": {},
+                "additional_data": {},
             }
         ),
         output=[],

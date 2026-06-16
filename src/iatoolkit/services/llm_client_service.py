@@ -15,6 +15,7 @@ import markdown2
 import os
 import logging
 import json
+import yaml
 from html import unescape
 from iatoolkit.common.exceptions import IAToolkitException
 import threading
@@ -427,7 +428,7 @@ class llmClient:
                 'stats': combined_stats,
                 'answer_format': decoded_response.get('answer_format', ''),
                 'error_message': decoded_response.get('error_message', ''),
-                'aditional_data': decoded_response.get('aditional_data', {}),
+                'additional_data': self._extract_additional_data_payload(decoded_response),
                 'query_id': query.id,
                 'model': model,
                 'reasoning_content': final_reasoning,
@@ -814,7 +815,7 @@ class llmClient:
             "status": False,
             "output_text": message,
             "answer": "",
-            "aditional_data": {},
+            "additional_data": {},
             "answer_format": "",
             "error_message": "",
             "parsed_json": None,
@@ -827,21 +828,25 @@ class llmClient:
 
         if isinstance(message, dict):
             decoded_response["parsed_json"] = message
-            if 'answer' not in message or 'aditional_data' not in message:
-                decoded_response['error_message'] = 'El llm respondio un diccionario invalido: missing "answer" key'
+            if 'answer' not in message or not self._has_additional_data_key(message):
+                decoded_response['error_message'] = 'El llm respondio un diccionario invalido: missing "answer" or "additional_data" key'
                 return decoded_response
 
+            additional_data = self._extract_additional_data_payload(message)
             decoded_response['status'] = True
             decoded_response['answer'] = message.get('answer', '')
-            decoded_response['aditional_data'] = message.get('aditional_data', {})
+            decoded_response['additional_data'] = additional_data
             decoded_response['answer_format'] = "dict"
             return decoded_response
 
         clean_message = re.sub(r'^\s*//.*$', '', message, flags=re.MULTILINE)
 
         if not ('```json' in clean_message or clean_message.strip().startswith('{')):
+            additional_data, clean_answer = self._extract_embedded_additional_data_from_text(clean_message)
             decoded_response['status'] = True
-            decoded_response['answer'] = clean_message
+            decoded_response['answer'] = clean_answer
+            if additional_data is not None:
+                decoded_response['additional_data'] = additional_data
             decoded_response['answer_format'] = "plaintext"
             return decoded_response
 
@@ -859,9 +864,9 @@ class llmClient:
             decoded_response['error_message'] = f'Error decodificando JSON: {str(e)}'
 
             # Intenta rescatar el contenido de "answer" con una expresión regular más robusta.
-            # Este patrón busca "answer": "..." y captura todo hasta que encuentra "," y "aditional_data".
+            # Este patrón busca "answer": "..." y captura hasta que encuentra el campo de metadata.
             # re.DOTALL es crucial para que `.` coincida con los saltos de línea en el HTML.
-            match = re.search(r'"answer"\s*:\s*"(.*?)"\s*,\s*"aditional_data"', clean_message, re.DOTALL)
+            match = re.search(r'"answer"\s*:\s*"(.*?)"\s*,\s*"(?:additional_data|aditional_data)"', clean_message, re.DOTALL)
 
             if match:
                 # ¡Éxito! Se encontró y extrajo el "answer".
@@ -870,6 +875,9 @@ class llmClient:
 
                 decoded_response['status'] = True
                 decoded_response['answer'] = rescued_answer
+                additional_data = self._extract_additional_data_from_jsonish_text(clean_message)
+                if additional_data is not None:
+                    decoded_response['additional_data'] = additional_data
                 decoded_response['answer_format'] = "plaintext_fallback_rescued"
             else:
                 # Si la regex no encuentra nada, usar el texto completo como último recurso.
@@ -879,8 +887,8 @@ class llmClient:
         else:
             # --- SOLO SE EJECUTA SI EL TRY FUE EXITOSO ---
             decoded_response["parsed_json"] = response_dict
-            if 'answer' not in response_dict or 'aditional_data' not in response_dict:
-                decoded_response['error_message'] = f'faltan las claves "answer" o "aditional_data" en el JSON'
+            if 'answer' not in response_dict or not self._has_additional_data_key(response_dict):
+                decoded_response['error_message'] = f'faltan las claves "answer" o "additional_data" en el JSON'
 
                 # fallback
                 decoded_response['status'] = True
@@ -888,12 +896,136 @@ class llmClient:
                 decoded_response['answer_format'] = "json_fallback"
             else:
                 # El diccionario JSON es perfecto.
+                additional_data = self._extract_additional_data_payload(response_dict)
                 decoded_response['status'] = True
                 decoded_response['answer'] = response_dict.get('answer', '')
-                decoded_response['aditional_data'] = response_dict.get('aditional_data', {})
+                decoded_response['additional_data'] = additional_data
                 decoded_response['answer_format'] = "json_string"
 
         return decoded_response
+
+    @staticmethod
+    def _has_additional_data_key(payload: dict) -> bool:
+        return isinstance(payload, dict) and (
+            "additional_data" in payload or "aditional_data" in payload
+        )
+
+    @staticmethod
+    def _extract_additional_data_payload(payload: dict):
+        if not isinstance(payload, dict):
+            return {}
+        value = (
+            payload.get("additional_data")
+            if "additional_data" in payload
+            else payload.get("aditional_data", {})
+        )
+        return {} if value is None else value
+
+    @staticmethod
+    def _extract_additional_data_from_jsonish_text(text: str):
+        if not isinstance(text, str) or not text.strip():
+            return None
+
+        match = re.search(r'"(?:additional_data|aditional_data)"\s*:', text)
+        if not match:
+            return None
+
+        value_start = match.end()
+        while value_start < len(text) and text[value_start].isspace():
+            value_start += 1
+        if value_start >= len(text):
+            return None
+
+        raw_value = llmClient._extract_jsonish_value(text, value_start)
+        if raw_value is None:
+            return None
+
+        for loader in (json.loads, yaml.safe_load):
+            try:
+                parsed = loader(raw_value)
+            except Exception:
+                continue
+            return {} if parsed is None else parsed
+
+        return None
+
+    @staticmethod
+    def _extract_embedded_additional_data_from_text(text: str):
+        if not isinstance(text, str) or not text.strip():
+            return None, text
+
+        for match in re.finditer(r'"(?:additional_data|aditional_data)"\s*:', text):
+            object_start = text.rfind("{", 0, match.start())
+            while object_start != -1:
+                raw_object = llmClient._extract_jsonish_value(text, object_start)
+                if raw_object:
+                    for loader in (json.loads, yaml.safe_load):
+                        try:
+                            parsed = loader(raw_object)
+                        except Exception:
+                            continue
+                        if llmClient._has_additional_data_key(parsed):
+                            additional_data = llmClient._extract_additional_data_payload(parsed)
+                            clean_text = (text[:object_start] + text[object_start + len(raw_object):]).strip()
+                            return additional_data, clean_text
+
+                object_start = text.rfind("{", 0, object_start)
+
+        return None, text
+
+    @staticmethod
+    def _extract_jsonish_value(text: str, start: int) -> str | None:
+        opener = text[start]
+        matching = {"{": "}", "[": "]"}
+        if opener in matching:
+            stack = [matching[opener]]
+            quote = None
+            escaped = False
+
+            for pos in range(start + 1, len(text)):
+                char = text[pos]
+                if quote:
+                    if escaped:
+                        escaped = False
+                    elif char == "\\":
+                        escaped = True
+                    elif char == quote:
+                        quote = None
+                    continue
+
+                if char in {"'", '"'}:
+                    quote = char
+                    continue
+
+                if char in matching:
+                    stack.append(matching[char])
+                    continue
+
+                if stack and char == stack[-1]:
+                    stack.pop()
+                    if not stack:
+                        return text[start:pos + 1].strip()
+
+            return None
+
+        if opener in {"'", '"'}:
+            quote = opener
+            escaped = False
+            for pos in range(start + 1, len(text)):
+                char = text[pos]
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == quote:
+                    return text[start:pos + 1].strip()
+            return None
+
+        value_end = start
+        while value_end < len(text) and text[value_end] not in {",", "}", "\n"}:
+            value_end += 1
+
+        return text[start:value_end].strip() or None
 
     def _apply_response_contract(self, decoded_response: dict, response_contract: Optional[Dict[str, Any]]) -> dict:
         if not isinstance(decoded_response, dict):
@@ -936,9 +1068,9 @@ class llmClient:
 
         if isinstance(parsed_json, dict):
             _add_candidate(parsed_json.get("answer"))
-            _add_candidate(parsed_json.get("aditional_data"))
+            _add_candidate(self._extract_additional_data_payload(parsed_json))
 
-        _add_candidate(decoded_response.get("aditional_data"))
+        _add_candidate(decoded_response.get("additional_data"))
         _add_candidate(decoded_response.get("answer"))
         _add_candidate(decoded_response.get("output_text"))
 
@@ -1019,7 +1151,7 @@ class llmClient:
     def _apply_legacy_structured_fallback(self, decoded_response: dict) -> dict:
         """
         Compatibility fallback:
-        if no schema contract was applied, expose aditional_data as structured_output when present.
+        if no schema contract was applied, expose additional_data as structured_output when present.
         """
         if not isinstance(decoded_response, dict):
             return decoded_response
@@ -1033,7 +1165,7 @@ class llmClient:
         if decoded_response.get("structured_output") is not None:
             return decoded_response
 
-        additional_data = decoded_response.get("aditional_data")
+        additional_data = self._extract_additional_data_payload(decoded_response)
         if isinstance(additional_data, (dict, list)):
             if isinstance(additional_data, dict) and not additional_data:
                 return decoded_response
@@ -1051,6 +1183,7 @@ class llmClient:
             "id": response.id,
             "model": response.model,
             "status": response.status,
+            "additional_data": self._extract_additional_data_payload(decoded_response),
             "structured_output": decoded_response.get("structured_output"),
             "schema_valid": decoded_response.get("schema_valid"),
             "schema_errors": decoded_response.get("schema_errors", []),

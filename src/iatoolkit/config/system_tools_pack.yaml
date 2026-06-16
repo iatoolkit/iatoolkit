@@ -276,6 +276,86 @@ tools:
           description: "Opcional en la práctica. Usa null cuando no necesites filtrar por metadata. No inventes filtros ni envíes [] por defecto. Ejemplo: [{'key':'doc.type','value':'invoice'},{'key':'chunk.source_type','value':'table'}]."
       required:
         - query
+  - function_name: iat_knowledge_wiki_search
+    description: Busca páginas publicadas dentro de las wikis de conocimiento compartidas por la empresa. Úsala para políticas, playbooks, procesos, runbooks, conocimiento operativo, onboarding, guías por área o información curada del tenant. No es memoria personal del usuario ni búsqueda documental cruda.
+    routing:
+      force_include_capability: has_knowledge_wikis
+    routing_profile:
+      tags:
+        - knowledge_wiki
+        - company_knowledge
+        - tenant_context
+        - playbook
+        - policy
+        - process
+        - runbook
+        - onboarding
+        - wiki
+      intents:
+        - Search curated company wiki pages for policies, processes, playbooks, runbooks, or area knowledge.
+        - Retrieve published tenant knowledge before answering operational questions.
+        - Find the relevant company wiki page when the user asks about internal procedures.
+      examples:
+        - iat_knowledge_wiki_search(query="politica de descuentos enterprise", wiki_key="sales", limit=5)
+        - iat_knowledge_wiki_search(query="como escalar incidentes sev1", wiki_key="ops", limit=3)
+        - iat_knowledge_wiki_search(query="onboarding de nuevos ejecutivos", limit=5)
+      cost:
+        penalty: 0.07
+        latency_class: low
+        expensive: false
+    parameters:
+      type: object
+      properties:
+        query:
+          type: string
+          description: Texto que describe el conocimiento publicado que deseas recuperar.
+        wiki_key:
+          anyOf:
+            - type: string
+            - type: "null"
+          description: Clave opcional de la wiki a consultar. Usa null para buscar en todas las wikis publicadas.
+        limit:
+          type: integer
+          description: Cantidad máxima de páginas a recuperar.
+          minimum: 1
+          maximum: 25
+      required:
+        - query
+        - limit
+  - function_name: iat_knowledge_wiki_get_page
+    description: Recupera una página completa de una wiki de conocimiento compartida por la empresa usando wiki_key y path/slug. Úsala después de iat_knowledge_wiki_search cuando necesites leer el contenido completo antes de responder.
+    routing:
+      force_include_capability: has_knowledge_wikis
+    routing_profile:
+      tags:
+        - knowledge_wiki
+        - company_knowledge
+        - tenant_context
+        - page
+        - markdown
+        - wiki
+      intents:
+        - Open a published tenant wiki page by path or slug.
+        - Read the full markdown content of a company knowledge page before answering.
+      examples:
+        - iat_knowledge_wiki_get_page(wiki_key="sales", path="pricing.md")
+        - iat_knowledge_wiki_get_page(wiki_key="ops", path="incident-response.md")
+      cost:
+        penalty: 0.04
+        latency_class: low
+        expensive: false
+    parameters:
+      type: object
+      properties:
+        wiki_key:
+          type: string
+          description: Clave de la wiki publicada.
+        path:
+          type: string
+          description: Path o slug de la página a recuperar.
+      required:
+        - wiki_key
+        - path
   - function_name: iat_memory_search
     description: Busca páginas relevantes dentro de la Memoria personal del usuario y retorna contexto compilado. Incluye la señal `has_native_files` cuando una memoria tiene archivos fuente que pueden adjuntarse nativamente al modelo. Debe usarse antes de responder preguntas sobre cosas guardadas, notas previas, memoria del usuario, continuidad entre sesiones o "lo que hablamos/guardé antes".
     routing:

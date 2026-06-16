@@ -69,6 +69,25 @@ class MemoryCaptureStatus(str, enum.Enum):
     FAILED = "failed"
 
 
+class KnowledgeWikiStatus(str, enum.Enum):
+    DRAFT = "draft"
+    PUBLISHED = "published"
+    ARCHIVED = "archived"
+
+
+class KnowledgeWikiPageStatus(str, enum.Enum):
+    DRAFT = "draft"
+    PUBLISHED = "published"
+    ARCHIVED = "archived"
+    BROKEN = "broken"
+
+
+class KnowledgeWikiSyncStatus(str, enum.Enum):
+    RUNNING = "running"
+    SUCCESS = "success"
+    FAILED = "failed"
+
+
 # Cross-database JSON type:
 # - PostgreSQL: JSONB (for jsonb operators/functions/indexing)
 # - SQLite/others (tests): JSON
@@ -177,6 +196,16 @@ class Company(Base):
     )
     memory_pages = relationship(
         "MemoryPage",
+        back_populates="company",
+        cascade="all, delete-orphan",
+    )
+    knowledge_wikis = relationship(
+        "KnowledgeWiki",
+        back_populates="company",
+        cascade="all, delete-orphan",
+    )
+    knowledge_wiki_pages = relationship(
+        "KnowledgeWikiPage",
         back_populates="company",
         cascade="all, delete-orphan",
     )
@@ -514,6 +543,100 @@ class VSImage(Base):
 
     company = relationship("Company", back_populates="vsimages")
     document_image = relationship("DocumentImage", back_populates="vsimage")
+
+    def to_dict(self):
+        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
+
+
+class KnowledgeWiki(Base):
+    """Represents a published markdown knowledge wiki scoped to a tenant."""
+    __tablename__ = "iat_knowledge_wikis"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_companies.id", ondelete="CASCADE"), nullable=False)
+    wiki_key = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    root_storage_key = Column(String, nullable=False)
+    status = Column(Enum(KnowledgeWikiStatus), nullable=False, default=KnowledgeWikiStatus.PUBLISHED)
+    settings = Column(JSON_NATIVE, nullable=False, default=dict)
+    last_synced_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("company_id", "wiki_key", name="uix_knowledge_wiki_company_key"),
+    )
+
+    company = relationship("Company", back_populates="knowledge_wikis")
+    pages = relationship(
+        "KnowledgeWikiPage",
+        back_populates="wiki",
+        cascade="all, delete-orphan",
+    )
+    sync_runs = relationship(
+        "KnowledgeWikiSyncRun",
+        back_populates="wiki",
+        cascade="all, delete-orphan",
+    )
+
+    def to_dict(self):
+        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
+
+
+class KnowledgeWikiPage(Base):
+    """Represents one published markdown page inside a tenant knowledge wiki."""
+    __tablename__ = "iat_knowledge_wiki_pages"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_companies.id", ondelete="CASCADE"), nullable=False)
+    wiki_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_knowledge_wikis.id", ondelete="CASCADE"), nullable=False)
+    path = Column(String, nullable=False)
+    slug = Column(String, nullable=False)
+    title = Column(String, nullable=False)
+    summary = Column(Text, nullable=True)
+    body_text = Column(Text, nullable=True)
+    source_storage_key = Column(String, nullable=False)
+    status = Column(Enum(KnowledgeWikiPageStatus), nullable=False, default=KnowledgeWikiPageStatus.PUBLISHED)
+    tags = Column(JSON_NATIVE, nullable=False, default=list)
+    owner = Column(String, nullable=True)
+    source_meta = Column(JSON_NATIVE, nullable=False, default=dict)
+    last_synced_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("wiki_id", "path", name="uix_knowledge_wiki_page_path"),
+        UniqueConstraint("wiki_id", "slug", name="uix_knowledge_wiki_page_slug"),
+    )
+
+    company = relationship("Company", back_populates="knowledge_wiki_pages")
+    wiki = relationship("KnowledgeWiki", back_populates="pages")
+
+    def to_dict(self):
+        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
+
+
+class KnowledgeWikiSyncRun(Base):
+    """Tracks one import/reindex pass for a tenant knowledge wiki."""
+    __tablename__ = "iat_knowledge_wiki_sync_runs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_companies.id", ondelete="CASCADE"), nullable=False)
+    wiki_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_knowledge_wikis.id", ondelete="CASCADE"), nullable=False)
+    status = Column(Enum(KnowledgeWikiSyncStatus), nullable=False, default=KnowledgeWikiSyncStatus.RUNNING)
+    pages_seen = Column(Integer, nullable=False, default=0)
+    pages_indexed = Column(Integer, nullable=False, default=0)
+    pages_failed = Column(Integer, nullable=False, default=0)
+    errors = Column(JSON_NATIVE, nullable=False, default=list)
+    metadata_json = Column(JSON_NATIVE, nullable=False, default=dict)
+    started_at = Column(DateTime, default=datetime.now, nullable=False)
+    finished_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+    company = relationship("Company")
+    wiki = relationship("KnowledgeWiki", back_populates="sync_runs")
 
     def to_dict(self):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}

@@ -105,6 +105,46 @@ class StorageService:
         connector = self._get_connector(company_short_name)
         return connector.generate_presigned_url(storage_key)
 
+    def list_files(
+        self,
+        company_short_name: str,
+        prefix: str | None = None,
+        extension: str | None = None,
+    ) -> list[dict]:
+        """Lists files from the configured storage connector with optional filtering."""
+        connector = self._get_connector(company_short_name)
+        files = connector.list_files()
+        normalized_prefix = str(prefix or "").strip().strip("/")
+        normalized_extension = str(extension or "").strip().lower()
+        if normalized_extension and not normalized_extension.startswith("."):
+            normalized_extension = f".{normalized_extension}"
+
+        normalized_files = []
+        for item in files or []:
+            if isinstance(item, str):
+                path = item
+                entry = {"path": path, "name": os.path.basename(path), "metadata": {}}
+            elif isinstance(item, dict):
+                path = str(item.get("path") or item.get("storage_key") or item.get("key") or "").strip()
+                if not path:
+                    continue
+                entry = {
+                    "path": path,
+                    "name": str(item.get("name") or os.path.basename(path)).strip(),
+                    "metadata": item.get("metadata") if isinstance(item.get("metadata"), dict) else {},
+                }
+            else:
+                continue
+
+            comparable_path = path.strip("/")
+            if normalized_prefix and comparable_path != normalized_prefix and not comparable_path.startswith(f"{normalized_prefix}/"):
+                continue
+            if normalized_extension and not comparable_path.lower().endswith(normalized_extension):
+                continue
+            normalized_files.append(entry)
+
+        return sorted(normalized_files, key=lambda item: item["path"])
+
     def upload_document(self,
                         company_short_name: str,
                         file_content: bytes,
