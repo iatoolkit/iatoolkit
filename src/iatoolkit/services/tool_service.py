@@ -107,8 +107,9 @@ class ToolService:
             "iat_document_search": self._handle_document_search_tool,
             "iat_memory_search": self._handle_memory_search_tool,
             "iat_memory_get_page": self._handle_memory_get_page_tool,
-            "iat_knowledge_wiki_search": self._handle_knowledge_wiki_search_tool,
-            "iat_knowledge_wiki_get_page": self._handle_knowledge_wiki_get_page_tool,
+            "iat_wiki_get_index": self._handle_wiki_get_index_tool,
+            "iat_wiki_search": self._handle_wiki_search_tool,
+            "iat_wiki_get_page": self._handle_wiki_get_page_tool,
             "iat_web_search": self._handle_web_search_tool,
         }
 
@@ -315,12 +316,24 @@ class ToolService:
 
         return response
 
-    def _handle_knowledge_wiki_search_tool(
+    def _handle_wiki_get_index_tool(
+        self,
+        company_short_name: str,
+        wiki_key: str,
+        **kwargs,
+    ):
+        return self.knowledge_wiki_service.get_index(
+            company_short_name=company_short_name,
+            wiki_key=wiki_key,
+        )
+
+    def _handle_wiki_search_tool(
         self,
         company_short_name: str,
         query: str,
         wiki_key: str | None = None,
         limit: int = 5,
+        allowed_wiki_keys: list[str] | set[str] | tuple[str, ...] | None = None,
         **kwargs,
     ):
         return self.knowledge_wiki_service.search_pages(
@@ -328,19 +341,22 @@ class ToolService:
             wiki_key=wiki_key,
             query=query,
             limit=limit,
+            allowed_wiki_keys=allowed_wiki_keys,
         )
 
-    def _handle_knowledge_wiki_get_page_tool(
+    def _handle_wiki_get_page_tool(
         self,
         company_short_name: str,
         wiki_key: str,
         path: str,
+        allowed_wiki_keys: list[str] | set[str] | tuple[str, ...] | None = None,
         **kwargs,
     ):
         return self.knowledge_wiki_service.get_page(
             company_short_name=company_short_name,
             wiki_key=wiki_key,
             path=path,
+            allowed_wiki_keys=allowed_wiki_keys,
         )
 
     @staticmethod

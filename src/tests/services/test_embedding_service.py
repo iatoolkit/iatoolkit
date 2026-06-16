@@ -184,6 +184,43 @@ class TestEmbeddingService:
         )
         assert wrapper.model == 'openai-model'
 
+    def test_factory_rebuilds_openai_client_when_gateway_transport_changes(self, mocker):
+        mock_openai_client_class = mocker.patch('iatoolkit.services.embedding_service.OpenAI')
+        mock_openai_client_class.side_effect = [MagicMock(name='direct-client'), MagicMock(name='gateway-client')]
+
+        wrapper_direct = self.client_factory.get_client('company_openai')
+
+        self.mock_gateway_resolver.resolve.return_value = {
+            "enabled": True,
+            "api_key": "",
+            "base_url": "https://gateway.ai.cloudflare.com/v1/cf-account-id/default/openai",
+            "default_headers": {
+                "cf-aig-authorization": "Bearer cf-token",
+            },
+            "vendor": "cloudflare",
+            "mode": "provider_native",
+            "credential_mode": "cloudflare_managed",
+        }
+
+        wrapper_gateway = self.client_factory.get_client('company_openai')
+
+        assert isinstance(wrapper_direct, OpenAIClientWrapper)
+        assert isinstance(wrapper_gateway, OpenAIClientWrapper)
+        assert wrapper_direct is not wrapper_gateway
+        assert mock_openai_client_class.call_count == 2
+        assert mock_openai_client_class.call_args_list == [
+            call(
+                api_key='fake-openai-key',
+                base_url=None,
+                default_headers=None,
+            ),
+            call(
+                api_key='',
+                base_url='https://gateway.ai.cloudflare.com/v1/cf-account-id/default/openai',
+                default_headers={"cf-aig-authorization": "Bearer cf-token"},
+            ),
+        ]
+
     def test_factory_creates_custom_class_wrapper(self, mocker):
         """Tests that the factory correctly loads and instantiates a custom class."""
         mocker.patch('os.getenv', return_value='fake-custom-key')

@@ -126,26 +126,75 @@ class MarkdownWikiService:
         return parsed
 
     @staticmethod
-    def render_generic_index(entries: list[dict], *, title: str = "Wiki Index") -> str:
-        normalized_entries = [dict(entry) for entry in (entries or []) if isinstance(entry, dict)]
-        frontmatter = {
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "entry_count": len(normalized_entries),
-            "entries": normalized_entries,
-        }
-        lines = ["---", yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True).strip(), "---", "", f"# {title}", ""]
+    def _normalize_index_entries(entries: list[dict]) -> list[dict]:
+        return [dict(entry) for entry in (entries or []) if isinstance(entry, dict)]
+
+    @staticmethod
+    def _build_index_frontmatter(entries: list[dict], *, extra: dict[str, Any] | None = None) -> dict[str, Any]:
+        normalized_entries = MarkdownWikiService._normalize_index_entries(entries)
+        frontmatter = dict(extra or {})
+        frontmatter["generated_at"] = datetime.now(timezone.utc).isoformat()
+        frontmatter["entry_count"] = len(normalized_entries)
+        frontmatter["entries"] = normalized_entries
+        return frontmatter
+
+    @staticmethod
+    def _render_index_entry_lines(entries: list[dict]) -> list[str]:
+        normalized_entries = MarkdownWikiService._normalize_index_entries(entries)
         if not normalized_entries:
-            lines.append("No pages yet.")
-        else:
-            for entry in normalized_entries:
-                label = str(entry.get("title") or entry.get("path") or entry.get("slug") or "Untitled page").strip()
-                target = str(entry.get("path") or entry.get("wiki_path") or entry.get("slug") or "").strip()
-                summary = str(entry.get("summary") or "No summary yet.").strip()
-                if target:
-                    lines.append(f"- [{label}]({target}) - {summary}")
-                else:
-                    lines.append(f"- {label} - {summary}")
+            return ["No pages yet."]
+
+        lines: list[str] = []
+        for entry in normalized_entries:
+            label = str(entry.get("title") or entry.get("path") or entry.get("slug") or "Untitled page").strip()
+            target = str(entry.get("path") or entry.get("wiki_path") or entry.get("slug") or "").strip()
+            summary = str(entry.get("summary") or "No summary yet.").strip()
+            if target:
+                lines.append(f"- [{label}]({target}) - {summary}")
+            else:
+                lines.append(f"- {label} - {summary}")
+        return lines
+
+    @classmethod
+    def render_generic_index(cls, entries: list[dict], *, title: str = "Wiki Index") -> str:
+        normalized_entries = [dict(entry) for entry in (entries or []) if isinstance(entry, dict)]
+        frontmatter = cls._build_index_frontmatter(normalized_entries)
+        lines = ["---", yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True).strip(), "---", "", f"# {title}", ""]
+        lines.extend(cls._render_index_entry_lines(normalized_entries))
         return "\n".join(lines).strip() + "\n"
+
+    @classmethod
+    def render_curated_index(
+        cls,
+        authored_markdown: str,
+        entries: list[dict],
+        *,
+        title: str = "Wiki Index",
+        listing_title: str = "Available pages",
+    ) -> str:
+        parsed = cls.parse_frontmatter_document(authored_markdown)
+        authored_frontmatter = parsed.get("frontmatter") if isinstance(parsed.get("frontmatter"), dict) else {}
+        authored_body = str(parsed.get("body") or "").strip()
+        normalized_entries = cls._normalize_index_entries(entries)
+        frontmatter = cls._build_index_frontmatter(
+            normalized_entries,
+            extra={
+                **authored_frontmatter,
+                "authored_index": True,
+            },
+        )
+
+        sections: list[str] = []
+        if authored_body:
+            sections.append(authored_body)
+        else:
+            sections.append(f"# {title}")
+
+        listing_lines = [f"## {listing_title}", ""]
+        listing_lines.extend(cls._render_index_entry_lines(normalized_entries))
+        sections.append("\n".join(listing_lines).strip())
+
+        return cls.render_frontmatter_document(frontmatter, "\n\n".join(section for section in sections if section))
 
     @classmethod
     def parse_generic_index(cls, markdown: str) -> dict:

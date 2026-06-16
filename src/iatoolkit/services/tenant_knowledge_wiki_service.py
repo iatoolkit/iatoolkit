@@ -93,6 +93,34 @@ class TenantKnowledgeWikiService:
         wikis = self.knowledge_wiki_repo.list_wikis(company.id, include_archived=include_archived)
         return {"status": "success", "wikis": [self.serialize_wiki(wiki) for wiki in wikis]}
 
+    def delete_wiki(self, company_short_name: str, *, wiki_key: str) -> dict:
+        company = self._get_company(company_short_name)
+        if not company:
+            return {"status": "error", "error_message": "company not found"}
+        normalized_key = self.normalize_wiki_key(wiki_key)
+        if not normalized_key:
+            return {"status": "error", "error_message": "wiki_key is required"}
+        wiki = self.knowledge_wiki_repo.get_wiki_by_key(company.id, normalized_key)
+        if not wiki:
+            return {"status": "error", "error_message": "wiki not found"}
+
+        generated_index_key = self.markdown_wiki_service.join_storage_path(
+            wiki.root_storage_key,
+            self.GENERATED_FOLDER,
+            self.INDEX_FILENAME,
+        )
+        try:
+            self.markdown_wiki_service.delete_markdown(company_short_name, generated_index_key)
+        except Exception:
+            pass
+
+        self.knowledge_wiki_repo.delete_wiki(company.id, normalized_key)
+        return {
+            "status": "success",
+            "wiki_key": normalized_key,
+            "root_storage_key": wiki.root_storage_key,
+        }
+
     def sync_wiki(
         self,
         company_short_name: str,
@@ -198,22 +226,72 @@ class TenantKnowledgeWikiService:
             return {"status": "error", "error_message": "wiki not found"}
         pages = self.knowledge_wiki_repo.list_pages(wiki.id, include_archived=False, limit=1000)
         entries = [self.serialize_page(page, include_body=False) for page in pages]
+        markdown, _source_storage_key = self._resolve_index_markdown(
+            company_short_name,
+            wiki,
+            entries,
+        )
         return {
             "status": "success",
             "wiki": self.serialize_wiki(wiki),
             "entries": entries,
-            "markdown": self.markdown_wiki_service.render_generic_index(entries, title=wiki.name),
+            "markdown": markdown,
         }
 
-    def get_page(self, company_short_name: str, *, wiki_key: str, path: str) -> dict:
+    def get_page(
+        self,
+        company_short_name: str,
+        *,
+        wiki_key: str,
+        path: str,
+        allowed_wiki_keys: list[str] | set[str] | tuple[str, ...] | None = None,
+    ) -> dict:
         company = self._get_company(company_short_name)
         if not company:
             return {"status": "error", "error_message": "company not found"}
-        wiki = self.knowledge_wiki_repo.get_wiki_by_key(company.id, self.normalize_wiki_key(wiki_key))
+        normalized_wiki_key = self.normalize_wiki_key(wiki_key)
+        allowed_keys = self._normalize_allowed_wiki_keys(allowed_wiki_keys)
+        if allowed_keys is not None and not allowed_keys:
+            return {"status": "error", "error_message": "no published knowledge wiki resources available"}
+        if allowed_keys is not None and normalized_wiki_key not in allowed_keys:
+            return {"status": "error", "error_message": "wiki not exposed to MCP"}
+        wiki = self.knowledge_wiki_repo.get_wiki_by_key(company.id, normalized_wiki_key)
         if not wiki:
             return {"status": "error", "error_message": "wiki not found"}
 
         normalized_path = self._normalize_page_path(path)
+        if normalized_path in {"", "/"}:
+            pages = self.knowledge_wiki_repo.list_pages(wiki.id, include_archived=False, limit=1000)
+            entries = [self.serialize_page(page, include_body=False) for page in pages]
+            markdown, source_storage_key = self._resolve_index_markdown(
+                company_short_name,
+                wiki,
+                entries,
+            )
+            parsed = self.markdown_wiki_service.parse_frontmatter_document(markdown)
+            frontmatter = parsed.get("frontmatter") if isinstance(parsed.get("frontmatter"), dict) else {}
+            body = str(parsed.get("body") or "").strip()
+            return {
+                "status": "success",
+                "wiki": self.serialize_wiki(wiki),
+                "page": {
+                    "id": None,
+                    "wiki_id": wiki.id,
+                    "path": "/",
+                    "slug": "index",
+                    "title": str(frontmatter.get("title") or wiki.name or wiki.wiki_key).strip(),
+                    "summary": str(frontmatter.get("summary") or wiki.description or "").strip(),
+                    "source_storage_key": source_storage_key,
+                    "status": str(frontmatter.get("status") or "active").strip() or "active",
+                    "tags": self._normalize_tags(frontmatter.get("tags")),
+                    "owner": str(frontmatter.get("owner") or "").strip() or None,
+                    "last_synced_at": wiki.last_synced_at.isoformat() if wiki.last_synced_at else None,
+                    "updated_at": wiki.updated_at.isoformat() if wiki.updated_at else None,
+                    "body_text": body,
+                    "frontmatter": frontmatter,
+                    "markdown": markdown,
+                },
+            }
         page = self.knowledge_wiki_repo.get_page_by_path(wiki.id, normalized_path)
         if page is None:
             page = self.knowledge_wiki_repo.get_page_by_slug(wiki.id, self.markdown_wiki_service.slugify(path))
@@ -239,17 +317,43 @@ class TenantKnowledgeWikiService:
         query: str,
         wiki_key: str | None = None,
         limit: int = 5,
+        allowed_wiki_keys: list[str] | set[str] | tuple[str, ...] | None = None,
     ) -> dict:
         company = self._get_company(company_short_name)
         if not company:
             return {"status": "error", "results": [], "error_message": "company not found"}
         normalized_query = self._normalize_text(query)
         query_tokens = self._tokenize(query)
+        allowed_keys = self._normalize_allowed_wiki_keys(allowed_wiki_keys)
+        normalized_wiki_key = self.normalize_wiki_key(wiki_key) if wiki_key else None
+        if allowed_keys is not None and not allowed_keys:
+            return {
+                "status": "error",
+                "query": query,
+                "wiki_key": normalized_wiki_key,
+                "count": 0,
+                "results": [],
+                "error_message": "no published knowledge wiki resources available",
+            }
         if wiki_key:
-            wiki = self.knowledge_wiki_repo.get_wiki_by_key(company.id, self.normalize_wiki_key(wiki_key))
+            if allowed_keys is not None and normalized_wiki_key not in allowed_keys:
+                return {
+                    "status": "error",
+                    "query": query,
+                    "wiki_key": normalized_wiki_key,
+                    "count": 0,
+                    "results": [],
+                    "error_message": "wiki not exposed to MCP",
+                }
+            wiki = self.knowledge_wiki_repo.get_wiki_by_key(company.id, normalized_wiki_key)
             wikis = [wiki] if wiki else []
         else:
             wikis = self.knowledge_wiki_repo.list_wikis(company.id, include_archived=False)
+            if allowed_keys is not None:
+                wikis = [
+                    wiki for wiki in wikis
+                    if wiki and self.normalize_wiki_key(wiki.wiki_key) in allowed_keys
+                ]
 
         results = []
         for wiki in wikis:
@@ -281,7 +385,7 @@ class TenantKnowledgeWikiService:
         return {
             "status": "success",
             "query": query,
-            "wiki_key": self.normalize_wiki_key(wiki_key) if wiki_key else None,
+            "wiki_key": normalized_wiki_key,
             "count": len(results[:bounded_limit]),
             "results": results[:bounded_limit],
         }
@@ -386,14 +490,49 @@ class TenantKnowledgeWikiService:
         }
 
     def _write_generated_index(self, company_short_name: str, wiki: KnowledgeWiki) -> str:
-        index_payload = self.get_index(company_short_name, wiki_key=wiki.wiki_key)
-        markdown = index_payload.get("markdown") or ""
+        pages = self.knowledge_wiki_repo.list_pages(wiki.id, include_archived=False, limit=1000)
+        entries = [self.serialize_page(page, include_body=False) for page in pages]
+        markdown = self.markdown_wiki_service.render_generic_index(entries, title=wiki.name)
         storage_key = self.markdown_wiki_service.join_storage_path(
             wiki.root_storage_key,
             self.GENERATED_FOLDER,
             self.INDEX_FILENAME,
         )
         return self.markdown_wiki_service.write_markdown(company_short_name, storage_key, markdown)
+
+    def _resolve_index_markdown(
+        self,
+        company_short_name: str,
+        wiki: KnowledgeWiki,
+        entries: list[dict],
+    ) -> tuple[str, str]:
+        authored_index_storage_key = self.markdown_wiki_service.join_storage_path(
+            wiki.root_storage_key,
+            self.INDEX_FILENAME,
+        )
+        authored_index_markdown = self.markdown_wiki_service.read_optional_markdown(
+            company_short_name,
+            authored_index_storage_key,
+        )
+        if authored_index_markdown:
+            return (
+                self.markdown_wiki_service.render_curated_index(
+                    authored_index_markdown,
+                    entries,
+                    title=wiki.name,
+                ),
+                authored_index_storage_key,
+            )
+
+        generated_index_storage_key = self.markdown_wiki_service.join_storage_path(
+            wiki.root_storage_key,
+            self.GENERATED_FOLDER,
+            self.INDEX_FILENAME,
+        )
+        return (
+            self.markdown_wiki_service.render_generic_index(entries, title=wiki.name),
+            generated_index_storage_key,
+        )
 
     def _resolve_unique_slug(self, wiki_id: int, slug: str, path: str) -> str:
         candidate = self.markdown_wiki_service.slugify(slug)
@@ -484,6 +623,21 @@ class TenantKnowledgeWikiService:
         if slug in targets:
             return True
         return self._normalize_text(target.rsplit(".", 1)[0]) in targets
+
+    @classmethod
+    def _normalize_allowed_wiki_keys(
+        cls,
+        allowed_wiki_keys: list[str] | set[str] | tuple[str, ...] | None,
+    ) -> set[str] | None:
+        if allowed_wiki_keys is None:
+            return None
+        if not isinstance(allowed_wiki_keys, (list, set, tuple)):
+            return set()
+        normalized = {
+            cls.normalize_wiki_key(str(item or "").strip())
+            for item in allowed_wiki_keys
+        }
+        return {item for item in normalized if item}
 
     def _score_page_match(self, normalized_query: str, query_tokens: set[str], page: KnowledgeWikiPage) -> float:
         if not normalized_query:

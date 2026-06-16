@@ -36,11 +36,12 @@ class GoogleCloudStorageConnector(FileConnector):
             client = storage.Client.from_service_account_json(self.service_account_path)
         return client
 
-    def list_files(self) -> List[dict]:
+    def list_files(self, prefix: str | None = None) -> List[dict]:
         """
         Lista todos los archivos en el bucket de GCS como diccionarios con claves 'path', 'name' y 'metadata'.
         """
-        blobs = self.bucket.list_blobs()
+        normalized_prefix = str(prefix or "").strip().strip("/") or None
+        blobs = self.bucket.list_blobs(prefix=normalized_prefix)
 
         return [
             {

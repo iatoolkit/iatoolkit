@@ -15,21 +15,32 @@ class S3Connector(FileConnector):
         self.folder = folder
         self.s3 = boto3.client('s3', **auth)
 
-    def list_files(self) -> List[dict]:
+    def list_files(self, prefix: str | None = None) -> List[dict]:
         # List only real S3 objects representing files, excluding folder placeholders.
-        # Construimos el prefijo evitando dobles barras si folder está vacío
-        parts = [p.strip('/') for p in [self.prefix, self.folder] if p]
-        prefix = "/".join(parts)
+        list_prefix = self._resolve_list_prefix(prefix)
+        files = []
+        continuation_token = None
 
-        # Agregamos slash final solo si hay prefijo, para listar "contenido de carpeta"
-        if prefix:
-            prefix += "/"
+        while True:
+            params = {
+                "Bucket": self.bucket,
+                "Prefix": list_prefix,
+            }
+            if continuation_token:
+                params["ContinuationToken"] = continuation_token
 
-        response = self.s3.list_objects_v2(Bucket=self.bucket, Prefix=prefix)
-        files = [
-            obj for obj in response.get('Contents', [])
-            if self._is_file_key(obj.get('Key'))
-        ]
+            response = self.s3.list_objects_v2(**params)
+            files.extend(
+                obj for obj in response.get('Contents', [])
+                if self._is_file_key(obj.get('Key'))
+            )
+
+            if not response.get("IsTruncated"):
+                break
+
+            continuation_token = response.get("NextContinuationToken")
+            if not continuation_token:
+                break
 
         return [
             {
@@ -43,6 +54,27 @@ class S3Connector(FileConnector):
             }
             for obj in files
         ]
+
+    def _resolve_list_prefix(self, requested_prefix: str | None) -> str:
+        base_prefix = "/".join(p.strip("/") for p in [self.prefix, self.folder] if p)
+        normalized_requested = str(requested_prefix or "").strip().strip("/")
+
+        if normalized_requested:
+            if base_prefix and (
+                normalized_requested == base_prefix
+                or normalized_requested.startswith(f"{base_prefix}/")
+            ):
+                effective_prefix = normalized_requested
+            elif base_prefix:
+                effective_prefix = "/".join([base_prefix, normalized_requested])
+            else:
+                effective_prefix = normalized_requested
+        else:
+            effective_prefix = base_prefix
+
+        if effective_prefix:
+            return f"{effective_prefix.rstrip('/')}/"
+        return ""
 
     def _is_file_key(self, key: str | None) -> bool:
         return isinstance(key, str) and key != "" and not key.endswith("/")

@@ -11,6 +11,17 @@ from iatoolkit.infra.connectors.file_connector import FileConnector
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.common.interfaces.secret_provider import SecretProvider
 
+
+class PrefixAwareConnector:
+    def __init__(self, files):
+        self.files = list(files)
+        self.prefix_calls = []
+
+    def list_files(self, prefix=None):
+        self.prefix_calls.append(prefix)
+        return list(self.files)
+
+
 # ... existing code ...
 class TestStorageService(unittest.TestCase):
 
@@ -120,6 +131,22 @@ class TestStorageService(unittest.TestCase):
             extension=".md",
         )
 
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["path"], "companies/acme/knowledge_wikis/sales/pricing.md")
+
+    def test_list_files_passes_prefix_to_prefix_aware_connector(self):
+        connector = PrefixAwareConnector([
+            {"path": "companies/acme/knowledge_wikis/sales/pricing.md", "name": "pricing.md", "metadata": {"size": 1}},
+        ])
+        self.mock_factory.create.return_value = connector
+
+        result = self.service.list_files(
+            self.company_name,
+            prefix="companies/acme/knowledge_wikis/sales",
+            extension=".md",
+        )
+
+        self.assertEqual(connector.prefix_calls, ["companies/acme/knowledge_wikis/sales"])
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["path"], "companies/acme/knowledge_wikis/sales/pricing.md")
 

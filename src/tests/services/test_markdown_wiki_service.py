@@ -44,6 +44,27 @@ class TestMarkdownWikiService:
         assert parsed["entries"][0]["title"] == "Pricing"
         assert parsed["entries"][0]["tags"] == ["sales"]
 
+    def test_curated_index_keeps_authored_body_and_generated_entries(self):
+        markdown = self.service.render_curated_index(
+            "---\ntitle: Sales Home\n---\n# Sales Home\n\nWelcome to the team wiki.",
+            [
+                {
+                    "path": "pages/pricing.md",
+                    "title": "Pricing",
+                    "summary": "Commercial pricing rules.",
+                    "tags": ["sales"],
+                }
+            ],
+            title="Sales Wiki",
+        )
+
+        parsed = self.service.parse_generic_index(markdown)
+
+        assert parsed["entries"][0]["path"] == "pages/pricing.md"
+        assert "Welcome to the team wiki." in markdown
+        assert "## Available pages" in markdown
+        assert "- [Pricing](pages/pricing.md) - Commercial pricing rules." in markdown
+
     def test_read_and_write_markdown_use_storage(self):
         self.storage_service.get_document_content.return_value = b"# Page"
 

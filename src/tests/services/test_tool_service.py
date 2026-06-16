@@ -113,15 +113,16 @@ class TestToolService:
             include_native_attachments=False,
         )
 
-    def test_handle_knowledge_wiki_search_tool_delegates_to_service(self):
+    def test_handle_wiki_search_tool_delegates_to_service(self):
         self.service._knowledge_wiki_service = MagicMock()
         self.service._knowledge_wiki_service.search_pages.return_value = {"status": "success", "results": []}
 
-        result = self.service._handle_knowledge_wiki_search_tool(
+        result = self.service._handle_wiki_search_tool(
             company_short_name="my_company",
             wiki_key="sales",
             query="discount policy",
             limit=3,
+            allowed_wiki_keys=["sales"],
         )
 
         self.service._knowledge_wiki_service.search_pages.assert_called_once_with(
@@ -129,23 +130,41 @@ class TestToolService:
             wiki_key="sales",
             query="discount policy",
             limit=3,
+            allowed_wiki_keys=["sales"],
         )
         assert result["status"] == "success"
 
-    def test_handle_knowledge_wiki_get_page_tool_delegates_to_service(self):
+    def test_handle_wiki_get_index_tool_delegates_to_service(self):
+        self.service._knowledge_wiki_service = MagicMock()
+        self.service._knowledge_wiki_service.get_index.return_value = {"status": "success", "markdown": "# Sales"}
+
+        result = self.service._handle_wiki_get_index_tool(
+            company_short_name="my_company",
+            wiki_key="sales",
+        )
+
+        self.service._knowledge_wiki_service.get_index.assert_called_once_with(
+            company_short_name="my_company",
+            wiki_key="sales",
+        )
+        assert result["status"] == "success"
+
+    def test_handle_wiki_get_page_tool_delegates_to_service(self):
         self.service._knowledge_wiki_service = MagicMock()
         self.service._knowledge_wiki_service.get_page.return_value = {"status": "success", "page": {"path": "pricing.md"}}
 
-        result = self.service._handle_knowledge_wiki_get_page_tool(
+        result = self.service._handle_wiki_get_page_tool(
             company_short_name="my_company",
             wiki_key="sales",
             path="pricing.md",
+            allowed_wiki_keys=["sales"],
         )
 
         self.service._knowledge_wiki_service.get_page.assert_called_once_with(
             company_short_name="my_company",
             wiki_key="sales",
             path="pricing.md",
+            allowed_wiki_keys=["sales"],
         )
         assert result["status"] == "success"
 

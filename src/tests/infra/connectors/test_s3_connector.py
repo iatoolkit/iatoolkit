@@ -59,7 +59,8 @@ class TestS3Connector(unittest.TestCase):
                     "Size": 2048,
                     "LastModified": datetime(2023, 1, 2, 0, 0, 0)
                 }
-            ]
+            ],
+            "IsTruncated": False,
         }
 
         # Act
@@ -81,9 +82,54 @@ class TestS3Connector(unittest.TestCase):
         self.assertEqual(result[1]['metadata']['last_modified'], "2023-01-02T00:00:00")
         self.assertEqual(result[1]['metadata']['folder'], "test-folder")
 
+    def test_list_files_uses_requested_prefix_and_continues_pagination(self):
+        self.mock_s3_client.list_objects_v2.side_effect = [
+            {
+                "Contents": [
+                    {
+                        "Key": "test-prefix/test-folder/wiki/page-1.md",
+                        "Size": 100,
+                        "LastModified": datetime(2023, 1, 1, 0, 0, 0),
+                    }
+                ],
+                "IsTruncated": True,
+                "NextContinuationToken": "page-2",
+            },
+            {
+                "Contents": [
+                    {
+                        "Key": "test-prefix/test-folder/wiki/page-2.md",
+                        "Size": 120,
+                        "LastModified": datetime(2023, 1, 2, 0, 0, 0),
+                    }
+                ],
+                "IsTruncated": False,
+            },
+        ]
+
+        result = self.connector.list_files(prefix="test-prefix/test-folder/wiki")
+
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["path"], "test-prefix/test-folder/wiki/page-1.md")
+        self.assertEqual(result[1]["path"], "test-prefix/test-folder/wiki/page-2.md")
+        self.assertEqual(
+            self.mock_s3_client.list_objects_v2.call_args_list[0].kwargs,
+            {"Bucket": self.bucket, "Prefix": "test-prefix/test-folder/wiki/"},
+        )
+        self.assertEqual(
+            self.mock_s3_client.list_objects_v2.call_args_list[1].kwargs,
+            {
+                "Bucket": self.bucket,
+                "Prefix": "test-prefix/test-folder/wiki/",
+                "ContinuationToken": "page-2",
+            },
+        )
+
     def test_list_files_returns_empty_list_when_no_contents(self):
         """Verifica que retorna lista vacía si S3 no devuelve 'Contents'."""
-        self.mock_s3_client.list_objects_v2.return_value = {} # Sin clave 'Contents'
+        self.mock_s3_client.list_objects_v2.return_value = {
+            "IsTruncated": False,
+        } # Sin clave 'Contents'
 
         result = self.connector.list_files()
 
@@ -108,7 +154,8 @@ class TestS3Connector(unittest.TestCase):
                     "Size": 1024,
                     "LastModified": datetime(2023, 1, 2, 0, 0, 0)
                 }
-            ]
+            ],
+            "IsTruncated": False,
         }
 
         result = self.connector.list_files()

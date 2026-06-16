@@ -8,6 +8,7 @@ import uuid
 import logging
 import mimetypes
 import os
+import inspect
 from injector import inject
 from typing import Dict
 from flask import current_app, has_app_context
@@ -113,11 +114,21 @@ class StorageService:
     ) -> list[dict]:
         """Lists files from the configured storage connector with optional filtering."""
         connector = self._get_connector(company_short_name)
-        files = connector.list_files()
         normalized_prefix = str(prefix or "").strip().strip("/")
         normalized_extension = str(extension or "").strip().lower()
         if normalized_extension and not normalized_extension.startswith("."):
             normalized_extension = f".{normalized_extension}"
+
+        supports_prefix = False
+        try:
+            supports_prefix = "prefix" in inspect.signature(connector.list_files).parameters
+        except (TypeError, ValueError):
+            supports_prefix = False
+
+        if supports_prefix:
+            files = connector.list_files(prefix=normalized_prefix or None)
+        else:
+            files = connector.list_files()
 
         normalized_files = []
         for item in files or []:

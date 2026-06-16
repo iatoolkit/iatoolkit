@@ -14,7 +14,7 @@ class LocalFileConnector(FileConnector):
         local_root = os.getenv("ROOT_DIR_LOCAL_FILES", '')
         self.directory = os.path.join(local_root, directory)
 
-    def list_files(self) -> List[dict]:
+    def list_files(self, prefix: str | None = None) -> List[dict]:
         """
         Estándar: Lista todos los archivos como diccionarios con claves 'path', 'name' y 'metadata'.
         """

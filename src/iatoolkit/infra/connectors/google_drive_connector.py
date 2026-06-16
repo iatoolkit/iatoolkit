@@ -52,7 +52,7 @@ class GoogleDriveConnector(FileConnector):
         )
         return service
 
-    def list_files(self) -> List[dict]:
+    def list_files(self, prefix: str | None = None) -> List[dict]:
         """
         Estándar: Lista todos los archivos como diccionarios con claves 'path', 'name' y 'metadata'.
         """

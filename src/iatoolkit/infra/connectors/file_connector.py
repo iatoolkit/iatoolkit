@@ -9,7 +9,7 @@ from typing import List, Optional
 
 class FileConnector(ABC):
     @abstractmethod
-    def list_files(self) -> List[str]:
+    def list_files(self, prefix: str | None = None) -> List[str]:
         pass
 
     @abstractmethod

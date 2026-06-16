@@ -181,16 +181,73 @@ class EmbeddingClientFactory:
         )
         self._clients = {}  # Cache for storing initialized client wrappers
 
+    @staticmethod
+    def _freeze_value(value):
+        if isinstance(value, dict):
+            return tuple(
+                (str(key), EmbeddingClientFactory._freeze_value(item))
+                for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+            )
+        if isinstance(value, list):
+            return tuple(EmbeddingClientFactory._freeze_value(item) for item in value)
+        return value
+
+    def _build_cache_key(
+        self,
+        company_short_name: str,
+        model_type: str,
+        config_section: str,
+        provider: str,
+        model: str | None,
+        dimensions: Optional[int],
+        embedding_config: dict,
+        openai_client_config: dict | None = None,
+    ) -> tuple:
+        cache_payload = {"embedding_config": dict(embedding_config or {})}
+        if provider == "openai" and isinstance(openai_client_config, dict):
+            cache_payload["openai_client_config"] = {
+                "api_key": openai_client_config.get("api_key") or "",
+                "base_url": openai_client_config.get("base_url") or "",
+                "default_headers": dict(openai_client_config.get("default_headers") or {}),
+            }
+
+        return (
+            company_short_name,
+            model_type,
+            config_section,
+            provider,
+            model or "",
+            dimensions,
+            self._freeze_value(cache_payload),
+        )
+
+    def _drop_stale_cache_entries(self, company_short_name: str, model_type: str, active_cache_key: tuple) -> None:
+        stale_keys = [
+            key
+            for key in self._clients
+            if key[:2] == (company_short_name, model_type) and key != active_cache_key
+        ]
+        for stale_key in stale_keys:
+            self._clients.pop(stale_key, None)
+
+    @staticmethod
+    def _describe_transport(provider: str, openai_client_config: dict | None = None) -> str:
+        if provider != "openai":
+            return provider
+
+        base_url = str((openai_client_config or {}).get("base_url") or "").strip().lower()
+        if "gateway.ai.cloudflare.com" in base_url:
+            return "cloudflare/provider_native"
+        if base_url:
+            return "custom"
+        return "direct"
+
     def get_client(self, company_short_name: str, model_type: str = 'text') -> EmbeddingClientWrapper:
         """
         Retrieves a configured embedding client wrapper for a specific company.
         If the client is not in the cache, it creates and stores it.
         model_type: 'text' or 'image'
         """
-        cache_key = (company_short_name, model_type)
-        if cache_key in self._clients:
-            return self._clients[cache_key]
-
         # Determine config section based on model type
         config_section = 'visual_embedding_provider' if model_type in ['image', 'image_query'] else 'embedding_provider'
 
@@ -212,6 +269,32 @@ class EmbeddingClientFactory:
 
         # Extract class path if provider is custom
         class_path = embedding_config.get('class_path')
+
+        openai_client_config = None
+        if provider == 'openai':
+            openai_client_config = self._get_openai_client_config(company_short_name, embedding_config)
+
+        cache_key = self._build_cache_key(
+            company_short_name=company_short_name,
+            model_type=model_type,
+            config_section=config_section,
+            provider=provider,
+            model=model,
+            dimensions=dimensions,
+            embedding_config=embedding_config,
+            openai_client_config=openai_client_config,
+        )
+        if cache_key in self._clients:
+            logging.debug(
+                "Reusing embedding client (%s) for '%s' from %s with model: %s provider=%s transport=%s",
+                model_type,
+                company_short_name,
+                config_section,
+                model,
+                provider,
+                self._describe_transport(provider, openai_client_config),
+            )
+            return self._clients[cache_key]
 
         # Logic to handle multiple providers
         wrapper = None
@@ -276,11 +359,10 @@ class EmbeddingClientFactory:
             )
 
         elif provider == 'openai':
-            client_config = self._get_openai_client_config(company_short_name, embedding_config)
             client = OpenAI(
-                api_key=client_config["api_key"],
-                base_url=client_config["base_url"] or None,
-                default_headers=client_config["default_headers"] or None,
+                api_key=openai_client_config["api_key"],
+                base_url=openai_client_config["base_url"] or None,
+                default_headers=openai_client_config["default_headers"] or None,
             )
             if not model:
                 model='text-embedding-ada-002'
@@ -288,7 +370,16 @@ class EmbeddingClientFactory:
         else:
             raise NotImplementedError(f"Embedding provider '{provider}' is not implemented.")
 
-        logging.debug(f"Embedding client ({model_type}) for '{company_short_name}' created with model: {model}")
+        self._drop_stale_cache_entries(company_short_name, model_type, cache_key)
+        logging.debug(
+            "Embedding client (%s) for '%s' created from %s with model: %s provider=%s transport=%s",
+            model_type,
+            company_short_name,
+            config_section,
+            model,
+            provider,
+            self._describe_transport(provider, openai_client_config),
+        )
         self._clients[cache_key] = wrapper
         return wrapper
 

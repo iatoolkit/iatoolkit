@@ -276,8 +276,8 @@ tools:
           description: "Opcional en la práctica. Usa null cuando no necesites filtrar por metadata. No inventes filtros ni envíes [] por defecto. Ejemplo: [{'key':'doc.type','value':'invoice'},{'key':'chunk.source_type','value':'table'}]."
       required:
         - query
-  - function_name: iat_knowledge_wiki_search
-    description: Busca páginas publicadas dentro de las wikis de conocimiento compartidas por la empresa. Úsala para políticas, playbooks, procesos, runbooks, conocimiento operativo, onboarding, guías por área o información curada del tenant. No es memoria personal del usuario ni búsqueda documental cruda.
+  - function_name: iat_wiki_search
+    description: Busca páginas publicadas dentro de las wikis de conocimiento compartidas por la empresa. Úsala como acelerador cuando necesites encontrar rápidamente una página relevante, pero no como punto de entrada por defecto. Si no conoces un `path` válido, primero llama `iat_wiki_get_page` con `path="/"` para leer el índice raíz de la wiki y seguir sus links exactos. `wiki_key` es el identificador estable de una wiki publicada, por ejemplo `sales`, `ops` o `hr`; úsalo cuando ya sepas en qué wiki buscar y omítelo cuando quieras buscar en todas las wikis publicadas disponibles en esta conexión MCP. Esta tool devuelve candidatos; luego usa `iat_wiki_get_page` para leer la página completa antes de responder.
     routing:
       force_include_capability: has_knowledge_wikis
     routing_profile:
@@ -292,15 +292,15 @@ tools:
         - onboarding
         - wiki
       intents:
-        - Search curated company wiki pages for policies, processes, playbooks, runbooks, or area knowledge.
-        - Retrieve published tenant knowledge before answering operational questions.
-        - Find the relevant company wiki page when the user asks about internal procedures.
+        - Search curated company wiki pages when direct lookup is faster than browsing the root index.
+        - Find the relevant company wiki page after the user asks about internal procedures, policies, or runbooks.
+        - Narrow down which exact page to open with iat_wiki_get_page.
       examples:
-        - iat_knowledge_wiki_search(query="politica de descuentos enterprise", wiki_key="sales", limit=5)
-        - iat_knowledge_wiki_search(query="como escalar incidentes sev1", wiki_key="ops", limit=3)
-        - iat_knowledge_wiki_search(query="onboarding de nuevos ejecutivos", limit=5)
+        - iat_wiki_search(query="politica de descuentos enterprise", wiki_key="sales", limit=5)
+        - iat_wiki_search(query="como escalar incidentes sev1", wiki_key="ops", limit=3)
+        - iat_wiki_search(query="onboarding de nuevos ejecutivos", limit=5)
       cost:
-        penalty: 0.07
+        penalty: 0.09
         latency_class: low
         expensive: false
     parameters:
@@ -308,22 +308,25 @@ tools:
       properties:
         query:
           type: string
-          description: Texto que describe el conocimiento publicado que deseas recuperar.
+          description: Consulta en lenguaje natural sobre políticas, playbooks, procesos, runbooks o conocimiento curado publicado en las wikis del tenant.
         wiki_key:
           anyOf:
             - type: string
             - type: "null"
-          description: Clave opcional de la wiki a consultar. Usa null para buscar en todas las wikis publicadas.
+          description: Clave estable de la wiki publicada, por ejemplo `sales`, `ops` o `hr`. Debe coincidir con el `wiki_key` expuesto por el catálogo/resource. Usa null para buscar en todas las wikis publicadas disponibles.
         limit:
           type: integer
-          description: Cantidad máxima de páginas a recuperar.
+          description: Cantidad máxima de páginas candidatas a recuperar antes de elegir una para leer completa.
           minimum: 1
           maximum: 25
       required:
         - query
         - limit
-  - function_name: iat_knowledge_wiki_get_page
-    description: Recupera una página completa de una wiki de conocimiento compartida por la empresa usando wiki_key y path/slug. Úsala después de iat_knowledge_wiki_search cuando necesites leer el contenido completo antes de responder.
+  - function_name: iat_wiki_get_page
+    description: |-
+      Wiki entrypoint: llama `iat_wiki_get_page` con `path="/"` para cargar el índice raíz de una wiki de conocimiento publicada del tenant.
+      Lee UNA página de wiki y devuelve su contenido en Markdown. La wiki documenta contexto de negocio, áreas, sistemas internos, arquitectura, procesos, políticas, runbooks, onboarding, operaciones y glosarios. Es una wiki navegable por links: la página raíz `path="/"` es el punto de entrada y lista las páginas disponibles con sus paths exactos; después abre solo las páginas relevantes siguiendo esos links o los paths devueltos por `iat_wiki_search`.
+      `wiki_key` identifica la wiki publicada, por ejemplo `sales`, `ops` o `hr`. Los `path` son sensibles a mayúsculas y deben coincidir EXACTAMENTE con el link o path publicado; no los inventes ni los reconstruyas de memoria. Si no conoces un path válido, vuelve a llamar con `path="/"`. Esta tool es de solo lectura y es segura de usar siempre que la documentación interna de la empresa ayude a responder. Prefiere abrir pocas páginas puntuales antes de recorrer el corpus completo. Cuando respondas usando material de la wiki, cita la página usada.
     routing:
       force_include_capability: has_knowledge_wikis
     routing_profile:
@@ -334,14 +337,21 @@ tools:
         - page
         - markdown
         - wiki
+        - entrypoint
+        - index
+        - root
+        - internal_docs
       intents:
-        - Open a published tenant wiki page by path or slug.
+        - Load the root index of a tenant knowledge wiki with path="/".
+        - Open a published tenant wiki page by exact path or slug.
         - Read the full markdown content of a company knowledge page before answering.
+        - Follow links from the root index or another wiki page to retrieve the exact page content.
       examples:
-        - iat_knowledge_wiki_get_page(wiki_key="sales", path="pricing.md")
-        - iat_knowledge_wiki_get_page(wiki_key="ops", path="incident-response.md")
+        - iat_wiki_get_page(wiki_key="sales", path="/")
+        - iat_wiki_get_page(wiki_key="sales", path="pricing.md")
+        - iat_wiki_get_page(wiki_key="ops", path="incident-response.md")
       cost:
-        penalty: 0.04
+        penalty: 0.01
         latency_class: low
         expensive: false
     parameters:
@@ -349,10 +359,10 @@ tools:
       properties:
         wiki_key:
           type: string
-          description: Clave de la wiki publicada.
+          description: Clave estable de la wiki publicada, por ejemplo `sales`, `ops` o `hr`.
         path:
           type: string
-          description: Path o slug de la página a recuperar.
+          description: Usa `"/"` para leer el índice raíz de la wiki. En cualquier otro caso, envía el path o slug exacto de la página dentro de esa wiki, idealmente uno listado en el índice raíz o devuelto por `iat_wiki_search`.
       required:
         - wiki_key
         - path

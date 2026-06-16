@@ -89,6 +89,14 @@ class KnowledgeWikiRepo:
         self.session.commit()
         return wiki
 
+    def delete_wiki(self, company_id: int, wiki_key: str) -> KnowledgeWiki | None:
+        wiki = self.get_wiki_by_key(company_id, wiki_key)
+        if wiki is None:
+            return None
+        self.session.delete(wiki)
+        self.session.commit()
+        return wiki
+
     def get_page_by_path(self, wiki_id: int, path: str) -> KnowledgeWikiPage | None:
         if not wiki_id or not path:
             return None

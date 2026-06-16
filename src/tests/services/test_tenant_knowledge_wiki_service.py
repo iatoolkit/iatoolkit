@@ -71,19 +71,56 @@ class TestTenantKnowledgeWikiService:
             {"path": f"{root}/incident-response.md", "name": "incident-response.md", "metadata": {}},
         ]
         markdown = b"---\ntitle: Incident Response\nowner: ops\n---\n# Incident Response\n\nEscalate by severity."
-        self.storage_service.get_document_content.return_value = markdown
+
+        def content_for(company_short_name, storage_key):
+            if storage_key.endswith("incident-response.md"):
+                return markdown
+            raise FileNotFoundError(storage_key)
+
+        self.storage_service.get_document_content.side_effect = content_for
 
         self.service.sync_wiki("acme", wiki_key="ops", root_storage_key=root, name="Ops Wiki")
 
         index = self.service.get_index("acme", wiki_key="ops")
+        root_page = self.service.get_page("acme", wiki_key="ops", path="/")
         page = self.service.get_page("acme", wiki_key="ops", path="incident-response.md")
 
         assert index["status"] == "success"
         assert index["entries"][0]["title"] == "Incident Response"
         assert "Incident Response" in index["markdown"]
+        assert root_page["status"] == "success"
+        assert root_page["page"]["path"] == "/"
+        assert "Incident Response" in root_page["page"]["markdown"]
         assert page["status"] == "success"
         assert page["page"]["frontmatter"]["owner"] == "ops"
         assert page["page"]["body_text"] == "# Incident Response\n\nEscalate by severity."
+
+    def test_get_index_prefers_authored_root_index_and_appends_generated_listing(self):
+        root = "companies/acme/knowledge_wikis/ops"
+        self.storage_service.list_files.return_value = [
+            {"path": f"{root}/incident-response.md", "name": "incident-response.md", "metadata": {}},
+            {"path": f"{root}/index.md", "name": "index.md", "metadata": {}},
+        ]
+
+        def content_for(company_short_name, storage_key):
+            if storage_key == f"{root}/incident-response.md":
+                return b"---\ntitle: Incident Response\nsummary: Escalation guide.\n---\n# Incident Response\n\nEscalate by severity."
+            if storage_key == f"{root}/index.md":
+                return b"---\ntitle: Ops Home\nowner: ops\n---\n# Ops Home\n\nStart here before opening a page."
+            raise FileNotFoundError(storage_key)
+
+        self.storage_service.get_document_content.side_effect = content_for
+
+        self.service.sync_wiki("acme", wiki_key="ops", root_storage_key=root, name="Ops Wiki")
+        index = self.service.get_index("acme", wiki_key="ops")
+
+        parsed = self.markdown_wiki_service.parse_generic_index(index["markdown"])
+
+        assert index["status"] == "success"
+        assert "Start here before opening a page." in index["markdown"]
+        assert "## Available pages" in index["markdown"]
+        assert "- [Incident Response](incident-response.md) - Escalation guide." in index["markdown"]
+        assert parsed["entries"][0]["path"] == "incident-response.md"
 
     def test_search_pages_ranks_matching_wiki_content(self):
         root = "companies/acme/knowledge_wikis/sales"
@@ -107,6 +144,65 @@ class TestTenantKnowledgeWikiService:
         assert result["results"][0]["path"] == "pricing.md"
         assert result["results"][0]["wiki_key"] == "sales"
 
+    def test_search_pages_can_be_scoped_to_allowed_wikis(self):
+        sales_root = "companies/acme/knowledge_wikis/sales"
+        ops_root = "companies/acme/knowledge_wikis/ops"
+
+        def list_files(company_short_name, prefix, extension):
+            if prefix == sales_root:
+                return [{"path": f"{sales_root}/pricing.md", "name": "pricing.md", "metadata": {}}]
+            if prefix == ops_root:
+                return [{"path": f"{ops_root}/runbook.md", "name": "runbook.md", "metadata": {}}]
+            raise AssertionError(f"unexpected prefix {prefix}")
+
+        def content_for(company_short_name, storage_key):
+            if storage_key.endswith("pricing.md"):
+                return b"# Pricing\n\nEnterprise discount approvals."
+            if storage_key.endswith("runbook.md"):
+                return b"# Runbook\n\nIncident escalation path."
+            raise AssertionError(f"unexpected storage key {storage_key}")
+
+        self.storage_service.list_files.side_effect = list_files
+        self.storage_service.get_document_content.side_effect = content_for
+
+        self.service.sync_wiki("acme", wiki_key="sales", root_storage_key=sales_root, name="Sales Wiki")
+        self.service.sync_wiki("acme", wiki_key="ops", root_storage_key=ops_root, name="Ops Wiki")
+
+        result = self.service.search_pages(
+            "acme",
+            query="incident escalation",
+            allowed_wiki_keys=["ops"],
+            limit=5,
+        )
+
+        assert result["status"] == "success"
+        assert result["count"] == 1
+        assert result["results"][0]["wiki_key"] == "ops"
+
+    def test_search_pages_rejects_unpublished_wiki_scope(self):
+        result = self.service.search_pages(
+            "acme",
+            wiki_key="sales",
+            query="discount policy",
+            allowed_wiki_keys=["ops"],
+            limit=5,
+        )
+
+        assert result["status"] == "error"
+        assert result["error_message"] == "wiki not exposed to MCP"
+        assert result["results"] == []
+
+    def test_get_page_rejects_unpublished_wiki_scope(self):
+        result = self.service.get_page(
+            "acme",
+            wiki_key="sales",
+            path="pricing.md",
+            allowed_wiki_keys=["ops"],
+        )
+
+        assert result["status"] == "error"
+        assert result["error_message"] == "wiki not exposed to MCP"
+
     def test_lint_reports_missing_metadata_and_broken_internal_links(self):
         root = "companies/acme/knowledge_wikis/ops"
         self.storage_service.list_files.return_value = [
@@ -123,3 +219,22 @@ class TestTenantKnowledgeWikiService:
         issue_types = {issue["issue_type"] for issue in result["issues"]}
         assert "missing_tags" in issue_types
         assert "broken_internal_link" in issue_types
+
+    def test_delete_wiki_removes_indexed_records_without_touching_source_markdown(self):
+        root = "companies/acme/knowledge_wikis/sales"
+        self.storage_service.list_files.return_value = [
+            {"path": f"{root}/pricing.md", "name": "pricing.md", "metadata": {}},
+        ]
+        self.storage_service.get_document_content.return_value = b"# Pricing\n\nApproved bands."
+
+        sync = self.service.sync_wiki("acme", wiki_key="sales", root_storage_key=root, name="Sales Wiki")
+        result = self.service.delete_wiki("acme", wiki_key="sales")
+
+        assert sync["status"] == "success"
+        assert result["status"] == "success"
+        assert self.repo.list_wikis(self.company.id) == []
+        assert self.repo.list_pages(sync["wiki"]["id"]) == []
+        self.storage_service.delete_file.assert_called_once_with(
+            "acme",
+            f"{root}/.iatoolkit/index.md",
+        )
