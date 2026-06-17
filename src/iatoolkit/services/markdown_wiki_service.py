@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, time, timezone
 from typing import Any
 
 import yaml
@@ -86,6 +86,21 @@ class MarkdownWikiService:
         ]
         return "\n".join(lines).strip() + "\n"
 
+    @classmethod
+    def make_json_safe(cls, value: Any) -> Any:
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, (datetime, date, time)):
+            return value.isoformat()
+        if isinstance(value, dict):
+            return {
+                str(key): cls.make_json_safe(item)
+                for key, item in value.items()
+            }
+        if isinstance(value, (list, tuple, set)):
+            return [cls.make_json_safe(item) for item in value]
+        return str(value)
+
     @staticmethod
     def parse_frontmatter_document(markdown: str) -> dict[str, Any]:
         content = str(markdown or "")
@@ -104,7 +119,7 @@ class MarkdownWikiService:
         if not isinstance(frontmatter, dict):
             frontmatter = {}
         return {
-            "frontmatter": frontmatter,
+            "frontmatter": MarkdownWikiService.make_json_safe(frontmatter),
             "body": body.strip(),
         }
 

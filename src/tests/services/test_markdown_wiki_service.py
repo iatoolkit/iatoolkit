@@ -24,6 +24,27 @@ class TestMarkdownWikiService:
         assert parsed["frontmatter"]["tags"] == ["sales", "pricing"]
         assert parsed["body"] == "# Pricing\n\nUse approved ranges."
 
+    def test_parse_frontmatter_document_normalizes_yaml_dates_to_strings(self):
+        markdown = (
+            "---\n"
+            "title: Legal AI Providers\n"
+            "review_date: 2026-06-17\n"
+            "timeline:\n"
+            "  approved_at: 2026-06-17T09:30:00+00:00\n"
+            "milestones:\n"
+            "  - name: legal-review\n"
+            "    due_on: 2026-06-20\n"
+            "---\n"
+            "\n"
+            "# Legal AI Providers\n"
+        )
+
+        parsed = self.service.parse_frontmatter_document(markdown)
+
+        assert parsed["frontmatter"]["review_date"] == "2026-06-17"
+        assert parsed["frontmatter"]["timeline"]["approved_at"] == "2026-06-17T09:30:00+00:00"
+        assert parsed["frontmatter"]["milestones"][0]["due_on"] == "2026-06-20"
+
     def test_generic_index_roundtrip(self):
         markdown = self.service.render_generic_index(
             [

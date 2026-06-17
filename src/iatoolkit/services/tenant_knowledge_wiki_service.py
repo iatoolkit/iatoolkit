@@ -486,7 +486,7 @@ class TenantKnowledgeWikiService:
             "status": status,
             "tags": self._normalize_tags(frontmatter.get("tags")),
             "owner": str(frontmatter.get("owner") or "").strip() or None,
-            "source_meta": source_meta,
+            "source_meta": self.markdown_wiki_service.make_json_safe(source_meta),
         }
 
     def _write_generated_index(self, company_short_name: str, wiki: KnowledgeWiki) -> str:

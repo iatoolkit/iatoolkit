@@ -95,6 +95,30 @@ class TestTenantKnowledgeWikiService:
         assert page["page"]["frontmatter"]["owner"] == "ops"
         assert page["page"]["body_text"] == "# Incident Response\n\nEscalate by severity."
 
+    def test_sync_wiki_serializes_frontmatter_dates_before_persisting(self):
+        root = "companies/acme/knowledge_wikis/legal"
+        self.storage_service.list_files.return_value = [
+            {"path": f"{root}/ai-providers.md", "name": "ai-providers.md", "metadata": {}},
+        ]
+        self.storage_service.get_document_content.return_value = (
+            b"---\n"
+            b"title: Legal AI Providers\n"
+            b"review_date: 2026-06-17\n"
+            b"milestones:\n"
+            b"  - name: contract-review\n"
+            b"    due_on: 2026-06-20\n"
+            b"---\n"
+            b"# Legal AI Providers\n\nApproved vendor list."
+        )
+
+        result = self.service.sync_wiki("acme", wiki_key="legal", root_storage_key=root, name="Legal Wiki")
+
+        assert result["status"] == "success"
+        page = self.repo.get_page_by_path(result["wiki"]["id"], "ai-providers.md")
+        assert page is not None
+        assert page.source_meta["frontmatter"]["review_date"] == "2026-06-17"
+        assert page.source_meta["frontmatter"]["milestones"][0]["due_on"] == "2026-06-20"
+
     def test_get_index_prefers_authored_root_index_and_appends_generated_listing(self):
         root = "companies/acme/knowledge_wikis/ops"
         self.storage_service.list_files.return_value = [
