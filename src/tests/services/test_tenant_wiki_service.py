@@ -88,8 +88,11 @@ class TestTenantWikiService:
         assert index["status"] == "success"
         assert index["entries"][0]["title"] == "Incident Response"
         assert "Incident Response" in index["markdown"]
+        assert "Incident Response" in index["generated_markdown"]
+        assert self.markdown_wiki_service.parse_generic_index(index["mcp_markdown"])["entries"][0]["path"] == "incident-response.md"
+        assert self.markdown_wiki_service.parse_generic_index(index["generated_markdown"])["entries"][0]["path"] == "incident-response.md"
         assert index["index_path"] == "/"
-        assert index["index_source_path"] == "/"
+        assert index["index_source_path"] == ".iatoolkit/index.md"
         assert root_page["status"] == "success"
         assert root_page["page"]["path"] == "/"
         assert "Incident Response" in root_page["page"]["markdown"]
@@ -121,7 +124,7 @@ class TestTenantWikiService:
         assert page.source_meta["frontmatter"]["review_date"] == "2026-06-17"
         assert page.source_meta["frontmatter"]["milestones"][0]["due_on"] == "2026-06-20"
 
-    def test_get_index_prefers_authored_root_index_and_appends_generated_listing(self):
+    def test_get_index_exposes_authored_root_and_generated_index_separately(self):
         root = "companies/acme/knowledge_wikis/ops"
         self.storage_service.list_files.return_value = [
             {"path": f"{root}/incident-response.md", "name": "incident-response.md", "metadata": {}},
@@ -139,16 +142,26 @@ class TestTenantWikiService:
 
         self.service.sync_wiki("acme", wiki_key="ops", root_storage_key=root, name="Ops Wiki")
         index = self.service.get_index("acme", wiki_key="ops")
+        root_page = self.service.get_page("acme", wiki_key="ops", path="/")
+        index_page = self.service.get_page("acme", wiki_key="ops", path="index.md")
 
-        parsed = self.markdown_wiki_service.parse_generic_index(index["markdown"])
+        parsed = self.markdown_wiki_service.parse_generic_index(index["generated_markdown"])
 
         assert index["status"] == "success"
-        assert "Start here before opening a page." in index["markdown"]
+        assert index["entries"][0]["path"] == "index.md"
+        assert index["entries"][0]["is_root_index"] is True
+        assert "Start here before opening a page." in index["mcp_markdown"]
+        assert "## Available pages" not in index["mcp_markdown"]
         assert index["index_path"] == "/"
         assert index["index_source_path"] == "index.md"
-        assert "## Available pages" in index["markdown"]
-        assert "- [Incident Response](incident-response.md) - Escalation guide." in index["markdown"]
+        assert "- [Incident Response](incident-response.md) - Escalation guide." in index["generated_markdown"]
         assert parsed["entries"][0]["path"] == "incident-response.md"
+        assert root_page["page"]["path"] == "/"
+        assert "Start here before opening a page." in root_page["page"]["markdown"]
+        assert "## Available pages" not in root_page["page"]["markdown"]
+        assert index_page["page"]["path"] == "index.md"
+        assert index_page["page"]["title"] == "Ops Home"
+        assert "Start here before opening a page." in index_page["page"]["markdown"]
 
     def test_search_pages_ranks_matching_wiki_content(self):
         root = "companies/acme/knowledge_wikis/sales"

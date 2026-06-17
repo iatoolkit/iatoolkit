@@ -225,17 +225,26 @@ class TenantWikiService:
         if not wiki:
             return {"status": "error", "error_message": "wiki not found"}
         pages = self.knowledge_wiki_repo.list_pages(wiki.id, include_archived=False, limit=1000)
-        entries = [self.serialize_page(page, include_body=False) for page in pages]
+        page_entries = [self.serialize_page(page, include_body=False) for page in pages]
+        generated_markdown = self.markdown_wiki_service.render_generic_index(page_entries, title=wiki.name)
         markdown, source_storage_key = self._resolve_index_markdown(
             company_short_name,
             wiki,
-            entries,
+            page_entries,
         )
+        index_entry = self._build_authored_index_entry(company_short_name, wiki)
+        entries = [index_entry, *page_entries] if index_entry else page_entries
         return {
             "status": "success",
             "wiki": self.serialize_wiki(wiki),
             "entries": entries,
             "markdown": markdown,
+            "generated_markdown": generated_markdown,
+            "generated_index_path": self.markdown_wiki_service.join_storage_path(self.GENERATED_FOLDER, self.INDEX_FILENAME),
+            "generated_index_source_path": self.markdown_wiki_service.join_storage_path(self.GENERATED_FOLDER, self.INDEX_FILENAME),
+            "mcp_markdown": markdown,
+            "mcp_index_path": "/",
+            "mcp_index_source_path": self._index_source_display_path(wiki, source_storage_key),
             "index_path": "/",
             "index_source_path": self._index_source_display_path(wiki, source_storage_key),
         }
@@ -270,29 +279,36 @@ class TenantWikiService:
                 wiki,
                 entries,
             )
-            parsed = self.markdown_wiki_service.parse_frontmatter_document(markdown)
-            frontmatter = parsed.get("frontmatter") if isinstance(parsed.get("frontmatter"), dict) else {}
-            body = str(parsed.get("body") or "").strip()
             return {
                 "status": "success",
                 "wiki": self.serialize_wiki(wiki),
-                "page": {
-                    "id": None,
-                    "wiki_id": wiki.id,
-                    "path": "/",
-                    "slug": "index",
-                    "title": str(frontmatter.get("title") or wiki.name or wiki.wiki_key).strip(),
-                    "summary": str(frontmatter.get("summary") or wiki.description or "").strip(),
-                    "source_storage_key": source_storage_key,
-                    "status": str(frontmatter.get("status") or "active").strip() or "active",
-                    "tags": self._normalize_tags(frontmatter.get("tags")),
-                    "owner": str(frontmatter.get("owner") or "").strip() or None,
-                    "last_synced_at": wiki.last_synced_at.isoformat() if wiki.last_synced_at else None,
-                    "updated_at": wiki.updated_at.isoformat() if wiki.updated_at else None,
-                    "body_text": body,
-                    "frontmatter": frontmatter,
-                    "markdown": markdown,
-                },
+                "page": self._build_virtual_index_page(
+                    wiki,
+                    markdown=markdown,
+                    source_storage_key=source_storage_key,
+                    path="/",
+                ),
+            }
+        if normalized_path == self.INDEX_FILENAME:
+            authored_index_storage_key = self.markdown_wiki_service.join_storage_path(
+                wiki.root_storage_key,
+                self.INDEX_FILENAME,
+            )
+            authored_index_markdown = self.markdown_wiki_service.read_optional_markdown(
+                company_short_name,
+                authored_index_storage_key,
+            )
+            if not authored_index_markdown:
+                return {"status": "error", "error_message": "page not found"}
+            return {
+                "status": "success",
+                "wiki": self.serialize_wiki(wiki),
+                "page": self._build_virtual_index_page(
+                    wiki,
+                    markdown=authored_index_markdown,
+                    source_storage_key=authored_index_storage_key,
+                    path=self.INDEX_FILENAME,
+                ),
             }
         page = self.knowledge_wiki_repo.get_page_by_path(wiki.id, normalized_path)
         if page is None:
@@ -517,14 +533,7 @@ class TenantWikiService:
             authored_index_storage_key,
         )
         if authored_index_markdown:
-            return (
-                self.markdown_wiki_service.render_curated_index(
-                    authored_index_markdown,
-                    entries,
-                    title=wiki.name,
-                ),
-                authored_index_storage_key,
-            )
+            return authored_index_markdown, authored_index_storage_key
 
         generated_index_storage_key = self.markdown_wiki_service.join_storage_path(
             wiki.root_storage_key,
@@ -535,6 +544,60 @@ class TenantWikiService:
             self.markdown_wiki_service.render_generic_index(entries, title=wiki.name),
             generated_index_storage_key,
         )
+
+    def _build_authored_index_entry(self, company_short_name: str, wiki: KnowledgeWiki) -> dict | None:
+        authored_index_storage_key = self.markdown_wiki_service.join_storage_path(
+            wiki.root_storage_key,
+            self.INDEX_FILENAME,
+        )
+        authored_index_markdown = self.markdown_wiki_service.read_optional_markdown(
+            company_short_name,
+            authored_index_storage_key,
+        )
+        if not authored_index_markdown:
+            return None
+        page = self._build_virtual_index_page(
+            wiki,
+            markdown=authored_index_markdown,
+            source_storage_key=authored_index_storage_key,
+            path=self.INDEX_FILENAME,
+        )
+        return {
+            key: value
+            for key, value in page.items()
+            if key not in {"body_text", "frontmatter", "markdown"}
+        }
+
+    def _build_virtual_index_page(
+        self,
+        wiki: KnowledgeWiki,
+        *,
+        markdown: str,
+        source_storage_key: str,
+        path: str,
+    ) -> dict:
+        parsed = self.markdown_wiki_service.parse_frontmatter_document(markdown)
+        frontmatter = parsed.get("frontmatter") if isinstance(parsed.get("frontmatter"), dict) else {}
+        body = str(parsed.get("body") or "").strip()
+        summary_fallback = wiki.description or ""
+        return {
+            "id": None,
+            "wiki_id": wiki.id,
+            "path": path,
+            "slug": "index",
+            "title": str(frontmatter.get("title") or wiki.name or wiki.wiki_key).strip(),
+            "summary": str(frontmatter.get("summary") or summary_fallback or "").strip(),
+            "source_storage_key": source_storage_key,
+            "status": str(frontmatter.get("status") or "active").strip() or "active",
+            "tags": self._normalize_tags(frontmatter.get("tags")),
+            "owner": str(frontmatter.get("owner") or "").strip() or None,
+            "last_synced_at": wiki.last_synced_at.isoformat() if wiki.last_synced_at else None,
+            "updated_at": wiki.updated_at.isoformat() if wiki.updated_at else None,
+            "body_text": body,
+            "frontmatter": frontmatter,
+            "markdown": markdown,
+            "is_root_index": True,
+        }
 
     def _resolve_unique_slug(self, wiki_id: int, slug: str, path: str) -> str:
         candidate = self.markdown_wiki_service.slugify(slug)
@@ -555,7 +618,7 @@ class TenantWikiService:
         )
         if source_storage_key == authored_index_storage_key:
             return self.INDEX_FILENAME
-        return "/"
+        return self.markdown_wiki_service.join_storage_path(self.GENERATED_FOLDER, self.INDEX_FILENAME)
 
     def _lint_wiki_pages(self, wiki: KnowledgeWiki, pages: list[KnowledgeWikiPage]) -> list[dict]:
         issues = []
