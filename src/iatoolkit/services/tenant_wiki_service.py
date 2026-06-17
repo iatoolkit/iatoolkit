@@ -29,7 +29,7 @@ from iatoolkit.services.markdown_wiki_service import MarkdownWikiService
 from iatoolkit.services.storage_service import StorageService
 
 
-class TenantKnowledgeWikiService:
+class TenantWikiService:
     GENERATED_FOLDER = ".iatoolkit"
     INDEX_FILENAME = "index.md"
 

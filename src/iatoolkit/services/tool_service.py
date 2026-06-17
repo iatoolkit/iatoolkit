@@ -107,7 +107,6 @@ class ToolService:
             "iat_document_search": self._handle_document_search_tool,
             "iat_memory_search": self._handle_memory_search_tool,
             "iat_memory_get_page": self._handle_memory_get_page_tool,
-            "iat_wiki_get_index": self._handle_wiki_get_index_tool,
             "iat_wiki_search": self._handle_wiki_search_tool,
             "iat_wiki_get_page": self._handle_wiki_get_page_tool,
             "iat_web_search": self._handle_web_search_tool,
@@ -130,8 +129,8 @@ class ToolService:
     @property
     def knowledge_wiki_service(self):
         if self._knowledge_wiki_service is None:
-            from iatoolkit.services.tenant_knowledge_wiki_service import TenantKnowledgeWikiService
-            self._knowledge_wiki_service = current_iatoolkit().get_injector().get(TenantKnowledgeWikiService)
+            from iatoolkit.services.tenant_wiki_service import TenantWikiService
+            self._knowledge_wiki_service = current_iatoolkit().get_injector().get(TenantWikiService)
         return self._knowledge_wiki_service
 
     @classmethod
@@ -315,17 +314,6 @@ class ToolService:
             )
 
         return response
-
-    def _handle_wiki_get_index_tool(
-        self,
-        company_short_name: str,
-        wiki_key: str,
-        **kwargs,
-    ):
-        return self.knowledge_wiki_service.get_index(
-            company_short_name=company_short_name,
-            wiki_key=wiki_key,
-        )
 
     def _handle_wiki_search_tool(
         self,

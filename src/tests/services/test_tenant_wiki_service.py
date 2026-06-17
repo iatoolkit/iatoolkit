@@ -5,10 +5,10 @@ from iatoolkit.repositories.knowledge_wiki_repo import KnowledgeWikiRepo
 from iatoolkit.repositories.models import Company
 from iatoolkit.services.markdown_wiki_service import MarkdownWikiService
 from iatoolkit.services.storage_service import StorageService
-from iatoolkit.services.tenant_knowledge_wiki_service import TenantKnowledgeWikiService
+from iatoolkit.services.tenant_wiki_service import TenantWikiService
 
 
-class TestTenantKnowledgeWikiService:
+class TestTenantWikiService:
     def setup_method(self):
         self.db_manager = DatabaseManager("sqlite:///:memory:")
         self.db_manager.create_all()
@@ -22,7 +22,7 @@ class TestTenantKnowledgeWikiService:
         self.storage_service = MagicMock(spec=StorageService)
         self.markdown_wiki_service = MarkdownWikiService(storage_service=self.storage_service)
         self.repo = KnowledgeWikiRepo(self.db_manager)
-        self.service = TenantKnowledgeWikiService(
+        self.service = TenantWikiService(
             profile_repo=self.profile_repo,
             knowledge_wiki_repo=self.repo,
             markdown_wiki_service=self.markdown_wiki_service,
