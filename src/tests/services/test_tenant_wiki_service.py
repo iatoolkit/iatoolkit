@@ -88,6 +88,8 @@ class TestTenantWikiService:
         assert index["status"] == "success"
         assert index["entries"][0]["title"] == "Incident Response"
         assert "Incident Response" in index["markdown"]
+        assert index["index_path"] == "/"
+        assert index["index_source_path"] == "/"
         assert root_page["status"] == "success"
         assert root_page["page"]["path"] == "/"
         assert "Incident Response" in root_page["page"]["markdown"]
@@ -142,6 +144,8 @@ class TestTenantWikiService:
 
         assert index["status"] == "success"
         assert "Start here before opening a page." in index["markdown"]
+        assert index["index_path"] == "/"
+        assert index["index_source_path"] == "index.md"
         assert "## Available pages" in index["markdown"]
         assert "- [Incident Response](incident-response.md) - Escalation guide." in index["markdown"]
         assert parsed["entries"][0]["path"] == "incident-response.md"

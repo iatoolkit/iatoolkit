@@ -226,7 +226,7 @@ class TenantWikiService:
             return {"status": "error", "error_message": "wiki not found"}
         pages = self.knowledge_wiki_repo.list_pages(wiki.id, include_archived=False, limit=1000)
         entries = [self.serialize_page(page, include_body=False) for page in pages]
-        markdown, _source_storage_key = self._resolve_index_markdown(
+        markdown, source_storage_key = self._resolve_index_markdown(
             company_short_name,
             wiki,
             entries,
@@ -236,6 +236,8 @@ class TenantWikiService:
             "wiki": self.serialize_wiki(wiki),
             "entries": entries,
             "markdown": markdown,
+            "index_path": "/",
+            "index_source_path": self._index_source_display_path(wiki, source_storage_key),
         }
 
     def get_page(
@@ -545,6 +547,15 @@ class TenantWikiService:
             return path_slug
         suffix = hashlib.sha1(path.encode("utf-8")).hexdigest()[:8]
         return f"{path_slug[:70]}-{suffix}"
+
+    def _index_source_display_path(self, wiki: KnowledgeWiki, source_storage_key: str) -> str:
+        authored_index_storage_key = self.markdown_wiki_service.join_storage_path(
+            wiki.root_storage_key,
+            self.INDEX_FILENAME,
+        )
+        if source_storage_key == authored_index_storage_key:
+            return self.INDEX_FILENAME
+        return "/"
 
     def _lint_wiki_pages(self, wiki: KnowledgeWiki, pages: list[KnowledgeWikiPage]) -> list[dict]:
         issues = []
