@@ -209,6 +209,11 @@ class Company(Base):
         back_populates="company",
         cascade="all, delete-orphan",
     )
+    knowledge_wiki_page_revisions = relationship(
+        "KnowledgeWikiPageRevision",
+        back_populates="company",
+        cascade="all, delete-orphan",
+    )
 
 
     def to_dict(self):
@@ -579,6 +584,11 @@ class KnowledgeWiki(Base):
         back_populates="wiki",
         cascade="all, delete-orphan",
     )
+    page_revisions = relationship(
+        "KnowledgeWikiPageRevision",
+        back_populates="wiki",
+        cascade="all, delete-orphan",
+    )
 
     def to_dict(self):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
@@ -612,6 +622,32 @@ class KnowledgeWikiPage(Base):
 
     company = relationship("Company", back_populates="knowledge_wiki_pages")
     wiki = relationship("KnowledgeWiki", back_populates="pages")
+
+    def to_dict(self):
+        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
+
+
+class KnowledgeWikiPageRevision(Base):
+    """Immutable audit snapshot for a manual tenant wiki page change."""
+    __tablename__ = "iat_knowledge_wiki_page_revisions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_companies.id", ondelete="CASCADE"), nullable=False)
+    wiki_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_knowledge_wikis.id", ondelete="CASCADE"), nullable=False)
+    page_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_knowledge_wiki_pages.id", ondelete="SET NULL"), nullable=True)
+    action = Column(String, nullable=False)
+    path = Column(String, nullable=False)
+    previous_path = Column(String, nullable=True)
+    title = Column(String, nullable=True)
+    markdown = Column(Text, nullable=True)
+    checksum = Column(String, nullable=True)
+    edited_by = Column(String, nullable=True)
+    change_summary = Column(Text, nullable=True)
+    metadata_json = Column(JSON_NATIVE, nullable=False, default=dict)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    company = relationship("Company", back_populates="knowledge_wiki_page_revisions")
+    wiki = relationship("KnowledgeWiki", back_populates="page_revisions")
 
     def to_dict(self):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}

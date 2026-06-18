@@ -8,11 +8,13 @@ from __future__ import annotations
 from datetime import datetime
 
 from injector import inject
+from sqlalchemy import or_
 
 from iatoolkit.repositories.database_manager import DatabaseManager
 from iatoolkit.repositories.models import (
     KnowledgeWiki,
     KnowledgeWikiPage,
+    KnowledgeWikiPageRevision,
     KnowledgeWikiPageStatus,
     KnowledgeWikiStatus,
     KnowledgeWikiSyncRun,
@@ -186,6 +188,82 @@ class KnowledgeWikiRepo:
             self.session.add(page)
         self.session.commit()
         return page
+
+    def save_page(self, page: KnowledgeWikiPage) -> KnowledgeWikiPage:
+        self.session.add(page)
+        self.session.commit()
+        return page
+
+    def delete_page(self, wiki_id: int, path: str) -> KnowledgeWikiPage | None:
+        page = self.get_page_by_path(wiki_id, path)
+        if page is None:
+            return None
+        self.session.delete(page)
+        self.session.commit()
+        return page
+
+    def create_page_revision(
+        self,
+        *,
+        company_id: int,
+        wiki_id: int,
+        page_id: int | None,
+        action: str,
+        path: str,
+        previous_path: str | None = None,
+        title: str | None = None,
+        markdown: str | None = None,
+        checksum: str | None = None,
+        edited_by: str | None = None,
+        change_summary: str | None = None,
+        metadata_json: dict | None = None,
+    ) -> KnowledgeWikiPageRevision:
+        revision = KnowledgeWikiPageRevision(
+            company_id=company_id,
+            wiki_id=wiki_id,
+            page_id=page_id,
+            action=action,
+            path=path,
+            previous_path=previous_path,
+            title=title,
+            markdown=markdown,
+            checksum=checksum,
+            edited_by=edited_by,
+            change_summary=change_summary,
+            metadata_json=metadata_json or {},
+        )
+        self.session.add(revision)
+        self.session.commit()
+        return revision
+
+    def list_page_revisions(
+        self,
+        wiki_id: int,
+        *,
+        path: str | None = None,
+        page_id: int | None = None,
+        limit: int = 50,
+    ) -> list[KnowledgeWikiPageRevision]:
+        if not wiki_id:
+            return []
+        query = self.session.query(KnowledgeWikiPageRevision).filter_by(wiki_id=wiki_id)
+        filters = []
+        if page_id:
+            filters.append(KnowledgeWikiPageRevision.page_id == page_id)
+        if path:
+            filters.extend([
+                KnowledgeWikiPageRevision.path == path,
+                KnowledgeWikiPageRevision.previous_path == path,
+            ])
+        if filters:
+            query = query.filter(or_(*filters))
+        bounded_limit = min(max(int(limit or 50), 1), 200)
+        return (
+            query
+            .order_by(KnowledgeWikiPageRevision.created_at.desc(), KnowledgeWikiPageRevision.id.desc())
+            .limit(bounded_limit)
+            .all()
+        )
 
     def archive_pages_not_in_paths(self, wiki_id: int, paths: set[str]) -> int:
         if not wiki_id:
