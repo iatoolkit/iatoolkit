@@ -2711,6 +2711,7 @@ js_messages:
   pipelines_invalid_execution_json: "Execution JSON must be valid JSON."
   conversation: "Conversations"
   agents: "Agents"
+  mcp: "MCP"
   rag_collections: "Collections"
   rag_active_docs: "Active Documents"
   rag_chunks: "Chunks"

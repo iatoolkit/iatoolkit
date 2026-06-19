@@ -2714,6 +2714,7 @@ js_messages:
   pipelines_invalid_execution_json: "El JSON de ejecución debe ser válido."
   conversation: "Conversaciones"
   agents: "Agentes"
+  mcp: "MCP"
   rag_collections: "Colecciones"
   rag_active_docs: "Documentos Activos"
   rag_chunks: "Chunks"
