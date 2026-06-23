@@ -11,7 +11,7 @@ import re
 import unicodedata
 from datetime import datetime
 from pathlib import PurePosixPath
-from typing import Any
+from typing import Any, Callable
 
 from injector import inject
 
@@ -264,7 +264,13 @@ class TenantWikiService:
             self.knowledge_wiki_repo.save_sync_run(run)
             return {"status": "error", "error_message": str(exc), "sync": self.serialize_sync_run(run)}
 
-    def get_index(self, company_short_name: str, *, wiki_key: str) -> dict:
+    def get_index(
+        self,
+        company_short_name: str,
+        *,
+        wiki_key: str,
+        visibility_filter: Callable[[str], bool] | None = None,
+    ) -> dict:
         company = self._get_company(company_short_name)
         if not company:
             return {"status": "error", "error_message": "company not found"}
@@ -272,11 +278,13 @@ class TenantWikiService:
         if not wiki:
             return {"status": "error", "error_message": "wiki not found"}
         page_entries = self._page_entries(wiki)
-        generated_markdown = self.markdown_wiki_service.render_generic_index(page_entries, title=wiki.name)
+        visible_entries = self._filter_page_entries(page_entries, visibility_filter=visibility_filter)
+        generated_markdown = self.markdown_wiki_service.render_generic_index(visible_entries, title=wiki.name)
         home_markdown, source_storage_key = self._resolve_home_markdown(
             company_short_name,
             wiki,
-            page_entries,
+            visible_entries,
+            visibility_filter=visibility_filter,
         )
         home_page = self._build_virtual_index_page(
             wiki,
@@ -287,7 +295,7 @@ class TenantWikiService:
         return {
             "status": "success",
             "wiki": self.serialize_wiki(wiki),
-            "entries": page_entries,
+            "entries": visible_entries,
             "markdown": home_markdown,
             "home_markdown": home_markdown,
             "home_page": home_page,
@@ -308,6 +316,7 @@ class TenantWikiService:
         wiki_key: str,
         path: str,
         allowed_wiki_keys: list[str] | set[str] | tuple[str, ...] | None = None,
+        visibility_filter: Callable[[str], bool] | None = None,
     ) -> dict:
         company = self._get_company(company_short_name)
         if not company:
@@ -324,11 +333,12 @@ class TenantWikiService:
 
         normalized_path = self._normalize_page_path(path)
         if normalized_path in {"", "/"}:
-            entries = self._page_entries(wiki)
+            entries = self._filter_page_entries(self._page_entries(wiki), visibility_filter=visibility_filter)
             markdown, source_storage_key = self._resolve_home_markdown(
                 company_short_name,
                 wiki,
                 entries,
+                visibility_filter=visibility_filter,
             )
             return {
                 "status": "success",
@@ -341,11 +351,12 @@ class TenantWikiService:
                 ),
             }
         if normalized_path == self.INDEX_FILENAME:
-            entries = self._page_entries(wiki)
+            entries = self._filter_page_entries(self._page_entries(wiki), visibility_filter=visibility_filter)
             authored_index_markdown, authored_index_storage_key = self._resolve_home_markdown(
                 company_short_name,
                 wiki,
                 entries,
+                visibility_filter=visibility_filter,
             )
             return {
                 "status": "success",
@@ -361,6 +372,8 @@ class TenantWikiService:
         if page is None:
             page = self.knowledge_wiki_repo.get_page_by_slug(wiki.id, self.markdown_wiki_service.slugify(path))
         if page is None or page.status == KnowledgeWikiPageStatus.ARCHIVED:
+            return {"status": "error", "error_message": "page not found"}
+        if visibility_filter is not None and not visibility_filter(page.path):
             return {"status": "error", "error_message": "page not found"}
 
         markdown = self.markdown_wiki_service.read_markdown(company_short_name, page.source_storage_key)
@@ -632,6 +645,7 @@ class TenantWikiService:
         wiki_key: str | None = None,
         limit: int = 5,
         allowed_wiki_keys: list[str] | set[str] | tuple[str, ...] | None = None,
+        visibility_filter: Callable[[str], bool] | None = None,
     ) -> dict:
         company = self._get_company(company_short_name)
         if not company:
@@ -676,6 +690,8 @@ class TenantWikiService:
             pages = self.knowledge_wiki_repo.list_pages(wiki.id, include_archived=False, limit=1000)
             for page in pages:
                 if page.status == KnowledgeWikiPageStatus.ARCHIVED:
+                    continue
+                if visibility_filter is not None and not visibility_filter(page.path):
                     continue
                 score = self._score_page_match(normalized_query, query_tokens, page)
                 if normalized_query and score <= 0:
@@ -861,7 +877,17 @@ class TenantWikiService:
         company_short_name: str,
         wiki: KnowledgeWiki,
         entries: list[dict],
+        visibility_filter: Callable[[str], bool] | None = None,
     ) -> tuple[str, str]:
+        all_entries = self._page_entries(wiki)
+        visible_entries = self._filter_page_entries(entries or all_entries, visibility_filter=visibility_filter)
+        if visibility_filter is not None and len(visible_entries) != len(all_entries):
+            generated_storage_key = self.markdown_wiki_service.join_storage_path(
+                wiki.root_storage_key,
+                self.GENERATED_FOLDER,
+                self.INDEX_FILENAME,
+            )
+            return self._render_root_index_markdown(wiki, visible_entries), generated_storage_key
         storage_key = self._root_index_storage_key(wiki)
         markdown = self.markdown_wiki_service.read_optional_markdown(company_short_name, storage_key)
         if markdown:
@@ -871,7 +897,22 @@ class TenantWikiService:
             self.GENERATED_FOLDER,
             self.INDEX_FILENAME,
         )
-        return self._render_root_index_markdown(wiki, entries), generated_storage_key
+        return self._render_root_index_markdown(wiki, visible_entries), generated_storage_key
+
+    @staticmethod
+    def _filter_page_entries(
+        entries: list[dict],
+        *,
+        visibility_filter: Callable[[str], bool] | None,
+    ) -> list[dict]:
+        if visibility_filter is None:
+            return list(entries or [])
+        filtered: list[dict] = []
+        for entry in entries or []:
+            path = str((entry or {}).get("path") or "").strip()
+            if not path or visibility_filter(path):
+                filtered.append(entry)
+        return filtered
 
     def _root_index_is_generated(self, markdown: str | None) -> bool:
         parsed = self.markdown_wiki_service.parse_frontmatter_document(markdown or "")

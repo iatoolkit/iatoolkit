@@ -179,6 +179,35 @@ class TestTenantWikiService:
         assert index_page["page"]["title"] == "Ops Home"
         assert "Start here before opening a page." in index_page["page"]["markdown"]
 
+    def test_get_page_root_uses_filtered_generated_index_when_visibility_is_restricted(self):
+        root = "companies/acme/knowledge_wikis/ops"
+        self.write_storage(
+            f"{root}/incident-response.md",
+            "---\ntitle: Incident Response\nsummary: Escalation guide.\n---\n# Incident Response\n\nEscalate by severity.\n",
+        )
+        self.write_storage(
+            f"{root}/board/compensation.md",
+            "---\ntitle: Compensation\nsummary: Board-only.\n---\n# Compensation\n\nRestricted.\n",
+        )
+        self.write_storage(
+            f"{root}/index.md",
+            "---\ntitle: Ops Home\n---\n# Ops Home\n\nSee [Compensation](board/compensation.md).\n",
+        )
+
+        self.service.sync_wiki("acme", wiki_key="ops", root_storage_key=root, name="Ops Wiki")
+
+        root_page = self.service.get_page(
+            "acme",
+            wiki_key="ops",
+            path="/",
+            visibility_filter=lambda path: not path.startswith("board/"),
+        )
+
+        assert root_page["status"] == "success"
+        assert "board/compensation.md" not in root_page["page"]["markdown"]
+        assert "incident-response.md" in root_page["page"]["markdown"]
+        assert root_page["page"]["source_storage_key"].endswith("/.iatoolkit/index.md")
+
     def test_configure_managed_wiki_creates_default_root_index(self):
         result = self.service.configure_wiki(
             "acme",
@@ -487,6 +516,25 @@ class TestTenantWikiService:
         assert result["status"] == "success"
         assert result["count"] == 1
         assert result["results"][0]["wiki_key"] == "ops"
+
+    def test_search_pages_respects_visibility_filter(self):
+        root = "companies/acme/knowledge_wikis/company"
+        self.write_storage(f"{root}/tech/roadmap.md", "# Roadmap\n\nTech plan.\n")
+        self.write_storage(f"{root}/public/intro.md", "# Intro\n\nShared overview.\n")
+
+        self.service.sync_wiki("acme", wiki_key="company", root_storage_key=root, name="Company Wiki")
+
+        result = self.service.search_pages(
+            "acme",
+            wiki_key="company",
+            query="plan overview",
+            visibility_filter=lambda path: not path.startswith("tech/"),
+            limit=5,
+        )
+
+        assert result["status"] == "success"
+        assert result["count"] == 1
+        assert result["results"][0]["path"] == "public/intro.md"
 
     def test_search_pages_rejects_unpublished_wiki_scope(self):
         result = self.service.search_pages(
