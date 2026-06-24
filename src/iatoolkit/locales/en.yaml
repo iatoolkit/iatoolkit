@@ -1867,6 +1867,7 @@ ui:
     tab_settings: "Settings"
     tab_access: "Access"
     tab_observability: "Observability"
+    tab_usage: "Usage"
     save_success: "MCP configuration saved successfully."
     save_error: "Could not save MCP configuration."
     preview_error: "Could not build the MCP preview."

@@ -1871,6 +1871,7 @@ ui:
     tab_settings: "Configuración"
     tab_access: "Acceso"
     tab_observability: "Observabilidad"
+    tab_usage: "Uso"
     save_success: "Configuración MCP guardada correctamente."
     save_error: "No se pudo guardar la configuración MCP."
     preview_error: "No se pudo generar la vista previa MCP."

@@ -255,13 +255,19 @@ class OpenAIAdapter:
 
         # Agregar partes de imagen (Responses API)
         for img in images:
-            filename = img.get('name', '')
-            mime_type, _ = mimetypes.guess_type(filename)
+            filename = str(img.get('name') or img.get('filename') or '').strip()
+            mime_type = str(img.get("mime_type") or img.get("type") or "").strip().lower()
             if not mime_type:
-                mime_type = 'image/jpeg'
+                mime_type = mimetypes.guess_type(filename)[0] or 'image/jpeg'
 
-            base64_data = img.get('base64', '')
-            url = f"data:{mime_type};base64,{base64_data}"
+            raw_url = str(img.get("url") or img.get("image_url") or "").strip()
+            if raw_url:
+                url = raw_url
+            else:
+                base64_data = str(img.get('base64') or img.get('content') or '').strip()
+                if not base64_data:
+                    continue
+                url = self._to_data_url(base64_data, mime_type)
 
             content_parts.append({
                 "type": "input_image",
