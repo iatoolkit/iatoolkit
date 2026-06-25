@@ -57,6 +57,9 @@ ui:
     task_reconciliation_failed: "Recovered As Failed"
     source_mcp: "MCP"
     source_standard_ui: "Standard UI"
+    execution_mode_sync: "Sync"
+    execution_mode_async: "Async"
+    execution_mode_sync_full: "Sync execution"
 
     inspector:
       title: "Interaction Inspector"
@@ -77,6 +80,9 @@ ui:
       primary_input: "Primary Input"
       prompt_args: "Prompt Arguments (Client Data)"
       llm_output: "LLM Output (Raw JSON)"
+      raw_response: "Raw Response"
+      structured_output: "Structured Output"
+      additional_data: "Additional Data"
       telemetry_label: "Telemetry"
       telemetry_open_trace: "Open Trace"
       telemetry_not_recorded: "Not recorded"

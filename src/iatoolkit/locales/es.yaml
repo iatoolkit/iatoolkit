@@ -58,6 +58,9 @@ ui:
     task_reconciliation_failed: "Recuperadas como fallidas"
     source_mcp: "MCP"
     source_standard_ui: "UI estándar"
+    execution_mode_sync: "Sync"
+    execution_mode_async: "Async"
+    execution_mode_sync_full: "Ejecución síncrona"
 
     inspector:
       title: "Inspector de Interacción"
@@ -78,6 +81,9 @@ ui:
       primary_input: "Entrada Principal"
       prompt_args: "Argumentos del Prompt (Client Data)"
       llm_output: "Salida LLM (JSON Crudo)"
+      raw_response: "Respuesta cruda"
+      structured_output: "Structured Output"
+      additional_data: "Additional Data"
       telemetry_label: "Telemetría"
       telemetry_open_trace: "Abrir traza"
       telemetry_not_recorded: "No registrada"
