@@ -400,7 +400,7 @@ class llmClient:
             telemetry_execution.finalize(
                 query_id=query.id,
                 success=decoded_response.get('status', False),
-                answer_preview=decoded_response.get('answer', ''),
+                output_payload=self._build_root_telemetry_output(decoded_response),
                 metrics={
                     "total_tokens": combined_stats.get("total_tokens"),
                     "response_time": combined_stats.get("response_time"),
@@ -490,6 +490,25 @@ class llmClient:
                 error_message = 'La respuesta es muy extensa, trata de filtrar/restringuir tu consulta'
 
             raise IAToolkitException(IAToolkitException.ErrorType.LLM_ERROR, error_message)
+
+    @staticmethod
+    def _build_root_telemetry_output(decoded_response: dict[str, Any] | None) -> dict[str, Any]:
+        payload = {
+            "success": bool((decoded_response or {}).get("status", False)),
+        }
+
+        result: dict[str, Any] = {}
+        answer = (decoded_response or {}).get("answer")
+        if answer not in (None, ""):
+            result["answer"] = answer
+
+        structured_output = (decoded_response or {}).get("structured_output")
+        if structured_output is not None:
+            result["structured_output"] = structured_output
+
+        if result:
+            payload["result"] = result
+        return payload
 
     @staticmethod
     def _serialize_tool_output(result) -> str:

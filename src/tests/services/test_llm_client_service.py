@@ -138,6 +138,39 @@ class TestLLMClient:
         assert saved_query.stats["telemetry"]["provider"] == "braintrust"
         assert result["stats"]["telemetry"]["trace_url"] == "https://braintrust.dev/app/trace/123"
 
+        finalize_kwargs = telemetry_execution.finalize.call_args.kwargs
+        assert finalize_kwargs["query_id"] == 42
+        assert finalize_kwargs["success"] is True
+        assert finalize_kwargs["output_payload"] == {
+            "success": True,
+            "result": {
+                "answer": "Test response",
+            },
+        }
+        assert finalize_kwargs["metrics"]["total_tokens"] == 150
+        assert finalize_kwargs["metrics"]["tool_call_count"] == 0
+        assert finalize_kwargs["metrics"]["tool_time_ms_total"] == 0
+
+    def test_build_root_telemetry_output_keeps_only_success_answer_and_structured_output(self):
+        payload = llmClient._build_root_telemetry_output(
+            {
+                "status": True,
+                "answer": "Respuesta",
+                "structured_output": {"customer_id": "c-1"},
+                "answer_format": "json",
+                "additional_data": {"ignored": True},
+                "schema_valid": True,
+            }
+        )
+
+        assert payload == {
+            "success": True,
+            "result": {
+                "answer": "Respuesta",
+                "structured_output": {"customer_id": "c-1"},
+            },
+        }
+
     def test_invoke_persists_request_source_in_query_stats(self):
         self.mock_proxy.create_response.return_value = self.mock_llm_response
         self.llmquery_repo.add_query.side_effect = lambda query: setattr(query, "id", 42)

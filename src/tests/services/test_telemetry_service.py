@@ -160,6 +160,33 @@ class TestTelemetryService:
             "input": [{"role": "user", "content": "hola"}],
         }
 
+    def test_finalize_logs_exact_root_output_payload(self):
+        bridge = MagicMock()
+        span = MagicMock()
+        execution = TelemetryExecution(
+            enabled=True,
+            bridge=bridge,
+            span=span,
+        )
+
+        execution.record_input({
+            "tool_name": "query_sql",
+            "arguments": {"query": "SELECT 1"},
+        })
+        execution.finalize(
+            success=True,
+            output_payload={
+                "success": True,
+                "result": {"rows": [{"value": 1}]},
+            },
+        )
+
+        event = bridge.log_span.call_args.args[1]
+        assert event["output"] == {
+            "success": True,
+            "result": {"rows": [{"value": 1}]},
+        }
+
     def test_finalize_wraps_multiple_provider_requests_in_root_input(self):
         bridge = MagicMock()
         span = MagicMock()

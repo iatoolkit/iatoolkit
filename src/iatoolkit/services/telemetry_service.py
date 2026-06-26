@@ -95,6 +95,7 @@ class TelemetryExecution:
         query_id: int | None = None,
         success: bool | None = None,
         answer_preview: str | None = None,
+        output_payload: Any | None = None,
         metrics: dict[str, Any] | None = None,
         error_message: str | None = None,
     ) -> None:
@@ -122,7 +123,9 @@ class TelemetryExecution:
                 event["input"] = input_payload
             if metadata:
                 event["metadata"] = metadata
-            if answer_preview:
+            if output_payload is not None:
+                event["output"] = self._clone_payload(output_payload)
+            elif answer_preview:
                 event["output"] = {"answer_preview": str(answer_preview)[:1000]}
             if event:
                 self.bridge.log_span(self.span, event)
