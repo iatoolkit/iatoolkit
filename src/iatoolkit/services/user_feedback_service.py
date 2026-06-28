@@ -81,6 +81,17 @@ class UserFeedbackService:
         else:
             logging.warning(f"unknown feedback channel: '{channel}' for company {company.short_name}.")
 
+    @staticmethod
+    def _build_notification_text(company_short_name: str, user_identifier: str, message: str, rating: int = None) -> str:
+        lines = [
+            f"*Nuevo feedback de {company_short_name}*:",
+            f"*Usuario:* {user_identifier}",
+            f"*Mensaje:* {message}",
+        ]
+        if rating != 0:
+            lines.append(f"*Calificación:* {rating if rating is not None else 'N/A'}")
+        return "\n".join(lines)
+
     def new_feedback(self,
                      company_short_name: str,
                      message: str,
@@ -92,10 +103,12 @@ class UserFeedbackService:
                 return {'error': self.i18n_service.t('errors.company_not_found', company_short_name=company_short_name)}
 
             # 2. send notification using company configuration
-            notification_text = (f"*Nuevo feedback de {company_short_name}*:\n"
-                                 f"*Usuario:* {user_identifier}\n"
-                                 f"*Mensaje:* {message}\n"
-                                 f"*Calificación:* {rating if rating is not None else 'N/A'}")
+            notification_text = self._build_notification_text(
+                company_short_name=company_short_name,
+                user_identifier=user_identifier,
+                message=message,
+                rating=rating,
+            )
             self._handle_notification(company, notification_text)
 
             # 3. always save the feedback in the database

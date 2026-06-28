@@ -85,6 +85,28 @@ class TestUserFeedbackService:
         assert '*Calificación:* 4' in call_args['message']['text']
         self.mail_service.send_mail.assert_not_called()
 
+    def test_omits_rating_line_from_google_chat_notification_when_rating_is_zero(self):
+        self.company.parameters = {
+            'user_feedback': {
+                'channel': 'google_chat',
+                'destination': 'spaces/test-space'
+            }
+        }
+
+        self.service.new_feedback(
+            company_short_name='my_company',
+            message='Comentario sin estrellas',
+            user_identifier='chat_user',
+            rating=0
+        )
+
+        self.google_chat_app.send_message.assert_called_once()
+        call_args = self.google_chat_app.send_message.call_args[1]['message_data']
+        assert '*Nuevo feedback de my_company*' in call_args['message']['text']
+        assert '*Mensaje:* Comentario sin estrellas' in call_args['message']['text']
+        assert '*Calificación:*' not in call_args['message']['text']
+        self.mail_service.send_mail.assert_not_called()
+
     def test_sends_email_notification_on_correct_config(self):
         """Test that an email notification is sent when configured for 'rmail'."""
         self.company.parameters = {
