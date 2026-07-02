@@ -664,6 +664,7 @@ class KnowledgeWikiSyncRun(Base):
     pages_seen = Column(Integer, nullable=False, default=0)
     pages_indexed = Column(Integer, nullable=False, default=0)
     pages_failed = Column(Integer, nullable=False, default=0)
+    pages_skipped = Column(Integer, nullable=False, default=0)
     errors = Column(JSON_NATIVE, nullable=False, default=list)
     metadata_json = Column(JSON_NATIVE, nullable=False, default=dict)
     started_at = Column(DateTime, default=datetime.now, nullable=False)

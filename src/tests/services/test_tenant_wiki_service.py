@@ -617,3 +617,72 @@ class TestTenantWikiService:
         assert f"{root}/pricing.md" in self.storage
         assert f"{root}/index.md" in self.storage
         assert f"{root}/.iatoolkit/index.md" not in self.storage
+
+    def test_sync_wiki_skips_unchanged_files_on_second_sync(self):
+        root = "companies/acme/knowledge_wikis/eng"
+        page_md = "---\ntitle: API Guide\ntags: [eng, api]\nsummary: API reference.\n---\n# API Guide\n\nEndpoints and schemas.\n"
+        self.write_storage(f"{root}/api-guide.md", page_md)
+        self.write_storage(f"{root}/runbook.md", "# Runbook\n\nOn-call procedures.\n")
+
+        original_list_files = self.storage_service.list_files.side_effect
+
+        def list_files_with_metadata(company_short_name, prefix, extension):
+            rows = original_list_files(company_short_name, prefix, extension)
+            for row in rows:
+                row["metadata"] = {"size": 100, "last_modified": "2024-01-15T10:00:00"}
+            return rows
+
+        self.storage_service.list_files.side_effect = list_files_with_metadata
+
+        first = self.service.sync_wiki("acme", wiki_key="eng", root_storage_key=root, name="Eng Wiki")
+        assert first["status"] == "success"
+        assert first["sync"]["pages_seen"] == 2
+        assert first["sync"]["pages_indexed"] == 2
+        assert first["sync"]["pages_skipped"] == 0
+
+        second = self.service.sync_wiki("acme", wiki_key="eng", root_storage_key=root, name="Eng Wiki")
+        assert second["status"] == "success"
+        assert second["sync"]["pages_seen"] == 2
+        assert second["sync"]["pages_indexed"] == 0
+        assert second["sync"]["pages_skipped"] == 2
+
+    def test_sync_wiki_reindexes_changed_file_on_second_sync(self):
+        root = "companies/acme/knowledge_wikis/product"
+        self.write_storage(f"{root}/intro.md", "# Intro\n\nOverview.\n")
+        self.write_storage(f"{root}/guide.md", "# Guide\n\nHow-to.\n")
+
+        original_list_files = self.storage_service.list_files.side_effect
+
+        def list_files_with_metadata(company_short_name, prefix, extension):
+            rows = original_list_files(company_short_name, prefix, extension)
+            for row in rows:
+                row["metadata"] = {"size": 50, "last_modified": "2024-01-15T10:00:00"}
+            return rows
+
+        self.storage_service.list_files.side_effect = list_files_with_metadata
+
+        self.service.sync_wiki("acme", wiki_key="product", root_storage_key=root, name="Product Wiki")
+
+        # Change one file: update content + metadata
+        self.write_storage(f"{root}/guide.md", "# Guide\n\nUpdated how-to with more detail.\n")
+
+        def list_files_with_updated_metadata(company_short_name, prefix, extension):
+            rows = original_list_files(company_short_name, prefix, extension)
+            for row in rows:
+                path = row["path"]
+                if path.endswith("guide.md"):
+                    row["metadata"] = {"size": 200, "last_modified": "2024-02-01T12:00:00"}
+                else:
+                    row["metadata"] = {"size": 50, "last_modified": "2024-01-15T10:00:00"}
+            return rows
+
+        self.storage_service.list_files.side_effect = list_files_with_updated_metadata
+
+        second = self.service.sync_wiki("acme", wiki_key="product", root_storage_key=root, name="Product Wiki")
+        assert second["status"] == "success"
+        assert second["sync"]["pages_seen"] == 2
+        assert second["sync"]["pages_indexed"] == 1
+        assert second["sync"]["pages_skipped"] == 1
+
+        guide_page = self.repo.get_page_by_path(second["wiki"]["id"], "guide.md")
+        assert "Updated how-to" in guide_page.body_text

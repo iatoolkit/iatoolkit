@@ -47,7 +47,12 @@ class GoogleCloudStorageConnector(FileConnector):
             {
                 "path": blob.name,  # Nombre o "ruta" del blob en el bucket
                 "name": blob.name.split("/")[-1],  # Nombre del archivo (última parte del path)
-                "metadata": {"size": blob.size}  # Incluye tamaño como metadata (u otros metadatos relevantes)
+                "metadata": {
+                    "size": blob.size,
+                    "last_modified": blob.updated.isoformat() if blob.updated else None,
+                    "md5_hash": blob.md5_hash,
+                    "crc32c": blob.crc32c,
+                }
             }
             for blob in blobs
         ]

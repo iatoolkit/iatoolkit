@@ -194,6 +194,7 @@ class TenantWikiService:
         seen_paths: set[str] = set()
         indexed = 0
         failed = 0
+        skipped = 0
 
         try:
             files = self.storage_service.list_files(
@@ -207,13 +208,22 @@ class TenantWikiService:
             ]
             for item in source_files:
                 storage_key = str(item.get("path") or "").strip()
+                current_metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+                relative_path = self._relative_path(wiki.root_storage_key, storage_key)
+                existing_page = self.knowledge_wiki_repo.get_page_by_path(wiki.id, relative_path)
+                if existing_page and self._file_metadata_unchanged(existing_page, current_metadata):
+                    seen_paths.add(relative_path)
+                    existing_page.last_synced_at = sync_started_at
+                    self.knowledge_wiki_repo.save_page(existing_page)
+                    skipped += 1
+                    continue
                 try:
                     markdown = self.markdown_wiki_service.read_markdown(company_short_name, storage_key)
                     page_payload = self._parse_markdown_page(
                         root_storage_key=wiki.root_storage_key,
                         storage_key=storage_key,
                         markdown=markdown,
-                        file_metadata=item.get("metadata") if isinstance(item.get("metadata"), dict) else {},
+                        file_metadata=current_metadata,
                     )
                     seen_paths.add(page_payload["path"])
                     unique_slug = self._resolve_unique_slug(wiki.id, page_payload["slug"], page_payload["path"])
@@ -248,6 +258,7 @@ class TenantWikiService:
             run.pages_seen = len(source_files)
             run.pages_indexed = indexed
             run.pages_failed = failed
+            run.pages_skipped = skipped
             run.errors = errors
             run.metadata_json = {**(run.metadata_json or {}), "archived_pages": archived}
             run.finished_at = datetime.now()
@@ -1382,6 +1393,29 @@ class TenantWikiService:
         return path != self.INDEX_FILENAME
 
     @staticmethod
+    def _file_metadata_unchanged(page: KnowledgeWikiPage, current_metadata: dict) -> bool:
+        if not isinstance(current_metadata, dict) or not current_metadata:
+            return False
+        source_meta = page.source_meta if isinstance(page.source_meta, dict) else {}
+        stored_file_meta = source_meta.get("file_metadata") if isinstance(source_meta.get("file_metadata"), dict) else {}
+        if not stored_file_meta:
+            return False
+        for key in ("md5_hash", "crc32c"):
+            current_val = str(current_metadata.get(key) or "").strip()
+            stored_val = str(stored_file_meta.get(key) or "").strip()
+            if current_val and stored_val:
+                return current_val == stored_val
+        current_size = current_metadata.get("size")
+        stored_size = stored_file_meta.get("size")
+        current_lm = str(current_metadata.get("last_modified") or "").strip()
+        stored_lm = str(stored_file_meta.get("last_modified") or "").strip()
+        if current_size is not None and stored_size is not None and current_lm and stored_lm:
+            return str(current_size) == str(stored_size) and current_lm == stored_lm
+        if current_size is not None and stored_size is not None:
+            return str(current_size) == str(stored_size)
+        return False
+
+    @staticmethod
     def _normalize_tags(value: Any) -> list[str]:
         if isinstance(value, str):
             raw_tags = re.split(r"[,#]", value)
@@ -1519,6 +1553,7 @@ class TenantWikiService:
             "pages_seen": run.pages_seen,
             "pages_indexed": run.pages_indexed,
             "pages_failed": run.pages_failed,
+            "pages_skipped": run.pages_skipped,
             "errors": run.errors or [],
             "metadata": run.metadata_json or {},
             "started_at": run.started_at.isoformat() if run.started_at else None,
