@@ -16,6 +16,8 @@ from iatoolkit.services.configuration_service import ConfigurationService
 
 
 class HttpToolService:
+    DEFAULT_MAX_RESPONSE_BYTES = 64 * 1024 * 1024
+
     @inject
     def __init__(self,
                  call_service: CallServiceClient,
@@ -493,7 +495,9 @@ class HttpToolService:
         success_codes = response_cfg.get("success_status_codes") or [200]
         mode = str(response_cfg.get("mode", "json")).lower()
         extract_path = response_cfg.get("extract_path")
-        max_response_bytes = response_cfg.get("max_response_bytes") or (1024 * 1024)
+        max_response_bytes = (
+            response_cfg.get("max_response_bytes") or self.DEFAULT_MAX_RESPONSE_BYTES
+        )
 
         serialized_size = len(json.dumps(response_data, ensure_ascii=False, default=str).encode("utf-8"))
         if serialized_size > max_response_bytes:
