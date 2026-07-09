@@ -3,8 +3,10 @@
 #
 # IAToolkit is open source software.
 
+import os
 import pytest
 from unittest.mock import patch, MagicMock
+from types import SimpleNamespace
 
 from iatoolkit.services.parsers.providers.basic_provider import BasicParsingProvider
 from iatoolkit.services.i18n_service import I18nService
@@ -114,6 +116,26 @@ class TestBasicParsingProvider:
 
         assert excinfo.value.error_type == IAToolkitException.ErrorType.CONFIG_ERROR
         assert "requires OCR but Tesseract is unavailable" in str(excinfo.value)
+
+    @patch("iatoolkit.services.parsers.providers.basic_provider.importlib.import_module",
+           side_effect=ModuleNotFoundError("No module named 'pytesseract'"))
+    def test_get_tesseract_status_reports_missing_python_package_when_enabled(self, _):
+        with patch.dict(os.environ, {"TESSERACT_ENABLED": "true"}):
+            can_use_tesseract, reason = self.provider._get_tesseract_status()
+
+        assert can_use_tesseract is False
+        assert reason == "python_package_missing"
+
+    @patch("iatoolkit.services.parsers.providers.basic_provider.importlib.import_module",
+           side_effect=ModuleNotFoundError("No module named 'pytesseract'"))
+    def test_image_to_text_raises_config_error_when_python_package_is_missing(self, _):
+        image = SimpleNamespace(n=3, width=1, height=1, samples=b"\x00\x00\x00")
+
+        with pytest.raises(IAToolkitException) as excinfo:
+            self.provider.image_to_text(image)
+
+        assert excinfo.value.error_type == IAToolkitException.ErrorType.CONFIG_ERROR
+        assert "python_package_missing" in str(excinfo.value)
 
     def test_parse_builds_text_result(self):
         with patch.object(self.provider, "extract_text", return_value="hello world"):

@@ -5,13 +5,13 @@
 
 from __future__ import annotations
 
+import importlib
 import io
 import logging
 import os
 import shutil
 
 import fitz
-import pytesseract
 from docx import Document
 from injector import inject, singleton
 from PIL import Image
@@ -122,9 +122,19 @@ class BasicParsingProvider:
         env_value = os.getenv("TESSERACT_ENABLED")
         if env_value is None or env_value.strip().lower() not in {"1", "true", "yes", "on"}:
             return False, "env_disabled"
+        pytesseract_module, reason = BasicParsingProvider._load_pytesseract()
+        if pytesseract_module is None:
+            return False, reason
         if shutil.which("tesseract") is None:
             return False, "binary_not_found"
         return True, "available"
+
+    @staticmethod
+    def _load_pytesseract():
+        try:
+            return importlib.import_module("pytesseract"), None
+        except ModuleNotFoundError:
+            return None, "python_package_missing"
 
     def extract_text(self, filename, file_content, allow_ocr: bool = False, pdf_needs_ocr: bool | None = None):
         return self.file_to_txt(filename, file_content, allow_ocr=allow_ocr, pdf_needs_ocr=pdf_needs_ocr)
@@ -279,6 +289,13 @@ class BasicParsingProvider:
         return figures
 
     def image_to_text(self, image):
+        pytesseract_module, reason = self._load_pytesseract()
+        if pytesseract_module is None:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.CONFIG_ERROR,
+                f"Tesseract OCR Python package is unavailable ({reason}).",
+            )
+
         if image.n == 1:
             pil_mode = "L"
         elif image.n == 2:
@@ -291,7 +308,7 @@ class BasicParsingProvider:
             raise ValueError(f"Canales desconocidos: {image.n}")
 
         img = Image.frombytes(pil_mode, (image.width, image.height), image.samples)
-        return pytesseract.image_to_string(img, lang="spa")
+        return pytesseract_module.image_to_string(img, lang="spa")
 
     @staticmethod
     def _as_bool(value, *, default: bool = False) -> bool:
