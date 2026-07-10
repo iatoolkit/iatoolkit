@@ -178,6 +178,8 @@ class LLMProxy:
             return self.PROVIDER_XAI
         if provider_key == "anthropic":
             return self.PROVIDER_ANTHROPIC
+        if provider_key == "openrouter":
+            return self.PROVIDER_OPENROUTER
 
         raise IAToolkitException(
             IAToolkitException.ErrorType.MODEL,

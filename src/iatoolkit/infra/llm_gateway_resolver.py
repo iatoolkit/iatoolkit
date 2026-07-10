@@ -18,6 +18,7 @@ class LLMGatewayResolver:
         "deepseek": "deepseek",
         "anthropic": "anthropic",
         "gemini": "google-ai-studio",
+        "openrouter": "openrouter",
     }
     SUPPORTED_PROVIDERS = frozenset(PROVIDER_SLUGS)
     CREDENTIAL_MODE_PROVIDER_KEY = "provider_key_in_request"
@@ -117,7 +118,7 @@ class LLMGatewayResolver:
                     ),
                 )
             # Some SDKs insist on a non-null api_key even when upstream credentials are injected by Cloudflare.
-            resolved_api_key = "" if normalized_provider in {"openai", "deepseek", "gemini"} else None
+            resolved_api_key = "" if normalized_provider in {"openai", "deepseek", "gemini", "openrouter"} else None
         else:
             raise IAToolkitException(
                 IAToolkitException.ErrorType.CONFIG_ERROR,

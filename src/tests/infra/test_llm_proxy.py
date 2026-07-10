@@ -709,6 +709,40 @@ class TestLLMProxy:
         )
         assert client_config["default_headers"]["cf-aig-authorization"] == "Bearer cf-token"
 
+    def test_get_client_config_allows_cloudflare_managed_credentials_for_openrouter(self):
+        self.config_service_mock.get_configuration.return_value = {
+            "provider_api_keys": {"openrouter": "OPENROUTER_KEY"}
+        }
+        self.config_service_mock.get_llm_provider_config.return_value = {
+            "base_url": "https://openrouter.ai/api/v1"
+        }
+        self.config_service_mock.get_llm_gateway_config.return_value = {
+            "enabled": True,
+            "vendor": "cloudflare",
+            "mode": "provider_native",
+            "gateway_id": "primary-gateway",
+            "account_id_secret_ref": "CF_ACCOUNT_ID",
+            "authenticated_gateway": True,
+            "cloudflare_api_token_secret_ref": "CF_API_TOKEN",
+            "credential_mode": "cloudflare_managed",
+        }
+
+        with patch.dict(
+            os.environ,
+            {
+                "CF_ACCOUNT_ID": "cf-account",
+                "CF_API_TOKEN": "cf-token",
+            },
+            clear=True,
+        ):
+            client_config = self.proxy._get_client_config(self.company_short_name, LLMProxy.PROVIDER_OPENROUTER)
+
+        assert client_config["api_key"] == ""
+        assert client_config["base_url"] == (
+            "https://gateway.ai.cloudflare.com/v1/cf-account/primary-gateway/openrouter"
+        )
+        assert client_config["default_headers"]["cf-aig-authorization"] == "Bearer cf-token"
+
     def test_get_client_config_rejects_cloudflare_managed_without_authenticated_gateway(self):
         self.config_service_mock.get_configuration.return_value = {
             "provider_api_keys": {"openai": "OPENAI_KEY"}
@@ -762,6 +796,48 @@ class TestLLMProxy:
         self.mock_openai_class.assert_called_once_with(
             api_key="sk-deepseek",
             base_url="https://gateway.ai.cloudflare.com/v1/cf-account/primary-gateway/deepseek",
+            timeout=ANY,
+            max_retries=0,
+            default_headers={"cf-aig-authorization": "Bearer cf-token"},
+        )
+
+    def test_create_response_routes_openrouter_through_cloudflare_gateway(self):
+        self.model_registry_mock.get_provider.return_value = "openrouter"
+        self.config_service_mock.get_configuration.return_value = {
+            "provider_api_keys": {"openrouter": "OPENROUTER_KEY"}
+        }
+        self.config_service_mock.get_llm_provider_config.return_value = {
+            "base_url": "https://openrouter.ai/api/v1"
+        }
+        self.config_service_mock.get_llm_gateway_config.return_value = {
+            "enabled": True,
+            "vendor": "cloudflare",
+            "mode": "provider_native",
+            "gateway_id": "primary-gateway",
+            "account_id_secret_ref": "CF_ACCOUNT_ID",
+            "authenticated_gateway": True,
+            "cloudflare_api_token_secret_ref": "CF_API_TOKEN",
+            "credential_mode": "cloudflare_managed",
+        }
+
+        with patch.dict(
+            os.environ,
+            {
+                "CF_ACCOUNT_ID": "cf-account",
+                "CF_API_TOKEN": "cf-token",
+            },
+            clear=True,
+        ):
+            self.proxy.create_response(
+                company_short_name=self.company_short_name,
+                model="openai/gpt-5-mini",
+                input=[],
+            )
+
+        self.mock_openrouter_adapter_instance.create_response.assert_called_once()
+        self.mock_openai_class.assert_called_once_with(
+            api_key="",
+            base_url="https://gateway.ai.cloudflare.com/v1/cf-account/primary-gateway/openrouter",
             timeout=ANY,
             max_retries=0,
             default_headers={"cf-aig-authorization": "Bearer cf-token"},

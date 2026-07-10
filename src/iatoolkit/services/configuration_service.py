@@ -111,7 +111,7 @@ class ConfigurationService:
             add_error(section, "Must be a dictionary.")
             return
 
-        allowed_gateway_providers = {"openai", "deepseek", "anthropic", "gemini"}
+        allowed_gateway_providers = {"openai", "deepseek", "anthropic", "gemini", "openrouter"}
         allowed_gateway_modes = {"provider_native"}
         allowed_gateway_vendors = {"cloudflare"}
         allowed_credential_modes = {"provider_key_in_request", "cloudflare_managed"}

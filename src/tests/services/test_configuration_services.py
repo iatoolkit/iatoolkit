@@ -837,7 +837,7 @@ class TestConfigurationService:
             "vendor": "cloudflare",
             "mode": "provider_native",
             "providers": {
-                "openrouter": {
+                "unsupported-provider": {
                     "enabled": True,
                 }
             },
@@ -851,7 +851,33 @@ class TestConfigurationService:
 
         assert any("llm.gateway.gateway_id" in e for e in errors)
         assert any("llm.gateway.account_id" in e for e in errors)
-        assert any("llm.gateway.providers.openrouter" in e for e in errors)
+        assert any("llm.gateway.providers.unsupported-provider" in e for e in errors)
+
+    def test_validate_configuration_accepts_openrouter_gateway_override(self):
+        valid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        valid_config["llm"]["gateway"] = {
+            "enabled": True,
+            "vendor": "cloudflare",
+            "mode": "provider_native",
+            "gateway_id": "primary-gateway",
+            "account_id_secret_ref": "CLOUDFLARE_ACCOUNT_ID",
+            "authenticated_gateway": True,
+            "cloudflare_api_token_secret_ref": "CLOUDFLARE_API_TOKEN",
+            "credential_mode": "provider_key_in_request",
+            "providers": {
+                "openrouter": {
+                    "enabled": True,
+                    "credential_mode": "cloudflare_managed",
+                }
+            },
+        }
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = valid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert errors == []
 
     def test_validate_configuration_accepts_openrouter_model_routing_config(self):
         valid_config = copy.deepcopy(MOCK_VALID_CONFIG)

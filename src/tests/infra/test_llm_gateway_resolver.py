@@ -106,6 +106,29 @@ class TestLLMGatewayResolver:
             "cf-aig-byok-alias": "production",
         }
 
+    def test_resolve_maps_openrouter_to_cloudflare_openrouter_provider_path(self):
+        self.config_service_mock.get_llm_gateway_config.return_value = {
+            "enabled": True,
+            "vendor": "cloudflare",
+            "mode": "provider_native",
+            "gateway_id": "primary-gateway",
+            "account_id_secret_ref": "CF_ACCOUNT_ID",
+            "authenticated_gateway": True,
+            "cloudflare_api_token_secret_ref": "CF_API_TOKEN",
+            "credential_mode": "cloudflare_managed",
+        }
+
+        with pytest.MonkeyPatch.context() as mp:
+            mp.setenv("CF_ACCOUNT_ID", "cf-account")
+            mp.setenv("CF_API_TOKEN", "cf-token")
+            resolved = self.resolver.resolve(self.company_short_name, "openrouter", "")
+
+        assert resolved["base_url"] == (
+            "https://gateway.ai.cloudflare.com/v1/cf-account/primary-gateway/openrouter"
+        )
+        assert resolved["api_key"] == ""
+        assert resolved["default_headers"]["cf-aig-authorization"] == "Bearer cf-token"
+
     def test_resolve_rejects_cloudflare_managed_without_authenticated_gateway(self):
         self.config_service_mock.get_llm_gateway_config.return_value = {
             "enabled": True,
