@@ -108,6 +108,31 @@ class TestAttachmentPolicyService:
         assert "cannot be sent as native image" in plan["errors"][0]
         assert plan["files_for_context"] == []
 
+    def test_model_capabilities_can_disable_native_images_even_when_provider_supports_them(self):
+        self.util.load_schema_from_yaml.return_value["openrouter"] = {
+            "supports_native_files": True,
+            "supports_native_images": True,
+            "supported_mime_types": ["application/pdf", "text/csv", "text/plain"],
+            "preferred_native_mime_types": ["application/pdf"],
+            "max_file_size_mb": 20,
+            "max_files_per_request": 10,
+        }
+        self.service._default_capabilities = None
+
+        plan = self.service.build_attachment_plan(
+            company_short_name="acme",
+            provider="openrouter",
+            files=[{"filename": "photo.png", "base64": "U0FNUExF"}],
+            policy={"attachment_mode": "native_only", "attachment_fallback": "extract"},
+            model_capabilities={"supports_native_images": False},
+        )
+
+        assert plan["errors"] == []
+        assert len(plan["files_for_context"]) == 1
+        assert plan["files_for_context"][0]["force_text_extraction"] is True
+        assert plan["stats"]["native_sent_count"] == 0
+        assert plan["stats"]["fallback_to_extract"] == 1
+
     def test_native_plus_extracted_keeps_context_when_native_is_not_supported(self):
         plan = self.service.build_attachment_plan(
             company_short_name="acme",

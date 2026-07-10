@@ -60,10 +60,12 @@ class AttachmentPolicyService:
         provider: str,
         files: list | None,
         policy: dict | None = None,
+        model_capabilities: dict | None = None,
     ) -> dict:
         mode = self.normalize_mode((policy or {}).get("attachment_mode"))
         fallback = self.normalize_fallback((policy or {}).get("attachment_fallback"))
         capabilities = self.get_effective_provider_capabilities(company_short_name, provider)
+        capabilities = self._apply_model_capability_hints(capabilities, model_capabilities)
 
         if not files:
             return {
@@ -240,6 +242,18 @@ class AttachmentPolicyService:
         merged.setdefault("preferred_native_mime_types", [])
         merged.setdefault("max_file_size_mb", 0)
         merged.setdefault("max_files_per_request", 0)
+        return merged
+
+    @staticmethod
+    def _apply_model_capability_hints(capabilities: dict, model_capabilities: dict | None) -> dict:
+        merged = dict(capabilities or {})
+        if not isinstance(model_capabilities, dict):
+            return merged
+
+        model_supports_native_images = model_capabilities.get("supports_native_images")
+        if isinstance(model_supports_native_images, bool):
+            merged["supports_native_images"] = bool(merged.get("supports_native_images")) and model_supports_native_images
+
         return merged
 
     def _normalize_file_meta(self, file_obj: dict) -> dict:
