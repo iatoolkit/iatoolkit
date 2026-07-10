@@ -126,8 +126,10 @@ class TestAttachmentPolicyService:
             self.service,
             "_get_openrouter_native_image_error",
             return_value=(
-                "El modelo de OpenRouter 'deepseek/deepseek-v4-pro' no publica 'image' en "
-                "'input_modalities' (publica: text), por lo que no puede recibir imagenes nativas."
+                "Este modelo/provider no expone visión nativa por API: "
+                "OpenRouter publica el modelo 'deepseek/deepseek-v4-pro' con input_modalities=text, "
+                "sin 'image'. Para enviar imagenes nativas usa un modelo/provider que publique 'image' "
+                "como modalidad de entrada."
             ),
         ):
             plan = self.service.build_attachment_plan(
@@ -139,8 +141,44 @@ class TestAttachmentPolicyService:
             )
 
         assert len(plan["errors"]) == 1
-        assert "no publica 'image' en 'input_modalities'" in plan["errors"][0]
+        assert "no expone visión nativa por API" in plan["errors"][0]
+        assert "input_modalities=text" in plan["errors"][0]
         assert plan["files_for_context"] == []
+
+    def test_openrouter_native_image_validation_falls_back_to_extraction_when_policy_allows_it(self):
+        self.util.load_schema_from_yaml.return_value["openrouter"] = {
+            "supports_native_files": True,
+            "supports_native_images": True,
+            "supported_mime_types": ["application/pdf", "text/csv", "text/plain"],
+            "preferred_native_mime_types": ["application/pdf"],
+            "max_file_size_mb": 20,
+            "max_files_per_request": 10,
+        }
+        self.service._default_capabilities = None
+
+        with patch.object(
+            self.service,
+            "_get_openrouter_native_image_error",
+            return_value=(
+                "Este modelo/provider no expone visión nativa por API: "
+                "OpenRouter publica el modelo 'deepseek/deepseek-v4-pro' con input_modalities=text, "
+                "sin 'image'. Para enviar imagenes nativas usa un modelo/provider que publique 'image' "
+                "como modalidad de entrada."
+            ),
+        ):
+            plan = self.service.build_attachment_plan(
+                company_short_name="acme",
+                provider="openrouter",
+                files=[{"filename": "photo.png", "base64": "U0FNUExF"}],
+                policy={"attachment_mode": "native_only", "attachment_fallback": "extract"},
+                model="deepseek/deepseek-v4-pro",
+            )
+
+        assert plan["errors"] == []
+        assert len(plan["files_for_context"]) == 1
+        assert plan["files_for_context"][0]["force_text_extraction"] is True
+        assert plan["stats"]["fallback_to_extract"] == 1
+        assert plan["stats"]["extract_candidates"] == 1
 
     def test_get_openrouter_native_image_error_accepts_models_that_publish_image_input(self):
         with patch("iatoolkit.services.attachment_policy_service.requests.get") as mock_get:
@@ -178,7 +216,9 @@ class TestAttachmentPolicyService:
 
         assert error is not None
         assert "deepseek/deepseek-v4-pro" in error
+        assert "no expone visión nativa por API" in error
         assert "input_modalities" in error
+        assert "sin 'image'" in error
         assert "text" in error
 
     def test_native_plus_extracted_keeps_context_when_native_is_not_supported(self):

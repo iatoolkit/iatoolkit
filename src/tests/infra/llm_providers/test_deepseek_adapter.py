@@ -227,7 +227,7 @@ class TestDeepseekAdapter:
             )
 
         assert excinfo.value.error_type == IAToolkitException.ErrorType.LLM_ERROR
-        assert "DeepSeek API directa" in str(excinfo.value)
+        assert "no expone visión" in str(excinfo.value)
         assert "imagenes" in str(excinfo.value)
         self.mock_deepseek_client.chat.completions.create.assert_not_called()
 
@@ -240,6 +240,7 @@ class TestDeepseekAdapter:
             )
 
         assert excinfo.value.error_type == IAToolkitException.ErrorType.LLM_ERROR
+        assert "no expone visión" in str(excinfo.value)
         assert "archivos nativos" in str(excinfo.value)
         self.mock_deepseek_client.chat.completions.create.assert_not_called()
 

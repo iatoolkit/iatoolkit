@@ -114,6 +114,7 @@ class AttachmentPolicyService:
                 wants_native = self._wants_native(mode, meta, capabilities)
                 wants_extract = self._wants_extract(mode, meta, capabilities)
                 native_ok = False
+                native_blocked_by_model_catalog = False
 
                 if wants_native:
                     if str(provider or "").strip().lower() == "openrouter":
@@ -124,17 +125,22 @@ class AttachmentPolicyService:
                             )
                             openrouter_native_image_checked = True
                         if openrouter_native_image_error:
-                            if openrouter_native_image_error not in errors:
-                                errors.append(openrouter_native_image_error)
-                            continue
-                    if bool(capabilities.get("supports_native_images")):
+                            if fallback == self.FALLBACK_EXTRACT or wants_extract:
+                                stats["fallback_to_extract"] += 1
+                                wants_extract = True
+                                native_blocked_by_model_catalog = True
+                            else:
+                                if openrouter_native_image_error not in errors:
+                                    errors.append(openrouter_native_image_error)
+                                continue
+                    if (not native_blocked_by_model_catalog) and bool(capabilities.get("supports_native_images")):
                         files_for_context.append(dict(file_obj))
                         native_ok = True
                         stats["native_sent_count"] += 1
-                    elif fallback == self.FALLBACK_EXTRACT or wants_extract:
+                    elif (not native_blocked_by_model_catalog) and (fallback == self.FALLBACK_EXTRACT or wants_extract):
                         stats["fallback_to_extract"] += 1
                         wants_extract = True
-                    else:
+                    elif not native_blocked_by_model_catalog:
                         errors.append(
                             f"Image attachment '{filename}' cannot be sent as native image for provider '{provider}'."
                         )
@@ -267,15 +273,19 @@ class AttachmentPolicyService:
     def _get_openrouter_native_image_error(self, company_short_name: str, model: str | None) -> str | None:
         model_id = str(model or "").strip()
         if not model_id:
-            return "No se pudo validar soporte de imagen nativa en OpenRouter porque no se resolvio el modelo efectivo."
+            return (
+                "Este modelo/provider no expone visión nativa por API: no se resolvio el modelo efectivo "
+                "para OpenRouter, por lo que no puedo confirmar soporte de imagenes nativas."
+            )
 
         model_metadata, verified = self._lookup_openrouter_model_metadata(company_short_name, model_id)
         if not verified:
             return None
         if not isinstance(model_metadata, dict):
             return (
+                "Este modelo/provider no expone visión nativa por API verificable: "
                 f"OpenRouter no publica metadata para el modelo '{model_id}', por lo que no puedo confirmar "
-                "si acepta imagenes nativas."
+                "que acepte imagenes nativas."
             )
 
         architecture = model_metadata.get("architecture") or {}
@@ -291,8 +301,10 @@ class AttachmentPolicyService:
         published_model_id = str(model_metadata.get("id") or model_id).strip() or model_id
         published_modalities = ", ".join(input_modalities) if input_modalities else "(vacio)"
         return (
-            f"El modelo de OpenRouter '{published_model_id}' no publica 'image' en 'input_modalities' "
-            f"(publica: {published_modalities}), por lo que no puede recibir imagenes nativas."
+            "Este modelo/provider no expone visión nativa por API: "
+            f"OpenRouter publica el modelo '{published_model_id}' con input_modalities={published_modalities}, "
+            "sin 'image'. Para enviar imagenes nativas usa un modelo/provider que publique 'image' "
+            "como modalidad de entrada."
         )
 
     def _lookup_openrouter_model_metadata(self, company_short_name: str, model: str) -> tuple[dict | None, bool]:

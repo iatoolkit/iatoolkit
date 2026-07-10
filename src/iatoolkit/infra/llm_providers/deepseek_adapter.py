@@ -85,7 +85,8 @@ class DeepseekAdapter(OpenAICompatibleChatAdapter):
         raise IAToolkitException(
             IAToolkitException.ErrorType.LLM_ERROR,
             (
-                "DeepSeek API directa no soporta imagenes ni archivos nativos en este endpoint. "
-                "Usa adjuntos extraidos a texto o un modelo/provider que publique soporte de image/file input."
+                "Este modelo/provider no expone visión ni archivos nativos por API en este endpoint: "
+                "DeepSeek API directa no acepta imagenes ni archivos nativos aqui. "
+                "Usa un modelo/provider que publique soporte API nativo de image/file input."
             ),
         )
