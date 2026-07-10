@@ -1422,18 +1422,12 @@ class QueryService:
                 },
             }
             if self.attachment_policy_service:
-                get_capabilities_fn = getattr(self.model_registry, "get_capabilities", None)
-                model_capabilities = (
-                    get_capabilities_fn(effective_model)
-                    if callable(get_capabilities_fn)
-                    else None
-                )
                 attachment_plan = self.attachment_policy_service.build_attachment_plan(
                     company_short_name=company_short_name,
                     provider=provider,
                     files=files or [],
                     policy=effective_attachment_policy,
-                    model_capabilities=model_capabilities,
+                    model=effective_model,
                 )
             log_stage("attachment_plan")
 

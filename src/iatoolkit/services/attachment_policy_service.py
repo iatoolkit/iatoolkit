@@ -10,6 +10,10 @@ from typing import Any, Dict, List
 import base64
 import logging
 import mimetypes
+import threading
+import time
+
+import requests
 
 from injector import inject
 
@@ -26,12 +30,16 @@ class AttachmentPolicyService:
 
     DEFAULT_MODE = MODE_EXTRACTED_ONLY
     DEFAULT_FALLBACK = FALLBACK_EXTRACT
+    OPENROUTER_MODELS_CACHE_TTL_SECONDS = 300
+    OPENROUTER_MODELS_TIMEOUT_SECONDS = 8
 
     @inject
     def __init__(self, configuration_service: ConfigurationService, util: Utility):
         self.configuration_service = configuration_service
         self.util = util
         self._default_capabilities: dict | None = None
+        self._openrouter_models_cache: dict[str, dict[str, Any]] = {}
+        self._openrouter_models_cache_lock = threading.Lock()
         self._default_capabilities_path = (
             Path(__file__).resolve().parent.parent / "config" / "llm_capabilities.yaml"
         )
@@ -60,12 +68,11 @@ class AttachmentPolicyService:
         provider: str,
         files: list | None,
         policy: dict | None = None,
-        model_capabilities: dict | None = None,
+        model: str | None = None,
     ) -> dict:
         mode = self.normalize_mode((policy or {}).get("attachment_mode"))
         fallback = self.normalize_fallback((policy or {}).get("attachment_fallback"))
         capabilities = self.get_effective_provider_capabilities(company_short_name, provider)
-        capabilities = self._apply_model_capability_hints(capabilities, model_capabilities)
 
         if not files:
             return {
@@ -95,6 +102,8 @@ class AttachmentPolicyService:
             "fallback_to_extract": 0,
             "errors": 0,
         }
+        openrouter_native_image_error: str | None = None
+        openrouter_native_image_checked = False
 
         for file_obj in files:
             stats["total_files"] += 1
@@ -107,6 +116,17 @@ class AttachmentPolicyService:
                 native_ok = False
 
                 if wants_native:
+                    if str(provider or "").strip().lower() == "openrouter":
+                        if not openrouter_native_image_checked:
+                            openrouter_native_image_error = self._get_openrouter_native_image_error(
+                                company_short_name=company_short_name,
+                                model=model,
+                            )
+                            openrouter_native_image_checked = True
+                        if openrouter_native_image_error:
+                            if openrouter_native_image_error not in errors:
+                                errors.append(openrouter_native_image_error)
+                            continue
                     if bool(capabilities.get("supports_native_images")):
                         files_for_context.append(dict(file_obj))
                         native_ok = True
@@ -244,17 +264,97 @@ class AttachmentPolicyService:
         merged.setdefault("max_files_per_request", 0)
         return merged
 
-    @staticmethod
-    def _apply_model_capability_hints(capabilities: dict, model_capabilities: dict | None) -> dict:
-        merged = dict(capabilities or {})
-        if not isinstance(model_capabilities, dict):
-            return merged
+    def _get_openrouter_native_image_error(self, company_short_name: str, model: str | None) -> str | None:
+        model_id = str(model or "").strip()
+        if not model_id:
+            return "No se pudo validar soporte de imagen nativa en OpenRouter porque no se resolvio el modelo efectivo."
 
-        model_supports_native_images = model_capabilities.get("supports_native_images")
-        if isinstance(model_supports_native_images, bool):
-            merged["supports_native_images"] = bool(merged.get("supports_native_images")) and model_supports_native_images
+        model_metadata, verified = self._lookup_openrouter_model_metadata(company_short_name, model_id)
+        if not verified:
+            return None
+        if not isinstance(model_metadata, dict):
+            return (
+                f"OpenRouter no publica metadata para el modelo '{model_id}', por lo que no puedo confirmar "
+                "si acepta imagenes nativas."
+            )
 
-        return merged
+        architecture = model_metadata.get("architecture") or {}
+        raw_input_modalities = architecture.get("input_modalities") or []
+        input_modalities = [
+            str(modality or "").strip().lower()
+            for modality in raw_input_modalities
+            if str(modality or "").strip()
+        ]
+        if "image" in input_modalities:
+            return None
+
+        published_model_id = str(model_metadata.get("id") or model_id).strip() or model_id
+        published_modalities = ", ".join(input_modalities) if input_modalities else "(vacio)"
+        return (
+            f"El modelo de OpenRouter '{published_model_id}' no publica 'image' en 'input_modalities' "
+            f"(publica: {published_modalities}), por lo que no puede recibir imagenes nativas."
+        )
+
+    def _lookup_openrouter_model_metadata(self, company_short_name: str, model: str) -> tuple[dict | None, bool]:
+        provider_config = self.configuration_service.get_llm_provider_config(company_short_name, "openrouter") or {}
+        base_url = str(provider_config.get("base_url") or "https://openrouter.ai/api/v1").strip()
+        models_url = f"{base_url.rstrip('/')}/models"
+        catalog = self._get_openrouter_models_catalog(models_url)
+        if catalog is None:
+            return None, False
+
+        model_key = str(model or "").strip().lower()
+        for item in catalog:
+            if not isinstance(item, dict):
+                continue
+            candidates = {
+                str(item.get("id") or "").strip().lower(),
+                str(item.get("canonical_slug") or "").strip().lower(),
+            }
+            candidates.update(
+                {
+                    candidate.split("/")[-1]
+                    for candidate in list(candidates)
+                    if candidate and "/" in candidate
+                }
+            )
+            if model_key and model_key in candidates:
+                return item, True
+
+        return None, True
+
+    def _get_openrouter_models_catalog(self, models_url: str) -> list[dict] | None:
+        current_time = time.time()
+        with self._openrouter_models_cache_lock:
+            cached_entry = self._openrouter_models_cache.get(models_url)
+            if cached_entry and (current_time - float(cached_entry.get("fetched_at") or 0)) < self.OPENROUTER_MODELS_CACHE_TTL_SECONDS:
+                cached_data = cached_entry.get("data")
+                if isinstance(cached_data, list):
+                    return cached_data
+
+        try:
+            response = requests.get(
+                models_url,
+                params={"output_modalities": "all"},
+                timeout=self.OPENROUTER_MODELS_TIMEOUT_SECONDS,
+                headers={"User-Agent": "IAToolkit AttachmentPolicy/1.0"},
+            )
+            response.raise_for_status()
+            payload = response.json()
+            catalog = payload.get("data") if isinstance(payload, dict) else None
+            if not isinstance(catalog, list):
+                logging.warning("OpenRouter models API returned an unexpected payload shape for '%s'.", models_url)
+                return None
+        except Exception as exc:
+            logging.warning("Could not fetch OpenRouter model metadata from '%s': %s", models_url, exc)
+            return None
+
+        with self._openrouter_models_cache_lock:
+            self._openrouter_models_cache[models_url] = {
+                "fetched_at": current_time,
+                "data": catalog,
+            }
+        return catalog
 
     def _normalize_file_meta(self, file_obj: dict) -> dict:
         if not isinstance(file_obj, dict):

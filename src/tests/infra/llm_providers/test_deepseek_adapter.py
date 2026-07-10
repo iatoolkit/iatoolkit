@@ -218,6 +218,31 @@ class TestDeepseekAdapter:
         assert call_kwargs["reasoning_effort"] == "high"
         assert call_kwargs["extra_body"]["thinking"] == {"type": "enabled"}
 
+    def test_create_response_rejects_native_images_with_clear_error(self):
+        with pytest.raises(IAToolkitException) as excinfo:
+            self.adapter.create_response(
+                model="deepseek-v4-pro",
+                input=[{"role": "user", "content": "Describe this"}],
+                images=[{"name": "photo.png", "base64": "AAAA"}],
+            )
+
+        assert excinfo.value.error_type == IAToolkitException.ErrorType.LLM_ERROR
+        assert "DeepSeek API directa" in str(excinfo.value)
+        assert "imagenes" in str(excinfo.value)
+        self.mock_deepseek_client.chat.completions.create.assert_not_called()
+
+    def test_create_response_rejects_native_file_attachments_with_clear_error(self):
+        with pytest.raises(IAToolkitException) as excinfo:
+            self.adapter.create_response(
+                model="deepseek-v4-pro",
+                input=[{"role": "user", "content": "Review this"}],
+                attachments=[{"name": "report.pdf", "mime_type": "application/pdf", "base64": "AAAA"}],
+            )
+
+        assert excinfo.value.error_type == IAToolkitException.ErrorType.LLM_ERROR
+        assert "archivos nativos" in str(excinfo.value)
+        self.mock_deepseek_client.chat.completions.create.assert_not_called()
+
     @pytest.mark.parametrize("legacy_model", ["deepseek-chat", "deepseek-reasoner", "deepseek-coder"])
     def test_create_response_rejects_unsupported_legacy_or_unknown_model(self, legacy_model):
         with pytest.raises(IAToolkitException) as excinfo:

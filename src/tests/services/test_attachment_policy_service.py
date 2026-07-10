@@ -4,7 +4,7 @@
 # IAToolkit is open source software.
 
 import base64
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from iatoolkit.services.attachment_policy_service import AttachmentPolicyService
 from iatoolkit.services.configuration_service import ConfigurationService
@@ -38,6 +38,9 @@ class TestAttachmentPolicyService:
         self.util.normalize_base64_payload.side_effect = lambda content: base64.b64decode(
             content.split(",", 1)[1] if isinstance(content, str) and content.startswith("data:") else content
         )
+        self.config_service.get_llm_provider_config.return_value = {
+            "base_url": "https://openrouter.ai/api/v1",
+        }
 
         self.service = AttachmentPolicyService(
             configuration_service=self.config_service,
@@ -108,7 +111,7 @@ class TestAttachmentPolicyService:
         assert "cannot be sent as native image" in plan["errors"][0]
         assert plan["files_for_context"] == []
 
-    def test_model_capabilities_can_disable_native_images_even_when_provider_supports_them(self):
+    def test_openrouter_native_image_validation_returns_clear_error_when_model_is_text_only(self):
         self.util.load_schema_from_yaml.return_value["openrouter"] = {
             "supports_native_files": True,
             "supports_native_images": True,
@@ -119,19 +122,64 @@ class TestAttachmentPolicyService:
         }
         self.service._default_capabilities = None
 
-        plan = self.service.build_attachment_plan(
-            company_short_name="acme",
-            provider="openrouter",
-            files=[{"filename": "photo.png", "base64": "U0FNUExF"}],
-            policy={"attachment_mode": "native_only", "attachment_fallback": "extract"},
-            model_capabilities={"supports_native_images": False},
-        )
+        with patch.object(
+            self.service,
+            "_get_openrouter_native_image_error",
+            return_value=(
+                "El modelo de OpenRouter 'deepseek/deepseek-v4-pro' no publica 'image' en "
+                "'input_modalities' (publica: text), por lo que no puede recibir imagenes nativas."
+            ),
+        ):
+            plan = self.service.build_attachment_plan(
+                company_short_name="acme",
+                provider="openrouter",
+                files=[{"filename": "photo.png", "base64": "U0FNUExF"}],
+                policy={"attachment_mode": "native_only", "attachment_fallback": "fail"},
+                model="deepseek/deepseek-v4-pro",
+            )
 
-        assert plan["errors"] == []
-        assert len(plan["files_for_context"]) == 1
-        assert plan["files_for_context"][0]["force_text_extraction"] is True
-        assert plan["stats"]["native_sent_count"] == 0
-        assert plan["stats"]["fallback_to_extract"] == 1
+        assert len(plan["errors"]) == 1
+        assert "no publica 'image' en 'input_modalities'" in plan["errors"][0]
+        assert plan["files_for_context"] == []
+
+    def test_get_openrouter_native_image_error_accepts_models_that_publish_image_input(self):
+        with patch("iatoolkit.services.attachment_policy_service.requests.get") as mock_get:
+            response = MagicMock()
+            response.json.return_value = {
+                "data": [
+                    {
+                        "id": "openai/gpt-5.2",
+                        "architecture": {"input_modalities": ["text", "image", "file"]},
+                    }
+                ]
+            }
+            response.raise_for_status.return_value = None
+            mock_get.return_value = response
+
+            error = self.service._get_openrouter_native_image_error("acme", "openai/gpt-5.2")
+
+        assert error is None
+
+    def test_get_openrouter_native_image_error_reports_text_only_catalog_entry(self):
+        with patch("iatoolkit.services.attachment_policy_service.requests.get") as mock_get:
+            response = MagicMock()
+            response.json.return_value = {
+                "data": [
+                    {
+                        "id": "deepseek/deepseek-v4-pro",
+                        "architecture": {"input_modalities": ["text"]},
+                    }
+                ]
+            }
+            response.raise_for_status.return_value = None
+            mock_get.return_value = response
+
+            error = self.service._get_openrouter_native_image_error("acme", "deepseek-v4-pro")
+
+        assert error is not None
+        assert "deepseek/deepseek-v4-pro" in error
+        assert "input_modalities" in error
+        assert "text" in error
 
     def test_native_plus_extracted_keeps_context_when_native_is_not_supported(self):
         plan = self.service.build_attachment_plan(

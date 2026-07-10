@@ -31,6 +31,7 @@ class DeepseekAdapter(OpenAICompatibleChatAdapter):
 
     def create_response(self, model: str, input: list[dict], **kwargs):
         self._validate_model(model)
+        self._validate_multimodal_inputs(kwargs)
         return super().create_response(model=model, input=input, **kwargs)
 
     @classmethod
@@ -73,3 +74,18 @@ class DeepseekAdapter(OpenAICompatibleChatAdapter):
         # Keep the default deterministic: unless a prompt explicitly asks for
         # reasoning, use non-thinking mode.
         return {"type": "disabled"}
+
+    @staticmethod
+    def _validate_multimodal_inputs(kwargs: dict) -> None:
+        images = kwargs.get("images") or []
+        attachments = kwargs.get("attachments") or []
+        if not images and not attachments:
+            return
+
+        raise IAToolkitException(
+            IAToolkitException.ErrorType.LLM_ERROR,
+            (
+                "DeepSeek API directa no soporta imagenes ni archivos nativos en este endpoint. "
+                "Usa adjuntos extraidos a texto o un modelo/provider que publique soporte de image/file input."
+            ),
+        )

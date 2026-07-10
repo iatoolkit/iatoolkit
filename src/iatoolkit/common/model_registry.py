@@ -100,9 +100,8 @@ class ModelRegistry:
         }
         supports_text_verbosity = normalized_provider in {"openai", "xai", "openrouter"}
         supports_store = normalized_provider in {"openai", "xai"}
-        supports_native_images = self._resolve_native_image_support(normalized_provider)
 
-        capabilities = {
+        return {
             "provider": normalized_provider,
             "history_type": self.get_history_type(model),
             "supports_reasoning_effort": supports_reasoning_effort,
@@ -111,9 +110,6 @@ class ModelRegistry:
             "allowed_text_verbosity": list(self._text_verbosity_options) if supports_text_verbosity else [],
             "supports_store": supports_store,
         }
-        if supports_native_images is not None:
-            capabilities["supports_native_images"] = supports_native_images
-        return capabilities
 
     def get_request_defaults(self, model: str) -> dict:
         """
@@ -195,12 +191,3 @@ class ModelRegistry:
 
     def is_anthropic_model(self, model: str) -> bool:
         return self.get_provider(model) == "anthropic"
-
-    @staticmethod
-    def _resolve_native_image_support(provider: ProviderType) -> bool | None:
-        # Keep this conservative and only publish a hint when we know the family behavior.
-        if provider in {"openai", "gemini", "anthropic"}:
-            return True
-        if provider == "deepseek":
-            return False
-        return None

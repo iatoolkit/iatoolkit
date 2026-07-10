@@ -52,7 +52,6 @@ class TestQueryService:
         # New dependency mock
         self.mock_context_builder = MagicMock(spec=ContextBuilderService)
         self.mock_attachment_policy_service = MagicMock(spec=AttachmentPolicyService)
-        self.model_registry.get_capabilities.return_value = {}
         self.mock_attachment_policy_service.normalize_mode.side_effect = (
             lambda mode: str(mode or "extracted_only").strip().lower()
             if str(mode or "extracted_only").strip().lower() in {"extracted_only", "native_only", "native_plus_extracted", "auto"}
@@ -70,7 +69,7 @@ class TestQueryService:
             }
         )
         self.mock_attachment_policy_service.build_attachment_plan.side_effect = (
-            lambda company_short_name, provider, files, policy, model_capabilities=None: {
+            lambda company_short_name, provider, files, policy, model=None: {
                 "files_for_context": files or [],
                 "native_attachments": [],
                 "errors": [],
@@ -458,59 +457,12 @@ class TestQueryService:
         self.mock_context_builder.build_user_turn_prompt.assert_called_once()
         build_kwargs = self.mock_context_builder.build_user_turn_prompt.call_args.kwargs
         assert build_kwargs["files"] == []
-        assert self.mock_attachment_policy_service.build_attachment_plan.call_args.kwargs["model_capabilities"] == {}
+        assert self.mock_attachment_policy_service.build_attachment_plan.call_args.kwargs["model"] == "gpt-test"
 
         invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
         assert len(invoke_kwargs["attachments"]) == 1
         assert invoke_kwargs["attachments"][0]["name"] == "sales.csv"
         assert invoke_kwargs["execution_metadata"]["attachments"]["stats"]["native_sent_count"] == 1
-
-    def test_llm_query_passes_model_capabilities_to_attachment_policy(self):
-        self.mock_attachment_policy_service.build_attachment_plan.side_effect = None
-        self.mock_context_builder.get_prompt_output_contract.return_value = {
-            "schema": None,
-            "attachment_mode": "native_only",
-            "attachment_fallback": "extract",
-        }
-        self.mock_attachment_policy_service.build_attachment_plan.return_value = {
-            "files_for_context": [{"filename": "photo.png", "base64": "U0FNUExF", "force_text_extraction": True}],
-            "native_attachments": [],
-            "errors": [],
-            "policy": {"attachment_mode": "native_only", "attachment_fallback": "extract"},
-            "capabilities": {"supports_native_files": True, "supports_native_images": False},
-            "stats": {
-                "total_files": 1,
-                "native_sent_count": 0,
-                "extract_candidates": 1,
-                "fallback_to_extract": 1,
-                "errors": 0,
-            },
-        }
-        self.model_registry.get_capabilities.side_effect = lambda model, provider=None: (
-            {"supports_native_images": False}
-            if provider is None and model == "deepseek-v4-pro"
-            else {}
-        )
-        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "q", [])
-        self.mock_history_manager.populate_request_params.side_effect = (
-            lambda handle, prompt, ignore: setattr(handle, "request_params", {"previous_response_id": None, "context_history": None}) or False
-        )
-        self.mock_llm_client.invoke.return_value = {"valid_response": True, "answer": "ok"}
-        self.mock_configuration_service.get_llm_model_config.return_value = {"provider": "openrouter"}
-
-        result = self.service.llm_query(
-            company_short_name=MOCK_COMPANY_SHORT_NAME,
-            user_identifier=MOCK_LOCAL_USER_ID,
-            prompt_name="sales_prompt",
-            question="analiza la imagen",
-            files=[{"filename": "photo.png", "base64": "U0FNUExF"}],
-            model="deepseek-v4-pro",
-        )
-
-        assert result["valid_response"] is True
-        plan_kwargs = self.mock_attachment_policy_service.build_attachment_plan.call_args.kwargs
-        assert plan_kwargs["provider"] == "openrouter"
-        assert plan_kwargs["model_capabilities"] == {"supports_native_images": False}
 
     def test_llm_query_returns_error_when_attachment_policy_fails(self):
         self.mock_attachment_policy_service.build_attachment_plan.side_effect = None
