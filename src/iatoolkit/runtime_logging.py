@@ -75,15 +75,34 @@ def _ensure_stdout_handler(
     log_level: int,
 ) -> None:
     logger.setLevel(min(logger.level or log_level, log_level))
+    canonical_handler = None
+
     for handler in logger.handlers:
         if getattr(handler, "_iatoolkit_stdout_handler", False):
             handler.setFormatter(formatter)
-            return
+            canonical_handler = handler
+            break
 
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(formatter)
-    handler._iatoolkit_stdout_handler = True
-    logger.addHandler(handler)
+    if canonical_handler is None:
+        for handler in logger.handlers:
+            if _is_root_stdio_handler(handler):
+                handler.setFormatter(formatter)
+                _set_handler_stream(handler, sys.stdout)
+                handler._iatoolkit_stdout_handler = True
+                canonical_handler = handler
+                break
+
+    if canonical_handler is None:
+        canonical_handler = logging.StreamHandler(sys.stdout)
+        canonical_handler.setFormatter(formatter)
+        canonical_handler._iatoolkit_stdout_handler = True
+        logger.addHandler(canonical_handler)
+
+    for handler in list(logger.handlers):
+        if handler is canonical_handler:
+            continue
+        if _is_root_stdio_handler(handler):
+            logger.removeHandler(handler)
 
 
 def _preserve_stdout_handler_across_basic_config(formatter: logging.Formatter) -> None:
@@ -103,6 +122,20 @@ def _preserve_stdout_handler_across_basic_config(formatter: logging.Formatter) -
 
     logging.basicConfig = _basic_config_with_stdout_preservation
     _BASIC_CONFIG_PATCHED = True
+
+
+def _is_root_stdio_handler(handler: logging.Handler) -> bool:
+    if not isinstance(handler, logging.StreamHandler):
+        return False
+    stream = getattr(handler, "stream", None)
+    return stream in {sys.stdout, sys.stderr}
+
+
+def _set_handler_stream(handler: logging.StreamHandler, stream) -> None:
+    try:
+        handler.setStream(stream)
+    except AttributeError:
+        handler.stream = stream
 
 
 def _runtime_log_level() -> int:
