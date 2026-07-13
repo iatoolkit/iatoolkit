@@ -16,3 +16,4 @@ SOURCES.txt
 
 build/
 .DS_Store
+.idea/
