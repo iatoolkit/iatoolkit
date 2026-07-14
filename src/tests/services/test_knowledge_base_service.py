@@ -316,6 +316,7 @@ class TestKnowledgeBaseService:
             n_results=5,
             metadata_filter={"source_type": "table", "doc.category": "finance"},
             collection_ids=[7],
+            include_urls=True,
         )
 
     def test_search_resolves_multiple_collection_ids(self):
@@ -339,6 +340,7 @@ class TestKnowledgeBaseService:
             n_results=5,
             metadata_filter=None,
             collection_ids=[7, 8],
+            include_urls=True,
         )
 
     def test_build_documents_query_filters_collection_case_insensitively(self):
@@ -378,7 +380,20 @@ class TestKnowledgeBaseService:
             n_results=5,
             metadata_filter=None,
             collection_ids=None,
+            include_urls=True,
         )
+
+    def test_search_can_skip_presigned_urls_for_internal_resolution(self):
+        self.mock_profile_service.get_company_by_short_name.return_value = self.company
+        self.mock_vs_repo.query.return_value = []
+
+        self.service.search(
+            company_short_name="acme",
+            query="find policy",
+            include_urls=False,
+        )
+
+        assert self.mock_vs_repo.query.call_args.kwargs["include_urls"] is False
 
     def test_search_with_unknown_collection_list_returns_no_results(self):
         self.mock_profile_service.get_company_by_short_name.return_value = self.company

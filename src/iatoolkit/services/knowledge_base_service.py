@@ -488,7 +488,8 @@ class KnowledgeBaseService:
                query: str,
                n_results: int = 5,
                collection: str | list[str] | None = None,
-               metadata_filter: dict = None
+               metadata_filter: dict = None,
+               include_urls: bool = True,
                ):
         """
         Performs a semantic search and returns the list of Document objects (chunks).
@@ -500,6 +501,7 @@ class KnowledgeBaseService:
             n_results: Max number of chunks to retrieve.
             metadata_filter: Optional filter for document metadata.
             collection: Optional collection name or list of collection names.
+            include_urls: Generate storage URLs for returned chunks when true.
 
         Returns:
             List of Document objects found.
@@ -532,6 +534,7 @@ class KnowledgeBaseService:
             n_results=n_results,
             metadata_filter=metadata_filter,
             collection_ids=collection_ids,
+            include_urls=include_urls,
         )
 
         return chunk_list

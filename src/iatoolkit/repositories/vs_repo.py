@@ -86,6 +86,7 @@ class VSRepo:
               n_results=5,
               metadata_filter=None,
               collection_ids: List[int] | None = None,
+              include_urls: bool = True,
               ) -> list[Dict]:
         """
         search documents similar to the query for a company
@@ -95,6 +96,7 @@ class VSRepo:
             query_text: query text
             n_results: max number of results to return
             metadata_filter:  (e.g., {"document_type": "certificate"})
+            include_urls: Generate storage URLs for returned chunks when true.
 
         Returns:
             list of documents matching the query and filters
@@ -185,7 +187,7 @@ class VSRepo:
                 # get the url of the document
                 storage_key = row[3] if len(row) > 3 and row[3] is not None else None
                 url = None
-                if storage_key:
+                if include_urls and storage_key:
                     url = self.storage_service.generate_presigned_url(company_short_name, storage_key)
 
                 vs_documents.append(

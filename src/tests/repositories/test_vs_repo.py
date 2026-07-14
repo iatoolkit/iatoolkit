@@ -107,6 +107,22 @@ class TestVSRepo:
         assert result_docs[0]['url'] == "http://url_key"
         assert result_docs[0]['chunk_meta'] == {"chunk": "meta1"}
 
+    def test_query_can_skip_presigned_urls(self):
+        mock_company = Company(id=self.MOCK_COMPANY_ID, short_name=self.MOCK_COMPANY_SHORT_NAME)
+        self.mock_session.query.return_value.filter.return_value.one_or_none.return_value = mock_company
+        self.mock_session.execute.return_value.fetchall.return_value = [
+            (1, "file1.txt", "content1", "storage/key", {"doc": 1}, 77, {"chunk": "meta1"}),
+        ]
+
+        result_docs = self.vs_repo.query(
+            company_short_name=self.MOCK_COMPANY_SHORT_NAME,
+            query_text="test query",
+            include_urls=False,
+        )
+
+        self.mock_storage_service.generate_presigned_url.assert_not_called()
+        assert result_docs[0]["url"] is None
+
     def test_query_raises_exception_on_db_error(self):
         """Tests that an IAToolkitException is raised if the DB query fails."""
         # Arrange
