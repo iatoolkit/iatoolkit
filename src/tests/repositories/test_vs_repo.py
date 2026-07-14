@@ -109,6 +109,11 @@ class TestVSRepo:
         assert result_docs[0]['url'] == "http://url_key"
         assert result_docs[0]['chunk_meta'] == {"chunk": "meta1"}
 
+        executed_sql = str(self.mock_session.execute.call_args[0][0])
+        assert "vector_dims(iat_vsdocs.embedding) = 3" in executed_sql
+        assert "iat_vsdocs.embedding::vector(3)" in executed_sql
+        assert "CAST(:query_embedding AS vector(3))" in executed_sql
+
     def test_query_logs_embedding_and_vector_sql_timings(self, caplog):
         mock_company = Company(id=self.MOCK_COMPANY_ID, short_name=self.MOCK_COMPANY_SHORT_NAME)
         self.mock_session.query.return_value.filter.return_value.one_or_none.return_value = mock_company
@@ -128,6 +133,7 @@ class TestVSRepo:
             "RAG vector query completed" in message
             and "company=test-corp" in message
             and "collection_ids=[99]" in message
+            and "dimensions=3" in message
             and "n_results=100" in message
             and "embedding_ms=" in message
             and "vector_sql_ms=" in message
@@ -237,6 +243,18 @@ class TestVSRepo:
                 metadata_filter={"bad key": "value"},
             )
 
+        self.mock_session.execute.assert_not_called()
+
+    def test_query_rejects_unsupported_embedding_dimensions(self):
+        self.mock_embedding_service.embed_text.return_value = []
+
+        with pytest.raises(IAToolkitException, match="unsupported query embedding dimensions"):
+            self.vs_repo.query(
+                company_short_name=self.MOCK_COMPANY_SHORT_NAME,
+                query_text="test query",
+            )
+
+        self.mock_session.query.assert_not_called()
         self.mock_session.execute.assert_not_called()
 
     def test_query_accepts_metadata_filter_as_key_value_list(self):

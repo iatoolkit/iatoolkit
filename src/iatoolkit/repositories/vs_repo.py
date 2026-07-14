@@ -117,6 +117,18 @@ class VSRepo:
             raise IAToolkitException(IAToolkitException.ErrorType.EMBEDDING_ERROR,
                                f"embedding error: {str(e)}")
         embedding_duration_ms = round((perf_counter() - embedding_started_at) * 1000)
+        try:
+            embedding_dimensions = len(query_embedding)
+        except TypeError as exc:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.EMBEDDING_ERROR,
+                "embedding error: query embedding has no dimensions",
+            ) from exc
+        if embedding_dimensions < 1 or embedding_dimensions > 2000:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.EMBEDDING_ERROR,
+                f"embedding error: unsupported query embedding dimensions ({embedding_dimensions})",
+            )
 
         sql_query, params = None, None
         try:
@@ -142,6 +154,11 @@ class VSRepo:
                                WHERE iat_vsdocs.company_id = :company_id
                                  AND iat_vsdocs.document_id = iat_documents.id \
                                """]
+            # The literal dimension lets PostgreSQL prove that a matching partial
+            # pgvector expression index can satisfy the nearest-neighbor order.
+            sql_query_parts.append(
+                f" AND vector_dims(iat_vsdocs.embedding) = {embedding_dimensions}"
+            )
 
             # query parameters
             params = {
@@ -179,13 +196,18 @@ class VSRepo:
             sql_query = "".join(sql_query_parts)
 
             # add sorting and limit of results
-            sql_query += " ORDER BY embedding <-> CAST(:query_embedding AS VECTOR) LIMIT :n_results"
+            sql_query += (
+                f" ORDER BY iat_vsdocs.embedding::vector({embedding_dimensions}) "
+                f"<-> CAST(:query_embedding AS vector({embedding_dimensions})) LIMIT :n_results"
+            )
 
             logging.debug(f"Executing SQL query: {sql_query}")
             logging.debug(f"With parameters: {params}")
 
             # execute the query
             vector_sql_started_at = perf_counter()
+            self.session.execute(text("SET LOCAL hnsw.iterative_scan = strict_order"))
+            self.session.execute(text("SET LOCAL hnsw.ef_search = 100"))
             result = self.session.execute(text(sql_query), params)
             rows = result.fetchall()
             vector_sql_duration_ms = round((perf_counter() - vector_sql_started_at) * 1000)
@@ -215,10 +237,11 @@ class VSRepo:
                 )
 
             logging.info(
-                "RAG vector query completed: company=%s collection_ids=%s n_results=%s rows=%s "
+                "RAG vector query completed: company=%s collection_ids=%s dimensions=%s n_results=%s rows=%s "
                 "embedding_ms=%s company_lookup_ms=%s vector_sql_ms=%s total_ms=%s",
                 company_short_name,
                 normalized_collection_ids,
+                embedding_dimensions,
                 n_results,
                 len(rows),
                 embedding_duration_ms,
