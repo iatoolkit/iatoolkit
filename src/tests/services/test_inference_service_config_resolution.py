@@ -183,6 +183,62 @@ class TestInferenceServiceConfigResolution:
         assert self.mock_call_service.post.call_count == 2
         assert sleep_calls == [5.0]
 
+    def test_predict_retries_transient_internal_server_error_with_default_budget(self, monkeypatch):
+        self.mock_config_service.get_configuration.return_value = {
+            "_defaults": {
+                "endpoint_url": "https://hf.endpoint",
+                "api_key_name": "HF_TOKEN",
+            },
+            "text_embeddings": {
+                "model_id": "sentence-transformers/all-MiniLM-L6-v2",
+            },
+        }
+        self.mock_secret_provider.get_secret.return_value = "super-secret-token"
+        self.mock_call_service.post.side_effect = [
+            ("500 Internal Server Error", 500),
+            ({"embedding": [0.1, 0.2]}, 200),
+        ]
+        sleep_calls = []
+        monkeypatch.setattr("iatoolkit.services.inference_service.time.sleep", sleep_calls.append)
+
+        result = self.service.predict(
+            company_short_name="acme",
+            tool_name="text_embeddings",
+            input_data={"mode": "text", "text": "network connectivity in depression"},
+        )
+
+        assert result == {"embedding": [0.1, 0.2]}
+        assert self.mock_call_service.post.call_count == 2
+        assert sleep_calls == [5.0]
+
+    def test_retry_budget_can_be_disabled_per_tool(self):
+        assert self.service._resolve_retry_budget_seconds({"retry_budget_seconds": 0}) == 0.0
+
+    def test_predict_does_not_retry_non_transient_http_status(self, monkeypatch):
+        self.mock_config_service.get_configuration.return_value = {
+            "_defaults": {
+                "endpoint_url": "https://hf.endpoint",
+                "api_key_name": "HF_TOKEN",
+            },
+            "text_embeddings": {
+                "model_id": "sentence-transformers/all-MiniLM-L6-v2",
+            },
+        }
+        self.mock_secret_provider.get_secret.return_value = "super-secret-token"
+        self.mock_call_service.post.return_value = ({"error": "Invalid input"}, 400)
+        sleep_calls = []
+        monkeypatch.setattr("iatoolkit.services.inference_service.time.sleep", sleep_calls.append)
+
+        with pytest.raises(ValueError, match="Inference Endpoint Error 400"):
+            self.service.predict(
+                company_short_name="acme",
+                tool_name="text_embeddings",
+                input_data={"mode": "text", "text": "hello"},
+            )
+
+        assert self.mock_call_service.post.call_count == 1
+        assert sleep_calls == []
+
     def test_predict_retries_request_errors_until_success(self, monkeypatch):
         self.mock_config_service.get_configuration.return_value = {
             "_defaults": {

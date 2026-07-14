@@ -236,6 +236,13 @@ For each tool config (after `_defaults` merge), supported keys include:
 - `api_key_secret_ref` or `api_key_name`
 - `model_id`
 - `model_parameters` (object)
+- `connect_timeout_seconds` (default: `5`)
+- `read_timeout_seconds` (default: `300`)
+- `retry_budget_seconds` (default: `30`; set to `0` to disable retries)
+
+Inference requests are idempotent and retry transient transport errors or HTTP
+`408`, `429`, `500`, `502`, `503`, and `504` responses. The retry budget can be
+overridden in `_defaults` for a tenant or in an individual tool configuration.
 
 ## 4.7 `data_sources.sql[]`
 

@@ -25,9 +25,12 @@ class InferenceService:
 
     DEFAULT_CONNECT_TIMEOUT_SECONDS = 5.0
     DEFAULT_READ_TIMEOUT_SECONDS = 300.0
+    DEFAULT_RETRY_BUDGET_SECONDS = 30.0
     DEFAULT_RETRY_INITIAL_DELAY_SECONDS = 5.0
     DEFAULT_RETRY_MAX_DELAY_SECONDS = 30.0
-    RETRYABLE_STATUS_CODES = {408, 429, 502, 503, 504}
+    # Inference POSTs are idempotent. Hosted model runtimes can emit transient
+    # generic 500 responses while recovering, so configured retry budgets may retry them.
+    RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 
     @inject
     def __init__(self,
@@ -251,7 +254,7 @@ class InferenceService:
         return self._resolve_float_config(
             config,
             "retry_budget_seconds",
-            0.0,
+            self.DEFAULT_RETRY_BUDGET_SECONDS,
             minimum=0.0,
         )
 
@@ -324,7 +327,7 @@ class InferenceService:
             payload: dict,
             suppress_error_logging: bool = False,
             timeout: tuple[float, float] = (DEFAULT_CONNECT_TIMEOUT_SECONDS, DEFAULT_READ_TIMEOUT_SECONDS),
-            retry_budget_seconds: float = 0.0,
+            retry_budget_seconds: float = DEFAULT_RETRY_BUDGET_SECONDS,
     ) -> Any:
         """Performs the POST request to the HF Endpoint."""
         headers = {
