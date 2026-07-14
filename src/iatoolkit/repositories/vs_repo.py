@@ -7,6 +7,7 @@ import ast
 import json
 import logging
 import re
+from time import perf_counter
 from typing import Dict, List
 
 from sqlalchemy import text
@@ -101,18 +102,28 @@ class VSRepo:
         Returns:
             list of documents matching the query and filters
         """
+        query_started_at = perf_counter()
+        embedding_started_at = perf_counter()
         # Generate the embedding with the query text for the specific company
         try:
             query_embedding = self.embedding_service.embed_text(company_short_name, query_text)
         except Exception as e:
-            logging.error(f"error while creating text embedding: {str(e)}")
+            logging.error(
+                "RAG vector query embedding failed: company=%s duration_ms=%s error=%s",
+                company_short_name,
+                round((perf_counter() - embedding_started_at) * 1000),
+                str(e),
+            )
             raise IAToolkitException(IAToolkitException.ErrorType.EMBEDDING_ERROR,
                                f"embedding error: {str(e)}")
+        embedding_duration_ms = round((perf_counter() - embedding_started_at) * 1000)
 
         sql_query, params = None, None
         try:
             # Get company ID from its short name for the SQL query
+            company_lookup_started_at = perf_counter()
             company = self.session.query(Company).filter(Company.short_name == company_short_name).one_or_none()
+            company_lookup_duration_ms = round((perf_counter() - company_lookup_started_at) * 1000)
             if not company:
                 raise IAToolkitException(IAToolkitException.ErrorType.VECTOR_STORE_ERROR,
                                    f"Company with short name '{company_short_name}' not found.")
@@ -174,9 +185,10 @@ class VSRepo:
             logging.debug(f"With parameters: {params}")
 
             # execute the query
+            vector_sql_started_at = perf_counter()
             result = self.session.execute(text(sql_query), params)
-
             rows = result.fetchall()
+            vector_sql_duration_ms = round((perf_counter() - vector_sql_started_at) * 1000)
             vs_documents = []
 
             for row in rows:
@@ -202,6 +214,18 @@ class VSRepo:
                     }
                 )
 
+            logging.info(
+                "RAG vector query completed: company=%s collection_ids=%s n_results=%s rows=%s "
+                "embedding_ms=%s company_lookup_ms=%s vector_sql_ms=%s total_ms=%s",
+                company_short_name,
+                normalized_collection_ids,
+                n_results,
+                len(rows),
+                embedding_duration_ms,
+                company_lookup_duration_ms,
+                vector_sql_duration_ms,
+                round((perf_counter() - query_started_at) * 1000),
+            )
             return vs_documents
 
         except Exception as e:

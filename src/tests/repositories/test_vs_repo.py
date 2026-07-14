@@ -1,5 +1,7 @@
 # tests/repositories/test_vs_repo.py
 
+import logging
+
 import pytest
 from unittest.mock import MagicMock, call
 from iatoolkit.common.exceptions import IAToolkitException
@@ -106,6 +108,31 @@ class TestVSRepo:
         assert result_docs[0]['document_id'] == 77
         assert result_docs[0]['url'] == "http://url_key"
         assert result_docs[0]['chunk_meta'] == {"chunk": "meta1"}
+
+    def test_query_logs_embedding_and_vector_sql_timings(self, caplog):
+        mock_company = Company(id=self.MOCK_COMPANY_ID, short_name=self.MOCK_COMPANY_SHORT_NAME)
+        self.mock_session.query.return_value.filter.return_value.one_or_none.return_value = mock_company
+        self.mock_session.execute.return_value.fetchall.return_value = []
+
+        with caplog.at_level(logging.INFO):
+            self.vs_repo.query(
+                company_short_name=self.MOCK_COMPANY_SHORT_NAME,
+                query_text="test query",
+                n_results=100,
+                collection_ids=[99],
+                include_urls=False,
+            )
+
+        messages = [record.getMessage() for record in caplog.records]
+        assert any(
+            "RAG vector query completed" in message
+            and "company=test-corp" in message
+            and "collection_ids=[99]" in message
+            and "n_results=100" in message
+            and "embedding_ms=" in message
+            and "vector_sql_ms=" in message
+            for message in messages
+        )
 
     def test_query_can_skip_presigned_urls(self):
         mock_company = Company(id=self.MOCK_COMPANY_ID, short_name=self.MOCK_COMPANY_SHORT_NAME)
