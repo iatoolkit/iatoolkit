@@ -496,6 +496,45 @@ class TestConfigurationService:
         # Assert
         assert errors == []
 
+    def test_validate_configuration_accepts_embedding_provider_startup_warmup(self):
+        valid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        valid_config["embedding_provider"]["warmup_on_startup"] = True
+        valid_config["embedding_providers"] = {
+            "routing": {
+                "provider": "huggingface",
+                "model": "BAAI/bge-m3",
+                "tool_name": "routing_embeddings",
+                "warmup_on_startup": True,
+            },
+        }
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = valid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert errors == []
+
+    def test_validate_configuration_rejects_invalid_embedding_provider_startup_warmup(self):
+        invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        invalid_config["embedding_provider"]["warmup_on_startup"] = "yes"
+        invalid_config["embedding_providers"] = {
+            "routing": {
+                "provider": "huggingface",
+                "model": "BAAI/bge-m3",
+                "tool_name": "routing_embeddings",
+                "warmup_on_startup": "yes",
+            },
+        }
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = invalid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert any("embedding_provider.warmup_on_startup" in e for e in errors)
+        assert any("embedding_providers.routing.warmup_on_startup" in e for e in errors)
+
     def test_validate_configuration_accepts_prompt_attachment_policy_values(self):
         valid_config = copy.deepcopy(MOCK_VALID_CONFIG)
         valid_config["prompts"]["prompt_list"][0]["attachment_mode"] = "native_plus_extracted"

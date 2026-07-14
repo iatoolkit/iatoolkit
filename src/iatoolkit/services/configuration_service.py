@@ -717,6 +717,23 @@ class ConfigurationService:
                 add_error("embedding_provider", "Missing required key: 'provider'")
             if not config.get("embedding_provider", {}).get("model"):
                 add_error("embedding_provider", "Missing required key: 'model'")
+            if (
+                    "warmup_on_startup" in config.get("embedding_provider", {})
+                    and not isinstance(config.get("embedding_provider", {}).get("warmup_on_startup"), bool)
+            ):
+                add_error("embedding_provider.warmup_on_startup", "Must be a boolean.")
+
+        embedding_providers_cfg = config.get("embedding_providers")
+        if embedding_providers_cfg is not None:
+            if not isinstance(embedding_providers_cfg, dict):
+                add_error("embedding_providers", "Section must be a dictionary.")
+            else:
+                for provider_key, provider_cfg in embedding_providers_cfg.items():
+                    if not isinstance(provider_cfg, dict):
+                        add_error(f"embedding_providers.{provider_key}", "Provider configuration must be a dictionary.")
+                        continue
+                    if "warmup_on_startup" in provider_cfg and not isinstance(provider_cfg.get("warmup_on_startup"), bool):
+                        add_error(f"embedding_providers.{provider_key}.warmup_on_startup", "Must be a boolean.")
 
         # 3b. Visual Embedding Provider (Optional)
         if config.get("visual_embedding_provider"):

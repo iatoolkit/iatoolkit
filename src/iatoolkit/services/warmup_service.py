@@ -56,15 +56,34 @@ class WarmupService:
         for company_short_name in get_registered_companies().keys():
             self.warmup_company(company_short_name, trigger=trigger)
 
-    def _warmup_remote_text_embeddings(self, company_short_name: str):
-        profiles = self._get_remote_text_embedding_profiles(company_short_name)
+    def warmup_startup_configured_companies(self, trigger: str = "startup") -> list[str]:
+        warmed_companies: list[str] = []
+        for company_short_name in get_registered_companies().keys():
+            warmed_profiles = self._warmup_remote_text_embeddings(company_short_name, startup_only=True)
+            if not warmed_profiles:
+                logging.debug(
+                    "Startup warm-up skipped for company='%s': no embedding provider enabled warmup_on_startup.",
+                    company_short_name,
+                )
+                continue
+
+            warmed_companies.append(company_short_name)
+
+        return warmed_companies
+
+    def is_startup_warmup_enabled(self, company_short_name: str) -> bool:
+        return bool(self._get_remote_text_embedding_profiles(company_short_name, startup_only=True))
+
+    def _warmup_remote_text_embeddings(self, company_short_name: str, startup_only: bool = False) -> list[tuple[str, str, str]]:
+        profiles = self._get_remote_text_embedding_profiles(company_short_name, startup_only=startup_only)
         if not profiles:
             logging.debug(
                 "Warm-up skipped for company='%s': no remote embedding inference configured.",
                 company_short_name
             )
-            return
+            return []
 
+        warmed_profiles = []
         for model_type, config_section, tool_name in profiles:
             try:
                 # Prime the remote model/container and download/cache model weights.
@@ -81,6 +100,7 @@ class WarmupService:
                     model_type,
                     tool_name,
                 )
+                warmed_profiles.append((model_type, config_section, tool_name))
             except Exception as e:
                 logging.debug(
                     "Warm-up failed for remote embedding profile company='%s' section='%s' model_type='%s' tool='%s': %s",
@@ -91,10 +111,16 @@ class WarmupService:
                     e,
                 )
 
+        return warmed_profiles
+
     def _uses_remote_text_inference(self, company_short_name: str) -> bool:
         return bool(self._get_remote_text_embedding_profiles(company_short_name))
 
-    def _get_remote_text_embedding_profiles(self, company_short_name: str) -> list[tuple[str, str, str]]:
+    def _get_remote_text_embedding_profiles(
+            self,
+            company_short_name: str,
+            startup_only: bool = False,
+    ) -> list[tuple[str, str, str]]:
         profiles: list[tuple[str, str, str, dict]] = []
 
         embedding_cfg = self.config_service.get_configuration(company_short_name, "embedding_provider") or {}
@@ -124,6 +150,7 @@ class WarmupService:
             (model_type, config_section, str(tool_name or "").strip())
             for model_type, config_section, tool_name, embedding_cfg in profiles
             if self._is_remote_embedding_profile(company_short_name, embedding_cfg, inference_tools, str(tool_name or "").strip())
+            and (not startup_only or bool(embedding_cfg.get("warmup_on_startup")))
         ]
 
         # Leave the default text profile warm last. It is the profile used by rag_search.

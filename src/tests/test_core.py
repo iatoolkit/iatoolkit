@@ -48,7 +48,8 @@ class TestIAToolkit(unittest.TestCase):
                 patch.object(toolkit, '_instantiate_company_instances') as mock_init_companies, \
                 patch.object(toolkit, '_setup_redis_sessions') as mock_setup_redis, \
                 patch.object(toolkit, '_setup_cors') as mock_setup_cors, \
-                patch.object(toolkit, '_setup_cli_commands') as mock_setup_cli:
+                patch.object(toolkit, '_setup_cli_commands') as mock_setup_cli, \
+                patch.object(toolkit, '_run_configured_startup_warmup') as mock_startup_warmup:
             # Act
             app = toolkit.create_iatoolkit()
 
@@ -70,6 +71,7 @@ class TestIAToolkit(unittest.TestCase):
             mock_setup_redis.assert_called_once()
             mock_setup_cors.assert_called_once()
             mock_setup_cli.assert_called_once()
+            mock_startup_warmup.assert_called_once()
 
     def test_singleton_pattern(self):
         """Test that IAToolkit follows the Singleton pattern strictly."""
@@ -99,6 +101,7 @@ class TestIAToolkit(unittest.TestCase):
                 patch.object(tk1, '_setup_additional_services'), \
                 patch.object(tk1, '_setup_cli_commands'), \
                 patch.object(tk1, '_setup_docling'), \
+                patch.object(tk1, '_run_configured_startup_warmup'), \
                 patch.object(tk1, 'register_data_sources'):
             # Inject dummy objects to allow flow to proceed
             tk1.app = MagicMock()
@@ -131,6 +134,17 @@ class TestIAToolkit(unittest.TestCase):
         # 4. Config dict should override Env Var
         with patch.dict(os.environ, {'TEST_KEY': 'env_value_override'}):
             self.assertEqual(toolkit._get_config_value('TEST_KEY'), 'config_value')
+
+    def test_run_configured_startup_warmup_delegates_to_warmup_service(self):
+        toolkit = IAToolkit({})
+        warmup_service = MagicMock()
+        warmup_service.warmup_startup_configured_companies.return_value = ["neuroscope"]
+        toolkit._injector = MagicMock()
+        toolkit._injector.get.return_value = warmup_service
+
+        toolkit._run_configured_startup_warmup()
+
+        warmup_service.warmup_startup_configured_companies.assert_called_once_with(trigger="core_startup")
 
     @patch('iatoolkit.core.DatabaseManager')
     def test_setup_database_failure_missing_uri(self, mock_db_cls):

@@ -115,6 +115,7 @@ class IAToolkit:
         self._setup_request_globals()
         self._setup_context_processors()
         self._sync_system_tools_on_boot()
+        self._run_configured_startup_warmup()
 
         # register data sources
         if start:
@@ -148,6 +149,19 @@ class IAToolkit:
             )
         except Exception as exc:
             logging.warning("⚠️ Unable to sync system tools on boot: %s", exc)
+
+    def _run_configured_startup_warmup(self):
+        from iatoolkit.services.warmup_service import WarmupService
+
+        try:
+            warmup_service = self._injector.get(WarmupService)
+            warmed_companies = warmup_service.warmup_startup_configured_companies(trigger="core_startup")
+            if warmed_companies:
+                logging.info("🔥 Startup warm-up completed for companies=%s", warmed_companies)
+            else:
+                logging.info("🔥 Startup warm-up skipped: no embedding provider enabled warmup_on_startup.")
+        except Exception:
+            logging.exception("⚠️ Startup warm-up failed.")
 
     def _get_config_value(self, key: str, default=None):
         # get a value from the config dict or the environment variable

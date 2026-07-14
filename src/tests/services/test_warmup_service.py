@@ -123,3 +123,60 @@ class TestWarmupService:
             [call("acme", trigger="startup"), call("beta", trigger="startup")],
             any_order=True,
         )
+
+    def test_warmup_startup_configured_companies_only_warms_enabled_embedding_providers(self):
+        def config_side_effect(company_short_name, key):
+            configs = {
+                "acme": {
+                    "embedding_provider": {
+                        "provider": "huggingface",
+                        "tool_name": "text_embeddings",
+                        "warmup_on_startup": True,
+                    },
+                    "embedding_providers": {},
+                },
+                "beta": {
+                    "embedding_provider": {
+                        "provider": "huggingface",
+                        "tool_name": "text_embeddings",
+                    },
+                    "embedding_providers": {},
+                },
+                "gamma": {
+                    "embedding_provider": {
+                        "provider": "huggingface",
+                        "tool_name": "text_embeddings",
+                    },
+                    "embedding_providers": {
+                        "routing": {
+                            "provider": "huggingface",
+                            "tool_name": "routing_embeddings",
+                            "warmup_on_startup": True,
+                        },
+                    },
+                },
+            }
+            if key == "inference_tools":
+                return {
+                    "_defaults": {"endpoint_url": "https://hf.endpoint"},
+                    "text_embeddings": {"model_id": "sentence-transformers/all-MiniLM-L6-v2"},
+                    "routing_embeddings": {"model_id": "BAAI/bge-m3"},
+                }
+            return configs.get(company_short_name, {}).get(key)
+
+        self.mock_config_service.get_configuration.side_effect = config_side_effect
+
+        with patch(
+            "iatoolkit.services.warmup_service.get_registered_companies",
+            return_value={"acme": object(), "beta": object(), "gamma": object()},
+        ):
+            warmed_companies = self.service.warmup_startup_configured_companies(trigger="core_startup")
+
+        assert warmed_companies == ["acme", "gamma"]
+        self.mock_embedding_service.embed_text.assert_has_calls(
+            [
+                call("acme", "hello", model_type="text", suppress_error_logging=True),
+                call("gamma", "hello", model_type="routing", suppress_error_logging=True),
+            ]
+        )
+        assert self.mock_embedding_service.embed_text.call_count == 2
