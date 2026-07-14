@@ -214,6 +214,43 @@ class TestInferenceServiceConfigResolution:
     def test_retry_budget_can_be_disabled_per_tool(self):
         assert self.service._resolve_retry_budget_seconds({"retry_budget_seconds": 0}) == 0.0
 
+    def test_predict_does_not_start_retry_after_budget_is_consumed_by_sleep(self, monkeypatch):
+        self.mock_config_service.get_configuration.return_value = {
+            "_defaults": {
+                "endpoint_url": "https://hf.endpoint",
+                "api_key_name": "HF_TOKEN",
+            },
+            "text_embeddings": {
+                "model_id": "sentence-transformers/all-MiniLM-L6-v2",
+                "retry_budget_seconds": 10,
+            },
+        }
+        self.mock_secret_provider.get_secret.return_value = "super-secret-token"
+        clock = {"now": 0.0}
+        sleep_calls = []
+
+        def fake_post(*args, **kwargs):
+            clock["now"] += 9.0
+            return "500 Internal Server Error", 500
+
+        def fake_sleep(seconds):
+            sleep_calls.append(seconds)
+            clock["now"] += seconds
+
+        self.mock_call_service.post.side_effect = fake_post
+        monkeypatch.setattr("iatoolkit.services.inference_service.time.monotonic", lambda: clock["now"])
+        monkeypatch.setattr("iatoolkit.services.inference_service.time.sleep", fake_sleep)
+
+        with pytest.raises(ValueError, match="Inference Endpoint Error 500"):
+            self.service.predict(
+                company_short_name="acme",
+                tool_name="text_embeddings",
+                input_data={"mode": "text", "text": "hello"},
+            )
+
+        assert self.mock_call_service.post.call_count == 1
+        assert sleep_calls == [1.0]
+
     def test_predict_does_not_retry_non_transient_http_status(self, monkeypatch):
         self.mock_config_service.get_configuration.return_value = {
             "_defaults": {

@@ -34,6 +34,7 @@ class TestWarmupService:
         self.mock_embedding_service.embed_text.assert_called_once_with(
             "acme",
             "hello",
+            model_type="text",
             suppress_error_logging=True,
         )
 
@@ -77,7 +78,36 @@ class TestWarmupService:
         self.mock_embedding_service.embed_text.assert_called_once_with(
             "acme",
             "hello",
+            model_type="text",
             suppress_error_logging=True,
+        )
+
+    def test_warmup_company_primes_remote_embedding_profiles_with_text_last(self):
+        def config_side_effect(company_short_name, key):
+            if key == "embedding_provider":
+                return {"provider": "huggingface", "tool_name": "text_embeddings"}
+            if key == "embedding_providers":
+                return {
+                    "routing": {"provider": "huggingface", "tool_name": "routing_embeddings"},
+                    "local": {"provider": "openai", "model": "text-embedding-3-small"},
+                }
+            if key == "inference_tools":
+                return {
+                    "_defaults": {"endpoint_url": "https://hf.endpoint"},
+                    "text_embeddings": {"model_id": "sentence-transformers/all-MiniLM-L6-v2"},
+                    "routing_embeddings": {"model_id": "BAAI/bge-m3"},
+                }
+            return None
+
+        self.mock_config_service.get_configuration.side_effect = config_side_effect
+
+        self.service.warmup_company("acme", trigger="test")
+
+        self.mock_embedding_service.embed_text.assert_has_calls(
+            [
+                call("acme", "hello", model_type="routing", suppress_error_logging=True),
+                call("acme", "hello", model_type="text", suppress_error_logging=True),
+            ]
         )
 
     def test_warmup_registered_companies_calls_each_company(self):

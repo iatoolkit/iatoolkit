@@ -310,15 +310,46 @@ class InferenceService:
             attempt: int,
             delay_seconds: float,
             reason: str,
+            attempt_duration_seconds: float | None = None,
+            elapsed_seconds: float | None = None,
             suppress_error_logging: bool = False
     ) -> None:
         log_fn = logging.debug if suppress_error_logging else logging.warning
+        if attempt_duration_seconds is None or elapsed_seconds is None:
+            log_fn(
+                "Inference request retry %s scheduled in %.1fs: %s",
+                attempt,
+                delay_seconds,
+                reason,
+            )
+            return
+
         log_fn(
-            "Inference request retry %s scheduled in %.1fs: %s",
+            "Inference request retry %s scheduled in %.1fs after %.1fs attempt (elapsed %.1fs): %s",
             attempt,
             delay_seconds,
+            attempt_duration_seconds,
+            elapsed_seconds,
             reason,
         )
+
+    def _timeout_for_attempt(
+            self,
+            *,
+            timeout: tuple[float, float],
+            deadline: float | None,
+            attempt: int,
+    ) -> tuple[float, float] | None:
+        if deadline is None or attempt == 1:
+            return timeout
+
+        remaining_seconds = deadline - time.monotonic()
+        if remaining_seconds <= 0:
+            return None
+
+        connect_timeout, read_timeout = timeout
+        bounded_timeout = max(0.1, remaining_seconds)
+        return min(connect_timeout, bounded_timeout), min(read_timeout, bounded_timeout)
 
     def _call_endpoint(
             self,
@@ -334,28 +365,44 @@ class InferenceService:
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         }
-        deadline = time.monotonic() + retry_budget_seconds if retry_budget_seconds > 0 else None
+        started_at = time.monotonic()
+        deadline = started_at + retry_budget_seconds if retry_budget_seconds > 0 else None
         attempt = 1
         delay_seconds = self.DEFAULT_RETRY_INITIAL_DELAY_SECONDS
 
         while True:
+            attempt_timeout = self._timeout_for_attempt(timeout=timeout, deadline=deadline, attempt=attempt)
+            if attempt_timeout is None:
+                error_msg = "Inference retry budget exhausted before next attempt."
+                if not suppress_error_logging:
+                    logging.error(error_msg)
+                raise ValueError(error_msg)
+
+            attempt_started_at = time.monotonic()
             try:
                 resp, status = self.call_service.post(
                     url,
                     json_dict=payload,
                     headers=headers,
-                    timeout=timeout
+                    timeout=attempt_timeout
                 )
             except Exception as exc:
+                attempt_duration = time.monotonic() - attempt_started_at
                 next_delay = self._next_retry_delay(delay_seconds=delay_seconds, deadline=deadline)
                 if self._is_retryable_request_exception(exc) and next_delay is not None:
                     self._log_retry_attempt(
                         attempt=attempt,
                         delay_seconds=next_delay,
                         reason=str(exc),
+                        attempt_duration_seconds=attempt_duration,
+                        elapsed_seconds=time.monotonic() - started_at,
                         suppress_error_logging=suppress_error_logging,
                     )
                     time.sleep(next_delay)
+                    if deadline is not None and time.monotonic() >= deadline:
+                        if not suppress_error_logging:
+                            logging.error(f"Failed to call inference endpoint: {exc}")
+                        raise
                     attempt += 1
                     delay_seconds = min(delay_seconds * 2, self.DEFAULT_RETRY_MAX_DELAY_SECONDS)
                     continue
@@ -367,6 +414,7 @@ class InferenceService:
             if status == 200:
                 return resp
 
+            attempt_duration = time.monotonic() - attempt_started_at
             error_msg = f"Inference Endpoint Error {status}"
             if isinstance(resp, dict) and 'error' in resp:
                 error_msg += f": {resp['error']}"
@@ -377,9 +425,16 @@ class InferenceService:
                     attempt=attempt,
                     delay_seconds=next_delay,
                     reason=error_msg,
+                    attempt_duration_seconds=attempt_duration,
+                    elapsed_seconds=time.monotonic() - started_at,
                     suppress_error_logging=suppress_error_logging,
                 )
                 time.sleep(next_delay)
+                if deadline is not None and time.monotonic() >= deadline:
+                    if not suppress_error_logging:
+                        logging.error(f"{error_msg} | Payload keys: {list(payload.keys())}")
+                        logging.error(f"Failed to call inference endpoint: {error_msg}")
+                    raise ValueError(error_msg)
                 attempt += 1
                 delay_seconds = min(delay_seconds * 2, self.DEFAULT_RETRY_MAX_DELAY_SECONDS)
                 continue

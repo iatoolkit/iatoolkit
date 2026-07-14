@@ -57,31 +57,92 @@ class WarmupService:
             self.warmup_company(company_short_name, trigger=trigger)
 
     def _warmup_remote_text_embeddings(self, company_short_name: str):
-        if not self._uses_remote_text_inference(company_short_name):
+        profiles = self._get_remote_text_embedding_profiles(company_short_name)
+        if not profiles:
             logging.debug(
                 "Warm-up skipped for company='%s': no remote embedding inference configured.",
                 company_short_name
             )
             return
 
-        # Prime the remote model/container.
-        self.embedding_service.embed_text(
-            company_short_name,
-            "hello",
-            suppress_error_logging=True,
-        )
+        for model_type, config_section, tool_name in profiles:
+            try:
+                # Prime the remote model/container and download/cache model weights.
+                self.embedding_service.embed_text(
+                    company_short_name,
+                    "hello",
+                    model_type=model_type,
+                    suppress_error_logging=True,
+                )
+                logging.debug(
+                    "Warm-up primed remote embedding profile company='%s' section='%s' model_type='%s' tool='%s'.",
+                    company_short_name,
+                    config_section,
+                    model_type,
+                    tool_name,
+                )
+            except Exception as e:
+                logging.debug(
+                    "Warm-up failed for remote embedding profile company='%s' section='%s' model_type='%s' tool='%s': %s",
+                    company_short_name,
+                    config_section,
+                    model_type,
+                    tool_name,
+                    e,
+                )
 
     def _uses_remote_text_inference(self, company_short_name: str) -> bool:
+        return bool(self._get_remote_text_embedding_profiles(company_short_name))
+
+    def _get_remote_text_embedding_profiles(self, company_short_name: str) -> list[tuple[str, str, str]]:
+        profiles: list[tuple[str, str, str, dict]] = []
+
         embedding_cfg = self.config_service.get_configuration(company_short_name, "embedding_provider") or {}
+        if isinstance(embedding_cfg, dict):
+            profiles.append(("text", "embedding_provider", embedding_cfg.get("tool_name") or "text_embeddings", embedding_cfg))
+
+        embedding_providers = self.config_service.get_configuration(company_short_name, "embedding_providers") or {}
+        if isinstance(embedding_providers, dict):
+            for model_type, embedding_provider_cfg in embedding_providers.items():
+                if not isinstance(embedding_provider_cfg, dict):
+                    continue
+                normalized_model_type = str(model_type or "").strip()
+                if not normalized_model_type:
+                    continue
+                profiles.append((
+                    normalized_model_type,
+                    f"embedding_providers.{normalized_model_type}",
+                    embedding_provider_cfg.get("tool_name") or normalized_model_type,
+                    embedding_provider_cfg,
+                ))
+
+        inference_tools = self.config_service.get_configuration(company_short_name, "inference_tools") or {}
+        if not isinstance(inference_tools, dict):
+            return []
+
+        remote_profiles = [
+            (model_type, config_section, str(tool_name or "").strip())
+            for model_type, config_section, tool_name, embedding_cfg in profiles
+            if self._is_remote_embedding_profile(company_short_name, embedding_cfg, inference_tools, str(tool_name or "").strip())
+        ]
+
+        # Leave the default text profile warm last. It is the profile used by rag_search.
+        return sorted(remote_profiles, key=lambda item: 1 if item[0] == "text" else 0)
+
+    def _is_remote_embedding_profile(
+            self,
+            company_short_name: str,
+            embedding_cfg: dict,
+            inference_tools: dict,
+            tool_name: str,
+    ) -> bool:
         provider = (embedding_cfg.get("provider") or "").strip().lower()
         if provider != "huggingface":
             return False
 
-        tool_name = (embedding_cfg.get("tool_name") or "text_embeddings").strip()
         if not tool_name:
             return False
 
-        inference_tools = self.config_service.get_configuration(company_short_name, "inference_tools") or {}
         defaults = inference_tools.get("_defaults") or {}
         if not isinstance(defaults, dict):
             defaults = {}
