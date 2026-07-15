@@ -374,6 +374,9 @@ class ToolService:
                 "page": page,
                 "caption_text": caption,
                 "document_id": item.get("document_id"),
+                "distance": item.get("distance"),
+                "distance_metric": item.get("distance_metric"),
+                "score": item.get("score"),
             }
             lines.append(json.dumps(header, ensure_ascii=False))
             text_content = (item.get("text") or "").strip()

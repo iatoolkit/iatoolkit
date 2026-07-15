@@ -82,8 +82,8 @@ class TestVSRepo:
         self.mock_storage_service.generate_presigned_url.return_value = "http://url_key"
         # Mock the final DB query result
         db_rows = [
-            (1, "file1.txt", "content1", "b64_1", {"doc": 1}, 77, {"chunk": "meta1"}),
-            (2, "file2.txt", "content2", "b64_2", {"doc": 2}, 88, {"chunk": "meta2"})
+            (1, "file1.txt", "content1", "b64_1", {"doc": 1}, 77, {"chunk": "meta1"}, 0.25),
+            (2, "file2.txt", "content2", "b64_2", {"doc": 2}, 88, {"chunk": "meta2"}, 0.5)
         ]
         self.mock_session.execute.return_value.fetchall.return_value = db_rows
 
@@ -108,11 +108,16 @@ class TestVSRepo:
         assert result_docs[0]['document_id'] == 77
         assert result_docs[0]['url'] == "http://url_key"
         assert result_docs[0]['chunk_meta'] == {"chunk": "meta1"}
+        assert result_docs[0]['distance'] == 0.25
+        assert result_docs[0]['distance_metric'] == "l2"
+        assert result_docs[0]['score'] == 0.8
 
         executed_sql = str(self.mock_session.execute.call_args[0][0])
         assert "vector_dims(iat_vsdocs.embedding) = 3" in executed_sql
         assert "iat_vsdocs.embedding::vector(3)" in executed_sql
         assert "CAST(:query_embedding AS vector(3))" in executed_sql
+        assert "AS distance" in executed_sql
+        assert "ORDER BY distance ASC LIMIT :n_results" in executed_sql
 
     def test_query_logs_embedding_and_vector_sql_timings(self, caplog):
         mock_company = Company(id=self.MOCK_COMPANY_ID, short_name=self.MOCK_COMPANY_SHORT_NAME)
@@ -144,7 +149,7 @@ class TestVSRepo:
         mock_company = Company(id=self.MOCK_COMPANY_ID, short_name=self.MOCK_COMPANY_SHORT_NAME)
         self.mock_session.query.return_value.filter.return_value.one_or_none.return_value = mock_company
         self.mock_session.execute.return_value.fetchall.return_value = [
-            (1, "file1.txt", "content1", "storage/key", {"doc": 1}, 77, {"chunk": "meta1"}),
+            (1, "file1.txt", "content1", "storage/key", {"doc": 1}, 77, {"chunk": "meta1"}, 0.1),
         ]
 
         result_docs = self.vs_repo.query(
@@ -155,6 +160,7 @@ class TestVSRepo:
 
         self.mock_storage_service.generate_presigned_url.assert_not_called()
         assert result_docs[0]["url"] is None
+        assert result_docs[0]["distance"] == 0.1
 
     def test_query_raises_exception_on_db_error(self):
         """Tests that an IAToolkitException is raised if the DB query fails."""

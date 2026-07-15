@@ -231,5 +231,6 @@ The `VSRepo` (`iatoolkit.repositories.vs_repo.VSRepo`) manages interactions with
   - Computes an embedding for the query text.
   - Executes a similarity search using `ORDER BY embedding <-> CAST(:query_embedding AS vector)`.
   - Joins with `iat_documents` to return document-level results.
+  - Returns retrieval ranking metadata for each chunk: raw L2 `distance`, `distance_metric`, and a derived `score`.
 
 ---

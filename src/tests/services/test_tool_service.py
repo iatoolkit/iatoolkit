@@ -1101,7 +1101,10 @@ class TestToolService:
             "url": "https://signed.example/invoice.pdf",
             "text": "Total amount is 1200",
             "meta": {"type": "invoice"},
-            "chunk_meta": {"source_type": "table", "caption_text": "Invoice totals", "table_json": "{\"a\":1}"}
+            "chunk_meta": {"source_type": "table", "caption_text": "Invoice totals", "table_json": "{\"a\":1}"},
+            "distance": 0.25,
+            "distance_metric": "l2",
+            "score": 0.8,
         }]
 
         handler = self.service.get_system_handler("iat_document_search")
@@ -1117,9 +1120,13 @@ class TestToolService:
         assert isinstance(result["chunks"], list)
         assert isinstance(result["chunks"][0]["chunk_meta"]["table_json"], dict)
         assert result["chunks"][0]["filename_link"] == "[invoice.pdf](https://signed.example/invoice.pdf)"
+        assert result["chunks"][0]["distance"] == 0.25
+        assert result["chunks"][0]["score"] == 0.8
         assert "serialized_context" in result
         assert "[invoice.pdf](https://signed.example/invoice.pdf)" in result["serialized_context"]
         assert "Total amount is 1200" in result["serialized_context"]
+        assert '"distance": 0.25' in result["serialized_context"]
+        assert '"score": 0.8' in result["serialized_context"]
         assert "table_json=" in result["serialized_context"]
 
     def test_system_document_search_passes_none_collection_without_filter(self):

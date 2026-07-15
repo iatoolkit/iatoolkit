@@ -515,6 +515,9 @@ class TestRagApiView:
             "text": "payment terms",
             "chunk_meta": {"source_type": "text", "page_start": 2},
             "meta": {"type": "contract"},
+            "distance": 0.25,
+            "distance_metric": "l2",
+            "score": 0.8,
         }]
 
         response = self.client.post(f'/{self.company_short_name}/api/rag/search/text', json={
@@ -530,7 +533,12 @@ class TestRagApiView:
         assert data["mode"] == "text"
         assert data["count"] == 1
         assert data["results"][0]["filename_link"] == "[contract.pdf](https://signed/doc)"
+        assert data["results"][0]["distance"] == 0.25
+        assert data["results"][0]["distance_metric"] == "l2"
+        assert data["results"][0]["score"] == 0.8
         assert "serialized_context" in data
+        assert '"distance": 0.25' in data["serialized_context"]
+        assert '"score": 0.8' in data["serialized_context"]
 
         self.mock_kb_service.search.assert_called_with(
             company_short_name=self.company_short_name,

@@ -499,6 +499,9 @@ class RagApiView(MethodView):
                 "text": item.get("text"),
                 "chunk_meta": item.get("chunk_meta") or {},
                 "document_meta": item.get("meta") or {},
+                "distance": item.get("distance"),
+                "distance_metric": item.get("distance_metric"),
+                "score": item.get("score"),
             })
         return normalized
 
@@ -537,6 +540,9 @@ class RagApiView(MethodView):
                 "chunk_id": item.get("chunk_id"),
                 "source_type": (item.get("chunk_meta") or {}).get("source_type"),
                 "page": (item.get("chunk_meta") or {}).get("page") or (item.get("chunk_meta") or {}).get("page_start"),
+                "distance": item.get("distance"),
+                "distance_metric": item.get("distance_metric"),
+                "score": item.get("score"),
             }
             lines.append(json.dumps(header, ensure_ascii=False))
             if item.get("text"):

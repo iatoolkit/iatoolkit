@@ -140,15 +140,22 @@ class VSRepo:
                 raise IAToolkitException(IAToolkitException.ErrorType.VECTOR_STORE_ERROR,
                                    f"Company with short name '{company_short_name}' not found.")
 
+            distance_metric = "l2"
+            distance_expression = (
+                f"iat_vsdocs.embedding::vector({embedding_dimensions}) "
+                f"<-> CAST(:query_embedding AS vector({embedding_dimensions}))"
+            )
+
             # build the SQL query
-            sql_query_parts = ["""
+            sql_query_parts = [f"""
                                SELECT iat_vsdocs.id, \
                                       iat_documents.filename, \
                                       iat_vsdocs.text, \
                                       iat_documents.storage_key, \
                                       iat_documents.meta,
                                       iat_documents.id, \
-                                      iat_vsdocs.meta
+                                      iat_vsdocs.meta,
+                                      ({distance_expression}) AS distance
                                FROM iat_vsdocs, \
                                     iat_documents
                                WHERE iat_vsdocs.company_id = :company_id
@@ -196,10 +203,7 @@ class VSRepo:
             sql_query = "".join(sql_query_parts)
 
             # add sorting and limit of results
-            sql_query += (
-                f" ORDER BY iat_vsdocs.embedding::vector({embedding_dimensions}) "
-                f"<-> CAST(:query_embedding AS vector({embedding_dimensions})) LIMIT :n_results"
-            )
+            sql_query += " ORDER BY distance ASC LIMIT :n_results"
 
             logging.debug(f"Executing SQL query: {sql_query}")
             logging.debug(f"With parameters: {params}")
@@ -218,6 +222,8 @@ class VSRepo:
                 doc_meta = row[4] if len(row) > 4 and row[4] is not None else {}
                 chunk_meta = row[6] if len(row) > 6 and row[6] is not None else {}
 
+                distance = float(row[7]) if len(row) > 7 and row[7] is not None else None
+
                 # get the url of the document
                 storage_key = row[3] if len(row) > 3 and row[3] is not None else None
                 url = None
@@ -232,7 +238,10 @@ class VSRepo:
                         'text': row[2],
                         'meta': doc_meta,
                         'chunk_meta': chunk_meta,
-                        'url': url
+                        'url': url,
+                        'distance': distance,
+                        'distance_metric': distance_metric,
+                        'score': self._score_from_l2_distance(distance),
                     }
                 )
 
@@ -434,6 +443,12 @@ class VSRepo:
             sql_parts.append(f" AND {expr} = :{value_param}")
 
         return sql_parts, params
+
+    @staticmethod
+    def _score_from_l2_distance(distance: float | None) -> float | None:
+        if distance is None:
+            return None
+        return 1 / (1 + distance)
 
     @staticmethod
     def _normalize_metadata_filter_input(metadata_filter):
