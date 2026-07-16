@@ -27,6 +27,18 @@ class DocumentRepo:
         self.session.commit()
         return document_image
 
+    def get_document_images(self, document_id: int, limit: int | None = None) -> list[DocumentImage]:
+        if not document_id:
+            return []
+        query = (
+            self.session.query(DocumentImage)
+            .filter(DocumentImage.document_id == document_id)
+            .order_by(DocumentImage.page.asc(), DocumentImage.image_index.asc(), DocumentImage.id.asc())
+        )
+        if limit is not None:
+            query = query.limit(max(int(limit), 0))
+        return list(query.all())
+
     def get(self, company_id, filename: str ) -> Document:
         if not company_id or not filename:
             raise IAToolkitException(IAToolkitException.ErrorType.PARAM_NOT_FILLED,

@@ -81,6 +81,21 @@ class VSRepo:
             self.session.rollback()
             raise e
 
+    def get_document_tables(self, document_id: int, limit: int | None = None) -> list[VSDoc]:
+        if not document_id:
+            return []
+        query = (
+            self.session.query(VSDoc)
+            .filter(
+                VSDoc.document_id == document_id,
+                VSDoc.meta["source_type"].as_string() == "table",
+            )
+            .order_by(VSDoc.id.asc())
+        )
+        if limit is not None:
+            query = query.limit(max(int(limit), 0))
+        return list(query.all())
+
     def query(self,
               company_short_name: str,
               query_text: str,

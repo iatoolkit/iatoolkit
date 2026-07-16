@@ -5,7 +5,7 @@
 
 import pytest
 from unittest.mock import MagicMock
-from iatoolkit.repositories.models import Document, Company, CollectionType
+from iatoolkit.repositories.models import Document, DocumentImage, Company, CollectionType
 from iatoolkit.repositories.document_repo import DocumentRepo
 from iatoolkit.common.exceptions import IAToolkitException
 import base64
@@ -72,6 +72,27 @@ class TestDocumentRepo:
 
         assert result == self.mock_document
         self.session.query.assert_called()
+
+    def test_get_document_images_orders_and_limits_by_document_id(self):
+        images = [DocumentImage(id=1, document_id=7), DocumentImage(id=2, document_id=7)]
+        query = MagicMock()
+        self.session.query.return_value = query
+        query.filter.return_value = query
+        query.order_by.return_value = query
+        query.limit.return_value = query
+        query.all.return_value = images
+
+        result = self.repo.get_document_images(7, limit=10)
+
+        assert result == images
+        query.filter.assert_called_once()
+        query.order_by.assert_called_once()
+        query.limit.assert_called_once_with(10)
+        query.all.assert_called_once_with()
+
+    def test_get_document_images_returns_empty_without_document_id(self):
+        assert self.repo.get_document_images(0) == []
+        self.session.query.assert_not_called()
 
     def test_get_by_hash_scopes_by_collection(self):
         self.session.query.return_value.filter_by.return_value.first.return_value = self.mock_document

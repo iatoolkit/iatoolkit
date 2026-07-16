@@ -759,6 +759,99 @@ class KnowledgeBaseService:
             raise IAToolkitException(IAToolkitException.ErrorType.FILE_FORMAT_ERROR,
                         f"Error reading file content: {e}")
 
+    def get_document_images(
+        self,
+        company_short_name: str,
+        document_id: int,
+        *,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        document = self.document_repo.get_by_id(document_id)
+        if not document:
+            return []
+        document_company = str(getattr(getattr(document, "company", None), "short_name", "") or "").strip()
+        if document_company != str(company_short_name or "").strip():
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_OPERATION,
+                "Document does not belong to the requested company.",
+            )
+
+        images = self.document_repo.get_document_images(document_id, limit=limit)
+        payloads: list[dict[str, Any]] = []
+        for image in images:
+            storage_key = str(getattr(image, "storage_key", "") or "").strip()
+            if not storage_key:
+                continue
+            content = self.storage_service.get_document_content(document_company, storage_key)
+            if not content:
+                continue
+            metadata = dict(getattr(image, "meta", None) or {})
+            filename = os.path.basename(storage_key) or f"document-{document_id}-image-{image.id}.png"
+            mime_type, _ = mimetypes.guess_type(filename)
+            if not mime_type:
+                image_format = str(metadata.get("format") or "").strip().lower()
+                mime_type = {
+                    "jpeg": "image/jpeg",
+                    "jpg": "image/jpeg",
+                    "png": "image/png",
+                    "webp": "image/webp",
+                    "gif": "image/gif",
+                }.get(image_format, "application/octet-stream")
+            payloads.append(
+                {
+                    "image_id": image.id,
+                    "document_id": document_id,
+                    "page": image.page,
+                    "image_index": image.image_index,
+                    "filename": filename,
+                    "mime_type": mime_type,
+                    "width": metadata.get("width"),
+                    "height": metadata.get("height"),
+                    "metadata": metadata,
+                    "content": content,
+                }
+            )
+        return payloads
+
+    def get_document_tables(
+        self,
+        company_short_name: str,
+        document_id: int,
+        *,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        document = self.document_repo.get_by_id(document_id)
+        if not document:
+            return []
+        document_company = str(getattr(getattr(document, "company", None), "short_name", "") or "").strip()
+        if document_company != str(company_short_name or "").strip():
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_OPERATION,
+                "Document does not belong to the requested company.",
+            )
+
+        payloads: list[dict[str, Any]] = []
+        for table in self.vs_repo.get_document_tables(document_id, limit=limit):
+            metadata = dict(getattr(table, "meta", None) or {})
+            table_text = str(getattr(table, "text", "") or "").strip()
+            if not table_text:
+                continue
+            payloads.append(
+                {
+                    "chunk_id": table.id,
+                    "document_id": document_id,
+                    "table_index": metadata.get("table_index"),
+                    "block_index": metadata.get("block_index"),
+                    "page": metadata.get("page"),
+                    "page_start": metadata.get("page_start"),
+                    "page_end": metadata.get("page_end"),
+                    "title": metadata.get("title") or metadata.get("caption_text"),
+                    "text": table_text,
+                    "table_json": metadata.get("table_json"),
+                }
+            )
+        return payloads
+
     def delete_document(self, document_id: int) -> bool:
         """
         Deletes a document and its associated vectors.

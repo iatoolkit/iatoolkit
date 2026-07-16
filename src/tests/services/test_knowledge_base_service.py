@@ -13,7 +13,7 @@ from iatoolkit.repositories.vs_repo import VSRepo
 from iatoolkit.services.parsers.parsing_service import ParsingService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.services.profile_service import ProfileService
-from iatoolkit.repositories.models import Company, Document, DocumentStatus, CollectionType
+from iatoolkit.repositories.models import Company, Document, DocumentImage, DocumentStatus, CollectionType, VSDoc
 from iatoolkit.services.storage_service import StorageService
 from iatoolkit.services.visual_kb_service import VisualKnowledgeBaseService
 from iatoolkit.services.parsers.contracts import ParseResult, ParsedText
@@ -192,6 +192,104 @@ class TestKnowledgeBaseService:
         self.mock_storage.get_document_content.assert_called_once_with('acme', "path/to/file")
         assert content == expected_bytes
         assert filename == "test.pdf"
+
+    def test_get_document_images_returns_persisted_images_by_document_id(self):
+        mock_doc = Document(id=1, filename="test.pdf")
+        mock_doc.company = self.company
+        self.mock_doc_repo.get_by_id.return_value = mock_doc
+        image = DocumentImage(
+            id=11,
+            document_id=1,
+            page=3,
+            image_index=2,
+            storage_key="companies/acme/images/brain.png",
+            meta={"width": 640, "height": 480, "format": "PNG"},
+        )
+        self.mock_doc_repo.get_document_images.return_value = [image]
+        self.mock_storage.get_document_content.return_value = b"PNG bytes"
+
+        payload = self.service.get_document_images("acme", 1, limit=10)
+
+        self.mock_doc_repo.get_document_images.assert_called_once_with(1, limit=10)
+        self.mock_storage.get_document_content.assert_called_once_with(
+            "acme",
+            "companies/acme/images/brain.png",
+        )
+        assert payload == [
+            {
+                "image_id": 11,
+                "document_id": 1,
+                "page": 3,
+                "image_index": 2,
+                "filename": "brain.png",
+                "mime_type": "image/png",
+                "width": 640,
+                "height": 480,
+                "metadata": {"width": 640, "height": 480, "format": "PNG"},
+                "content": b"PNG bytes",
+            }
+        ]
+
+    def test_get_document_images_rejects_wrong_company(self):
+        other_company = Company(id=2, short_name="other", name="Other")
+        mock_doc = Document(id=1, filename="test.pdf")
+        mock_doc.company = other_company
+        self.mock_doc_repo.get_by_id.return_value = mock_doc
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.get_document_images("acme", 1)
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_OPERATION
+        self.mock_doc_repo.get_document_images.assert_not_called()
+
+    def test_get_document_tables_returns_persisted_table_chunks(self):
+        mock_doc = Document(id=1, filename="test.pdf")
+        mock_doc.company = self.company
+        self.mock_doc_repo.get_by_id.return_value = mock_doc
+        table = VSDoc(
+            id=21,
+            document_id=1,
+            text="| Group | Mean |\n|---|---|\n| Control | 12.4 |",
+            meta={
+                "source_type": "table",
+                "table_index": 2,
+                "block_index": 14,
+                "page": 6,
+                "caption_text": "Demographics",
+                "table_json": '{"rows": 2}',
+            },
+        )
+        self.mock_vs_repo.get_document_tables.return_value = [table]
+
+        payload = self.service.get_document_tables("acme", 1, limit=50)
+
+        self.mock_vs_repo.get_document_tables.assert_called_once_with(1, limit=50)
+        assert payload == [
+            {
+                "chunk_id": 21,
+                "document_id": 1,
+                "table_index": 2,
+                "block_index": 14,
+                "page": 6,
+                "page_start": None,
+                "page_end": None,
+                "title": "Demographics",
+                "text": "| Group | Mean |\n|---|---|\n| Control | 12.4 |",
+                "table_json": '{"rows": 2}',
+            }
+        ]
+
+    def test_get_document_tables_rejects_wrong_company(self):
+        other_company = Company(id=2, short_name="other", name="Other")
+        mock_doc = Document(id=1, filename="test.pdf")
+        mock_doc.company = other_company
+        self.mock_doc_repo.get_by_id.return_value = mock_doc
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.get_document_tables("acme", 1)
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_OPERATION
+        self.mock_vs_repo.get_document_tables.assert_not_called()
 
     def test_get_document_descriptor_returns_download_metadata(self):
         mock_doc = Document(id=1, filename="test.pdf", storage_key="path/to/file", meta={"topic": "legal"})

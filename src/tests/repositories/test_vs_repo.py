@@ -73,6 +73,30 @@ class TestVSRepo:
         self.mock_session.rollback.assert_called_once()
         self.mock_session.commit.assert_not_called()
 
+    def test_get_document_tables_filters_orders_and_limits(self):
+        tables = [
+            VSDoc(id=11, document_id=7, text="| A |"),
+            VSDoc(id=12, document_id=7, text="| B |"),
+        ]
+        query = MagicMock()
+        self.mock_session.query.return_value = query
+        query.filter.return_value = query
+        query.order_by.return_value = query
+        query.limit.return_value = query
+        query.all.return_value = tables
+
+        result = self.vs_repo.get_document_tables(7, limit=50)
+
+        assert result == tables
+        query.filter.assert_called_once()
+        query.order_by.assert_called_once()
+        query.limit.assert_called_once_with(50)
+        query.all.assert_called_once_with()
+
+    def test_get_document_tables_returns_empty_without_document_id(self):
+        assert self.vs_repo.get_document_tables(0) == []
+        self.mock_session.query.assert_not_called()
+
     def test_query_success(self):
         """Tests the happy path for the query method."""
         # Arrange
