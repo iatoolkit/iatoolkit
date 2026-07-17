@@ -56,6 +56,11 @@ class PromptService:
     AGENT_ROLE_CHANNELS = PromptAgentRole.CHANNELS.value
     AGENT_ROLE_OPERATIONS = PromptAgentRole.OPERATIONS.value
     DEFAULT_CATEGORY_LABEL = "General"
+    COMPANY_CONTEXT_BLOCK_KEYS = {
+        "markdown_context",
+        "sql_context",
+        "yaml_context",
+    }
 
     @inject
     def __init__(self,
@@ -141,6 +146,41 @@ class PromptService:
             cls.AGENT_ROLE_WORKSPACE_CHAT,
             cls.AGENT_ROLE_CHANNELS,
         }
+
+    @classmethod
+    def default_context_policy_for_agent_role(cls, agent_role: str | None) -> dict:
+        normalized = str(agent_role or "").strip().lower()
+        if normalized == cls.AGENT_ROLE_WORKSPACE_CHAT:
+            blocks = {
+                "markdown_context": True,
+                "sql_context": True,
+                "yaml_context": True,
+            }
+        else:
+            blocks = {
+                "markdown_context": True,
+                "sql_context": False,
+                "yaml_context": False,
+            }
+        return {"company_context_blocks": blocks}
+
+    @classmethod
+    def normalize_context_policy(cls, context_policy: dict | None, agent_role: str | None = None) -> dict:
+        defaults = cls.default_context_policy_for_agent_role(agent_role)
+        if not isinstance(context_policy, dict):
+            return defaults
+
+        raw_blocks = context_policy.get("company_context_blocks")
+        if raw_blocks is None:
+            raw_blocks = context_policy.get("company_context")
+        if not isinstance(raw_blocks, dict):
+            return defaults
+
+        blocks = dict(defaults["company_context_blocks"])
+        for key in cls.COMPANY_CONTEXT_BLOCK_KEYS:
+            if key in raw_blocks:
+                blocks[key] = bool(raw_blocks.get(key))
+        return {"company_context_blocks": blocks}
 
     def _normalize_output_schema_mode(self, output_schema_mode: str | None) -> str:
         candidate = str(output_schema_mode or self.OUTPUT_SCHEMA_MODE_BEST_EFFORT).strip().lower()
@@ -557,6 +597,10 @@ class PromptService:
                             ),
                             'llm_request_options': dict(getattr(p, 'llm_request_options', None) or {}),
                             'tool_policy': dict(getattr(p, 'tool_policy', None) or {}),
+                            'context_policy': self.normalize_context_policy(
+                                getattr(p, 'context_policy', None),
+                                getattr(p, 'agent_role', None),
+                            ),
                         }
                         for p in prompts
                     ]
@@ -687,6 +731,10 @@ class PromptService:
             ),
             llm_request_options=llm_request_options,
             tool_policy=tool_policy,
+            context_policy=self.normalize_context_policy(
+                data.get("context_policy"),
+                agent_role,
+            ),
         )
         self.llm_query_repo.create_or_update_prompt(new_prompt)
 
@@ -963,6 +1011,10 @@ class PromptService:
                         self._extract_llm_request_options_payload(prompt_data)
                     ),
                     tool_policy=self._normalize_tool_policy(prompt_data.get("tool_policy")),
+                    context_policy=self.normalize_context_policy(
+                        prompt_data.get("context_policy"),
+                        agent_role,
+                    ),
                 )
 
                 self.llm_query_repo.create_or_update_prompt(new_prompt)

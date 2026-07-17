@@ -163,6 +163,10 @@ class ContextBuilderService:
             "prompt_name": prompt_obj.name,
             "agent_role": agent_role,
             "execution_mode": execution_mode,
+            "context_policy": self.prompt_service.normalize_context_policy(
+                getattr(prompt_obj, "context_policy", None),
+                agent_role,
+            ),
             "schema": schema,
             "schema_yaml": prompt_obj.output_schema_yaml,
             "schema_mode": prompt_obj.output_schema_mode or "best_effort",
@@ -354,15 +358,25 @@ class ContextBuilderService:
                 collection_names=rag_collections,
             )
 
+        context_policy = self.prompt_service.normalize_context_policy(
+            resolved_contract.get("context_policy"),
+            resolved_contract.get("agent_role"),
+        )
+        company_context_policy = context_policy.get("company_context_blocks") or {}
         company_context_blocks = self.company_context_service.get_company_context_blocks(
             company_short_name,
-            include_sql_context=False,
-            include_yaml_context=False,
+            include_sql_context=bool(company_context_policy.get("sql_context")),
+            include_yaml_context=bool(company_context_policy.get("yaml_context")),
+        )
+        markdown_context = (
+            company_context_blocks.get("markdown_context")
+            if bool(company_context_policy.get("markdown_context"))
+            else ""
         )
         final_system_context = self._join_context_sections(
             rendered_sections.get("identity"),
             rendered_sections.get("business_context"),
-            company_context_blocks.get("markdown_context"),
+            markdown_context,
             rendered_sections.get("conversation_rules"),
             rendered_sections.get("retrieval_guidance"),
             collection_context,

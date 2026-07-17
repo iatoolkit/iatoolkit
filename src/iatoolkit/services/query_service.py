@@ -15,6 +15,7 @@ from iatoolkit.services.context_builder_service import ContextBuilderService
 from iatoolkit.services.attachment_policy_service import AttachmentPolicyService
 from iatoolkit.services.memory_lookup_policy_service import MemoryLookupPolicyService
 from iatoolkit.services.telemetry_service import NoopTelemetryService
+from iatoolkit.services.prompt_service import PromptService
 from iatoolkit.common.model_registry import ModelRegistry
 from injector import inject
 import logging
@@ -341,6 +342,10 @@ class QueryService:
                     })
             contract["resource_bindings"] = normalized_resource_bindings
             contract["tool_policy"] = self._normalize_prompt_tool_policy(contract.get("tool_policy"))
+            contract["context_policy"] = PromptService.normalize_context_policy(
+                contract.get("context_policy"),
+                contract.get("agent_role"),
+            )
             contract["provider"] = self._get_provider(company.short_name, contract.get("llm_model") or "")
             return contract
         except Exception as e:
@@ -1875,6 +1880,10 @@ class QueryService:
                 "provider": provider,
                 "effective_model": effective_model,
                 "tool_policy": self._normalize_prompt_tool_policy(prompt_output_contract.get("tool_policy")),
+                "context_policy": PromptService.normalize_context_policy(
+                    prompt_output_contract.get("context_policy"),
+                    prompt_output_contract.get("agent_role"),
+                ),
                 "resource_bindings": list(prompt_output_contract.get("resource_bindings") or []),
                 "selected_system_prompt_keys": selected_system_prompt_keys,
                 "tool_names": self._get_tool_names(tools),

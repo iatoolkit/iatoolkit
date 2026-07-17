@@ -194,6 +194,7 @@ class LLMQueryRepo:
             prompt.queue_tier = getattr(new_prompt, "queue_tier", None) or prompt.queue_tier or "default"
             prompt.llm_request_options = dict(new_prompt.llm_request_options or {})
             prompt.tool_policy = dict(new_prompt.tool_policy or {})
+            prompt.context_policy = dict(getattr(new_prompt, "context_policy", None) or {})
         else:
             if new_prompt.active is None:
                 new_prompt.active = True
@@ -221,6 +222,8 @@ class LLMQueryRepo:
                 new_prompt.llm_request_options = {}
             if new_prompt.tool_policy is None:
                 new_prompt.tool_policy = {}
+            if getattr(new_prompt, "context_policy", None) is None:
+                new_prompt.context_policy = {}
             self.session.add(new_prompt)
             prompt = new_prompt
 

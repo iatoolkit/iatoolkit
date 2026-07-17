@@ -740,6 +740,7 @@ class Prompt(Base):
     queue_tier = Column(String, nullable=False, default="default")
     llm_request_options = Column(JSON_NATIVE, nullable=False, default=dict)
     tool_policy = Column(JSON_NATIVE, nullable=False, default=dict)
+    context_policy = Column(JSON_NATIVE, nullable=False, default=dict)
     created_at = Column(DateTime, default=datetime.now)
 
     def to_dict(self):

@@ -44,6 +44,7 @@ class TestContextBuilderService:
         self.mock_company = Company(short_name=MOCK_COMPANY_SHORT_NAME, name="Acme Consumer")
         self.mock_company.id = 1
         self.mock_profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.mock_prompt_service.normalize_context_policy.side_effect = PromptService.normalize_context_policy
 
     def test_build_system_context_success(self):
         """Should correctly assemble company context, rendered system prompt, and return profile."""
@@ -237,6 +238,55 @@ class TestContextBuilderService:
             allowed_sql_databases=["erp"],
         )
 
+    def test_build_agent_system_context_can_skip_all_company_context_blocks(self):
+        self.mock_profile_service.get_profile_by_identifier.return_value = {"name": "Agent User"}
+        self.mock_prompt_service.get_system_prompt_payload.return_value = {
+            "selected_keys": ["core_identity"],
+            "sections": [
+                {"section": "identity", "content": "Agent Identity"},
+                {"section": "conversation_rules", "content": "Agent Rules"},
+            ],
+        }
+        self.mock_prompt_service.resolve_system_prompt_capabilities.return_value = set()
+        self.mock_util.render_prompt_from_string.side_effect = [
+            "Agent Identity",
+            "Agent Rules",
+        ]
+        self.mock_company_context.get_company_context_blocks.return_value = {
+            "markdown_context": "Company Markdown Context",
+            "sql_context": "Global SQL Context",
+            "yaml_context": "Global YAML Context",
+        }
+
+        context, _, _ = self.service.build_agent_system_context(
+            MOCK_COMPANY_SHORT_NAME,
+            MOCK_USER_ID,
+            "minimal_ops_agent",
+            enabled_tools=[],
+            prompt_output_contract={
+                "agent_role": "operations",
+                "context_policy": {
+                    "company_context_blocks": {
+                        "markdown_context": False,
+                        "sql_context": False,
+                        "yaml_context": False,
+                    }
+                },
+                "resource_bindings": [],
+            },
+        )
+
+        assert "Agent Identity" in context
+        assert "Agent Rules" in context
+        assert "Company Markdown Context" not in context
+        assert "Global SQL Context" not in context
+        assert "Global YAML Context" not in context
+        self.mock_company_context.get_company_context_blocks.assert_called_once_with(
+            MOCK_COMPANY_SHORT_NAME,
+            include_sql_context=False,
+            include_yaml_context=False,
+        )
+
     def test_build_user_turn_prompt_basic(self):
         """Should build a simple prompt with a direct question and no files."""
         # Arrange
@@ -397,6 +447,13 @@ required:
         assert contract["llm_model"] is None
         assert contract["llm_request_options"] == {}
         assert contract["tool_policy"] == {"mode": "inherit", "tool_names": []}
+        assert contract["context_policy"] == {
+            "company_context_blocks": {
+                "markdown_context": True,
+                "sql_context": True,
+                "yaml_context": True,
+            }
+        }
 
     def test_get_prompt_output_contract_accepts_json_string_schema(self):
         self.mock_prompt_service.get_prompt_definition.return_value = SimpleNamespace(
@@ -416,6 +473,13 @@ required:
                 "store": False,
                 "prompt_version": "2",
                 "prompt_variant": "baseline",
+            },
+            context_policy={
+                "company_context_blocks": {
+                    "markdown_context": False,
+                    "sql_context": False,
+                    "yaml_context": False,
+                }
             },
             tool_policy={"mode": "explicit", "tool_names": ["iat_sql_query"]},
             resource_bindings=[
@@ -451,6 +515,13 @@ required:
             "prompt_variant": "baseline",
         }
         assert contract["tool_policy"] == {"mode": "explicit", "tool_names": ["iat_sql_query"]}
+        assert contract["context_policy"] == {
+            "company_context_blocks": {
+                "markdown_context": False,
+                "sql_context": False,
+                "yaml_context": False,
+            }
+        }
         assert contract["resource_bindings"] == [
             {
                 "resource_type": "sql_source",

@@ -34,6 +34,7 @@ class TestPromptService:
         prompt.queue_tier = 'default'
         prompt.llm_request_options = {}
         prompt.tool_policy = {}
+        prompt.context_policy = {}
         return prompt
 
     @pytest.fixture(autouse=True)
@@ -114,6 +115,13 @@ class TestPromptService:
                     'queue_tier': 'default',
                     'llm_request_options': {},
                     'tool_policy': {},
+                    'context_policy': {
+                        'company_context_blocks': {
+                            'markdown_context': True,
+                            'sql_context': True,
+                            'yaml_context': True,
+                        }
+                    },
                 }],
             }]
         }
@@ -446,9 +454,43 @@ class TestPromptService:
         saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
         assert saved_prompt.agent_role == 'channels'
         assert saved_prompt.execution_mode == 'agentic'
+        assert saved_prompt.context_policy == {
+            "company_context_blocks": {
+                "markdown_context": True,
+                "sql_context": False,
+                "yaml_context": False,
+            }
+        }
         assert saved_prompt.output_response_mode == "chat_compatible"
         assert saved_prompt.output_schema is None
         assert saved_prompt.output_schema_yaml is None
+
+    def test_save_prompt_persists_context_policy(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_category_by_name.return_value = None
+
+        self.prompt_service.save_prompt(
+            'test_co',
+            'minimal_ops_agent',
+            {
+                'content': 'Prompt text',
+                'agent_role': 'operations',
+                'context_policy': {
+                    'company_context_blocks': {
+                        'markdown_context': False,
+                    }
+                },
+            }
+        )
+
+        saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
+        assert saved_prompt.context_policy == {
+            "company_context_blocks": {
+                "markdown_context": False,
+                "sql_context": False,
+                "yaml_context": False,
+            }
+        }
 
     def test_save_prompt_persists_queue_tier(self):
         self.profile_repo.get_company_by_short_name.return_value = self.mock_company
