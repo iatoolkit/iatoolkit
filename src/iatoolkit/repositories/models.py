@@ -724,8 +724,6 @@ class Prompt(Base):
     description = Column(String, nullable=False)
     filename = Column(String, nullable=False)
     active = Column(Boolean, default=True)
-    agent_role = Column(String, default=PromptAgentRole.WORKSPACE_CHAT.value, nullable=False)
-    execution_mode = Column(String, default=PromptExecutionMode.CONVERSATIONAL.value, nullable=False)
     order = Column(Integer, nullable=True, default=0)
     category_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_prompt_categories.id', ondelete='SET NULL'), nullable=True)
     custom_fields = Column(JSON, nullable=False, default=[])
@@ -737,10 +735,9 @@ class Prompt(Base):
     attachment_parser_provider = Column(String, nullable=False, default="basic")
     attachment_fallback = Column(String, nullable=False, default="extract")
     llm_model = Column(String, nullable=True, default=None)
-    queue_tier = Column(String, nullable=False, default="default")
     llm_request_options = Column(JSON_NATIVE, nullable=False, default=dict)
     tool_policy = Column(JSON_NATIVE, nullable=False, default=dict)
-    context_policy = Column(JSON_NATIVE, nullable=False, default=dict)
+    runtime_policy = Column(JSON_NATIVE, nullable=False, default=dict)
     created_at = Column(DateTime, default=datetime.now)
 
     def to_dict(self):
@@ -754,6 +751,59 @@ class Prompt(Base):
         cascade="all, delete-orphan",
         order_by="PromptResourceBinding.binding_order",
     )
+
+    def _runtime_policy_dict(self) -> dict:
+        return dict(self.runtime_policy or {})
+
+    def _set_runtime_policy_value(self, key: str, value):
+        policy = self._runtime_policy_dict()
+        policy["version"] = 1
+        policy[key] = value
+        self.runtime_policy = policy
+
+    @property
+    def agent_role(self) -> str:
+        role = str((self.runtime_policy or {}).get("role") or "").strip().lower()
+        if role in {item.value for item in PromptAgentRole}:
+            return role
+        return PromptAgentRole.WORKSPACE_CHAT.value
+
+    @agent_role.setter
+    def agent_role(self, value: str | None):
+        role = str(value or "").strip().lower()
+        if role not in {item.value for item in PromptAgentRole}:
+            role = PromptAgentRole.WORKSPACE_CHAT.value
+        self._set_runtime_policy_value("role", role)
+
+    @property
+    def execution_mode(self) -> str:
+        if self.agent_role == PromptAgentRole.WORKSPACE_CHAT.value:
+            return PromptExecutionMode.CONVERSATIONAL.value
+        return PromptExecutionMode.AGENTIC.value
+
+    @execution_mode.setter
+    def execution_mode(self, value: str | None):
+        # execution_mode is derived from runtime_policy.role and is intentionally not persisted.
+        return
+
+    @property
+    def queue_tier(self) -> str:
+        tier = str((self.runtime_policy or {}).get("queue_tier") or "default").strip().lower()
+        return "low" if tier == "low" else "default"
+
+    @queue_tier.setter
+    def queue_tier(self, value: str | None):
+        tier = str(value or "default").strip().lower()
+        self._set_runtime_policy_value("queue_tier", "low" if tier == "low" else "default")
+
+    @property
+    def context_policy(self) -> dict:
+        context = (self.runtime_policy or {}).get("context")
+        return dict(context or {}) if isinstance(context, dict) else {}
+
+    @context_policy.setter
+    def context_policy(self, value: dict | None):
+        self._set_runtime_policy_value("context", dict(value or {}))
 
 
 class PromptResourceBinding(Base):

@@ -48,9 +48,17 @@ class PromptApiView(MethodView):
 
                 # get the prompt content
                 content = self.prompt_service.get_prompt_content(company, prompt_name)
+                meta = prompt_obj.to_dict()
+                runtime_policy = PromptService.normalize_runtime_policy(meta.get("runtime_policy"))
+                agent_role = runtime_policy["role"]
+                meta["runtime_policy"] = runtime_policy
+                meta["agent_role"] = agent_role
+                meta["execution_mode"] = PromptService.execution_mode_for_agent_role(agent_role)
+                meta["queue_tier"] = runtime_policy["queue_tier"]
+                meta["context_policy"] = runtime_policy["context"]
 
                 return jsonify({
-                    "meta": prompt_obj.to_dict(),
+                    "meta": meta,
                     "content": content
                 })
             else:

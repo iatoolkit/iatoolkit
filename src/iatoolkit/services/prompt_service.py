@@ -17,7 +17,6 @@ from iatoolkit.repositories.models import (
     PromptAgentRole,
     PromptCategory,
     Company,
-    PromptExecutionMode,
 )
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.system_prompt_catalog import build_system_prompt_payload
@@ -49,8 +48,8 @@ class PromptService:
     TOOL_POLICY_MODE_EXPLICIT = "explicit"
     QUEUE_TIER_DEFAULT = "default"
     QUEUE_TIER_LOW = "low"
-    EXECUTION_MODE_CONVERSATIONAL = PromptExecutionMode.CONVERSATIONAL.value
-    EXECUTION_MODE_AGENTIC = PromptExecutionMode.AGENTIC.value
+    EXECUTION_MODE_CONVERSATIONAL = "conversational"
+    EXECUTION_MODE_AGENTIC = "agentic"
     AGENT_ROLE_WORKSPACE_CHAT = PromptAgentRole.WORKSPACE_CHAT.value
     AGENT_ROLE_WORKSPACE_AGENT = PromptAgentRole.WORKSPACE_AGENT.value
     AGENT_ROLE_CHANNELS = PromptAgentRole.CHANNELS.value
@@ -181,6 +180,54 @@ class PromptService:
             if key in raw_blocks:
                 blocks[key] = bool(raw_blocks.get(key))
         return {"company_context_blocks": blocks}
+
+    @classmethod
+    def normalize_agent_role_value(cls, agent_role: str | None) -> str:
+        candidate = str(agent_role or "").strip().lower()
+        if candidate in {
+            cls.AGENT_ROLE_WORKSPACE_CHAT,
+            cls.AGENT_ROLE_WORKSPACE_AGENT,
+            cls.AGENT_ROLE_CHANNELS,
+            cls.AGENT_ROLE_OPERATIONS,
+        }:
+            return candidate
+        return cls.AGENT_ROLE_WORKSPACE_CHAT
+
+    @classmethod
+    def normalize_queue_tier_value(cls, queue_tier: str | None) -> str:
+        candidate = str(queue_tier or cls.QUEUE_TIER_DEFAULT).strip().lower()
+        if candidate in {cls.QUEUE_TIER_DEFAULT, cls.QUEUE_TIER_LOW}:
+            return candidate
+        return cls.QUEUE_TIER_DEFAULT
+
+    @classmethod
+    def normalize_runtime_policy(cls, runtime_policy: dict | None) -> dict:
+        policy = runtime_policy if isinstance(runtime_policy, dict) else {}
+        role = cls.normalize_agent_role_value(policy.get("role"))
+        queue_tier = cls.normalize_queue_tier_value(policy.get("queue_tier"))
+        raw_context = policy.get("context")
+        context = cls.normalize_context_policy(
+            raw_context if isinstance(raw_context, dict) else None,
+            role,
+        )
+        return {
+            "version": 1,
+            "role": role,
+            "queue_tier": queue_tier,
+            "context": context,
+        }
+
+    @classmethod
+    def get_runtime_policy_role(cls, runtime_policy: dict | None) -> str:
+        return cls.normalize_runtime_policy(runtime_policy).get("role", cls.AGENT_ROLE_WORKSPACE_CHAT)
+
+    @classmethod
+    def get_runtime_policy_queue_tier(cls, runtime_policy: dict | None) -> str:
+        return cls.normalize_runtime_policy(runtime_policy).get("queue_tier", cls.QUEUE_TIER_DEFAULT)
+
+    @classmethod
+    def get_runtime_policy_context(cls, runtime_policy: dict | None) -> dict:
+        return cls.normalize_runtime_policy(runtime_policy).get("context", cls.default_context_policy_for_agent_role(None))
 
     def _normalize_output_schema_mode(self, output_schema_mode: str | None) -> str:
         candidate = str(output_schema_mode or self.OUTPUT_SCHEMA_MODE_BEST_EFFORT).strip().lower()
@@ -544,7 +591,9 @@ class PromptService:
                 all_prompts = [
                     prompt for prompt in all_prompts
                     if bool(getattr(prompt, 'active', True))
-                    and self.is_workspace_chat_role(getattr(prompt, 'agent_role', None))
+                    and self.is_workspace_chat_role(
+                        self.get_runtime_policy_role(getattr(prompt, 'runtime_policy', None))
+                    )
                 ]
 
             # group by category
@@ -567,43 +616,35 @@ class PromptService:
             sorted_categories = sorted(prompts_by_category.items(), key=lambda item: item[0][0])
 
             for (cat_order, cat_name), prompts in sorted_categories:
+                prompt_items = []
+                for p in prompts:
+                    runtime_policy = self.normalize_runtime_policy(getattr(p, 'runtime_policy', None))
+                    agent_role = runtime_policy["role"]
+                    prompt_items.append({
+                        'prompt': p.name,
+                        'description': p.description,
+                        'category': p.category.name if p.category else None,
+                        'agent_role': agent_role,
+                        'execution_mode': self.execution_mode_for_agent_role(agent_role),
+                        'active': p.active,
+                        'custom_fields': p.custom_fields,
+                        'order': p.order,
+                        'output_schema_mode': p.output_schema_mode,
+                        'output_response_mode': p.output_response_mode,
+                        'attachment_mode': p.attachment_mode,
+                        'attachment_parser_provider': getattr(p, 'attachment_parser_provider', None),
+                        'attachment_fallback': p.attachment_fallback,
+                        'llm_model': getattr(p, 'llm_model', None),
+                        'queue_tier': runtime_policy["queue_tier"],
+                        'llm_request_options': dict(getattr(p, 'llm_request_options', None) or {}),
+                        'tool_policy': dict(getattr(p, 'tool_policy', None) or {}),
+                        'context_policy': runtime_policy["context"],
+                    })
+
                 categorized_prompts.append({
                     'category_name': cat_name,
                     'category_order': cat_order,
-                    'prompts': [
-                        {
-                            'prompt': p.name,
-                            'description': p.description,
-                            'category': p.category.name if p.category else None,
-                            'agent_role': self._normalize_agent_role(
-                                getattr(p, 'agent_role', None)
-                            ),
-                            'execution_mode': (
-                                str(getattr(p, 'execution_mode', None) or self.EXECUTION_MODE_CONVERSATIONAL)
-                                .strip()
-                                .lower()
-                            ),
-                            'active': p.active,
-                            'custom_fields': p.custom_fields,
-                            'order': p.order,
-                            'output_schema_mode': p.output_schema_mode,
-                            'output_response_mode': p.output_response_mode,
-                            'attachment_mode': p.attachment_mode,
-                            'attachment_parser_provider': getattr(p, 'attachment_parser_provider', None),
-                            'attachment_fallback': p.attachment_fallback,
-                            'llm_model': getattr(p, 'llm_model', None),
-                            'queue_tier': self._normalize_queue_tier(
-                                getattr(p, 'queue_tier', None)
-                            ),
-                            'llm_request_options': dict(getattr(p, 'llm_request_options', None) or {}),
-                            'tool_policy': dict(getattr(p, 'tool_policy', None) or {}),
-                            'context_policy': self.normalize_context_policy(
-                                getattr(p, 'context_policy', None),
-                                getattr(p, 'agent_role', None),
-                            ),
-                        }
-                        for p in prompts
-                    ]
+                    'prompts': prompt_items
                 })
 
             return {'message': categorized_prompts}
@@ -686,10 +727,43 @@ class PromptService:
         tool_policy = self._normalize_tool_policy(data.get("tool_policy"))
 
         # 2. update the prompt in the database
-        raw_agent_role = data.get('agent_role')
-        agent_role = self._normalize_agent_role(raw_agent_role)
-        execution_mode = self.execution_mode_for_agent_role(agent_role)
-        force_free_text_output = raw_agent_role is not None and self.should_force_free_text_output(agent_role)
+        raw_runtime_policy = data.get("runtime_policy")
+        runtime_policy_explicit = isinstance(raw_runtime_policy, dict)
+        if runtime_policy_explicit:
+            runtime_policy = self.normalize_runtime_policy(raw_runtime_policy)
+        else:
+            existing_runtime_policy = self.normalize_runtime_policy(
+                getattr(existing_prompt, "runtime_policy", None)
+                if existing_prompt is not None else None
+            )
+            role_value = data.get(
+                "agent_role",
+                getattr(existing_prompt, "agent_role", existing_runtime_policy["role"])
+                if existing_prompt is not None else existing_runtime_policy["role"],
+            )
+            queue_tier_value = data.get(
+                "queue_tier",
+                getattr(existing_prompt, "queue_tier", existing_runtime_policy["queue_tier"])
+                if existing_prompt is not None else existing_runtime_policy["queue_tier"],
+            )
+            if "context_policy" in data:
+                context_value = data.get("context_policy")
+            elif "agent_role" in data:
+                context_value = None
+            else:
+                context_value = (
+                    getattr(existing_prompt, "context_policy", existing_runtime_policy["context"])
+                    if existing_prompt is not None else existing_runtime_policy["context"]
+                )
+            runtime_policy = self.normalize_runtime_policy({
+                "role": role_value,
+                "queue_tier": queue_tier_value,
+                "context": context_value,
+            })
+        agent_role = runtime_policy["role"]
+        force_free_text_output = (
+            runtime_policy_explicit or "agent_role" in data
+        ) and self.should_force_free_text_output(agent_role)
 
         new_prompt = Prompt(
             company_id=company.id,
@@ -698,8 +772,6 @@ class PromptService:
             order=data.get('order', 1),
             category_id=category_id,
             active=data.get('active', True),
-            agent_role=agent_role,
-            execution_mode=execution_mode,
             filename=f"{prompt_name.lower().replace(' ', '_')}.prompt",
             custom_fields=data.get('custom_fields', []),
             output_schema=None if force_free_text_output else output_schema,
@@ -724,17 +796,9 @@ class PromptService:
                 data.get("attachment_fallback", company_default_policy["attachment_fallback"])
             ),
             llm_model=self._normalize_llm_model(company_short_name, data.get("llm_model")),
-            queue_tier=self._normalize_queue_tier(
-                data.get("queue_tier")
-                if "queue_tier" in data
-                else getattr(existing_prompt, "queue_tier", None)
-            ),
             llm_request_options=llm_request_options,
             tool_policy=tool_policy,
-            context_policy=self.normalize_context_policy(
-                data.get("context_policy"),
-                agent_role,
-            ),
+            runtime_policy=runtime_policy,
         )
         self.llm_query_repo.create_or_update_prompt(new_prompt)
 
@@ -966,9 +1030,9 @@ class PromptService:
                 filename = f"{prompt_name}.prompt"
                 normalized_schema = StructuredOutputService.normalize_schema(prompt_data.get("output_schema"))
 
-                raw_agent_role = prompt_data.get('agent_role')
-                agent_role = self._normalize_agent_role(raw_agent_role)
-                force_free_text_output = raw_agent_role is not None and self.should_force_free_text_output(agent_role)
+                runtime_policy = self.normalize_runtime_policy(prompt_data.get("runtime_policy"))
+                agent_role = runtime_policy["role"]
+                force_free_text_output = self.should_force_free_text_output(agent_role)
                 new_prompt = Prompt(
                     company_id=company.id,
                     name=prompt_name,
@@ -976,8 +1040,6 @@ class PromptService:
                     order=prompt_data.get('order'),
                     category_id=category_obj.id if category_obj else None,
                     active=prompt_data.get('active', True),
-                    agent_role=agent_role,
-                    execution_mode=self.execution_mode_for_agent_role(agent_role),
                     filename=filename,
                     custom_fields=prompt_data.get('custom_fields', []),
                     output_schema=None if force_free_text_output else normalized_schema,
@@ -1006,15 +1068,11 @@ class PromptService:
                         prompt_data.get("attachment_fallback", company_default_policy["attachment_fallback"])
                     ),
                     llm_model=self._normalize_llm_model(company_short_name, prompt_data.get("llm_model")),
-                    queue_tier=self._normalize_queue_tier(prompt_data.get("queue_tier")),
                     llm_request_options=self._normalize_llm_request_options(
                         self._extract_llm_request_options_payload(prompt_data)
                     ),
                     tool_policy=self._normalize_tool_policy(prompt_data.get("tool_policy")),
-                    context_policy=self.normalize_context_policy(
-                        prompt_data.get("context_policy"),
-                        agent_role,
-                    ),
+                    runtime_policy=runtime_policy,
                 )
 
                 self.llm_query_repo.create_or_update_prompt(new_prompt)

@@ -129,15 +129,17 @@ class ContextBuilderService:
             except Exception:
                 schema = None
 
-        raw_execution_mode = str(getattr(prompt_obj, "execution_mode", "") or "").strip().lower()
-        execution_mode = raw_execution_mode if raw_execution_mode in {"conversational", "agentic"} else "conversational"
-        raw_agent_role = str(getattr(prompt_obj, "agent_role", "") or "").strip().lower()
-        agent_role = (
-            raw_agent_role
-            if raw_agent_role in {"workspace_chat", "workspace_agent", "channels", "operations"}
-            else "workspace_chat"
-        )
-        execution_mode = "conversational" if agent_role == "workspace_chat" else "agentic"
+        raw_runtime_policy = getattr(prompt_obj, "runtime_policy", None)
+        if isinstance(raw_runtime_policy, dict):
+            runtime_policy = PromptService.normalize_runtime_policy(raw_runtime_policy)
+        else:
+            runtime_policy = PromptService.normalize_runtime_policy({
+                "role": getattr(prompt_obj, "agent_role", None),
+                "queue_tier": getattr(prompt_obj, "queue_tier", None),
+                "context": getattr(prompt_obj, "context_policy", None),
+            })
+        agent_role = runtime_policy["role"]
+        execution_mode = PromptService.execution_mode_for_agent_role(agent_role)
 
         resource_bindings: list[dict] = []
         for binding in getattr(prompt_obj, "resource_bindings", []) or []:
@@ -163,10 +165,8 @@ class ContextBuilderService:
             "prompt_name": prompt_obj.name,
             "agent_role": agent_role,
             "execution_mode": execution_mode,
-            "context_policy": self.prompt_service.normalize_context_policy(
-                getattr(prompt_obj, "context_policy", None),
-                agent_role,
-            ),
+            "runtime_policy": runtime_policy,
+            "context_policy": runtime_policy["context"],
             "schema": schema,
             "schema_yaml": prompt_obj.output_schema_yaml,
             "schema_mode": prompt_obj.output_schema_mode or "best_effort",

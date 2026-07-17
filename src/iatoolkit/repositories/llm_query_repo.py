@@ -10,7 +10,6 @@ from iatoolkit.repositories.models import (
     Prompt,
     PromptAgentRole,
     PromptCategory,
-    PromptExecutionMode,
 )
 from injector import inject
 from iatoolkit.repositories.database_manager import DatabaseManager
@@ -147,16 +146,34 @@ class LLMQueryRepo:
             return self.session.query(Prompt).filter(
                 Prompt.company_id == company.id,
             ).all()
-        else:
-            # Only active prompts explicitly exposed in chat for end users.
-            return self.session.query(Prompt).filter(
-                Prompt.company_id == company.id,
-                Prompt.active.is_(True),
-                Prompt.agent_role.in_([
-                    PromptAgentRole.WORKSPACE_CHAT.value,
-                    PromptAgentRole.WORKSPACE_AGENT.value,
-                ]),
-            ).all()
+
+        # Only active prompts explicitly exposed in chat for end users.
+        prompts = self.session.query(Prompt).filter(
+            Prompt.company_id == company.id,
+            Prompt.active.is_(True),
+        ).all()
+        return [
+            prompt for prompt in prompts
+            if self._get_prompt_runtime_role(prompt) in {
+                PromptAgentRole.WORKSPACE_CHAT.value,
+                PromptAgentRole.WORKSPACE_AGENT.value,
+            }
+        ]
+
+    @staticmethod
+    def _get_prompt_runtime_role(prompt: Prompt) -> str:
+        runtime_policy = getattr(prompt, "runtime_policy", None)
+        if not isinstance(runtime_policy, dict):
+            runtime_policy = {}
+        role = str(runtime_policy.get("role") or "").strip().lower()
+        if role in {
+            PromptAgentRole.WORKSPACE_CHAT.value,
+            PromptAgentRole.WORKSPACE_AGENT.value,
+            PromptAgentRole.CHANNELS.value,
+            PromptAgentRole.OPERATIONS.value,
+        }:
+            return role
+        return PromptAgentRole.WORKSPACE_CHAT.value
 
     def create_or_update_prompt(self, new_prompt: Prompt):
         prompt = self.session.query(Prompt).filter_by(company_id=new_prompt.company_id,
@@ -167,16 +184,6 @@ class LLMQueryRepo:
             prompt.order = new_prompt.order
             if new_prompt.active is not None:
                 prompt.active = new_prompt.active
-            prompt.agent_role = (
-                getattr(new_prompt, "agent_role", None)
-                or prompt.agent_role
-                or PromptAgentRole.WORKSPACE_CHAT.value
-            )
-            prompt.execution_mode = (
-                PromptExecutionMode.CONVERSATIONAL.value
-                if prompt.agent_role == PromptAgentRole.WORKSPACE_CHAT.value
-                else PromptExecutionMode.AGENTIC.value
-            )
             prompt.filename = new_prompt.filename
             prompt.custom_fields = new_prompt.custom_fields
             prompt.output_schema = new_prompt.output_schema
@@ -191,21 +198,15 @@ class LLMQueryRepo:
             )
             prompt.attachment_fallback = new_prompt.attachment_fallback or prompt.attachment_fallback or "extract"
             prompt.llm_model = new_prompt.llm_model
-            prompt.queue_tier = getattr(new_prompt, "queue_tier", None) or prompt.queue_tier or "default"
             prompt.llm_request_options = dict(new_prompt.llm_request_options or {})
             prompt.tool_policy = dict(new_prompt.tool_policy or {})
-            prompt.context_policy = dict(getattr(new_prompt, "context_policy", None) or {})
+            prompt.runtime_policy = (
+                dict(getattr(new_prompt, "runtime_policy", None) or {})
+                or dict(getattr(prompt, "runtime_policy", None) or {})
+            )
         else:
             if new_prompt.active is None:
                 new_prompt.active = True
-            if not new_prompt.agent_role:
-                new_prompt.agent_role = PromptAgentRole.WORKSPACE_CHAT.value
-            if not new_prompt.execution_mode:
-                new_prompt.execution_mode = (
-                    PromptExecutionMode.CONVERSATIONAL.value
-                    if new_prompt.agent_role == PromptAgentRole.WORKSPACE_CHAT.value
-                    else PromptExecutionMode.AGENTIC.value
-                )
             if not new_prompt.output_schema_mode:
                 new_prompt.output_schema_mode = "best_effort"
             if not new_prompt.output_response_mode:
@@ -216,14 +217,12 @@ class LLMQueryRepo:
                 new_prompt.attachment_parser_provider = "basic"
             if not new_prompt.attachment_fallback:
                 new_prompt.attachment_fallback = "extract"
-            if not getattr(new_prompt, "queue_tier", None):
-                new_prompt.queue_tier = "default"
             if new_prompt.llm_request_options is None:
                 new_prompt.llm_request_options = {}
             if new_prompt.tool_policy is None:
                 new_prompt.tool_policy = {}
-            if getattr(new_prompt, "context_policy", None) is None:
-                new_prompt.context_policy = {}
+            if getattr(new_prompt, "runtime_policy", None) is None:
+                new_prompt.runtime_policy = {}
             self.session.add(new_prompt)
             prompt = new_prompt
 

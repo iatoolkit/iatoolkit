@@ -273,26 +273,22 @@ class QueryService:
             contract["attachment_mode"] = (
                 str(raw_attachment_mode).strip().lower() if raw_attachment_mode is not None else None
             )
-            raw_execution_mode = contract.get("execution_mode")
-            normalized_execution_mode = (
-                str(raw_execution_mode).strip().lower()
-                if raw_execution_mode is not None else "conversational"
-            )
-            if normalized_execution_mode not in {"conversational", "agentic"}:
-                normalized_execution_mode = "conversational"
-            contract["execution_mode"] = normalized_execution_mode
-            raw_agent_role = contract.get("agent_role")
-            normalized_agent_role = (
-                str(raw_agent_role).strip().lower()
-                if raw_agent_role is not None else "workspace_chat"
-            )
-            if normalized_agent_role not in {"workspace_chat", "workspace_agent", "channels", "operations"}:
-                normalized_agent_role = "workspace_chat"
+            raw_runtime_policy = contract.get("runtime_policy")
+            if isinstance(raw_runtime_policy, dict):
+                runtime_policy = PromptService.normalize_runtime_policy(raw_runtime_policy)
+                runtime_role_explicit = True
+            else:
+                runtime_policy = PromptService.normalize_runtime_policy({
+                    "role": contract.get("agent_role"),
+                    "queue_tier": contract.get("queue_tier"),
+                    "context": contract.get("context_policy"),
+                })
+                runtime_role_explicit = contract.get("agent_role") is not None
+            normalized_agent_role = runtime_policy["role"]
+            contract["runtime_policy"] = runtime_policy
             contract["agent_role"] = normalized_agent_role
-            contract["execution_mode"] = (
-                "conversational" if normalized_agent_role == "workspace_chat" else "agentic"
-            )
-            if raw_agent_role is not None and normalized_agent_role in {"workspace_chat", "channels"}:
+            contract["execution_mode"] = PromptService.execution_mode_for_agent_role(normalized_agent_role)
+            if runtime_role_explicit and normalized_agent_role in {"workspace_chat", "channels"}:
                 contract["response_mode"] = "chat_compatible"
                 contract["schema"] = None
                 contract["schema_mode"] = "best_effort"
@@ -342,10 +338,7 @@ class QueryService:
                     })
             contract["resource_bindings"] = normalized_resource_bindings
             contract["tool_policy"] = self._normalize_prompt_tool_policy(contract.get("tool_policy"))
-            contract["context_policy"] = PromptService.normalize_context_policy(
-                contract.get("context_policy"),
-                contract.get("agent_role"),
-            )
+            contract["context_policy"] = runtime_policy["context"]
             contract["provider"] = self._get_provider(company.short_name, contract.get("llm_model") or "")
             return contract
         except Exception as e:

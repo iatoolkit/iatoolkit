@@ -777,13 +777,13 @@ class ConfigurationService:
         prompt_list, categories_config = self._get_prompt_config(config)
 
         category_set = set(categories_config)
-        allowed_execution_modes = {"conversational", "agentic"}
         allowed_agent_roles = {
             "workspace_chat",
             "workspace_agent",
             "channels",
             "operations",
         }
+        allowed_queue_tiers = {"default", "low"}
         allowed_output_schema_modes = {"best_effort", "strict"}
         allowed_output_response_modes = {"chat_compatible", "structured_only"}
         allowed_attachment_modes = {"extracted_only", "native_only", "native_plus_extracted"}
@@ -816,19 +816,24 @@ class ConfigurationService:
                     add_error(f"prompts[{i}]", "Missing required key: 'description'")
 
             prompt_cat = prompt.get("category")
-            execution_mode = str(prompt.get("execution_mode", "") or "").strip().lower()
-            if execution_mode and execution_mode not in allowed_execution_modes:
+            runtime_policy = prompt.get("runtime_policy") or {}
+            if not isinstance(runtime_policy, dict):
+                add_error(f"prompts[{i}].runtime_policy", "Must be a dictionary.")
+                continue
+
+            agent_role = str(runtime_policy.get("role", "") or "").strip().lower()
+            if agent_role and agent_role not in allowed_agent_roles:
                 add_error(
-                    f"prompts[{i}]",
-                    f"Unsupported execution_mode '{execution_mode}'. Must be one of: {sorted(allowed_execution_modes)}."
+                    f"prompts[{i}].runtime_policy.role",
+                    f"Unsupported runtime_policy.role '{agent_role}'. Must be one of: {sorted(allowed_agent_roles)}.",
                 )
                 continue
 
-            agent_role = str(prompt.get("agent_role", "") or "").strip().lower()
-            if agent_role and agent_role not in allowed_agent_roles:
+            queue_tier = str(runtime_policy.get("queue_tier", "") or "").strip().lower()
+            if queue_tier and queue_tier not in allowed_queue_tiers:
                 add_error(
-                    f"prompts[{i}].agent_role",
-                    f"Unsupported agent_role '{agent_role}'. Must be one of: {sorted(allowed_agent_roles)}.",
+                    f"prompts[{i}].runtime_policy.queue_tier",
+                    f"Unsupported runtime_policy.queue_tier '{queue_tier}'. Must be one of: {sorted(allowed_queue_tiers)}.",
                 )
                 continue
 
