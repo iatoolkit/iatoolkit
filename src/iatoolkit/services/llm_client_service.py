@@ -1157,7 +1157,7 @@ class llmClient:
         decoded_response["error_message"] = ""
 
         if response_mode == "structured_only":
-            decoded_response["answer"] = StructuredOutputService.render_structured_output_as_html(structured_output)
+            decoded_response["answer"] = ""
             decoded_response["answer_format"] = "structured_only"
             return decoded_response
 

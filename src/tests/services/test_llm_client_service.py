@@ -939,6 +939,7 @@ class TestLLMClient:
         assert result["schema_applied"] is True
         assert result["schema_valid"] is True
         assert result["structured_output"]["customer_id"] == "c-100"
+        assert result["answer"] == ""
         assert result["answer_format"] == "structured_only"
 
     def test_apply_response_contract_accepts_answer_with_additional_data_payload(self):
