@@ -12,6 +12,7 @@ flask-cors==6.0.0
 Flask-Injector==0.15.0
 Flask-Session==0.8.0
 flatbuffers==24.3.25
+gevent==26.5.0
 google-ai-generativelanguage==0.6.15
 google-api-core==2.24.1
 google-api-python-client==2.161.0
@@ -46,6 +47,7 @@ pandas==2.3.1
 pgvector==0.3.6
 pillow==11.0.0
 psutil==7.0.0
+psycogreen==1.0.2
 psycopg2-binary==2.9.10
 PyMySQL==1.1.1
 PyJWT==2.10.1

@@ -1,1 +1,1 @@
-web: export PYTHONPATH=./src && gunicorn app:app --worker-class=gthread --access-logfile - --error-logfile - --capture-output --workers=2 --threads=3 --timeout=60 --max-requests=800 --max-requests-jitter=200
+web: export PYTHONPATH=./src && gunicorn app:app --worker-class=gevent --worker-connections=500 --config gunicorn.conf.py --access-logfile - --error-logfile - --capture-output --workers=2 --timeout=60 --max-requests=800 --max-requests-jitter=200

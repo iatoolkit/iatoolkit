@@ -37,10 +37,6 @@ class DatabaseManager(DatabaseProvider):
         self.schema = schema
         self.timeout = self._normalize_timeout(timeout)
 
-        # FIX HEROKU: replace postgres:// by postgresql:// for compatibility with SQLAlchemy 1.4+
-        if database_url and database_url.startswith("postgres://"):
-            database_url = database_url.replace("postgres://", "postgresql://", 1)
-
         self.url = make_url(database_url)
         self.backend = self.url.get_backend_name()
         self.statement_timeout_seconds = self._resolve_statement_timeout(timeout)
