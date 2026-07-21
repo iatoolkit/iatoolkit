@@ -79,6 +79,13 @@ class IAToolkit:
         if self._initialized and self.app:
             return self.app
 
+        # Lets any code (core, enterprise, or company modules) tell apart the
+        # Flask/web process from an RQ worker process (which also calls this
+        # same factory via IatEnterprise.create()). setdefault so a worker
+        # entrypoint that already set this to "worker" before reaching here
+        # isn't overwritten.
+        os.environ.setdefault("IATOOLKIT_PROCESS_ROLE", "web")
+
         self._setup_logging()
 
         # Step 1: Create the Flask app instance
