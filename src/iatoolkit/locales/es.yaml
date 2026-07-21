@@ -12,6 +12,8 @@ ui:
     period: "Período"
     refresh: "Actualizar"
     delete: "Borrar"
+    loading: "Cargando..."
+    read_only: "Solo lectura"
 
 
   dates:
@@ -1120,6 +1122,8 @@ ui:
     no_result_available: "Todavía no hay un resultado disponible para esta ejecución."
     no_result_rows: "No hay filas disponibles para previsualizar."
     result_modal_unavailable: "El visor de resultados no está disponible en esta pantalla."
+    failed_items_title: "Items fallidos"
+    failed_items_subtitle: "Fallas de items para esta ejecución de pipeline."
     no_artifacts: "Todavía no hay exportaciones consolidadas."
     artifact_preview: "Vista previa"
     artifact_rows: "Filas"
@@ -1473,6 +1477,7 @@ ui:
     sql_context_scope_empty: "Selecciona una base para definir qué tablas pertenecen al contexto SQL."
     sql_context_scope_loading: "Carga el esquema de la base para elegir las tablas que deben aparecer en el contexto."
     sql_context_scope_all_tables: "Incluir todas las tablas"
+    sql_context_scope_save: "Guardar"
     sql_sources_save_source: "Guardar fuente"
     sql_sources_delete_title: "Eliminar fuente SQL"
     sql_sources_delete_message: "¿Seguro que quieres eliminar esta fuente SQL?"
@@ -1682,6 +1687,8 @@ ui:
     run_btn: "Ejecutar"
     playground_delivery_mode_label: "Ejecutar Async"
     playground_delivery_mode_help: "Encola esta ejecución del playground en lugar de esperar una respuesta sincrónica."
+    playground_run_mode_hint_sync: "Esta ejecución del playground se ejecutará de inmediato y mantendrá la solicitud abierta hasta que se devuelva un resultado."
+    playground_run_mode_hint_async: "Esta ejecución del playground se encolará y el playground seguirá consultando hasta que el resultado esté listo."
     copy_html_btn: "Copiar HTML"
     copy_json_btn: "Copiar JSON"
     download_json_btn: "Descargar JSON"
@@ -2016,6 +2023,7 @@ ui:
     select_section: "Seleccione una sección del panel izquierdo"
     no_section_selected: "No hay sección seleccionada."
     view_yaml: "Ver YAML"
+    activate: "Activar configuración"
     files: "Archivos de Configuración"
     overview_title: "Resumen de la empresa"
     overview_desc_short: "Configuración principal de negocio, modelo y branding"
@@ -2063,6 +2071,7 @@ ui:
     bundle_import: "Importar"
     bundle_export_modal_title: "Exportar paquete de configuración"
     bundle_export_select_components: "Selecciona los componentes a incluir:"
+    bundle_component_agents: "Agentes"
     bundle_component_prompts_with_categories: "Prompts (incluye categorías)"
     bundle_component_collections: "Colecciones"
     bundle_component_tools_native: "Tools nativas"
@@ -2070,6 +2079,9 @@ ui:
     bundle_import_modal_title: "Importar paquete de configuración"
     bundle_zip_label: "ZIP del paquete"
     bundle_import_select_components: "Selecciona los componentes a importar:"
+    chat_context_preview_title: "Contexto de chat del usuario actual"
+    chat_context_preview_subtitle: "Vista lógica del contexto conversacional activo para este usuario."
+    chat_context_preview_block_label: "Contexto Enviado"
 
   rag:
     ingestion: "Ingesta"

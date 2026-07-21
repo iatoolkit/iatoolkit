@@ -5,9 +5,6 @@ openai:
     - application/pdf
     - text/plain
     - text/csv
-    - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
-    - application/vnd.openxmlformats-officedocument.wordprocessingml.document
-    - application/vnd.openxmlformats-officedocument.presentationml.presentation
     - application/json
     - application/xml
     - text/xml
@@ -23,9 +20,6 @@ gemini:
     - application/pdf
     - text/plain
     - text/csv
-    - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
-    - application/vnd.openxmlformats-officedocument.wordprocessingml.document
-    - application/vnd.openxmlformats-officedocument.presentationml.presentation
     - application/json
     - application/xml
     - text/xml
@@ -65,9 +59,6 @@ openrouter:
     - application/pdf
     - text/plain
     - text/csv
-    - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
-    - application/vnd.openxmlformats-officedocument.wordprocessingml.document
-    - application/vnd.openxmlformats-officedocument.presentationml.presentation
     - application/json
     - application/xml
     - text/xml

@@ -69,6 +69,32 @@ class _QuietRQMaintenanceFilter(logging.Filter):
         return not any(substring in message for substring in _QUIET_RQ_MESSAGE_SUBSTRINGS)
 
 
+_RQ_LOGGER_NAMES_WITH_OWN_HANDLERS = ("rq.worker", "rq.job")
+
+
+def _dedupe_rq_loghandlers() -> None:
+    """
+    RQ's own Worker.bootstrap() calls setup_loghandlers(), which attaches a
+    StreamHandler directly to 'rq.worker'/'rq.job' UNLESS it detects an
+    existing handler anywhere in the logger hierarchy at that exact moment.
+    During a worker's boot sequence, our own root stdout handler may not be
+    in place yet the first time that runs (logging gets configured more than
+    once - at worker.py's top, then again inside enterprise.create() - and
+    the exact ordering isn't guaranteed) - RQ's own handler then sticks
+    around even after our root handler shows up, and every RQ log record
+    (e.g. the per-job start/"Successfully completed" lines) gets printed
+    twice: once by RQ's handler, once via propagation to root. These two
+    loggers propagate to root, which already carries our canonical handler,
+    so it's always safe to drop their own direct handlers here.
+    """
+    for logger_name in _RQ_LOGGER_NAMES_WITH_OWN_HANDLERS:
+        rq_logger = logging.getLogger(logger_name)
+        if not rq_logger.propagate:
+            continue
+        for handler in list(rq_logger.handlers):
+            rq_logger.removeHandler(handler)
+
+
 def configure_runtime_logging() -> None:
     formatter = logging.Formatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
     log_level = _runtime_log_level()
@@ -88,6 +114,8 @@ def configure_runtime_logging() -> None:
             handler.setFormatter(formatter)
 
     logging.getLogger("httpx").setLevel(logging.WARNING)
+
+    _dedupe_rq_loghandlers()
 
     rq_worker_logger = logging.getLogger("rq.worker")
     if not any(isinstance(f, _QuietRQMaintenanceFilter) for f in rq_worker_logger.filters):
