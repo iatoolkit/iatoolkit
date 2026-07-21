@@ -41,6 +41,34 @@ except ImportError:
     QuietLivenessGunicornLogger = None
 
 
+_QUIET_RQ_MESSAGE_SUBSTRINGS = (
+    "cleaning registries for queue",
+    "Job OK",
+)
+
+
+class _QuietRQMaintenanceFilter(logging.Filter):
+    """
+    RQ logs its own per-job success ('Job OK') and per-queue maintenance
+    ('cleaning registries for queue: ...') lines at INFO unconditionally -
+    with several queues x several workers this floods production logs with
+    nothing actionable. Suppressed unless LOG_LEVEL=DEBUG (or
+    IATOOLKIT_LOG_RQ_MAINTENANCE=true) is explicitly requested. Genuine
+    failures (AbandonedJobError, job exceptions) go through RQ's own
+    WARNING/ERROR calls and are untouched by this filter.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.levelno != logging.INFO:
+            return True
+        if _runtime_log_level() <= logging.DEBUG:
+            return True
+        if _parse_bool_env("IATOOLKIT_LOG_RQ_MAINTENANCE", default=False):
+            return True
+        message = record.getMessage()
+        return not any(substring in message for substring in _QUIET_RQ_MESSAGE_SUBSTRINGS)
+
+
 def configure_runtime_logging() -> None:
     formatter = logging.Formatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
     log_level = _runtime_log_level()
@@ -60,6 +88,10 @@ def configure_runtime_logging() -> None:
             handler.setFormatter(formatter)
 
     logging.getLogger("httpx").setLevel(logging.WARNING)
+
+    rq_worker_logger = logging.getLogger("rq.worker")
+    if not any(isinstance(f, _QuietRQMaintenanceFilter) for f in rq_worker_logger.filters):
+        rq_worker_logger.addFilter(_QuietRQMaintenanceFilter())
 
 
 def install_flask_request_logging(app) -> None:
