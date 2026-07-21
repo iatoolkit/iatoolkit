@@ -50,6 +50,13 @@ def register_views(app):
     from iatoolkit.views.api_key_api_view import ApiKeyApiView
     from iatoolkit.views.memory_api_view import MemoryApiView
 
+    # Dependency-free liveness endpoint for load balancer/orchestrator health
+    # checks (ALB, ECS, Docker HEALTHCHECK, etc). Deliberately returns a plain
+    # 200 rather than redirecting to a company home like RootRedirectView
+    # below - health checkers commonly only treat 2xx as healthy, and this
+    # must stay reachable even if the company registry or DB is degraded.
+    app.add_url_rule('/', endpoint='liveness', view_func=lambda: ("ok", 200))
+
     # assign root '/' to our new redirect logic
     app.add_url_rule('/home', view_func=RootRedirectView.as_view('root_redirect'))
 

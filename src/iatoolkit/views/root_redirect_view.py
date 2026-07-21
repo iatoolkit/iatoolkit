@@ -1,11 +1,12 @@
-from flask import redirect, url_for
+from flask import abort, redirect, url_for
 from flask.views import MethodView
 from iatoolkit.company_registry import get_company_registry
 
 
 class RootRedirectView(MethodView):
     """
-    Vista que redirige la raíz '/' al home de la primera compañía disponible.
+    Vista que redirige '/home' al home de la primera compañía disponible.
+    '/' está reservado para el endpoint de liveness (ver routes.py).
     """
 
     def get(self):
@@ -18,5 +19,5 @@ class RootRedirectView(MethodView):
             first_company_short_name = next(iter(companies))
             return redirect(url_for('home', company_short_name=first_company_short_name))
 
-        # Fallback: Si no hay compañías, ir al index genérico (o a un 404)
-        return redirect(url_for('index'))
+        # Fallback: no hay compañías registradas, no hay a dónde redirigir.
+        abort(404)
