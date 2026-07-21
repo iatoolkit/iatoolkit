@@ -12,6 +12,7 @@ from iatoolkit.repositories.models import Base, ORM_SCHEMA
 from injector import inject
 from pgvector.psycopg2 import register_vector
 from iatoolkit.common.interfaces.database_provider import DatabaseProvider
+from iatoolkit.common.exceptions import is_worker_timeout_signal
 import logging
 
 
@@ -355,6 +356,8 @@ class DatabaseManager(DatabaseProvider):
                         "pk": col['name'] in pks
                     })
             except Exception as e:
+                if is_worker_timeout_signal(e):
+                    raise
                 logging.warning(f"Could not inspect columns for table {table}: {e}")
 
             structure[table] = {

@@ -17,7 +17,7 @@ import logging
 import json
 import yaml
 from html import unescape
-from iatoolkit.common.exceptions import IAToolkitException
+from iatoolkit.common.exceptions import IAToolkitException, is_worker_timeout_signal
 import threading
 import re
 import tiktoken
@@ -1306,13 +1306,7 @@ class llmClient:
             tokens = self.encoding.encode(content)
             return len(tokens)
         except Exception as e:
-            if type(e).__module__ == "rq.timeouts" and type(e).__name__ == "JobTimeoutException":
-                # Must propagate, not be absorbed by the approximation fallback below:
-                # this is RQ's job-timeout signal (checked by name/module rather than
-                # imported, since core iatoolkit has no dependency on rq). RQ's
-                # SIGALRM-based timeout only fires once, so swallowing it here would
-                # let the task keep running for the rest of its execution with no
-                # timeout protection at all instead of properly failing/retrying.
+            if is_worker_timeout_signal(e):
                 raise
             # Safe approximation to keep request flow alive.
             logging.warning(f"Token counting fallback in use: {e}")

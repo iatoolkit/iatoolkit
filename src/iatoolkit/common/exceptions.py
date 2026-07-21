@@ -49,3 +49,20 @@ class IAToolkitException(Exception):
         self.error_type = error_type
         self.message = message
         super().__init__(self.message)
+
+
+def is_worker_timeout_signal(exc: BaseException) -> bool:
+    """
+    True if `exc` is a job-timeout signal injected by the task worker (e.g. RQ's
+    JobTimeoutException, raised via SIGALRM mid-call) rather than an ordinary
+    application error. Checked by class name/module instead of importing rq,
+    since core iatoolkit has no dependency on the task-queue package.
+
+    Any `except Exception: log-and-continue` fallback along the task execution
+    path (tool calls, schema introspection, tokenization, etc.) must re-raise
+    this instead of swallowing it - the worker's timeout only fires once
+    (one-shot signal), so absorbing it here lets the task keep running for the
+    rest of its execution with no timeout protection at all, instead of
+    properly failing/retrying.
+    """
+    return type(exc).__module__ == "rq.timeouts" and type(exc).__name__ == "JobTimeoutException"
