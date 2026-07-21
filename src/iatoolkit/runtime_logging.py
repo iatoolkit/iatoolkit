@@ -14,6 +14,33 @@ _ORIGINAL_BASIC_CONFIG = logging.basicConfig
 _BASIC_CONFIG_PATCHED = False
 
 
+try:
+    from gunicorn.glogging import Logger as _GunicornLogger
+
+    class QuietLivenessGunicornLogger(_GunicornLogger):
+        """
+        Drop-in replacement for gunicorn's default access logger that
+        silences the liveness endpoint ('/', see common/routes.py) - load
+        balancer/orchestrator health checks hit it every ~10-15s and would
+        otherwise flood the access log forever with nothing of value.
+        Everything else logs exactly as gunicorn's default Logger would.
+
+        Reference from a gunicorn.conf.py:
+            logger_class = "iatoolkit.runtime_logging.QuietLivenessGunicornLogger"
+        """
+
+        _SILENCED_PATHS = {"/"}
+
+        def access(self, resp, req, environ, request_time):
+            if environ.get("PATH_INFO") in self._SILENCED_PATHS:
+                return
+            super().access(resp, req, environ, request_time)
+except ImportError:
+    # gunicorn isn't necessarily installed in every context that imports this
+    # module (e.g. plain `flask run` in local dev without the [server] extra).
+    QuietLivenessGunicornLogger = None
+
+
 def configure_runtime_logging() -> None:
     formatter = logging.Formatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
     log_level = _runtime_log_level()
@@ -184,6 +211,10 @@ def _should_log_request(request, response) -> bool:
 
         if not _parse_bool_env("IATOOLKIT_LOG_MONITORING_REQUESTS", default=False):
             if "/api/monitoring/" in path:
+                return False
+
+        if not _parse_bool_env("IATOOLKIT_LOG_LIVENESS_REQUESTS", default=False):
+            if endpoint == "liveness":
                 return False
 
     return True
