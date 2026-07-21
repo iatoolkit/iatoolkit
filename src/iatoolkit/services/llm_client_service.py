@@ -1291,7 +1291,14 @@ class llmClient:
                 try:
                     # Preferred encoder for GPT-4o family.
                     self.encoding = tiktoken.encoding_for_model("gpt-4o")
-                except Exception as model_error:
+                except KeyError as model_error:
+                    # tiktoken raises KeyError when it can't map the model name to a
+                    # tokeniser (e.g. a newer model it doesn't recognize yet) - that's
+                    # the only failure this fallback is meant to handle. A broader
+                    # `except Exception` here would also swallow unrelated signals like
+                    # RQ's injected JobTimeoutException if a job timeout happens to fire
+                    # mid-call, silently absorbing the timeout instead of letting the
+                    # task fail/retry.
                     logging.warning(f"tiktoken encoding_for_model failed, fallback to cl100k_base: {model_error}")
                     # Local fallback for startup/offline compatibility.
                     self.encoding = tiktoken.get_encoding("cl100k_base")
