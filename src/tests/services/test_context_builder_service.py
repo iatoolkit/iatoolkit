@@ -287,6 +287,87 @@ class TestContextBuilderService:
             include_yaml_context=False,
         )
 
+    def test_build_agent_system_context_can_skip_runtime_instructions(self):
+        self.mock_profile_service.get_profile_by_identifier.return_value = {"name": "Agent User"}
+        self.mock_prompt_service.resolve_system_prompt_capabilities.return_value = {
+            "can_query_sql",
+        }
+        self.mock_company_context.get_sql_context.return_value = "Filtered SQL Context"
+        self.mock_company_context.get_company_context_blocks.return_value = {
+            "markdown_context": "Company Markdown Context",
+            "sql_context": "Global SQL Context",
+            "yaml_context": "Global YAML Context",
+        }
+
+        context, profile, selected_keys = self.service.build_agent_system_context(
+            MOCK_COMPANY_SHORT_NAME,
+            MOCK_USER_ID,
+            "sql_ops_agent",
+            enabled_tools=[{"name": "iat_sql_query", "description": "sql"}],
+            prompt_output_contract={
+                "agent_role": "operations",
+                "context_policy": {
+                    "runtime_instructions": {
+                        "enabled": False,
+                    },
+                    "company_context_blocks": {
+                        "markdown_context": False,
+                        "sql_context": False,
+                        "yaml_context": False,
+                    },
+                },
+                "resource_bindings": [
+                    {"resource_type": "sql_source", "resource_key": "erp"},
+                ],
+            },
+        )
+
+        assert context == "Filtered SQL Context"
+        assert profile == {"name": "Agent User"}
+        assert selected_keys == []
+        self.mock_prompt_service.get_system_prompt_payload.assert_not_called()
+        self.mock_util.render_prompt_from_string.assert_not_called()
+        self.mock_company_context.get_sql_context.assert_called_once_with(
+            MOCK_COMPANY_SHORT_NAME,
+            allowed_databases=["erp"],
+        )
+
+    def test_render_system_prompt_sections_uses_company_name_alias(self):
+        real_util = Utility()
+
+        self.mock_util.render_prompt_from_string.side_effect = (
+            lambda template_string, client_data=None, **kwargs: real_util.render_prompt_from_string(
+                template_string=template_string,
+                client_data=client_data or {},
+                **kwargs,
+            )
+        )
+
+        rendered = self.service._render_system_prompt_sections(
+            system_prompt_payload={
+                "sections": [
+                    {
+                        "section": "identity",
+                        "content": (
+                            "Nombre={{ company }} "
+                            "short={{ company_short_name }} "
+                            "obj={{ company_object.short_name }}"
+                        ),
+                    }
+                ]
+            },
+            client_data={"company": "External user company"},
+            company=self.mock_company,
+            service_list=[],
+        )
+
+        assert rendered["identity"] == "Nombre=Acme Consumer short=acme obj=acme"
+        render_kwargs = self.mock_util.render_prompt_from_string.call_args.kwargs
+        assert render_kwargs["client_data"]["company"] == "Acme Consumer"
+        assert render_kwargs["client_data"]["company_name"] == "Acme Consumer"
+        assert render_kwargs["client_data"]["company_short_name"] == MOCK_COMPANY_SHORT_NAME
+        assert render_kwargs["company_object"] == self.mock_company
+
     def test_build_user_turn_prompt_basic(self):
         """Should build a simple prompt with a direct question and no files."""
         # Arrange
@@ -452,6 +533,9 @@ required:
                 "markdown_context": True,
                 "sql_context": True,
                 "yaml_context": True,
+            },
+            "runtime_instructions": {
+                "enabled": True,
             }
         }
 
@@ -479,6 +563,9 @@ required:
                     "markdown_context": False,
                     "sql_context": False,
                     "yaml_context": False,
+                },
+                "runtime_instructions": {
+                    "enabled": False,
                 }
             },
             tool_policy={"mode": "explicit", "tool_names": ["iat_sql_query"]},
@@ -520,6 +607,9 @@ required:
                 "markdown_context": False,
                 "sql_context": False,
                 "yaml_context": False,
+            },
+            "runtime_instructions": {
+                "enabled": False,
             }
         }
         assert contract["resource_bindings"] == [

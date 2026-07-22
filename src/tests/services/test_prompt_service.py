@@ -120,6 +120,9 @@ class TestPromptService:
                             'markdown_context': True,
                             'sql_context': True,
                             'yaml_context': True,
+                        },
+                        'runtime_instructions': {
+                            'enabled': True,
                         }
                     },
                 }],
@@ -459,6 +462,9 @@ class TestPromptService:
                 "markdown_context": True,
                 "sql_context": False,
                 "yaml_context": False,
+            },
+            "runtime_instructions": {
+                "enabled": True,
             }
         }
         assert saved_prompt.output_response_mode == "chat_compatible"
@@ -478,6 +484,9 @@ class TestPromptService:
                 'context_policy': {
                     'company_context_blocks': {
                         'markdown_context': False,
+                    },
+                    'runtime_instructions': {
+                        'enabled': False,
                     }
                 },
             }
@@ -489,6 +498,9 @@ class TestPromptService:
                 "markdown_context": False,
                 "sql_context": False,
                 "yaml_context": False,
+            },
+            "runtime_instructions": {
+                "enabled": False,
             }
         }
 

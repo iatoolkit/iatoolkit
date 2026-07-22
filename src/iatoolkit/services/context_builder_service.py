@@ -324,16 +324,25 @@ class ContextBuilderService:
             prompt_capabilities,
             allowed_sql_databases=sql_sources if self.SQL_TOOL_NAME in enabled_tool_names else None,
         )
-
-        system_prompt_payload = self.prompt_service.get_system_prompt_payload(
-            company_id=company.id,
-            company_short_name=company.short_name,
-            query_text=query_text,
-            capabilities_override=prompt_capabilities,
-            execution_mode="agent",
-            response_mode=str(resolved_contract.get("response_mode") or "chat_compatible").strip().lower() or "chat_compatible",
-            agent_role=str(resolved_contract.get("agent_role") or "").strip().lower() or None,
+        context_policy = self.prompt_service.normalize_context_policy(
+            resolved_contract.get("context_policy"),
+            resolved_contract.get("agent_role"),
         )
+        runtime_instructions_policy = context_policy.get("runtime_instructions") or {}
+        include_runtime_instructions = runtime_instructions_policy.get("enabled") is not False
+
+        if include_runtime_instructions:
+            system_prompt_payload = self.prompt_service.get_system_prompt_payload(
+                company_id=company.id,
+                company_short_name=company.short_name,
+                query_text=query_text,
+                capabilities_override=prompt_capabilities,
+                execution_mode="agent",
+                response_mode=str(resolved_contract.get("response_mode") or "chat_compatible").strip().lower() or "chat_compatible",
+                agent_role=str(resolved_contract.get("agent_role") or "").strip().lower() or None,
+            )
+        else:
+            system_prompt_payload = {"content": "", "selected_keys": [], "sections": []}
         selected_system_prompt_keys = system_prompt_payload.get("selected_keys")
         if not isinstance(selected_system_prompt_keys, list):
             selected_system_prompt_keys = []
@@ -358,10 +367,6 @@ class ContextBuilderService:
                 collection_names=rag_collections,
             )
 
-        context_policy = self.prompt_service.normalize_context_policy(
-            resolved_contract.get("context_policy"),
-            resolved_contract.get("agent_role"),
-        )
         company_context_policy = context_policy.get("company_context_blocks") or {}
         company_context_blocks = self.company_context_service.get_company_context_blocks(
             company_short_name,
@@ -398,6 +403,14 @@ class ContextBuilderService:
         payload = system_prompt_payload or {}
         raw_sections = payload.get("sections")
         rendered_sections: dict[str, str] = {}
+        render_client_data = dict(client_data or {})
+        company_name = str(getattr(company, "name", "") or "").strip()
+        company_short_name = str(getattr(company, "short_name", "") or "").strip()
+        if company_name:
+            render_client_data["company"] = company_name
+            render_client_data["company_name"] = company_name
+        if company_short_name:
+            render_client_data["company_short_name"] = company_short_name
 
         if isinstance(raw_sections, list) and raw_sections:
             for item in raw_sections:
@@ -410,8 +423,8 @@ class ContextBuilderService:
                 rendered_sections[section_name] = self.util.render_prompt_from_string(
                     template_string=template_string,
                     question=None,
-                    client_data=client_data,
-                    company=company,
+                    client_data=render_client_data,
+                    company_object=company,
                     service_list=service_list,
                 ).strip()
 
@@ -426,8 +439,8 @@ class ContextBuilderService:
             "identity": self.util.render_prompt_from_string(
                 template_string=fallback_content,
                 question=None,
-                client_data=client_data,
-                company=company,
+                client_data=render_client_data,
+                company_object=company,
                 service_list=service_list,
             ).strip()
         }

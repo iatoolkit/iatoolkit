@@ -161,7 +161,12 @@ class PromptService:
                 "sql_context": False,
                 "yaml_context": False,
             }
-        return {"company_context_blocks": blocks}
+        return {
+            "company_context_blocks": blocks,
+            "runtime_instructions": {
+                "enabled": True,
+            },
+        }
 
     @classmethod
     def normalize_context_policy(cls, context_policy: dict | None, agent_role: str | None = None) -> dict:
@@ -179,7 +184,21 @@ class PromptService:
         for key in cls.COMPANY_CONTEXT_BLOCK_KEYS:
             if key in raw_blocks:
                 blocks[key] = bool(raw_blocks.get(key))
-        return {"company_context_blocks": blocks}
+
+        runtime_defaults = defaults.get("runtime_instructions") or {}
+        raw_runtime_instructions = context_policy.get("runtime_instructions")
+        if not isinstance(raw_runtime_instructions, dict):
+            raw_runtime_instructions = {}
+        runtime_instructions = {
+            "enabled": bool(runtime_defaults.get("enabled", True)),
+        }
+        if "enabled" in raw_runtime_instructions:
+            runtime_instructions["enabled"] = bool(raw_runtime_instructions.get("enabled"))
+
+        return {
+            "company_context_blocks": blocks,
+            "runtime_instructions": runtime_instructions,
+        }
 
     @classmethod
     def normalize_agent_role_value(cls, agent_role: str | None) -> str:
