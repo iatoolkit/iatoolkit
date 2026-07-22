@@ -45,6 +45,7 @@ ui:
     tab_agents: "Agents"
     tab_logs: "Access Logs"
     tab_tools: "Tools Router"
+    tab_apps: "Apps"
     search_placeholder: "Search user or text..."
     tool_router_config_title: "Router configuration"
     tool_router_enabled: "Enabled"
