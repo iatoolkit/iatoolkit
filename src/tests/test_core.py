@@ -142,7 +142,8 @@ class TestIAToolkit(unittest.TestCase):
         toolkit._injector = MagicMock()
         toolkit._injector.get.return_value = warmup_service
 
-        toolkit._run_configured_startup_warmup()
+        thread = toolkit._run_configured_startup_warmup()
+        thread.join(timeout=5)
 
         warmup_service.warmup_startup_configured_companies.assert_called_once_with(trigger="core_startup")
 

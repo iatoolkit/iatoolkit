@@ -21,6 +21,7 @@ from datetime import timedelta
 import redis
 import logging
 import os
+import threading
 
 from iatoolkit import __version__ as IATOOLKIT_VERSION
 from iatoolkit.runtime_logging import configure_runtime_logging, install_flask_request_logging
@@ -158,17 +159,28 @@ class IAToolkit:
             logging.warning("⚠️ Unable to sync system tools on boot: %s", exc)
 
     def _run_configured_startup_warmup(self):
+        # Runs in a background thread: a remote embedding endpoint that is cold, slow, or
+        # unreachable can block for minutes (up to the HTTP client's read timeout). Running
+        # this inline would block create_app() itself, which blocks every gunicorn worker
+        # from ever finishing boot - the app never starts accepting connections and the
+        # deploy's port-scan times out. Warm-up is a best-effort optimization; it must never
+        # be able to prevent the app from serving traffic.
         from iatoolkit.services.warmup_service import WarmupService
 
-        try:
-            warmup_service = self._injector.get(WarmupService)
-            warmed_companies = warmup_service.warmup_startup_configured_companies(trigger="core_startup")
-            if warmed_companies:
-                logging.info("🔥 Startup warm-up completed for companies=%s", warmed_companies)
-            else:
-                logging.info("🔥 Startup warm-up skipped: no embedding provider enabled warmup_on_startup.")
-        except Exception:
-            logging.exception("⚠️ Startup warm-up failed.")
+        def _run_warmup():
+            try:
+                warmup_service = self._injector.get(WarmupService)
+                warmed_companies = warmup_service.warmup_startup_configured_companies(trigger="core_startup")
+                if warmed_companies:
+                    logging.info("🔥 Startup warm-up completed for companies=%s", warmed_companies)
+                else:
+                    logging.info("🔥 Startup warm-up skipped: no embedding provider enabled warmup_on_startup.")
+            except Exception:
+                logging.exception("⚠️ Startup warm-up failed.")
+
+        thread = threading.Thread(target=_run_warmup, name="iatoolkit-startup-warmup", daemon=True)
+        thread.start()
+        return thread
 
     def _get_config_value(self, key: str, default=None):
         # get a value from the config dict or the environment variable
