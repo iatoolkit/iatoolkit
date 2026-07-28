@@ -347,9 +347,8 @@ tools:
         - Read the full markdown content of a company knowledge page before answering.
         - Follow links from the root index or another wiki page to retrieve the exact page content.
       examples:
-        - iat_wiki_get_page(wiki_key="sales", path="/")
-        - iat_wiki_get_page(wiki_key="sales", path="pricing.md")
-        - iat_wiki_get_page(wiki_key="ops", path="incident-response.md")
+        - iat_wiki_get_page(wiki_key="kb-integrated", path="/")
+        - iat_wiki_get_page(wiki_key="kb-integrated", path="commercial/README-commercial.md")
       cost:
         penalty: 0.01
         latency_class: low
@@ -359,10 +358,10 @@ tools:
       properties:
         wiki_key:
           type: string
-          description: Clave estable de la wiki publicada, por ejemplo `sales`, `ops` o `hr`.
+          description: Clave estable de la wiki publicada, por ejemplo `kb-integrated`.
         path:
           type: string
-          description: Usa `"/"` para leer el índice raíz de la wiki. En cualquier otro caso, envía el path o slug exacto de la página dentro de esa wiki, idealmente uno listado en el índice raíz o devuelto por `iat_wiki_search`.
+          description: Usa `"/"` para leer el índice raíz de la wiki. En cualquier otro caso, envía el path o slug exacto de la página dentro de esa wiki, idealmente uno listado en el índice raíz o devuelto por `iat_wiki_search` (si esta disponible).
       required:
         - wiki_key
         - path
