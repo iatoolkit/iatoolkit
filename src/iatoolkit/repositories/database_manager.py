@@ -20,7 +20,7 @@ class DatabaseManager(DatabaseProvider):
     _POSTGRES_BOOTSTRAP_PATCHES = (
     )
     _DEFAULT_CONNECT_TIMEOUT = 60
-    MAX_RESULT_ROWS = 1000
+    MAX_RESULT_ROWS = 2000
 
     @inject
     def __init__(self,

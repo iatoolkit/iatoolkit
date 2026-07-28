@@ -21,7 +21,7 @@ class SqlService:
     Manages database connections and executes SQL statements.
     It maintains a cache of named DatabaseManager instances to avoid reconnecting.
     """
-    MAX_QUERY_ROWS = 1000
+    MAX_QUERY_ROWS = 2000
     _ALLOWED_QUERY_PREFIXES = ("SELECT", "WITH")
     _BLOCKED_SQL_PATTERN = re.compile(
         r"\b(?:INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|MERGE|CALL|COPY|GRANT|REVOKE|"
