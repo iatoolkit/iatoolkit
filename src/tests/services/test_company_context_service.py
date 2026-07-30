@@ -417,6 +417,31 @@ class TestCompanyContextService:
         assert "shipping_address" in props
         assert props["shipping_address"]["type"] == "string"
 
+    def test_get_enriched_schema_expands_imported_json_schema_wrapper(self):
+        self.mock_sql_service.get_database_structure.return_value = {
+            "orders": {
+                "columns": [{"name": "details", "type": "JSONB"}],
+            }
+        }
+        self.mock_asset_repo.list_files.return_value = ["main-db-orders.yaml"]
+        self.mock_asset_repo.read_text.return_value = textwrap.dedent("""
+        orders:
+          columns:
+            details:
+              type: JSONB
+              json_schema:
+                type: object
+                properties:
+                  shipping_address:
+                    type: string
+        """)
+
+        result = self.context_service.get_enriched_database_schema(self.COMPANY_NAME, "main-db")
+
+        details = result["orders"]["columns"][0]
+        assert details["json_schema"]["type"] == "object"
+        assert details["properties"]["shipping_address"]["type"] == "string"
+
     def test_get_enriched_schema_merge_flat_schema_format(self):
         """
         Supports flat schema files where metadata is defined at top level:

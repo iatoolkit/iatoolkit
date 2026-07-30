@@ -554,12 +554,11 @@ class CompanyContextService:
                     clean = clean[:-5]
                 elif clean.endswith('.yml'):
                     clean = clean[:-4]
-                if '-' not in clean:
-                    continue            # skip non-table files
-
-                dbname, table = clean.split("-", 1)
-                # filter by the database
-                if dbname != normalized_db_name:
+                database_prefix = f"{normalized_db_name}-"
+                if not clean.startswith(database_prefix):
+                    continue
+                table = clean[len(database_prefix):]
+                if not table:
                     continue
                 for table_candidate in self._table_name_candidates(table):
                     files_map[table_candidate] = f
@@ -617,10 +616,24 @@ class CompanyContextService:
                                 if y_col.get('pii'): col['pii'] = y_col['pii']
                                 if y_col.get('synonyms'): col['synonyms'] = y_col['synonyms']
 
-                                # C. inject the json schema from the YAML
+                                # C. inject the JSON schema metadata from the YAML.
+                                # Bundles use the explicit json_schema wrapper while
+                                # legacy schema files keep properties/items directly.
+                                json_schema = y_col.get('json_schema')
+                                if isinstance(json_schema, dict):
+                                    col['json_schema'] = json_schema
+
                                 props = y_col.get('properties')
+                                if not props and isinstance(json_schema, dict):
+                                    props = json_schema.get('properties')
                                 if props:
                                     col['properties'] = props
+
+                                items = y_col.get('items')
+                                if not items and isinstance(json_schema, dict):
+                                    items = json_schema.get('items')
+                                if items:
+                                    col['items'] = items
                     else:
                         if yaml_cols:
                             logging.warning(f"⚠️ [CompanyContextService] Unrecognized column format in {real_filename}")
