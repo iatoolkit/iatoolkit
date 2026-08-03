@@ -92,6 +92,8 @@ ui:
       telemetry_not_recorded: "No registrada"
       telemetry_disabled: "Deshabilitada"
       telemetry_unknown_provider: "provider desconocido"
+      attached_files: "Archivos adjuntos"
+      open_attachment: "Abrir {filename}"
 
   communications:
     title: "Communications"
