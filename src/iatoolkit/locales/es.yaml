@@ -1902,7 +1902,7 @@ ui:
     delete_success: "Bridge eliminado correctamente."
     rotate_tooltip: "Rotar API key"
     rotate_confirmation: "¿Rotar la API key?"
-    rotate_message: "Se emite una key nueva y la anterior deja de servir. El bridge queda caído hasta que actualices IAT_BRIDGE_KEY en su .env."
+    rotate_message: "Se emite una key nueva y la anterior se elimina. El bridge queda caído hasta que actualices IAT_BRIDGE_KEY en su .env."
     rotate_action: "Rotar key"
     rotate_success: "API key rotada. Actualiza IAT_BRIDGE_KEY en el bridge."
     load_error: "Error al cargar los bridges."
