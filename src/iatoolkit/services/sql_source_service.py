@@ -14,6 +14,7 @@ from iatoolkit.common.interfaces.secret_provider import SecretProvider
 from iatoolkit.common.secret_resolver import normalize_secret_ref, resolve_secret
 from iatoolkit.repositories.models import Company, SqlSource
 from iatoolkit.repositories.profile_repo import ProfileRepo
+from iatoolkit.repositories.bridge_repo import BridgeRepo
 from iatoolkit.repositories.sql_source_repo import SqlSourceRepo
 from iatoolkit.services.sql_service import SqlService
 
@@ -27,11 +28,13 @@ class SqlSourceService:
         sql_source_repo: SqlSourceRepo,
         sql_service: SqlService,
         secret_provider: SecretProvider,
+        bridge_repo: BridgeRepo,
     ):
         self.profile_repo = profile_repo
         self.sql_source_repo = sql_source_repo
         self.sql_service = sql_service
         self.secret_provider = secret_provider
+        self.bridge_repo = bridge_repo
 
     def _get_company(self, company_short_name: str) -> Company:
         company = self.profile_repo.get_company_by_short_name(company_short_name)
@@ -97,6 +100,7 @@ class SqlSourceService:
         connection_type: str,
         connection_string_env: str | None,
         bridge_id: str | None,
+        company: Company | None = None,
     ) -> None:
         if not database:
             raise IAToolkitException(
@@ -114,6 +118,35 @@ class SqlSourceService:
             raise IAToolkitException(
                 IAToolkitException.ErrorType.MISSING_PARAMETER,
                 "Missing required field for bridge connection: bridge_id",
+            )
+
+        if connection_type == SqlSource.CONNECTION_BRIDGE and company is not None:
+            self._validate_bridge_exists(company, bridge_id)
+
+    def _validate_bridge_exists(self, company: Company, bridge_id: str) -> None:
+        """
+        Rejects a bridge_id with no registered bridge behind it.
+
+        Worth the extra check because the failure it prevents is genuinely
+        confusing: an unregistered bridge_id used to surface only at runtime,
+        as "Bridge '<id>' is not connected" — the exact same message as a
+        bridge that is simply down. Catching it at save time separates
+        "you typed it wrong" from "your agent is offline".
+
+        Skipped entirely for companies that have no bridges registered yet:
+        those still reference bridges by API key name (the pre-registry rule),
+        and refusing to save would break configurations that work today. The
+        check turns itself on once the company is backfilled.
+        """
+        registered = self.bridge_repo.get_by_company(company)
+        if not registered:
+            return
+
+        if not any(b.bridge_id == bridge_id for b in registered):
+            known = ", ".join(sorted(b.bridge_id for b in registered))
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                f"Unknown bridge_id '{bridge_id}'. Registered bridges for this company: {known}",
             )
 
     def list_sources(self, company_short_name: str, include_inactive: bool = False) -> list[dict]:
@@ -143,6 +176,7 @@ class SqlSourceService:
             connection_type=connection_type,
             connection_string_env=connection_string_env,
             bridge_id=bridge_id,
+            company=company,
         )
 
         source = SqlSource(
@@ -224,6 +258,7 @@ class SqlSourceService:
             connection_type=self._normalize_connection_type(source.connection_type),
             connection_string_env=normalize_secret_ref(source.connection_string_env) or None,
             bridge_id=self._normalize_optional_text(source.bridge_id),
+            company=company,
         )
 
         persisted = self.sql_source_repo.create_or_update(source)

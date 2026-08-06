@@ -1474,6 +1474,7 @@ ui:
     sql_sources_form_connection_type: "Tipo de conexión"
     sql_sources_form_connection_env: "Variable de entorno de conexión"
     sql_sources_form_bridge_id: "Bridge ID"
+    sql_sources_form_bridge_none: "Esta empresa aún no tiene bridges registrados. Créalos en la sección Bridges."
     sql_sources_form_description: "Descripción"
     sql_sources_form_active: "Activa"
     sql_context_scope_title: "Contexto SQL"

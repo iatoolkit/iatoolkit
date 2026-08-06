@@ -94,9 +94,15 @@ class TestSqlService:
         # Act
         self.service.register_database(COMPANY_SHORT_NAME, 'bridge_db', config)
 
-        # Assert
-        mock_factory.assert_called_once_with(config)
+        # Assert: the factory receives the config plus the owning company.
+        # Providers that reach a shared cross-tenant resource (the Enterprise
+        # bridge transport) need it — a source name alone is not unique across
+        # companies, so scoping by it would let one company's queries reach
+        # another company's bridge.
+        mock_factory.assert_called_once_with({**config, 'company_short_name': COMPANY_SHORT_NAME})
         assert self.service.get_database_provider(COMPANY_SHORT_NAME, 'bridge_db') == mock_provider
+        # The caller's dict must not be mutated in the process.
+        assert 'company_short_name' not in config
 
     @patch('iatoolkit.services.sql_service.DatabaseManager')
     def test_register_database_not_skips_if_already_exists(self, MockDatabaseManager):

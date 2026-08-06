@@ -89,8 +89,13 @@ class SqlService:
             return
 
         try:
-            # Create the provider using the appropriate factory
-            provider_instance = factory(config)
+            # Hand the owning company to the factory. Providers that reach a
+            # shared, cross-tenant resource (Enterprise's bridge transport)
+            # need it to scope their lookups; without it they can only key by
+            # the source name, which is not unique across companies. Passed
+            # through the config dict rather than as an argument so existing
+            # third-party factories keep working unchanged.
+            provider_instance = factory({**config, 'company_short_name': company_short_name})
             self._db_connections[key] = provider_instance
 
             # save the db_schema

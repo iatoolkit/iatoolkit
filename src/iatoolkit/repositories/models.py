@@ -174,6 +174,11 @@ class Company(Base):
         back_populates="company",
         cascade="all, delete-orphan",
     )
+    bridges = relationship(
+        "Bridge",
+        back_populates="company",
+        cascade="all, delete-orphan",
+    )
     sql_datasets = relationship(
         "SqlDataset",
         back_populates="company",
@@ -876,6 +881,77 @@ class SqlSource(Base):
 
     company = relationship("Company", back_populates="sql_sources")
     sql_datasets = relationship("SqlDataset", back_populates="sql_source", cascade="all, delete-orphan")
+
+    def to_dict(self):
+        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
+
+
+class Bridge(Base):
+    """
+    An on-premise IAToolkit Bridge agent registered for a company.
+
+    Before this table, `bridge_id` was just the `key_name` of an API key,
+    referenced as free text from SQL sources and HTTP tools with nothing
+    linking the three. That had two costs worth remembering:
+
+      * `key_name` has no uniqueness constraint, so two companies could pick
+        the same bridge name and collide (see BridgeService's Redis key
+        helpers in iatoolkit-enterprise for how that is scoped now).
+      * A typo in a SQL source's `bridge_id` was indistinguishable at runtime
+        from a bridge that was simply down — both surfaced as
+        "Bridge '<id>' is not connected".
+
+    Identity now lives here, and the API key is a satellite pointed at by
+    `api_key_id`. That means the key can be rotated without touching
+    `bridge_id`, and renaming a key no longer breaks routing.
+
+    Columns below the identity block are runtime state, written by the
+    server as bridges connect and report in. They are denormalized here on
+    purpose: live status lives in Redis (cheap, high frequency) and is
+    flushed to this table on transitions and periodically, so that status
+    survives a worker restart and can be queried across companies for the
+    hosting control center.
+    """
+    __tablename__ = "iat_bridges"
+
+    STATUS_CONNECTED = "connected"
+    STATUS_DISCONNECTED = "disconnected"
+    STATUS_NEVER_CONNECTED = "never_connected"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_companies.id", ondelete="CASCADE"), nullable=False)
+
+    # Identity
+    bridge_id = Column(String, nullable=False)
+    display_name = Column(String, nullable=True)
+    description = Column(Text, nullable=True)
+    api_key_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_api_keys.id", ondelete="SET NULL"), nullable=True)
+    is_active = Column(Boolean, nullable=False, default=True)
+
+    # Runtime state
+    status = Column(String(32), nullable=False, default=STATUS_NEVER_CONNECTED)
+    last_connected_at = Column(DateTime, nullable=True)
+    last_seen_at = Column(DateTime, nullable=True)
+    last_disconnected_at = Column(DateTime, nullable=True)
+    last_disconnect_reason = Column(String, nullable=True)
+
+    # Telemetry reported by the agent
+    agent_version = Column(String, nullable=True)
+    capabilities = Column(JSON_NATIVE, nullable=False, default=list)
+    exposed_resources = Column(JSON_NATIVE, nullable=False, default=dict)
+    last_remote_addr = Column(String, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    __table_args__ = (
+        # bridge_id is chosen by the customer, so names like "prod" are
+        # expected — unique per company, not globally.
+        UniqueConstraint("company_id", "bridge_id", name="uix_company_bridge_id"),
+    )
+
+    company = relationship("Company", back_populates="bridges")
+    api_key = relationship("ApiKey")
 
     def to_dict(self):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}

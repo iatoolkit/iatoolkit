@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.common.interfaces.secret_provider import SecretProvider
 from iatoolkit.repositories.models import Company, SqlSource
+from iatoolkit.repositories.bridge_repo import BridgeRepo
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.repositories.sql_source_repo import SqlSourceRepo
 from iatoolkit.services.sql_service import SqlService
@@ -17,12 +18,17 @@ class TestSqlSourceService:
         self.sql_source_repo = MagicMock(spec=SqlSourceRepo)
         self.sql_service = MagicMock(spec=SqlService)
         self.secret_provider = MagicMock(spec=SecretProvider)
+        self.bridge_repo = MagicMock(spec=BridgeRepo)
+        # No bridges registered by default: pre-registry companies must keep
+        # saving bridge sources exactly as before.
+        self.bridge_repo.get_by_company.return_value = []
 
         self.service = SqlSourceService(
             profile_repo=self.profile_repo,
             sql_source_repo=self.sql_source_repo,
             sql_service=self.sql_service,
             secret_provider=self.secret_provider,
+            bridge_repo=self.bridge_repo,
         )
 
         self.company_short_name = "acme"
@@ -315,3 +321,66 @@ class TestSqlSourceService:
 
         assert result is False
         self.sql_service.register_database.assert_not_called()
+
+    # --- validación de bridge_id contra el registro ---
+
+    def test_create_bridge_source_rejects_unregistered_bridge_id(self):
+        """Un bridge_id inexistente antes solo se notaba en runtime, con el MISMO
+        mensaje que un bridge caído ("is not connected"). Validarlo al guardar
+        separa 'lo escribiste mal' de 'tu agente está offline'."""
+        registered = MagicMock()
+        registered.bridge_id = "prod"
+        self.bridge_repo.get_by_company.return_value = [registered]
+        self.sql_source_repo.get_by_database.return_value = None
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.create_source(self.company_short_name, {
+                "database": "web_store",
+                "connection_type": SqlSource.CONNECTION_BRIDGE,
+                "bridge_id": "prodd",     # typo
+            })
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_PARAMETER
+        assert "prodd" in str(exc.value)
+        assert "prod" in str(exc.value)   # sugiere los válidos
+        self.sql_source_repo.create_or_update.assert_not_called()
+
+    def test_create_bridge_source_accepts_registered_bridge_id(self):
+        registered = MagicMock()
+        registered.bridge_id = "prod"
+        self.bridge_repo.get_by_company.return_value = [registered]
+        self.sql_source_repo.get_by_database.return_value = None
+
+        self.service.create_source(self.company_short_name, {
+            "database": "web_store",
+            "connection_type": SqlSource.CONNECTION_BRIDGE,
+            "bridge_id": "prod",
+        })
+
+        self.sql_source_repo.create_or_update.assert_called_once()
+
+    def test_create_bridge_source_skips_validation_when_no_bridges_registered(self):
+        """Empresas aún no migradas referencian bridges por nombre de API key;
+        rechazar el guardado rompería configuraciones que hoy funcionan."""
+        self.bridge_repo.get_by_company.return_value = []
+        self.sql_source_repo.get_by_database.return_value = None
+
+        self.service.create_source(self.company_short_name, {
+            "database": "web_store",
+            "connection_type": SqlSource.CONNECTION_BRIDGE,
+            "bridge_id": "cualquier-cosa-heredada",
+        })
+
+        self.sql_source_repo.create_or_update.assert_called_once()
+
+    def test_direct_source_never_consults_the_bridge_registry(self):
+        self.bridge_repo.get_by_company.return_value = [MagicMock(bridge_id="prod")]
+        self.sql_source_repo.get_by_database.return_value = None
+
+        self.service.create_source(self.company_short_name, {
+            "database": "local",
+            "connection_type": SqlSource.CONNECTION_DIRECT,
+            "connection_string_env": "LOCAL_URI",
+        })
+
+        self.bridge_repo.get_by_company.assert_not_called()
