@@ -1884,6 +1884,7 @@ ui:
     active: "Active"
     inactive: "Inactive"
     last_seen_at: "Last seen"
+    origin: "Origin"
     agent_version: "Version"
     capabilities: "Capabilities"
     resources: "Exposed resources"
