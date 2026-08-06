@@ -36,6 +36,7 @@ class ToolService:
     HTTP_ALLOWED_AUTH_TYPES = {"none", "bearer", "api_key_header", "api_key_query", "basic"}
     HTTP_ALLOWED_RESPONSE_MODES = {"json", "text", "raw"}
     HTTP_ALLOWED_MODEL_OUTPUT_MODES = {"raw", "extract", "map"}
+    HTTP_ALLOWED_TRANSPORTS = {"direct", "bridge"}
 
     TOOL_EVENT_CREATED = "created"
     TOOL_EVENT_UPDATED = "updated"
@@ -457,6 +458,18 @@ class ToolService:
                 "execution_config.version must be 1"
             )
 
+        transport = str(execution_config.get("transport", "direct")).lower()
+        if transport not in self.HTTP_ALLOWED_TRANSPORTS:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                f"execution_config.transport must be one of {sorted(self.HTTP_ALLOWED_TRANSPORTS)}"
+            )
+        if transport == "bridge" and not str(execution_config.get("bridge_id") or "").strip():
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "execution_config.bridge_id is required when transport is 'bridge'"
+            )
+
         request_cfg = execution_config.get("request")
         if not isinstance(request_cfg, dict):
             raise IAToolkitException(
@@ -471,58 +484,70 @@ class ToolService:
                 f"execution_config.request.method must be one of {sorted(self.HTTP_ALLOWED_METHODS)}"
             )
 
-        url = request_cfg.get("url")
-        if not isinstance(url, str) or not url.strip():
-            raise IAToolkitException(
-                IAToolkitException.ErrorType.INVALID_PARAMETER,
-                "execution_config.request.url is required and must be a non-empty string"
-            )
-
-        security_cfg = execution_config.get("security")
-        allow_private_network = False
-        if security_cfg is not None:
-            if not isinstance(security_cfg, dict):
+        # For transport='bridge', the hosted side never names a host/URL — it names a
+        # `target` that the bridge itself resolves against its own allowlist. There is
+        # no URL here to apply the direct-transport SSRF/scheme checks against.
+        if transport == "bridge":
+            target = request_cfg.get("target")
+            if not isinstance(target, str) or not target.strip():
                 raise IAToolkitException(
                     IAToolkitException.ErrorType.INVALID_PARAMETER,
-                    "execution_config.security must be a JSON object"
+                    "execution_config.request.target is required and must be a non-empty string "
+                    "when transport is 'bridge'"
+                )
+        else:
+            url = request_cfg.get("url")
+            if not isinstance(url, str) or not url.strip():
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.request.url is required and must be a non-empty string"
                 )
 
-            allowed_hosts = security_cfg.get("allowed_hosts")
-            if allowed_hosts is not None:
-                if not isinstance(allowed_hosts, list):
+            security_cfg = execution_config.get("security")
+            allow_private_network = False
+            if security_cfg is not None:
+                if not isinstance(security_cfg, dict):
                     raise IAToolkitException(
                         IAToolkitException.ErrorType.INVALID_PARAMETER,
-                        "execution_config.security.allowed_hosts must be a list"
+                        "execution_config.security must be a JSON object"
                     )
-                for host in allowed_hosts:
-                    if not isinstance(host, str) or not host.strip():
+
+                allowed_hosts = security_cfg.get("allowed_hosts")
+                if allowed_hosts is not None:
+                    if not isinstance(allowed_hosts, list):
                         raise IAToolkitException(
                             IAToolkitException.ErrorType.INVALID_PARAMETER,
-                            "execution_config.security.allowed_hosts must contain non-empty strings"
+                            "execution_config.security.allowed_hosts must be a list"
                         )
+                    for host in allowed_hosts:
+                        if not isinstance(host, str) or not host.strip():
+                            raise IAToolkitException(
+                                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                                "execution_config.security.allowed_hosts must contain non-empty strings"
+                            )
 
-            allow_private_network_value = security_cfg.get("allow_private_network", False)
-            if not isinstance(allow_private_network_value, bool):
+                allow_private_network_value = security_cfg.get("allow_private_network", False)
+                if not isinstance(allow_private_network_value, bool):
+                    raise IAToolkitException(
+                        IAToolkitException.ErrorType.INVALID_PARAMETER,
+                        "execution_config.security.allow_private_network must be a boolean"
+                    )
+                allow_private_network = allow_private_network_value
+
+            parsed = urlparse(url)
+            scheme = parsed.scheme.lower()
+            allowed_schemes = {"https", "http"} if allow_private_network else {"https"}
+            if scheme not in allowed_schemes or not parsed.netloc:
+                message = "execution_config.request.url must be an absolute HTTPS URL"
+                if allow_private_network:
+                    message = (
+                        "execution_config.request.url must be an absolute HTTP or HTTPS URL "
+                        "when allow_private_network=true"
+                    )
                 raise IAToolkitException(
                     IAToolkitException.ErrorType.INVALID_PARAMETER,
-                    "execution_config.security.allow_private_network must be a boolean"
+                    message
                 )
-            allow_private_network = allow_private_network_value
-
-        parsed = urlparse(url)
-        scheme = parsed.scheme.lower()
-        allowed_schemes = {"https", "http"} if allow_private_network else {"https"}
-        if scheme not in allowed_schemes or not parsed.netloc:
-            message = "execution_config.request.url must be an absolute HTTPS URL"
-            if allow_private_network:
-                message = (
-                    "execution_config.request.url must be an absolute HTTP or HTTPS URL "
-                    "when allow_private_network=true"
-                )
-            raise IAToolkitException(
-                IAToolkitException.ErrorType.INVALID_PARAMETER,
-                message
-            )
 
         timeout_ms = request_cfg.get("timeout_ms")
         if timeout_ms is not None:

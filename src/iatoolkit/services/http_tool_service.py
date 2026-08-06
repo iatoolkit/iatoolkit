@@ -7,6 +7,7 @@ import base64
 import ipaddress
 import json
 import socket
+from typing import Callable
 from urllib.parse import urlparse
 from injector import inject
 from iatoolkit.common.exceptions import IAToolkitException
@@ -27,6 +28,25 @@ class HttpToolService:
         self.secret_provider = secret_provider
         self.config_service = config_service
 
+        # Registry of alternate transports for execution_config.transport
+        # values other than the built-in "direct". Populated by plugins
+        # (e.g. Enterprise's bridge integration) via register_transport() —
+        # this module has no knowledge of what a "bridge" is.
+        self._transports: dict[str, Callable] = {}
+
+    def register_transport(self, name: str, handler: Callable):
+        """
+        Registers a handler for execution_config.transport == name (other
+        than "direct", which is built in). handler is called as:
+
+            handler(company_short_name=..., tool_name=..., execution_config=...,
+                     bridge_id=..., target=..., method=..., path=...,
+                     query_params=..., headers=..., body=..., timeout_ms=...)
+
+        and must return (response_data, status_code).
+        """
+        self._transports[name] = handler
+
     def execute(self,
                 company_short_name: str,
                 tool_name: str,
@@ -38,6 +58,18 @@ class HttpToolService:
                 f"Invalid execution_config for HTTP tool '{tool_name}'"
             )
 
+        transport = str(execution_config.get("transport") or "direct").lower()
+        if transport != "direct":
+            return self._execute_via_transport(
+                transport, company_short_name, tool_name, execution_config, input_data)
+
+        return self._execute_direct(company_short_name, tool_name, execution_config, input_data)
+
+    def _execute_direct(self,
+                         company_short_name: str,
+                         tool_name: str,
+                         execution_config: dict,
+                         input_data: dict) -> dict:
         request_cfg = execution_config.get("request") or {}
         method = str(request_cfg.get("method", "")).upper()
         url = str(request_cfg.get("url", ""))
@@ -64,6 +96,56 @@ class HttpToolService:
         timeout = (5, float(timeout_ms) / 1000.0)
 
         response_data, status_code = self._call(method, url, params, headers, json_payload, timeout)
+
+        return self._build_response(
+            tool_name=tool_name,
+            execution_config=execution_config,
+            response_data=response_data,
+            status_code=status_code,
+        )
+
+    def _execute_via_transport(self,
+                                transport: str,
+                                company_short_name: str,
+                                tool_name: str,
+                                execution_config: dict,
+                                input_data: dict) -> dict:
+        handler = self._transports.get(transport)
+        if not handler:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                f"HTTP tool '{tool_name}' uses transport '{transport}', which is not registered"
+            )
+
+        request_cfg = execution_config.get("request") or {}
+        method = str(request_cfg.get("method", "")).upper()
+        target = str(request_cfg.get("target", ""))
+        bridge_id = str(execution_config.get("bridge_id", ""))
+
+        if not method or not target:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                f"Invalid request config for HTTP tool '{tool_name}'"
+            )
+
+        params = self._build_query_params(request_cfg, input_data)
+        path = self._render_path_params(request_cfg.get("path") or "", request_cfg, input_data)
+        json_payload = self._build_json_payload(request_cfg, input_data)
+        timeout_ms = request_cfg.get("timeout_ms") or 30000
+
+        response_data, status_code = handler(
+            company_short_name=company_short_name,
+            tool_name=tool_name,
+            execution_config=execution_config,
+            bridge_id=bridge_id,
+            target=target,
+            method=method,
+            path=path,
+            query_params=params,
+            headers=request_cfg.get("headers") or {},
+            body=json_payload,
+            timeout_ms=timeout_ms,
+        )
 
         return self._build_response(
             tool_name=tool_name,

@@ -742,3 +742,106 @@ class TestHttpToolService:
             )
 
         assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_PARAMETER
+
+
+class TestHttpToolServiceBridgeTransport:
+    """Tests for the transport extension point used by transport='bridge' tools.
+    This module has no knowledge of what a 'bridge' is — Enterprise registers
+    a handler via register_transport(), which these tests stand in for."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        self.call_service = MagicMock(spec=CallServiceClient)
+        self.secret_provider = MagicMock(spec=SecretProvider)
+        self.config_service = MagicMock(spec=ConfigurationService)
+        self.config_service.get_configuration.return_value = {}
+        self.service = HttpToolService(
+            call_service=self.call_service,
+            secret_provider=self.secret_provider,
+            config_service=self.config_service,
+        )
+
+    def test_execute_dispatches_to_registered_transport(self):
+        handler = MagicMock(return_value=({"orders": []}, 200))
+        self.service.register_transport("bridge", handler)
+
+        result = self.service.execute(
+            company_short_name="acme",
+            tool_name="http_orders",
+            execution_config={
+                "version": 1,
+                "transport": "bridge",
+                "bridge_id": "acme-bridge-1",
+                "request": {
+                    "method": "GET",
+                    "target": "erp_orders",
+                    "path": "/orders/{order_id}",
+                    "path_params": {"order_id": "order_id"},
+                    "query_params": {"expand": "expand"},
+                },
+            },
+            input_data={"order_id": 15, "expand": "items"},
+        )
+
+        handler.assert_called_once_with(
+            company_short_name="acme",
+            tool_name="http_orders",
+            execution_config={
+                "version": 1,
+                "transport": "bridge",
+                "bridge_id": "acme-bridge-1",
+                "request": {
+                    "method": "GET",
+                    "target": "erp_orders",
+                    "path": "/orders/{order_id}",
+                    "path_params": {"order_id": "order_id"},
+                    "query_params": {"expand": "expand"},
+                },
+            },
+            bridge_id="acme-bridge-1",
+            target="erp_orders",
+            method="GET",
+            path="/orders/15",
+            query_params={"expand": "items"},
+            headers={},
+            body=None,
+            timeout_ms=30000,
+        )
+        self.call_service.get.assert_not_called()
+        assert result["status"] == "success"
+        assert result["http_status"] == 200
+        assert result["data"] == {"orders": []}
+
+    def test_execute_bridge_transport_not_registered_raises(self):
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.execute(
+                company_short_name="acme",
+                tool_name="http_orders",
+                execution_config={
+                    "version": 1,
+                    "transport": "bridge",
+                    "bridge_id": "acme-bridge-1",
+                    "request": {"method": "GET", "target": "erp_orders"},
+                },
+                input_data={},
+            )
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_PARAMETER
+
+    def test_execute_direct_transport_unaffected_by_registered_bridge_transport(self):
+        """Registering a 'bridge' transport must not change behavior for direct tools."""
+        self.service.register_transport("bridge", MagicMock())
+        self.call_service.get.return_value = ({"ok": True}, 200)
+
+        result = self.service.execute(
+            company_short_name="acme",
+            tool_name="http_direct",
+            execution_config={
+                "version": 1,
+                "request": {"method": "GET", "url": "https://api.example.com/ping"},
+            },
+            input_data={},
+        )
+
+        self.call_service.get.assert_called_once()
+        assert result["status"] == "success"

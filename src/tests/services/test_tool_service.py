@@ -765,6 +765,98 @@ class TestToolService:
         assert args.tool_type == Tool.TYPE_HTTP
         assert args.execution_config["request"]["url"] == "https://api.example.com/orders"
 
+    def test_create_http_tool_bridge_transport_success(self):
+        self.mock_llm_query_repo.get_tool_definition.return_value = None
+
+        mock_created = MagicMock(spec=Tool)
+        mock_created.to_dict.return_value = {"name": "http_orders_bridge"}
+        self.mock_llm_query_repo.add_tool.return_value = mock_created
+
+        result = self.service.create_tool(self.company_short_name, {
+            "name": "http_orders_bridge",
+            "description": "Orders API via bridge",
+            "tool_type": Tool.TYPE_HTTP,
+            "execution_config": {
+                "version": 1,
+                "transport": "bridge",
+                "bridge_id": "acme-bridge-1",
+                "request": {
+                    "method": "GET",
+                    "target": "erp_orders",
+                    "path": "/orders/{order_id}"
+                }
+            }
+        })
+
+        assert result["name"] == "http_orders_bridge"
+        args = self.mock_llm_query_repo.add_tool.call_args[0][0]
+        assert args.execution_config["transport"] == "bridge"
+        assert args.execution_config["request"]["target"] == "erp_orders"
+
+    def test_create_http_tool_bridge_transport_requires_bridge_id(self):
+        self.mock_llm_query_repo.get_tool_definition.return_value = None
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.create_tool(self.company_short_name, {
+                "name": "http_orders_bridge",
+                "description": "Orders API via bridge",
+                "tool_type": Tool.TYPE_HTTP,
+                "execution_config": {
+                    "version": 1,
+                    "transport": "bridge",
+                    "request": {
+                        "method": "GET",
+                        "target": "erp_orders"
+                    }
+                }
+            })
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_PARAMETER
+        self.mock_llm_query_repo.add_tool.assert_not_called()
+
+    def test_create_http_tool_bridge_transport_requires_target_not_url(self):
+        self.mock_llm_query_repo.get_tool_definition.return_value = None
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.create_tool(self.company_short_name, {
+                "name": "http_orders_bridge",
+                "description": "Orders API via bridge",
+                "tool_type": Tool.TYPE_HTTP,
+                "execution_config": {
+                    "version": 1,
+                    "transport": "bridge",
+                    "bridge_id": "acme-bridge-1",
+                    "request": {
+                        "method": "GET",
+                        "url": "https://api.example.com/orders"
+                    }
+                }
+            })
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_PARAMETER
+        self.mock_llm_query_repo.add_tool.assert_not_called()
+
+    def test_create_http_tool_rejects_invalid_transport(self):
+        self.mock_llm_query_repo.get_tool_definition.return_value = None
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.create_tool(self.company_short_name, {
+                "name": "http_orders",
+                "description": "Orders API",
+                "tool_type": Tool.TYPE_HTTP,
+                "execution_config": {
+                    "version": 1,
+                    "transport": "carrier-pigeon",
+                    "request": {
+                        "method": "GET",
+                        "url": "https://api.example.com/orders"
+                    }
+                }
+            })
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_PARAMETER
+        self.mock_llm_query_repo.add_tool.assert_not_called()
+
     def test_create_http_tool_allows_private_http_with_explicit_security(self):
         self.mock_llm_query_repo.get_tool_definition.return_value = None
 
