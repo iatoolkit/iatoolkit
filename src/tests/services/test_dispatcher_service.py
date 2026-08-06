@@ -3,7 +3,7 @@
 
 import pytest
 from unittest.mock import MagicMock, patch
-from injector import Injector
+from injector import Injector, NoScope
 from iatoolkit.repositories.models import Tool
 from iatoolkit.base_company import BaseCompany
 from iatoolkit.company_registry import get_company_registry, register_company
@@ -54,7 +54,14 @@ class TestDispatcher:
         mock_injector.binder.bind(ProfileRepo, to=self.mock_profile_repo)
         mock_injector.binder.bind(LLMQueryRepo, to=self.mock_llm_query_repo)
         mock_injector.binder.bind(ToolService, to=self.mock_tool_service)  # Bind ToolService
-        mock_injector.binder.bind(HttpToolService, to=self.mock_http_tool_service)
+        # Explicit scope=NoScope: HttpToolService is now @singleton (see
+        # http_tool_service.py), and injector's create_binding() checks
+        # `to.__scope__` before `interface.__scope__` when `to` is an
+        # instance. Without this, the MagicMock(spec=HttpToolService) below
+        # exposes an auto-mocked `__scope__` attribute (since the real class
+        # now has one), which injector then tries to resolve as an actual
+        # Scope binding and fails.
+        mock_injector.binder.bind(HttpToolService, to=self.mock_http_tool_service, scope=NoScope)
 
         # Create a mock IAToolkit instance that returns our injector.
         self.toolkit_mock = MagicMock()

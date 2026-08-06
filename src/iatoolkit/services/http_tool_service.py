@@ -9,13 +9,14 @@ import json
 import socket
 from typing import Callable
 from urllib.parse import urlparse
-from injector import inject
+from injector import inject, singleton
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.infra.call_service import CallServiceClient
 from iatoolkit.common.interfaces.secret_provider import SecretProvider
 from iatoolkit.services.configuration_service import ConfigurationService
 
 
+@singleton
 class HttpToolService:
     DEFAULT_MAX_RESPONSE_BYTES = 64 * 1024 * 1024
 
