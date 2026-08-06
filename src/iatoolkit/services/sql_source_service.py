@@ -9,6 +9,7 @@ import logging
 
 from injector import inject, singleton
 
+from iatoolkit.common.bridge_validation import validate_bridge_is_registered
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.common.interfaces.secret_provider import SecretProvider
 from iatoolkit.common.secret_resolver import normalize_secret_ref, resolve_secret
@@ -121,33 +122,7 @@ class SqlSourceService:
             )
 
         if connection_type == SqlSource.CONNECTION_BRIDGE and company is not None:
-            self._validate_bridge_exists(company, bridge_id)
-
-    def _validate_bridge_exists(self, company: Company, bridge_id: str) -> None:
-        """
-        Rejects a bridge_id with no registered bridge behind it.
-
-        Worth the extra check because the failure it prevents is genuinely
-        confusing: an unregistered bridge_id used to surface only at runtime,
-        as "Bridge '<id>' is not connected" — the exact same message as a
-        bridge that is simply down. Catching it at save time separates
-        "you typed it wrong" from "your agent is offline".
-
-        Skipped entirely for companies that have no bridges registered yet:
-        those still reference bridges by API key name (the pre-registry rule),
-        and refusing to save would break configurations that work today. The
-        check turns itself on once the company is backfilled.
-        """
-        registered = self.bridge_repo.get_by_company(company)
-        if not registered:
-            return
-
-        if not any(b.bridge_id == bridge_id for b in registered):
-            known = ", ".join(sorted(b.bridge_id for b in registered))
-            raise IAToolkitException(
-                IAToolkitException.ErrorType.INVALID_PARAMETER,
-                f"Unknown bridge_id '{bridge_id}'. Registered bridges for this company: {known}",
-            )
+            validate_bridge_is_registered(self.bridge_repo, company, bridge_id)
 
     def list_sources(self, company_short_name: str, include_inactive: bool = False) -> list[dict]:
         company = self._get_company(company_short_name)

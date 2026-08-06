@@ -10,11 +10,13 @@ import logging
 import re
 import unicodedata
 from urllib.parse import urlparse
+from iatoolkit.repositories.bridge_repo import BridgeRepo
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.visual_kb_service import VisualKnowledgeBaseService
 from iatoolkit.services.knowledge_base_service import KnowledgeBaseService
 from iatoolkit.repositories.models import Company, Tool
+from iatoolkit.common.bridge_validation import validate_bridge_is_registered
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.sql_service import SqlService
 from iatoolkit.services.excel_service import ExcelService
@@ -82,8 +84,10 @@ class ToolService:
                  mail_service: MailService,
                  memory_service=None,
                  web_search_service=None,
-                 knowledge_wiki_service=None):
+                 knowledge_wiki_service=None,
+                 bridge_repo: BridgeRepo = None):
         self.llm_query_repo = llm_query_repo
+        self.bridge_repo = bridge_repo
         self.profile_repo = profile_repo
         self.sql_service = sql_service
         self.excel_service = excel_service
@@ -431,7 +435,8 @@ class ToolService:
             return text
         return f"[{text}]({url})"
 
-    def _validate_tool_contract(self, tool_type: str, execution_config, output_contract=None):
+    def _validate_tool_contract(self, tool_type: str, execution_config, output_contract=None,
+                                company=None):
         normalize_output_contract(output_contract)
         if tool_type != Tool.TYPE_HTTP:
             return
@@ -442,9 +447,9 @@ class ToolService:
                 "execution_config is required for HTTP tools"
             )
 
-        self._validate_http_execution_config(execution_config)
+        self._validate_http_execution_config(execution_config, company=company)
 
-    def _validate_http_execution_config(self, execution_config):
+    def _validate_http_execution_config(self, execution_config, company=None):
         if not isinstance(execution_config, dict):
             raise IAToolkitException(
                 IAToolkitException.ErrorType.INVALID_PARAMETER,
@@ -464,11 +469,18 @@ class ToolService:
                 IAToolkitException.ErrorType.INVALID_PARAMETER,
                 f"execution_config.transport must be one of {sorted(self.HTTP_ALLOWED_TRANSPORTS)}"
             )
-        if transport == "bridge" and not str(execution_config.get("bridge_id") or "").strip():
-            raise IAToolkitException(
-                IAToolkitException.ErrorType.INVALID_PARAMETER,
-                "execution_config.bridge_id is required when transport is 'bridge'"
-            )
+        if transport == "bridge":
+            bridge_id = str(execution_config.get("bridge_id") or "").strip()
+            if not bridge_id:
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    "execution_config.bridge_id is required when transport is 'bridge'"
+                )
+            # Same registry check the SQL source form applies. Without it a
+            # typo here only surfaced at call time, as "Bridge '<id>' is not
+            # connected" — indistinguishable from an agent that is simply down.
+            if company is not None and self.bridge_repo is not None:
+                validate_bridge_is_registered(self.bridge_repo, company, bridge_id)
 
         request_cfg = execution_config.get("request")
         if not isinstance(request_cfg, dict):
@@ -1134,7 +1146,7 @@ class ToolService:
         tool_type = tool_data.get('tool_type', Tool.TYPE_NATIVE)
         execution_config = tool_data.get('execution_config')
         output_contract = normalize_output_contract(tool_data.get('output_contract'))
-        self._validate_tool_contract(tool_type, execution_config, output_contract)
+        self._validate_tool_contract(tool_type, execution_config, output_contract, company=company)
 
         new_tool = Tool(
             company_id=company.id,
@@ -1189,7 +1201,8 @@ class ToolService:
         effective_execution_config = tool_data.get('execution_config', tool.execution_config)
         existing_output_contract = clone_output_contract(tool.output_contract) if isinstance(tool.output_contract, dict) else None
         effective_output_contract = normalize_output_contract(tool_data.get('output_contract', existing_output_contract))
-        self._validate_tool_contract(effective_tool_type, effective_execution_config, effective_output_contract)
+        self._validate_tool_contract(effective_tool_type, effective_execution_config,
+                                     effective_output_contract, company=company)
 
         # Update fields
         if 'name' in tool_data:

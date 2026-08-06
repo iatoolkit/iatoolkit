@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 from iatoolkit.services.tool_service import ToolService
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.repositories.profile_repo import ProfileRepo
+from iatoolkit.repositories.bridge_repo import BridgeRepo
 from iatoolkit.repositories.models import Company, Tool
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.sql_service import SqlService
@@ -30,6 +31,11 @@ class TestToolService:
         self.mock_visual_tool_service = MagicMock(spec=VisualToolService)
         self.mock_web_search_service = MagicMock()
 
+        self.mock_bridge_repo = MagicMock(spec=BridgeRepo)
+        # Sin bridges registrados la validación se auto-desactiva (regla
+        # pre-registry); los tests que la ejercen la pueblan explícitamente.
+        self.mock_bridge_repo.get_by_company.return_value = []
+
         ToolService.clear_tool_lifecycle_hook()
 
         self.service = ToolService(
@@ -43,6 +49,7 @@ class TestToolService:
             visual_kb_service=self.mock_visual_kb_service,
             visual_tool_service=self.mock_visual_tool_service,
             web_search_service=self.mock_web_search_service,
+            bridge_repo=self.mock_bridge_repo,
         )
 
         # Mock del modelo de base de datos (Company Model)
@@ -792,6 +799,107 @@ class TestToolService:
         args = self.mock_llm_query_repo.add_tool.call_args[0][0]
         assert args.execution_config["transport"] == "bridge"
         assert args.execution_config["request"]["target"] == "erp_orders"
+
+    def test_create_http_tool_rejects_unregistered_bridge_id(self):
+        """
+        Un bridge_id con typo antes solo fallaba al invocar la tool, como
+        "Bridge '<id>' is not connected" — el mismo mensaje que un agente
+        caído. Validarlo al guardar separa "lo escribiste mal" de "está caído".
+        """
+        self.mock_llm_query_repo.get_tool_definition.return_value = None
+        registered = MagicMock()
+        registered.bridge_id = "acme-bridge-1"
+        self.mock_bridge_repo.get_by_company.return_value = [registered]
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.create_tool(self.company_short_name, {
+                "name": "http_orders_bridge",
+                "description": "Orders API via bridge",
+                "tool_type": Tool.TYPE_HTTP,
+                "execution_config": {
+                    "version": 1,
+                    "transport": "bridge",
+                    "bridge_id": "acme-bridge-2",
+                    "request": {"method": "GET", "target": "erp_orders"}
+                }
+            })
+
+        # El mensaje lista los bridges válidos: sin eso el operador adivina.
+        assert "acme-bridge-2" in str(exc.value)
+        assert "acme-bridge-1" in str(exc.value)
+        self.mock_llm_query_repo.add_tool.assert_not_called()
+
+    def test_create_http_tool_accepts_a_registered_bridge_id(self):
+        self.mock_llm_query_repo.get_tool_definition.return_value = None
+        registered = MagicMock()
+        registered.bridge_id = "acme-bridge-1"
+        self.mock_bridge_repo.get_by_company.return_value = [registered]
+        created = MagicMock(spec=Tool)
+        created.to_dict.return_value = {"name": "http_orders_bridge"}
+        self.mock_llm_query_repo.add_tool.return_value = created
+
+        self.service.create_tool(self.company_short_name, {
+            "name": "http_orders_bridge",
+            "description": "Orders API via bridge",
+            "tool_type": Tool.TYPE_HTTP,
+            "execution_config": {
+                "version": 1,
+                "transport": "bridge",
+                "bridge_id": "acme-bridge-1",
+                "request": {"method": "GET", "target": "erp_orders"}
+            }
+        })
+
+        self.mock_llm_query_repo.add_tool.assert_called_once()
+
+    def test_create_http_tool_skips_bridge_check_when_company_has_none(self):
+        """Empresas aún sin backfill referencian bridges por nombre de API key:
+        rechazar ahí rompería configuraciones que hoy funcionan."""
+        self.mock_llm_query_repo.get_tool_definition.return_value = None
+        self.mock_bridge_repo.get_by_company.return_value = []
+        created = MagicMock(spec=Tool)
+        created.to_dict.return_value = {"name": "http_orders_bridge"}
+        self.mock_llm_query_repo.add_tool.return_value = created
+
+        self.service.create_tool(self.company_short_name, {
+            "name": "http_orders_bridge",
+            "description": "Orders API via bridge",
+            "tool_type": Tool.TYPE_HTTP,
+            "execution_config": {
+                "version": 1,
+                "transport": "bridge",
+                "bridge_id": "no-registrado",
+                "request": {"method": "GET", "target": "erp_orders"}
+            }
+        })
+
+        self.mock_llm_query_repo.add_tool.assert_called_once()
+
+    def test_update_http_tool_also_validates_the_bridge_id(self):
+        """Guardar desde la GUI puede ser un update: el chequeo no puede vivir
+        solo en la creación."""
+        registered = MagicMock()
+        registered.bridge_id = "acme-bridge-1"
+        self.mock_bridge_repo.get_by_company.return_value = [registered]
+        existing = MagicMock(spec=Tool)
+        existing.source = Tool.SOURCE_USER
+        existing.tool_type = Tool.TYPE_HTTP
+        existing.execution_config = {}
+        existing.output_contract = None
+        self.mock_llm_query_repo.get_tool_by_id.return_value = existing
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.update_tool(self.company_short_name, 1, {
+                "tool_type": Tool.TYPE_HTTP,
+                "execution_config": {
+                    "version": 1,
+                    "transport": "bridge",
+                    "bridge_id": "typo-bridge",
+                    "request": {"method": "GET", "target": "erp_orders"}
+                }
+            })
+
+        assert "typo-bridge" in str(exc.value)
 
     def test_create_http_tool_bridge_transport_requires_bridge_id(self):
         self.mock_llm_query_repo.get_tool_definition.return_value = None
