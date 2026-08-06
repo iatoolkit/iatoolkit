@@ -828,6 +828,35 @@ class TestHttpToolServiceBridgeTransport:
 
         assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_PARAMETER
 
+    def test_execute_normalizes_foreign_exceptions_from_transport_handler(self):
+        """A transport handler (e.g. Enterprise's bridge relay) may raise its own
+        exception type (e.g. IatEnterpriceException) that this module has no
+        knowledge of and is NOT a subclass of IAToolkitException. Without
+        normalization, callers upstream (retry logic, error formatting) would
+        see an inconsistent exception type depending on transport."""
+
+        class SomeForeignException(Exception):
+            pass
+
+        handler = MagicMock(side_effect=SomeForeignException("Bridge 'x' is not connected."))
+        self.service.register_transport("bridge", handler)
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.execute(
+                company_short_name="acme",
+                tool_name="http_orders",
+                execution_config={
+                    "version": 1,
+                    "transport": "bridge",
+                    "bridge_id": "acme-bridge-1",
+                    "request": {"method": "GET", "target": "erp_orders"},
+                },
+                input_data={},
+            )
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.REQUEST_ERROR
+        assert "Bridge 'x' is not connected." in str(exc.value)
+
     def test_execute_direct_transport_unaffected_by_registered_bridge_transport(self):
         """Registering a 'bridge' transport must not change behavior for direct tools."""
         self.service.register_transport("bridge", MagicMock())

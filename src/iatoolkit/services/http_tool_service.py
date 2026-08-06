@@ -134,19 +134,33 @@ class HttpToolService:
         json_payload = self._build_json_payload(request_cfg, input_data)
         timeout_ms = request_cfg.get("timeout_ms") or 30000
 
-        response_data, status_code = handler(
-            company_short_name=company_short_name,
-            tool_name=tool_name,
-            execution_config=execution_config,
-            bridge_id=bridge_id,
-            target=target,
-            method=method,
-            path=path,
-            query_params=params,
-            headers=request_cfg.get("headers") or {},
-            body=json_payload,
-            timeout_ms=timeout_ms,
-        )
+        try:
+            response_data, status_code = handler(
+                company_short_name=company_short_name,
+                tool_name=tool_name,
+                execution_config=execution_config,
+                bridge_id=bridge_id,
+                target=target,
+                method=method,
+                path=path,
+                query_params=params,
+                headers=request_cfg.get("headers") or {},
+                body=json_payload,
+                timeout_ms=timeout_ms,
+            )
+        except IAToolkitException:
+            raise
+        except Exception as e:
+            # Transport handlers (e.g. Enterprise's bridge relay) may raise
+            # their own exception types this module has no knowledge of
+            # (e.g. IatEnterpriceException, which is NOT a subclass of
+            # IAToolkitException). Normalize here so callers see one
+            # consistent exception type regardless of transport — same as
+            # CallServiceClient already does for the direct-transport path.
+            # Without this, transport='bridge' failures fell through to a
+            # generic error-formatting branch upstream that also echoes the
+            # raw tool call args into the message.
+            raise IAToolkitException(IAToolkitException.ErrorType.REQUEST_ERROR, str(e)) from e
 
         return self._build_response(
             tool_name=tool_name,
