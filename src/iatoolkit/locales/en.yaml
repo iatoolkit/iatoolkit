@@ -1894,7 +1894,7 @@ ui:
     create_success: "Bridge created. Copy the API key and configure it on the bridge."
     update_success: "Bridge updated successfully."
     delete_confirmation: "Delete Bridge?"
-    delete_message: "SQL sources and tools referencing it will stop working. Its API key is deactivated, not deleted."
+    delete_message: "SQL sources and tools referencing it will stop working. Its API key is deleted too."
     delete_success: "Bridge deleted successfully."
     rotate_tooltip: "Rotate API key"
     rotate_confirmation: "Rotate the API key?"
