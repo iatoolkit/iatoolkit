@@ -318,6 +318,7 @@ ui:
   account:
     title: "My Account"
     back_to_chat: "Back to chat"
+    menu_getting_started: "Getting Started"
     menu_general: "General"
     menu_mcp_tokens: "MCP Tokens"
     general_title: "Personal settings"

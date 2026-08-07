@@ -317,6 +317,19 @@
                     </div>
 
                     <nav class="nav flex-column gap-2">
+                        {% set getting_started_url = optional_url_for('onboarding_company_success', company_short_name=company_short_name) %}
+                        {% if getting_started_url and user_role in ['admin', 'owner'] %}
+                        <a href="{{ getting_started_url }}"
+                           class="account-menu-link">
+                            <span class="account-menu-link-main">
+                                <span class="account-menu-link-icon">
+                                    <i class="bi bi-compass"></i>
+                                </span>
+                                <span class="account-menu-link-label">{{ t('ui.account.menu_getting_started') }}</span>
+                            </span>
+                            <i class="bi bi-chevron-right account-menu-link-arrow"></i>
+                        </a>
+                        {% endif %}
                         <a href="{{ url_for('account', company_short_name=company_short_name, section='general') }}"
                            class="account-menu-link {% if active_section == 'general' %}is-active{% endif %}">
                             <span class="account-menu-link-main">
