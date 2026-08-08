@@ -84,6 +84,33 @@ class llmClient:
         return self._telemetry_service
 
 
+    @staticmethod
+    def _assert_runtime_not_suspended(company: Company) -> None:
+        """Refuse execution when a company's runtime spend guard is tripped.
+
+        The flag is written by whoever meters the company's consumption; this
+        layer only honours it, so nothing here knows about plans or invoices. A
+        suspended company keeps full read access — data queries and document
+        retrieval never reach a model and cost nothing — only execution stops.
+
+        This runs on the hot path of every execution, so it reads the company
+        object already in hand and never queries. It also fails open on purpose:
+        a problem reading the flag must never take a customer's operation down.
+        """
+        try:
+            parameters = getattr(company, "parameters", None) or {}
+            guard = parameters.get("runtime_guard") or {}
+            if not guard.get("suspended"):
+                return
+        except Exception:
+            return
+
+        raise IAToolkitException(
+            IAToolkitException.ErrorType.INVALID_STATE,
+            "Runtime execution is paused for this company because the monthly "
+            "spend limit was reached. Data access is unaffected.",
+        )
+
     def invoke(self,
                company: Company,
                user_identifier: str,
@@ -105,6 +132,8 @@ class llmClient:
                telemetry_request: Optional[Dict[str, Any]] = None,
                response_contract: Optional[Dict[str, Any]] = None
                ) -> dict:
+
+        self._assert_runtime_not_suspended(company)
 
         images = images or []
         attachments = attachments or []
