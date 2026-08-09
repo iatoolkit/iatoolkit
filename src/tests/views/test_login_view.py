@@ -267,7 +267,9 @@ class TestLoginView:
 
         assert resp.status_code == 302
         assert resp.headers["Location"] == f"/{self.company_short_name}/admin/dashboard"
-        self.auth_service.login_google_user.assert_called_once()
+        auth_call = self.auth_service.login_google_user.call_args.kwargs
+        assert auth_call["lang"] == "es"
+        assert auth_call["welcome_url"] == f"http://localhost/{self.company_short_name}/admin/dashboard"
         mock_session_manager.remove.assert_called_once_with("google_oauth_states")
 
     @patch("iatoolkit.views.login_view.SessionManager")

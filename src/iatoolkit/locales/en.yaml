@@ -1,4 +1,15 @@
 # Language: English
+emails:
+  google_welcome:
+    subject: "Welcome to IAToolkit"
+    title: "Your IAToolkit account is ready"
+    greeting: "Hello {name},"
+    intro: "We created your account successfully using your Google identity."
+    account: "Sign-in account: {email}"
+    password_note: "You do not need an IAToolkit password. To sign in again, choose Sign up or continue with Google."
+    cta: "Continue to IAToolkit"
+    security_note: "If you did not create this account, contact IAToolkit support."
+
 ui:
   common:
     actions: "Actions"
@@ -609,6 +620,7 @@ ui:
     load_configuration_hint: "Applies configuration and refreshes runtime clients"
     load_configuration_short: "Apply"
     select_company: "Select company"
+    documentation: "Documentation"
     goto_chat: "Go to chat"
     logout: "Close session"
     error_loading: "Error loading file content"

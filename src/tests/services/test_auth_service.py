@@ -328,10 +328,17 @@ class TestAuthServiceLoginFlows:
                 state='oauth-state',
                 nonce='oauth-nonce',
                 redirect_uri='https://app.test/acme/login/google/callback',
+                lang='en',
+                welcome_url='https://app.test/onboarding/company/setup?lang=en',
             )
 
         assert result['success'] is True
-        self.mock_profile_service.login_with_google.assert_called_once()
+        self.mock_profile_service.login_with_google.assert_called_once_with(
+            company_short_name=self.company_short_name,
+            google_identity=self.mock_google_auth_client.exchange_code_for_identity.return_value,
+            lang='en',
+            welcome_url='https://app.test/onboarding/company/setup?lang=en',
+        )
         self.mock_log_access.assert_called_once_with(
             company_short_name=self.company_short_name,
             auth_type='google',

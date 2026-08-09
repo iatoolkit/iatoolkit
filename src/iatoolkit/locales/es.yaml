@@ -1,4 +1,15 @@
 # locales/es.yaml
+emails:
+  google_welcome:
+    subject: "Bienvenido a IAToolkit"
+    title: "Tu cuenta IAToolkit está lista"
+    greeting: "Hola {name},"
+    intro: "Creamos tu cuenta correctamente usando tu identidad de Google."
+    account: "Cuenta de acceso: {email}"
+    password_note: "No necesitas una contraseña de IAToolkit. Para volver a entrar, elige Registrarse o continuar con Google."
+    cta: "Continuar en IAToolkit"
+    security_note: "Si no realizaste este registro, contacta al soporte de IAToolkit."
+
 ui:
   common:
     actions: "Acciones"
@@ -611,6 +622,7 @@ ui:
     load_configuration_hint: "Aplica configuración y refresca clientes en runtime"
     load_configuration_short: "Aplicar"
     select_company: "Seleccionar empresa"
+    documentation: "Documentación"
     goto_chat: "Ir al chat"
     logout: "Cerrar sesión"
     error_loading: "Error al cargar el contenido del archivo"

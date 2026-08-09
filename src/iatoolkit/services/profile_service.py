@@ -21,6 +21,7 @@ import random
 import re
 import string
 import logging
+from html import escape
 from datetime import datetime
 from typing import List, Dict
 from iatoolkit.common.interfaces.signup_policy_resolver import SignupPolicyResolver
@@ -294,7 +295,13 @@ class ProfileService:
             return {}
         return self.session_context.get_profile_data(company_short_name, user_identifier)
 
-    def login_with_google(self, company_short_name: str, google_identity: GoogleIdentity) -> dict:
+    def login_with_google(
+        self,
+        company_short_name: str,
+        google_identity: GoogleIdentity,
+        lang: str | None = None,
+        welcome_url: str | None = None,
+    ) -> dict:
         try:
             company = self.profile_repo.get_company_by_short_name(company_short_name)
             if not company:
@@ -314,6 +321,7 @@ class ProfileService:
 
             user = None
             persisted = False
+            new_google_user = False
             user_by_google_sub = self.profile_repo.get_user_by_google_sub(google_identity.subject)
 
             provisioning_outcome = "existing_google_subject"
@@ -361,6 +369,7 @@ class ProfileService:
                     )
                     first_name, last_name = self._resolve_google_names(email, google_identity)
                     provisioning_outcome = "new_google_user"
+                    new_google_user = True
                     user = User(
                         email=email,
                         password=None,
@@ -417,6 +426,21 @@ class ProfileService:
                 )
                 self.profile_repo.create_user(user)
                 provisioning_outcome = "created_and_associated"
+                if new_google_user:
+                    try:
+                        self.send_google_welcome_email(
+                            user=user,
+                            company_short_name=company_short_name,
+                            lang=lang,
+                            welcome_url=welcome_url,
+                            display_name=google_identity.given_name,
+                        )
+                    except Exception:
+                        logging.exception(
+                            "Google account welcome email failed. company=%s email=%s",
+                            company_short_name,
+                            email,
+                        )
             elif persisted:
                 logging.debug(
                     "Google login saving existing user updates. company=%s email=%s user_id=%s",
@@ -444,6 +468,61 @@ class ProfileService:
                 "message": self.i18n_service.t('errors.general.unexpected_error', error=str(e)),
                 "reason_code": "UNEXPECTED_ERROR",
             }
+
+    def send_google_welcome_email(
+        self,
+        *,
+        user: User,
+        company_short_name: str,
+        lang: str | None = None,
+        welcome_url: str | None = None,
+        display_name: str | None = None,
+    ):
+        name = str(display_name or user.first_name or user.email.split("@", 1)[0]).strip()
+        email = str(user.email or "").strip()
+        safe_url = escape(str(welcome_url or "").strip(), quote=True)
+        subject = self.i18n_service.t("emails.google_welcome.subject", lang=lang)
+        continue_block = ""
+        if safe_url:
+            continue_block = f"""
+                <p style="text-align:center; margin:28px 0;">
+                    <a href="{safe_url}" style="display:inline-block; background:#4a55a2; color:#fff; text-decoration:none; padding:12px 22px; border-radius:7px; font-weight:700;">
+                        {escape(self.i18n_service.t("emails.google_welcome.cta", lang=lang))}
+                    </a>
+                </p>
+            """
+        body = f"""
+            <!DOCTYPE html>
+            <html>
+            <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+            <body style="font-family:Arial,sans-serif; background:#f5f7fc; margin:0; padding:24px; color:#1f2641;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+                    <tr><td align="center">
+                        <table role="presentation" width="600" cellpadding="28" cellspacing="0" border="0" style="max-width:600px; width:100%; background:#fff; border:1px solid #d6def2; border-radius:12px;">
+                            <tr><td>
+                                <div style="font-size:22px; font-weight:800; color:#4a55a2; margin-bottom:22px;">IAToolkit</div>
+                                <h1 style="font-size:24px; margin:0 0 18px;">{escape(self.i18n_service.t("emails.google_welcome.title", lang=lang))}</h1>
+                                <p>{escape(self.i18n_service.t("emails.google_welcome.greeting", lang=lang, name=name))}</p>
+                                <p>{escape(self.i18n_service.t("emails.google_welcome.intro", lang=lang))}</p>
+                                <p style="background:#eef0f9; border-radius:8px; padding:14px;">
+                                    {escape(self.i18n_service.t("emails.google_welcome.account", lang=lang, email=email))}
+                                </p>
+                                <p>{escape(self.i18n_service.t("emails.google_welcome.password_note", lang=lang))}</p>
+                                {continue_block}
+                                <p style="font-size:13px; color:#6b7386; margin-top:28px;">{escape(self.i18n_service.t("emails.google_welcome.security_note", lang=lang))}</p>
+                            </td></tr>
+                        </table>
+                    </td></tr>
+                </table>
+            </body>
+            </html>
+        """
+        return self.mail_service.send_mail(
+            company_short_name=company_short_name,
+            recipient=user.email,
+            subject=subject,
+            body=body,
+        )
 
 
     def signup(self,

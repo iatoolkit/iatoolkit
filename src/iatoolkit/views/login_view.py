@@ -19,7 +19,7 @@ from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.views.base_login_view import BaseLoginView
 import logging
 import secrets
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 
 def _normalize_safe_next_target(raw_target: str | None) -> str | None:
@@ -221,12 +221,24 @@ class GoogleLoginCallbackView(BaseLoginView):
             'login_google_callback',
             _external=True,
         )
+        welcome_url = (
+            urljoin(request.url_root, next_target.lstrip('/'))
+            if next_target
+            else url_for(
+                'home',
+                company_short_name=company_short_name,
+                lang=current_lang,
+                _external=True,
+            )
+        )
         auth_response = self.auth_service.login_google_user(
             company_short_name=company_short_name,
             code=code,
             state=state,
             nonce=pending_state.get('nonce', ''),
             redirect_uri=redirect_uri,
+            lang=current_lang,
+            welcome_url=welcome_url,
         )
 
         if not auth_response.get('success'):

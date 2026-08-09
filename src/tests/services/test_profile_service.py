@@ -506,6 +506,7 @@ class TestProfileService:
         assert self.mock_user.google_sub == 'google-sub-1'
         assert self.mock_repo.save_user.called is True
         self.mock_session_context.save_profile_data.assert_called()
+        self.mock_mail_service.send_mail.assert_not_called()
 
     def test_login_with_google_creates_new_google_user(self, mock_session_manager):
         google_identity = GoogleIdentity(
@@ -528,7 +529,12 @@ class TestProfileService:
 
         self.mock_repo.create_user.side_effect = create_user_side_effect
 
-        response = self.service.login_with_google(self.mock_company.short_name, google_identity)
+        response = self.service.login_with_google(
+            self.mock_company.short_name,
+            google_identity,
+            lang="en",
+            welcome_url="https://app.test/onboarding/company/setup?lang=en",
+        )
 
         assert response['success'] is True
         assert len(created_users) == 1
@@ -536,6 +542,35 @@ class TestProfileService:
         assert created_user.auth_method == 'google'
         assert created_user.password is None
         assert created_user.google_sub == 'google-sub-new'
+        welcome_call = self.mock_mail_service.send_mail.call_args.kwargs
+        assert welcome_call["company_short_name"] == self.mock_company.short_name
+        assert welcome_call["recipient"] == "newuser@email.com"
+        assert welcome_call["subject"] == "translated:emails.google_welcome.subject"
+        assert "https://app.test/onboarding/company/setup?lang=en" in welcome_call["body"]
+
+    def test_login_with_google_keeps_login_success_when_welcome_email_fails(self, mock_session_manager):
+        google_identity = GoogleIdentity(
+            subject='google-sub-new',
+            email='newuser@email.com',
+            email_verified=True,
+            given_name='New',
+            family_name='User',
+        )
+        self.mock_repo.get_user_by_google_sub.return_value = None
+        self.mock_repo.get_user_by_email.return_value = None
+        self.mock_repo.get_user_role_in_company.return_value = None
+        self.mock_repo.create_user.side_effect = lambda user: setattr(user, "id", 999)
+        self.mock_mail_service.send_mail.side_effect = RuntimeError("mail unavailable")
+
+        response = self.service.login_with_google(
+            self.mock_company.short_name,
+            google_identity,
+            lang="es",
+            welcome_url="https://app.test/onboarding/company/setup?lang=es",
+        )
+
+        assert response['success'] is True
+        self.mock_session_context.save_profile_data.assert_called_once()
 
     def test_login_with_google_requires_verified_email(self, mock_session_manager):
         google_identity = GoogleIdentity(

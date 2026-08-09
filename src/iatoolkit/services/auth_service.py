@@ -107,6 +107,8 @@ class AuthService:
         state: str,
         nonce: str,
         redirect_uri: str,
+        lang: str | None = None,
+        welcome_url: str | None = None,
     ) -> dict:
         try:
             google_identity = self.google_auth_client.exchange_code_for_identity(
@@ -156,6 +158,8 @@ class AuthService:
         auth_response = self.profile_service.login_with_google(
             company_short_name=company_short_name,
             google_identity=google_identity,
+            lang=lang,
+            welcome_url=welcome_url,
         )
 
         if not auth_response.get('success'):
