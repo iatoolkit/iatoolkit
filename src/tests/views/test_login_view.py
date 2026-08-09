@@ -182,6 +182,81 @@ class TestLoginView:
         assert resp.status_code == 200
         assert resp.data == b"OK"
 
+    def test_login_success_returns_to_where_the_user_was_sent(self, monkeypatch):
+        """A local login can be a means to an end — an MCP authorization the
+        assistant opened. It ends there, not in chat, exactly as the Google
+        callback already does."""
+        self.auth_service.login_local_user.return_value = {
+            "success": True,
+            "user_identifier": self.user_identifier,
+        }
+
+        def fail_if_called(instance, csn, uid, company):
+            raise AssertionError("the chat path must be skipped when a target was given")
+
+        monkeypatch.setattr(BaseLoginView, "_handle_login_path", fail_if_called, raising=True)
+
+        resp = self.client.post(
+            f"/{self.company_short_name}/login",
+            data={
+                "email": self.email,
+                "password": self.password,
+                "next": f"/{self.company_short_name}/api/mcp/authorize?redirect_uri=x",
+            },
+        )
+
+        assert resp.status_code == 302
+        assert resp.headers["Location"] == f"/{self.company_short_name}/api/mcp/authorize?redirect_uri=x"
+
+    def test_login_success_reads_the_target_from_the_query_string_too(self, monkeypatch):
+        """Not every company home posts the hidden field."""
+        self.auth_service.login_local_user.return_value = {
+            "success": True,
+            "user_identifier": self.user_identifier,
+        }
+        monkeypatch.setattr(BaseLoginView, "_handle_login_path", lambda *a: ("OK", 200), raising=True)
+
+        resp = self.client.post(
+            f"/{self.company_short_name}/login?next=/{self.company_short_name}/admin/dashboard",
+            data={"email": self.email, "password": self.password},
+        )
+
+        assert resp.status_code == 302
+        assert resp.headers["Location"] == f"/{self.company_short_name}/admin/dashboard"
+
+    def test_login_success_ignores_an_offsite_target(self, monkeypatch):
+        """An attacker-supplied absolute URL would turn login into an open
+        redirect; those fall back to the normal path."""
+        self.auth_service.login_local_user.return_value = {
+            "success": True,
+            "user_identifier": self.user_identifier,
+        }
+        monkeypatch.setattr(
+            BaseLoginView, "_handle_login_path", lambda *a: ("OK", 200), raising=True
+        )
+
+        resp = self.client.post(
+            f"/{self.company_short_name}/login",
+            data={"email": self.email, "password": self.password, "next": "https://evil.example/steal"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.data == b"OK"
+
+    def test_a_failed_login_never_follows_the_target(self):
+        self.auth_service.login_local_user.return_value = {
+            "success": False,
+            "message": "Invalid credentials",
+        }
+        self.utility.get_company_template.return_value = "<html>index</html>"
+
+        resp = self.client.post(
+            f"/{self.company_short_name}/login",
+            data={"email": self.email, "password": self.password, "next": "/acme/admin/dashboard"},
+        )
+
+        assert resp.status_code == 400
+
     @patch("iatoolkit.views.login_view.SessionManager")
     def test_google_login_start_redirects_to_google(self, mock_session_manager):
         resp = self.client.get(f"/{self.company_short_name}/login/google?lang=es")

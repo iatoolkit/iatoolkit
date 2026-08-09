@@ -52,6 +52,11 @@ class LoginView(BaseLoginView):
         email = request.form.get('email')
         password = request.form.get('password')
         current_lang = request.form.get('lang') or request.args.get('lang') or 'en'
+        # Carried by the login widget as a hidden field; the query string is the
+        # fallback for a form posted without it.
+        next_target = _normalize_safe_next_target(
+            request.form.get('next') or request.args.get('next')
+        )
 
         # 1. Authenticate internal user
         auth_response = self.auth_service.login_local_user(
@@ -89,6 +94,14 @@ class LoginView(BaseLoginView):
             ), 400
 
         user_identifier = auth_response['user_identifier']
+
+        # The login was a means to an end — an MCP authorization, a page the
+        # user was already asked for — so it ends there rather than in chat.
+        # Same decision the Google callback makes, and for the same reason: the
+        # context rebuild below is a chat concern, and this user is not opening
+        # chat. It will happen the first time they do.
+        if next_target:
+            return redirect(next_target)
 
         # 3. define URL to call when slow path is finished
         target_url = url_for('finalize_no_token',
