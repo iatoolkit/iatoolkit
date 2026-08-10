@@ -2217,6 +2217,7 @@ ui:
     delete_error: "Error deleting secret."
 
   config:
+    default_model_is: "This workspace answers with {model}. The default model is chosen in Models — llm.model here is not used once one is marked as the default there."
     default_model_lives_in_models: "The default model for this workspace is chosen in Models. Setting llm.model here has no effect once a model is marked as the default there."
     editor_title: "Configuration"
     editor_description: "IAToolkit configuration file"
