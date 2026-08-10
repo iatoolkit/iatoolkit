@@ -1254,7 +1254,6 @@ class ModelCatalogEntry(Base):
     context_length = Column(Integer, nullable=True)
     supports_attachments = Column(Boolean, nullable=False, default=False)
     supports_reasoning = Column(Boolean, nullable=False, default=False)
-    reasoning_level = Column(String(32), nullable=True)
 
     #: Where the entry came from: `manual` or a sync source such as
     #: `openrouter`. A synced entry still needs publishing by hand.

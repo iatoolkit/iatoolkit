@@ -2208,6 +2208,7 @@ ui:
     delete_error: "Error al eliminar el secret."
 
   config:
+    default_model_lives_in_models: "El modelo por defecto de este espacio de trabajo se elige en Modelos. Definir llm.model acá no tiene efecto una vez que allá se marcó un modelo como el predeterminado."
     editor_title: "Configuración"
     editor_description: "Editor de configuración"
     title: "Configuración"
