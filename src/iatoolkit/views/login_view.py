@@ -265,7 +265,17 @@ class GoogleLoginCallbackView(BaseLoginView):
             return redirect(url_for('home', company_short_name=company_short_name, lang=current_lang))
 
         if next_target:
-            return redirect(next_target)
+            redirect_target = urljoin(request.url_root, next_target.lstrip('/'))
+            logging.info(
+                "Google login callback redirecting to next target. company=%s next_target=%s "
+                "redirect_uri=%s welcome_url=%s location=%s",
+                company_short_name,
+                next_target,
+                redirect_uri,
+                welcome_url,
+                redirect_target,
+            )
+            return redirect(redirect_target)
 
         target_url = url_for(
             'finalize_no_token',

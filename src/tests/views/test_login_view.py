@@ -341,7 +341,7 @@ class TestLoginView:
         resp = self.client.get("/auth/google/callback?state=oauth-state&code=auth-code")
 
         assert resp.status_code == 302
-        assert resp.headers["Location"] == f"/{self.company_short_name}/admin/dashboard"
+        assert resp.headers["Location"] == f"http://localhost/{self.company_short_name}/admin/dashboard"
         auth_call = self.auth_service.login_google_user.call_args.kwargs
         assert auth_call["lang"] == "es"
         assert auth_call["welcome_url"] == f"http://localhost/{self.company_short_name}/admin/dashboard"

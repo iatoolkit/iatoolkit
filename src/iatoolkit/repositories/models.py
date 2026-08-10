@@ -3,6 +3,8 @@
 #
 # IAToolkit is open source software.
 
+import enum
+
 from sqlalchemy import Column, Integer, BigInteger, String, DateTime, Enum, Text, JSON, Boolean, ForeignKey, Table, MetaData
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm import relationship, class_mapper
@@ -122,6 +124,69 @@ class ApiKey(Base):
     company = relationship("Company", back_populates="api_keys")
 
 
+class ServiceModel(str, enum.Enum):
+    """The commercial relationship IAToolkit has with a company.
+
+    Separate from ``Company.runtime_mode``, which answers a different question
+    — which class to instantiate at boot. The two were read as one until the
+    data disproved it: neuroscope is ``runtime_mode='static'`` and invoiced.
+
+    Lives in the core rather than in enterprise or the website because all
+    three read it, and a rule restated in three repositories drifts. The two
+    questions are properties here on purpose: adding a fourth member forces
+    whoever adds it to answer both, instead of silently defaulting to "no"
+    wherever someone wrote a string comparison.
+    """
+
+    #: The operator's own companies and demos. Neither billed nor supported.
+    internal = "internal"
+
+    #: A customer on this platform: billed here, support opened from its own
+    #: admin console because the case lands in a database the operator reads.
+    hosted = "hosted"
+
+    #: A customer running IAToolkit in their own cloud. The contract is held on
+    #: the operator's platform, so they are billed there — but support is not
+    #: offered from their install, where a case would land in their own
+    #: database and never be seen.
+    self_hosted = "self_hosted"
+
+    @classmethod
+    def parse(cls, raw) -> "ServiceModel":
+        """Read a stored value. Anything unrecognised is ``internal``.
+
+        Deliberately the restrictive direction: a company nobody classified is
+        not invoiced and sees no support module, which is recoverable. The
+        other way round bills someone by accident.
+        """
+        value = getattr(raw, "value", raw)
+        normalized = str(value or "").strip().lower()
+        try:
+            return cls(normalized)
+        except ValueError:
+            return cls.internal
+
+    @classmethod
+    def of(cls, company) -> "ServiceModel":
+        """The service model of a company object, however it stores it."""
+        return cls.parse(getattr(company, "service_model", None))
+
+    @property
+    def is_billable(self) -> bool:
+        """Whether monthly closes and invoices run for this company here."""
+        return self in {ServiceModel.hosted, ServiceModel.self_hosted}
+
+    @property
+    def offers_support(self) -> bool:
+        """Whether this company's admins can open support cases here.
+
+        Also gates the tenant's billing module: what it would show comes from
+        this deployment's database, and for a self-hosted customer the contract
+        lives on the operator's platform instead.
+        """
+        return self is ServiceModel.hosted
+
+
 class Company(Base):
     """Represents a company or tenant in the multi-tenant system."""
     __tablename__ = 'iat_companies'
@@ -131,6 +196,21 @@ class Company(Base):
     name = Column(String, nullable=False)
     is_active = Column(Boolean, nullable=False, default=True, index=True)
     runtime_mode = Column(String(32), nullable=False, default='static', index=True)
+
+    # The commercial relationship, kept apart from runtime_mode on purpose:
+    # that one answers which class to boot, this one whether IAToolkit bills
+    # this company and whether its admins can open support cases here.
+    #
+    #   internal     — neither billed nor supported (the operator's own, demos)
+    #   hosted       — billed here, support opened from its own console
+    #   self_hosted  — billed here, but the deployment lives in the customer's
+    #                  cloud, so a case filed there would land in a database
+    #                  the operator can never read
+    #
+    # Defaults to internal so a fresh deployment — a customer's self-hosted
+    # install — bills nobody and offers support to nobody until somebody
+    # decides otherwise. The absence of a decision is the safe answer.
+    service_model = Column(String(32), nullable=False, default='internal', index=True)
 
     parameters = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
