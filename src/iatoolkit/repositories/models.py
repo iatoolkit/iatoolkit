@@ -1139,3 +1139,166 @@ class AccessLog(Base):
     def __repr__(self):
         return (f"<AccessLog(id={self.id}, company='{self.company_short_name}', "
                 f"user='{self.user_identifier}', outcome='{self.outcome}')>")
+
+
+class ModelCatalogStatus(str, enum.Enum):
+    """Whether a catalogue entry is offered to companies.
+
+    Publishing is the operator's decision and it is gated: a model with no
+    active rate card cannot be published, because a company enabling it would
+    consume something IAToolkit has no price for. The exception is declared, not
+    assumed — see `ModelBillingPolicy`.
+    """
+
+    draft = "draft"
+    published = "published"
+    retired = "retired"
+
+
+class ModelBillingPolicy(str, enum.Enum):
+    """Whether serving a model costs IAToolkit money per token.
+
+    This exists to keep one question from having two meanings. "No rate card"
+    used to be ambiguous: it could mean nobody priced it yet, or it could mean
+    there is genuinely nothing to price — a model running locally, on a
+    self-hosted HuggingFace endpoint, or behind a customer's own gateway, where
+    no provider sends IAToolkit a bill per token.
+
+    Both cases are real and they need opposite handling, so the operator says
+    which it is. `metered` keeps the guardrail: no active rate card, no
+    publishing. `not_billable` lifts it, and is a deliberate declaration rather
+    than the absence of data — a model marked this way never reaches an invoice,
+    whatever the entitlement says.
+    """
+
+    metered = "metered"
+    not_billable = "not_billable"
+
+    @property
+    def requires_rate_card(self) -> bool:
+        return self is ModelBillingPolicy.metered
+
+    @classmethod
+    def parse(cls, raw) -> "ModelBillingPolicy":
+        """Read a stored or submitted value, defaulting to the safe direction.
+
+        An unrecognised value reads as `metered`: keeping the rate card
+        requirement is recoverable, while quietly treating a paid model as free
+        is consumption nobody charged for.
+        """
+        value = str(getattr(raw, "value", raw) or "").strip().lower()
+        try:
+            return cls(value)
+        except ValueError:
+            return cls.metered
+
+
+class ModelCredentialOwner(str, enum.Enum):
+    """Whose provider key pays for a model's tokens.
+
+    This is the commercial fork of the whole feature. With `platform` the
+    operator resells execution and meters it; with `company` the customer
+    brought their own key, so the tokens are billed to them by their provider
+    and IAToolkit must not meter or invoice that consumption.
+    """
+
+    platform = "platform"
+    company = "company"
+
+    @property
+    def is_metered(self) -> bool:
+        return self is ModelCredentialOwner.platform
+
+
+class ModelCatalogEntry(Base):
+    """A model IAToolkit knows about, with the copy shown to customers.
+
+    The single source of truth for `model_key`, which until now was typed by
+    hand in each company's YAML and in each rate card, with no list of what
+    existed and nothing checking that a key in use had a price.
+
+    One key per route, not per model: `deepseek-v4-flash` and
+    `deepseek/deepseek-v4-flash` are the same model reached through DeepSeek
+    directly and through OpenRouter, and they are priced differently, so they
+    are two entries.
+
+    `display_name` and `description` are IAToolkit's own words, not the
+    provider's: "Fast and cheap" is a recommendation to a customer choosing
+    from a list, and no upstream catalogue writes that.
+    """
+
+    __tablename__ = 'iat_model_catalog'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+
+    #: Canonical key. Everything else — rate cards, usage rows, entitlements —
+    #: refers to a model through this exact string.
+    model_key = Column(String(120), nullable=False, unique=True, index=True)
+    provider = Column(String(60), nullable=False, index=True)
+
+    display_name = Column(String(120), nullable=False)
+    description = Column(Text, nullable=False, default="")
+
+    status = Column(String(16), nullable=False, default=ModelCatalogStatus.draft.value, index=True)
+
+    #: Whether serving this model costs IAToolkit money per token, and so
+    #: whether publishing it requires a rate card. Defaults to `metered`: a
+    #: model that turns out to be free can be corrected, while a paid model
+    #: treated as free is revenue that silently never appears.
+    billing_policy = Column(
+        String(16), nullable=False, default=ModelBillingPolicy.metered.value, index=True
+    )
+
+    #: Capabilities a customer picks on, kept as columns rather than JSON
+    #: because the model picker filters by them.
+    context_length = Column(Integer, nullable=True)
+    supports_attachments = Column(Boolean, nullable=False, default=False)
+    supports_reasoning = Column(Boolean, nullable=False, default=False)
+    reasoning_level = Column(String(32), nullable=True)
+
+    #: Where the entry came from: `manual` or a sync source such as
+    #: `openrouter`. A synced entry still needs publishing by hand.
+    source = Column(String(32), nullable=False, default="manual")
+    last_synced_at = Column(DateTime, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    def to_dict(self):
+        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
+
+
+class CompanyModelEntitlement(Base):
+    """A model a company has enabled, and whose key pays for it.
+
+    Enabling is the customer's decision; publishing is the operator's. This row
+    is the customer's side of it, and `credential_owner` is what decides
+    whether the resulting consumption is metered.
+    """
+
+    __tablename__ = 'iat_company_model_entitlements'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_short_name = Column(String(120), nullable=False, index=True)
+    model_key = Column(String(120), nullable=False, index=True)
+
+    credential_owner = Column(
+        String(16), nullable=False, default=ModelCredentialOwner.platform.value, index=True
+    )
+    #: Name of the CompanySecret holding the customer's key. Required when
+    #: credential_owner is `company`, meaningless otherwise.
+    secret_key_name = Column(String(120), nullable=True)
+
+    #: The model this company's requests use when none is specified.
+    is_default = Column(Boolean, nullable=False, default=False)
+    is_active = Column(Boolean, nullable=False, default=True, index=True)
+
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    __table_args__ = (
+        UniqueConstraint("company_short_name", "model_key", name="uq_iat_company_model_entitlement"),
+    )
+
+    def to_dict(self):
+        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
