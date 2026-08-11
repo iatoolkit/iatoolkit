@@ -2219,8 +2219,6 @@ ui:
     delete_error: "Error al eliminar el secret."
 
   config:
-    default_model_is: "Este espacio de trabajo responde con {model}. El modelo por defecto se elige en Modelos — llm.model acá no se usa una vez que allá se marcó uno como predeterminado."
-    default_model_lives_in_models: "El modelo por defecto de este espacio de trabajo se elige en Modelos. Definir llm.model acá no tiene efecto una vez que allá se marcó un modelo como el predeterminado."
     editor_title: "Configuración"
     editor_description: "Editor de configuración"
     title: "Configuración"
@@ -2250,10 +2248,6 @@ ui:
     company_name: "Nombre de la empresa"
     short_name: "Nombre corto"
     runtime_mode: "Modo runtime"
-    model_card_title: "Modelo AI por defecto"
-    model_card_desc: "Elige el modelo por defecto usado en la configuración de la empresa."
-    default_model: "Modelo por defecto"
-    model_card_helper: "Este modelo se usará como selección por defecto en runtime."
     default_reasoning: "Razonamiento por defecto"
     default_reasoning_auto: "Automático"
     reasoning_card_helper: "Se aplica cuando el modelo y el provider seleccionados soportan este nivel de razonamiento. Los prompts igual pueden sobreescribirlo."
@@ -2268,7 +2262,6 @@ ui:
     reasoning_effort_high: "Alto"
     reasoning_effort_xhigh: "Muy alto"
     branding_card_title: "Branding"
-    branding_card_desc: "Ajusta los colores principales usados por la experiencia de la empresa."
     primary_color: "Color primario"
     secondary_color: "Color secundario"
     preview: "Vista previa"
@@ -2291,6 +2284,7 @@ ui:
     chat_context_preview_subtitle: "Vista lógica del contexto conversacional activo para este usuario."
     chat_context_preview_block_label: "Contexto Enviado"
 
+    runtime_defaults_card_title: "Valores por defecto en runtime"
   rag:
     ingestion: "Ingesta"
     ingestion_description: "Ingestar documentos en la base de conocimiento."

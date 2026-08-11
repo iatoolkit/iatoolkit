@@ -2213,8 +2213,6 @@ ui:
     delete_error: "Error deleting secret."
 
   config:
-    default_model_is: "This workspace answers with {model}. The default model is chosen in Models — llm.model here is not used once one is marked as the default there."
-    default_model_lives_in_models: "The default model for this workspace is chosen in Models. Setting llm.model here has no effect once a model is marked as the default there."
     editor_title: "Configuration"
     editor_description: "IAToolkit configuration file"
     title: "Configuration"
@@ -2244,10 +2242,6 @@ ui:
     company_name: "Company name"
     short_name: "Short name"
     runtime_mode: "Runtime mode"
-    model_card_title: "Default AI Model"
-    model_card_desc: "Choose the default model used across the company configuration."
-    default_model: "Default model"
-    model_card_helper: "This model will be used as the default runtime selection."
     default_reasoning: "Default reasoning"
     default_reasoning_auto: "Automatic"
     reasoning_card_helper: "Applies when the selected model and provider support this reasoning level. Prompts can still override it."
@@ -2262,7 +2256,6 @@ ui:
     reasoning_effort_high: "High"
     reasoning_effort_xhigh: "Very high"
     branding_card_title: "Branding"
-    branding_card_desc: "Adjust the main colors used by the company experience."
     primary_color: "Primary color"
     secondary_color: "Secondary color"
     preview: "Preview"
@@ -2285,6 +2278,7 @@ ui:
     chat_context_preview_subtitle: "Logical view of the active conversational context for this user."
     chat_context_preview_block_label: "Sent Context"
 
+    runtime_defaults_card_title: "Runtime defaults"
   rag:
     ingestion: "Ingestion"
     ingestion_description: "Ingest documents into the knowledge base."
