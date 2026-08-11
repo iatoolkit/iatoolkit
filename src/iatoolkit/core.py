@@ -170,11 +170,9 @@ class IAToolkit:
         def _run_warmup():
             try:
                 warmup_service = self._injector.get(WarmupService)
-                warmed_companies = warmup_service.warmup_startup_configured_companies(trigger="core_startup")
-                if warmed_companies:
-                    logging.info("🔥 Startup warm-up completed for companies=%s", warmed_companies)
-                else:
-                    logging.info("🔥 Startup warm-up skipped: no embedding provider enabled warmup_on_startup.")
+                woken_endpoints = warmup_service.warmup_startup_configured_companies(trigger="core_startup")
+                if woken_endpoints:
+                    logging.info("🔥 Startup warm-up completed for endpoints=%s", woken_endpoints)
             except Exception:
                 logging.exception("⚠️ Startup warm-up failed.")
 

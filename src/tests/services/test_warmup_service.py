@@ -170,13 +170,99 @@ class TestWarmupService:
             "iatoolkit.services.warmup_service.get_registered_companies",
             return_value={"acme": object(), "beta": object(), "gamma": object()},
         ):
-            warmed_companies = self.service.warmup_startup_configured_companies(trigger="core_startup")
+            woken = self.service.warmup_startup_configured_companies(trigger="core_startup")
 
-        assert warmed_companies == ["acme", "gamma"]
-        self.mock_embedding_service.embed_text.assert_has_calls(
-            [
-                call("acme", "hello", model_type="text", suppress_error_logging=True),
-                call("gamma", "hello", model_type="routing", suppress_error_logging=True),
-            ]
+        # acme and gamma share one endpoint, so it is knocked on once, not twice.
+        # beta is skipped: it never enabled warmup_on_startup.
+        assert woken == ["hf.endpoint"]
+        self.mock_embedding_service.embed_text.assert_called_once_with(
+            "acme", "hello", model_type="text", suppress_error_logging=True
         )
+
+    def test_startup_warmup_knocks_once_per_endpoint_not_once_per_tenant(self):
+        """The whole point: N tenants on one endpoint is one wake-up call.
+
+        Calling per tenant multiplied requests against a container that was
+        already starting, each willing to spend the tool's full retry budget.
+        """
+        def config_side_effect(company_short_name, key):
+            if key == "inference_tools":
+                return {
+                    "_defaults": {"endpoint_url": "https://shared.endpoint"},
+                    "text_embeddings": {"model_id": "sentence-transformers/all-MiniLM-L6-v2"},
+                }
+            if key == "embedding_provider":
+                return {
+                    "provider": "huggingface",
+                    "tool_name": "text_embeddings",
+                    "warmup_on_startup": True,
+                }
+            return {}
+
+        self.mock_config_service.get_configuration.side_effect = config_side_effect
+
+        with patch(
+            "iatoolkit.services.warmup_service.get_registered_companies",
+            return_value={"one": object(), "two": object(), "three": object()},
+        ):
+            woken = self.service.warmup_startup_configured_companies(trigger="core_startup")
+
+        assert woken == ["shared.endpoint"]
+        assert self.mock_embedding_service.embed_text.call_count == 1
+
+    def test_startup_warmup_still_wakes_every_distinct_endpoint(self):
+        """Dedup must not cost coverage: two endpoints are two wake-up calls."""
+        def config_side_effect(company_short_name, key):
+            if key == "inference_tools":
+                url = "https://one.endpoint" if company_short_name == "acme" else "https://two.endpoint"
+                return {
+                    "_defaults": {"endpoint_url": url},
+                    "text_embeddings": {"model_id": "sentence-transformers/all-MiniLM-L6-v2"},
+                }
+            if key == "embedding_provider":
+                return {
+                    "provider": "huggingface",
+                    "tool_name": "text_embeddings",
+                    "warmup_on_startup": True,
+                }
+            return {}
+
+        self.mock_config_service.get_configuration.side_effect = config_side_effect
+
+        with patch(
+            "iatoolkit.services.warmup_service.get_registered_companies",
+            return_value={"acme": object(), "beta": object()},
+        ):
+            woken = self.service.warmup_startup_configured_companies(trigger="core_startup")
+
+        assert sorted(woken) == ["one.endpoint", "two.endpoint"]
+        assert self.mock_embedding_service.embed_text.call_count == 2
+
+    def test_a_failed_wake_up_does_not_stop_the_other_endpoints(self):
+        """One unreachable endpoint must not leave the others cold."""
+        def config_side_effect(company_short_name, key):
+            if key == "inference_tools":
+                url = "https://down.endpoint" if company_short_name == "acme" else "https://up.endpoint"
+                return {
+                    "_defaults": {"endpoint_url": url},
+                    "text_embeddings": {"model_id": "m"},
+                }
+            if key == "embedding_provider":
+                return {
+                    "provider": "huggingface",
+                    "tool_name": "text_embeddings",
+                    "warmup_on_startup": True,
+                }
+            return {}
+
+        self.mock_config_service.get_configuration.side_effect = config_side_effect
+        self.mock_embedding_service.embed_text.side_effect = [RuntimeError("cold"), "ok"]
+
+        with patch(
+            "iatoolkit.services.warmup_service.get_registered_companies",
+            return_value={"acme": object(), "beta": object()},
+        ):
+            woken = self.service.warmup_startup_configured_companies(trigger="core_startup")
+
+        assert woken == ["up.endpoint"]
         assert self.mock_embedding_service.embed_text.call_count == 2
