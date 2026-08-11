@@ -694,6 +694,11 @@ class KnowledgeWikiPage(Base):
     source_storage_key = Column(String, nullable=False)
     status = Column(Enum(KnowledgeWikiPageStatus), nullable=False, default=KnowledgeWikiPageStatus.PUBLISHED)
     tags = Column(JSON_NATIVE, nullable=False, default=list)
+    # Visibility labels, kept apart from `tags`: `tags` is editorial (searchable,
+    # scored, serialized to the caller) while these decide who may read the page.
+    # An empty list denies the page under access control, which is why the sync
+    # writes them from the wiki's access manifest and never from frontmatter.
+    access_tags = Column(JSON_NATIVE, nullable=False, default=list)
     owner = Column(String, nullable=True)
     source_meta = Column(JSON_NATIVE, nullable=False, default=dict)
     last_synced_at = Column(DateTime, nullable=True)

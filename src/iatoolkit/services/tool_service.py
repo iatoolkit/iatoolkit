@@ -327,14 +327,19 @@ class ToolService:
         wiki_key: str | None = None,
         limit: int = 5,
         allowed_wiki_keys: list[str] | set[str] | tuple[str, ...] | None = None,
+        user_identifier: str | None = None,
         **kwargs,
     ):
+        # `user_identifier` is injected by the dispatcher for user-scoped system
+        # tools; it never comes from the model. A wiki with access control on
+        # denies everything without it, which is the intended failure direction.
         return self.knowledge_wiki_service.search_pages(
             company_short_name=company_short_name,
             wiki_key=wiki_key,
             query=query,
             limit=limit,
             allowed_wiki_keys=allowed_wiki_keys,
+            user_identifier=user_identifier,
         )
 
     def _handle_wiki_get_page_tool(
@@ -343,6 +348,7 @@ class ToolService:
         wiki_key: str,
         path: str,
         allowed_wiki_keys: list[str] | set[str] | tuple[str, ...] | None = None,
+        user_identifier: str | None = None,
         **kwargs,
     ):
         return self.knowledge_wiki_service.get_page(
@@ -350,6 +356,7 @@ class ToolService:
             wiki_key=wiki_key,
             path=path,
             allowed_wiki_keys=allowed_wiki_keys,
+            user_identifier=user_identifier,
         )
 
     @staticmethod

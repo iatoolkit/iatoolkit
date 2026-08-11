@@ -15,7 +15,16 @@ from uuid import uuid4
 
 
 class Dispatcher:
-    USER_SCOPED_SYSTEM_TOOLS = {"iat_memory_search", "iat_memory_get_page"}
+    # System tools whose answer depends on who is asking, so the dispatcher
+    # injects the identity server-side. The wiki tools are here because a page's
+    # visibility labels are matched against the reader's; without the identity
+    # they would resolve to no labels and, under enforcement, return nothing.
+    USER_SCOPED_SYSTEM_TOOLS = {
+        "iat_memory_search",
+        "iat_memory_get_page",
+        "iat_wiki_search",
+        "iat_wiki_get_page",
+    }
     _tool_execution_hook = None
 
     @inject

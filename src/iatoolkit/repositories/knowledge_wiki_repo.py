@@ -149,6 +149,7 @@ class KnowledgeWikiRepo:
         body_text: str | None = None,
         status: KnowledgeWikiPageStatus = KnowledgeWikiPageStatus.PUBLISHED,
         tags: list[str] | None = None,
+        access_tags: list[str] | None = None,
         owner: str | None = None,
         source_meta: dict | None = None,
         last_synced_at: datetime | None = None,
@@ -166,6 +167,11 @@ class KnowledgeWikiRepo:
             page.source_storage_key = source_storage_key
             page.status = status
             page.tags = tags or []
+            # None means "leave the stored labels alone": a wiki with no access
+            # manifest must not lose its labels because a page's markdown changed.
+            # An empty list is a real value and does clear them.
+            if access_tags is not None:
+                page.access_tags = list(access_tags)
             page.owner = owner
             page.source_meta = source_meta or {}
             page.last_synced_at = last_synced_at
@@ -181,6 +187,7 @@ class KnowledgeWikiRepo:
                 source_storage_key=source_storage_key,
                 status=status,
                 tags=tags or [],
+                access_tags=list(access_tags or []),
                 owner=owner,
                 source_meta=source_meta or {},
                 last_synced_at=last_synced_at,

@@ -130,14 +130,18 @@ class TestToolService:
             query="discount policy",
             limit=3,
             allowed_wiki_keys=["sales"],
+            user_identifier="dcanales@maxxa.cl",
         )
 
+        # The identity the dispatcher injected has to reach the service: it is
+        # what the pages' visibility labels are matched against.
         self.service._knowledge_wiki_service.search_pages.assert_called_once_with(
             company_short_name="my_company",
             wiki_key="sales",
             query="discount policy",
             limit=3,
             allowed_wiki_keys=["sales"],
+            user_identifier="dcanales@maxxa.cl",
         )
         assert result["status"] == "success"
 
@@ -150,6 +154,7 @@ class TestToolService:
             wiki_key="sales",
             path="pricing.md",
             allowed_wiki_keys=["sales"],
+            user_identifier="dcanales@maxxa.cl",
         )
 
         self.service._knowledge_wiki_service.get_page.assert_called_once_with(
@@ -157,6 +162,7 @@ class TestToolService:
             wiki_key="sales",
             path="pricing.md",
             allowed_wiki_keys=["sales"],
+            user_identifier="dcanales@maxxa.cl",
         )
         assert result["status"] == "success"
 

@@ -6,6 +6,8 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import logging
 import os
 import re
 import unicodedata
@@ -36,6 +38,30 @@ class TenantWikiService:
     AUTHORING_MODE_MANAGED = "managed"
     AUTHORING_MODE_EXTERNAL_SYNC = "external_sync"
     ROOT_INDEX_GENERATED_FLAG = "iatoolkit_generated"
+
+    # Upper bound for the page listings that back the index, the generated index,
+    # search and lint. It is a guard against an unbounded query, not a product
+    # limit: a corpus that reaches it is silently truncated, which reads as
+    # "the page does not exist" and, once access control is on, is
+    # indistinguishable from "you may not see it".
+    MAX_PAGES = 5000
+
+    # Per-page visibility labels for a wiki published from outside IAToolkit.
+    # The manifest at the root of the wiki's storage prefix is authoritative for
+    # the whole corpus and is regenerated on every publish; page frontmatter is
+    # never consulted, so an author cannot widen their own page's audience.
+    ACCESS_MANIFEST_FILENAME = "_access-manifest.json"
+    ACCESS_MODE_OFF = "off"
+    ACCESS_MODE_DRY_RUN = "dry_run"
+    ACCESS_MODE_ENFORCE = "enforce"
+    ACCESS_MODES = (ACCESS_MODE_OFF, ACCESS_MODE_DRY_RUN, ACCESS_MODE_ENFORCE)
+
+    # Resolves the visibility labels one user holds. Registered by the edition
+    # that knows where they come from -- the core has no business calling a
+    # tenant's access control service -- and left unset in the community edition,
+    # where a wiki with access control on therefore denies everything rather than
+    # falling open.
+    _access_label_resolver = None
 
     @inject
     def __init__(
@@ -76,6 +102,66 @@ class TenantWikiService:
         if wiki.last_synced_at:
             return self.AUTHORING_MODE_EXTERNAL_SYNC
         return self.AUTHORING_MODE_MANAGED
+
+    @classmethod
+    def normalize_access_mode(cls, value: str | None) -> str:
+        normalized = str(value or "").strip().lower()
+        return normalized if normalized in cls.ACCESS_MODES else cls.ACCESS_MODE_OFF
+
+    def wiki_access_control(self, wiki: KnowledgeWiki | None) -> dict:
+        """
+        Resolves the per-wiki access control block from `settings`.
+
+        Absent or malformed reads as mode 'off', so every wiki that exists today
+        keeps its current behaviour until someone opts it in.
+        """
+        settings = wiki.settings if isinstance(wiki, KnowledgeWiki) and isinstance(wiki.settings, dict) else {}
+        block = settings.get("access_control")
+        if not isinstance(block, dict):
+            block = {}
+        manifest = str(block.get("manifest") or "").strip() or self.ACCESS_MANIFEST_FILENAME
+        return {
+            "mode": self.normalize_access_mode(block.get("mode")),
+            "manifest": manifest,
+        }
+
+    @classmethod
+    def register_access_label_resolver(cls, resolver: Callable[[str, str | None], Any]) -> None:
+        """
+        Registers `resolver(company_short_name, user_identifier) -> set | None`,
+        where None means the labels could not be determined and every labelled
+        page is denied.
+        """
+        cls._access_label_resolver = resolver
+
+    @classmethod
+    def clear_access_label_resolver(cls) -> None:
+        cls._access_label_resolver = None
+
+    @classmethod
+    def page_is_visible(cls, access_tags: Any, user_labels: Any) -> bool:
+        """
+        The visibility rule, in one place: a page is visible when its labels
+        intersect the labels the reader holds.
+
+        Fail-closed at both ends. A page with no labels is denied, and a reader
+        whose labels could not be resolved (None) or who holds none is denied
+        everything: 'public' is an explicit label, never the absence of one.
+        """
+        if user_labels is None:
+            return False
+        page_labels = cls._comparable_labels(access_tags)
+        if not page_labels:
+            return False
+        return not page_labels.isdisjoint(cls._comparable_labels(user_labels))
+
+    @staticmethod
+    def _comparable_labels(value: Any) -> set[str]:
+        if isinstance(value, str):
+            value = [value]
+        if not isinstance(value, (list, tuple, set, frozenset)):
+            return set()
+        return {str(label).strip().lower() for label in value if str(label or "").strip()}
 
     def configure_wiki(
         self,
@@ -184,6 +270,7 @@ class TenantWikiService:
                 "error_message": "wiki is managed in the GUI and cannot be refreshed from storage",
             }
 
+        access_control = self.wiki_access_control(wiki)
         sync_started_at = datetime.now()
         run = self.knowledge_wiki_repo.create_sync_run(
             company_id=company.id,
@@ -195,8 +282,18 @@ class TenantWikiService:
         indexed = 0
         failed = 0
         skipped = 0
+        relabelled = 0
 
         try:
+            # Read before anything is written: when the manifest is required and
+            # unusable this raises, the run is marked failed and no page is
+            # touched, so the previously synced corpus stays served instead of
+            # every page silently losing its labels.
+            access_manifest, access_manifest_meta = self._load_access_manifest(
+                company_short_name,
+                wiki,
+                access_control,
+            )
             files = self.storage_service.list_files(
                 company_short_name,
                 prefix=wiki.root_storage_key,
@@ -210,10 +307,17 @@ class TenantWikiService:
                 storage_key = str(item.get("path") or "").strip()
                 current_metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
                 relative_path = self._relative_path(wiki.root_storage_key, storage_key)
+                access_tags = self._manifest_access_tags(access_manifest, relative_path)
                 existing_page = self.knowledge_wiki_repo.get_page_by_path(wiki.id, relative_path)
                 if existing_page and self._file_metadata_unchanged(existing_page, current_metadata):
                     seen_paths.add(relative_path)
                     existing_page.last_synced_at = sync_started_at
+                    # The manifest changes without the markdown changing, so the
+                    # unchanged-file fast path still has to apply the labels.
+                    # Skipping this is how a revoked page stays readable.
+                    if access_tags is not None and list(existing_page.access_tags or []) != access_tags:
+                        existing_page.access_tags = access_tags
+                        relabelled += 1
                     self.knowledge_wiki_repo.save_page(existing_page)
                     skipped += 1
                     continue
@@ -228,6 +332,11 @@ class TenantWikiService:
                     seen_paths.add(page_payload["path"])
                     unique_slug = self._resolve_unique_slug(wiki.id, page_payload["slug"], page_payload["path"])
                     page_payload["slug"] = unique_slug
+                    # Same value as `relative_path` above, by construction.
+                    # None leaves the column as it is: a wiki with no manifest
+                    # keeps whatever labels it already had instead of being
+                    # cleared by an unrelated content edit.
+                    page_payload["access_tags"] = access_tags
                     self.knowledge_wiki_repo.create_or_update_page(
                         company_id=company.id,
                         wiki_id=wiki.id,
@@ -260,7 +369,16 @@ class TenantWikiService:
             run.pages_failed = failed
             run.pages_skipped = skipped
             run.errors = errors
-            run.metadata_json = {**(run.metadata_json or {}), "archived_pages": archived}
+            run.metadata_json = {
+                **(run.metadata_json or {}),
+                "archived_pages": archived,
+                "access_control": {
+                    **access_manifest_meta,
+                    "mode": access_control["mode"],
+                    **self._access_manifest_coverage(access_manifest, seen_paths),
+                    "pages_relabelled": relabelled,
+                },
+            }
             run.finished_at = datetime.now()
             self.knowledge_wiki_repo.save_sync_run(run)
             return {
@@ -282,6 +400,15 @@ class TenantWikiService:
         wiki_key: str,
         visibility_filter: Callable[[str], bool] | None = None,
     ) -> dict:
+        """
+        The administrative view of a wiki: everything it contains.
+
+        Access labels are deliberately not applied here. This backs the admin
+        panel, which runs in an operator's context and has no end-user identity
+        to match labels against — filtering it would blank the panel for a wiki
+        under enforcement. The reader's index is `get_page(path="/")`, which is
+        filtered. To see what a given user would get, use the visibility report.
+        """
         company = self._get_company(company_short_name)
         if not company:
             return {"status": "error", "error_message": "company not found"}
@@ -328,7 +455,17 @@ class TenantWikiService:
         path: str,
         allowed_wiki_keys: list[str] | set[str] | tuple[str, ...] | None = None,
         visibility_filter: Callable[[str], bool] | None = None,
+        user_identifier: str | None = None,
+        bypass_access_control: bool = False,
     ) -> dict:
+        """
+        Reads one page, or the reader's home page when `path` is "/" or empty.
+
+        This is a reader surface, so access labels apply by default and an
+        absent identity denies. `bypass_access_control` exists for the admin
+        panel, which inspects a wiki as its owner and has no end-user identity to
+        match labels against; it is spelled out at the call site on purpose.
+        """
         company = self._get_company(company_short_name)
         if not company:
             return {"status": "error", "error_message": "company not found"}
@@ -341,6 +478,13 @@ class TenantWikiService:
         wiki = self.knowledge_wiki_repo.get_wiki_by_key(company.id, normalized_wiki_key)
         if not wiki:
             return {"status": "error", "error_message": "wiki not found"}
+        if not bypass_access_control:
+            visibility_filter = self._access_visibility_filter(
+                company_short_name,
+                wiki,
+                user_identifier,
+                visibility_filter,
+            )
 
         normalized_path = self._normalize_page_path(path)
         if normalized_path in {"", "/"}:
@@ -657,6 +801,7 @@ class TenantWikiService:
         limit: int = 5,
         allowed_wiki_keys: list[str] | set[str] | tuple[str, ...] | None = None,
         visibility_filter: Callable[[str], bool] | None = None,
+        user_identifier: str | None = None,
     ) -> dict:
         company = self._get_company(company_short_name)
         if not company:
@@ -698,11 +843,20 @@ class TenantWikiService:
         for wiki in wikis:
             if not wiki or wiki.status == KnowledgeWikiStatus.ARCHIVED:
                 continue
-            pages = self.knowledge_wiki_repo.list_pages(wiki.id, include_archived=False, limit=1000)
+            # Per wiki: each one carries its own access control mode.
+            wiki_filter = self._access_visibility_filter(
+                company_short_name,
+                wiki,
+                user_identifier,
+                visibility_filter,
+            )
+            pages = self.knowledge_wiki_repo.list_pages(wiki.id, include_archived=False, limit=self.MAX_PAGES)
             for page in pages:
                 if page.status == KnowledgeWikiPageStatus.ARCHIVED:
                     continue
-                if visibility_filter is not None and not visibility_filter(page.path):
+                # Filtered before scoring: a denied page must not even influence
+                # the ranking, let alone contribute a snippet.
+                if wiki_filter is not None and not wiki_filter(page.path):
                     continue
                 score = self._score_page_match(normalized_query, query_tokens, page)
                 if normalized_query and score <= 0:
@@ -746,7 +900,7 @@ class TenantWikiService:
         for wiki in wikis:
             if not wiki or wiki.status == KnowledgeWikiStatus.ARCHIVED:
                 continue
-            pages = self.knowledge_wiki_repo.list_pages(wiki.id, include_archived=False, limit=1000)
+            pages = self.knowledge_wiki_repo.list_pages(wiki.id, include_archived=False, limit=self.MAX_PAGES)
             checked_pages += len(pages)
             issues.extend(self._lint_wiki_pages(wiki, pages))
 
@@ -756,6 +910,142 @@ class TenantWikiService:
             "checked_pages": checked_pages,
             "issues": issues,
             "issue_count": len(issues),
+        }
+
+    def _access_visibility_filter(
+        self,
+        company_short_name: str,
+        wiki: KnowledgeWiki,
+        user_identifier: str | None,
+        base_filter: Callable[[str], bool] | None,
+    ) -> Callable[[str], bool] | None:
+        """
+        Composes the caller's filter with this wiki's label-based one.
+
+        With access control off the caller's filter is returned untouched, so a
+        wiki that never opted in behaves exactly as it did before. In dry_run the
+        decision is computed and logged but not applied, which is how a corpus of
+        this size gets switched on without a blackout. In enforce it is applied.
+        """
+        access_control = self.wiki_access_control(wiki)
+        mode = access_control["mode"]
+        if mode == self.ACCESS_MODE_OFF:
+            return base_filter
+
+        user_labels = self._resolve_access_labels(company_short_name, user_identifier)
+        access_tags_index: dict[str, list[str]] = {}
+        index_loaded = False
+        # One line per call, not per page: a 1.268-page index would otherwise
+        # bury the log. The full picture is the `wiki-access-check` report.
+        already_logged = False
+
+        def access_tags_for(path: str):
+            nonlocal index_loaded
+            if not index_loaded:
+                access_tags_index.update({
+                    page.path: (page.access_tags or [])
+                    for page in self.knowledge_wiki_repo.list_pages(
+                        wiki.id,
+                        include_archived=False,
+                        limit=self.MAX_PAGES,
+                    )
+                })
+                index_loaded = True
+            # A path with no row is unknown, and unknown denies.
+            return access_tags_index.get(path)
+
+        def is_visible(path: str) -> bool:
+            nonlocal already_logged
+            if base_filter is not None and not base_filter(path):
+                return False
+            if self.page_is_visible(access_tags_for(path), user_labels):
+                return True
+            if not already_logged:
+                already_logged = True
+                logging.info(
+                    "Knowledge wiki access %s: company=%s wiki=%s user=%s labels=%s first_denied_path=%s",
+                    "would deny (dry_run)" if mode == self.ACCESS_MODE_DRY_RUN else "denied",
+                    company_short_name,
+                    wiki.wiki_key,
+                    user_identifier or "(none)",
+                    "unresolved" if user_labels is None else sorted(user_labels),
+                    path,
+                )
+            return mode == self.ACCESS_MODE_DRY_RUN
+
+        return is_visible
+
+    def _resolve_access_labels(self, company_short_name: str, user_identifier: str | None):
+        if not str(user_identifier or "").strip():
+            # Denied here rather than by asking the resolver what an anonymous
+            # reader holds: with no identity there is nothing to match labels
+            # against, and this must not depend on a resolver being careful.
+            logging.info(
+                "Wiki access control is on for %s and the request carries no identity; denying.",
+                company_short_name,
+            )
+            return None
+
+        resolver = type(self)._access_label_resolver
+        if not callable(resolver):
+            logging.warning(
+                "Wiki access control is on for %s but no label resolver is registered; denying.",
+                company_short_name,
+            )
+            return None
+        try:
+            return resolver(company_short_name, user_identifier)
+        except Exception as exc:
+            logging.warning(
+                "Could not resolve wiki access labels for %s/%s: %s",
+                company_short_name,
+                user_identifier,
+                exc,
+            )
+            return None
+
+    def access_visibility_report(
+        self,
+        company_short_name: str,
+        *,
+        wiki_key: str,
+        user_labels: Any,
+    ) -> dict:
+        """
+        What a reader holding `user_labels` would see of a wiki, without reading
+        a single page. Diagnostics: this is how an operator checks a real user
+        against the synced manifest before anyone turns enforcement on.
+        """
+        company = self._get_company(company_short_name)
+        if not company:
+            return {"status": "error", "error_message": "company not found"}
+        wiki = self.knowledge_wiki_repo.get_wiki_by_key(company.id, self.normalize_wiki_key(wiki_key))
+        if not wiki:
+            return {"status": "error", "error_message": "wiki not found"}
+
+        pages = self.knowledge_wiki_repo.list_pages(wiki.id, include_archived=False, limit=self.MAX_PAGES)
+        visible: list[str] = []
+        denied: list[str] = []
+        unlabelled: list[str] = []
+        for page in pages:
+            if not (page.access_tags or []):
+                unlabelled.append(page.path)
+            if self.page_is_visible(page.access_tags, user_labels):
+                visible.append(page.path)
+            else:
+                denied.append(page.path)
+
+        access_control = self.wiki_access_control(wiki)
+        return {
+            "status": "success",
+            "wiki_key": wiki.wiki_key,
+            "mode": access_control["mode"],
+            "pages": len(pages),
+            "visible": len(visible),
+            "denied": len(denied),
+            "unlabelled": len(unlabelled),
+            "visible_sample": visible[:20],
+            "denied_sample": denied[:20],
         }
 
     def _get_or_create_wiki(
@@ -838,8 +1128,172 @@ class TenantWikiService:
         )
         return normalized
 
+    def _load_access_manifest(
+        self,
+        company_short_name: str,
+        wiki: KnowledgeWiki,
+        access_control: dict,
+    ) -> tuple[dict[str, list[str]] | None, dict]:
+        """
+        Loads the wiki's access manifest: relative page path -> visibility labels.
+
+        Returns `(None, meta)` when there is no usable manifest and the wiki does
+        not require one, so a wiki with access control off syncs exactly as it
+        does today. When the mode is dry_run or enforce, an unusable manifest
+        raises instead: indexing the corpus as unlabelled would deny every page,
+        and doing that quietly is worse than a failed run someone can read.
+        """
+        manifest_path = str(access_control.get("manifest") or self.ACCESS_MANIFEST_FILENAME).strip()
+        storage_key = self.markdown_wiki_service.join_storage_path(wiki.root_storage_key, manifest_path)
+        required = access_control.get("mode") != self.ACCESS_MODE_OFF
+        meta: dict = {"manifest_path": manifest_path, "manifest_status": "absent"}
+
+        try:
+            raw = self.storage_service.get_document_content(company_short_name, storage_key)
+        except Exception as exc:
+            if required:
+                raise ValueError(
+                    self._access_manifest_error(wiki, access_control, manifest_path, f"could not be read: {exc}")
+                ) from exc
+            logging.info(
+                "Wiki '%s' has no access manifest at %s; access labels left untouched.",
+                wiki.wiki_key,
+                storage_key,
+            )
+            return None, meta
+
+        try:
+            pages, document_meta = self._parse_access_manifest(raw)
+        except ValueError as exc:
+            meta["manifest_status"] = "invalid"
+            meta["manifest_error"] = str(exc)
+            if required:
+                raise ValueError(
+                    self._access_manifest_error(wiki, access_control, manifest_path, str(exc))
+                ) from exc
+            logging.warning(
+                "Wiki '%s' has an unusable access manifest at %s: it %s. Access labels left untouched.",
+                wiki.wiki_key,
+                storage_key,
+                exc,
+            )
+            return None, meta
+
+        meta.update({
+            "manifest_status": "loaded",
+            "manifest_checksum": hashlib.sha256(bytes(raw)).hexdigest(),
+            "manifest_entries": len(pages),
+            **document_meta,
+        })
+        return pages, meta
+
+    @classmethod
+    def _parse_access_manifest(cls, raw: bytes) -> tuple[dict[str, list[str]], dict]:
+        try:
+            document = json.loads(bytes(raw or b"").decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError(f"is not valid JSON ({exc})") from exc
+        if not isinstance(document, dict):
+            raise ValueError("is not a JSON object")
+        raw_pages = document.get("pages")
+        if not isinstance(raw_pages, dict):
+            raise ValueError("has no 'pages' object mapping relative path to labels")
+
+        pages: dict[str, list[str]] = {}
+        for raw_path, raw_labels in raw_pages.items():
+            path = cls._normalize_manifest_path(raw_path)
+            if not path:
+                continue
+            if isinstance(raw_labels, dict):
+                raw_labels = raw_labels.get("tags", raw_labels.get("labels"))
+            labels = cls._normalize_access_tags(raw_labels)
+            previous = pages.get(path)
+            if previous is not None and previous != labels:
+                # Two keys naming the same page with different labels: which one
+                # wins would be arbitrary, and arbitrary is not an answer to a
+                # question about who may read the page.
+                raise ValueError(f"maps '{path}' more than once with different labels")
+            pages[path] = labels
+        if not pages:
+            raise ValueError("declares no pages")
+
+        document_meta = {}
+        for key in ("version", "generated_at"):
+            value = str(document.get(key) or "").strip()
+            if value:
+                document_meta[f"manifest_{key}"] = value
+        return pages, document_meta
+
+    @classmethod
+    def _access_manifest_error(
+        cls,
+        wiki: KnowledgeWiki,
+        access_control: dict,
+        manifest_path: str,
+        reason: str,
+    ) -> str:
+        return (
+            f"access manifest '{manifest_path}' is required for wiki '{wiki.wiki_key}' "
+            f"(access_control.mode='{access_control.get('mode')}') but it {reason}. "
+            "No page was modified, so the previously synced corpus stays served."
+        )
+
+    @staticmethod
+    def _manifest_access_tags(manifest: dict[str, list[str]] | None, path: str) -> list[str] | None:
+        """
+        Labels for one page. `None` means there is no manifest, so callers leave
+        the stored labels alone; `[]` means the manifest has no entry for this
+        page, which denies it — 'public' is an explicit label, not an absence.
+        """
+        if manifest is None:
+            return None
+        return list(manifest.get(path) or [])
+
+    @staticmethod
+    def _access_manifest_coverage(
+        manifest: dict[str, list[str]] | None,
+        seen_paths: set[str],
+    ) -> dict:
+        if manifest is None:
+            return {}
+        missing = sorted(path for path in seen_paths if path not in manifest)
+        orphans = sorted(path for path in manifest if path not in seen_paths)
+        return {
+            "pages_without_manifest_entry": len(missing),
+            "pages_without_manifest_entry_sample": missing[:20],
+            "manifest_entries_without_page": len(orphans),
+            "manifest_entries_without_page_sample": orphans[:20],
+        }
+
+    @classmethod
+    def _normalize_manifest_path(cls, value: str) -> str:
+        return cls._normalize_page_path(cls._collapse_relative_page_path(value))
+
+    @staticmethod
+    def _normalize_access_tags(value: Any) -> list[str]:
+        """
+        Visibility labels: lowercased for case-insensitive comparison against the
+        labels a user holds, deduplicated, and sorted so that reordering the
+        manifest is not read as a change.
+
+        Unlike `_normalize_tags` there is no cap: silently dropping the 26th
+        label would silently narrow who can read the page.
+        """
+        if isinstance(value, str):
+            raw_labels = re.split(r"[,\s]+", value)
+        elif isinstance(value, (list, tuple, set)):
+            raw_labels = list(value)
+        else:
+            raw_labels = []
+        labels: list[str] = []
+        for label in raw_labels:
+            normalized = str(label or "").strip().lower()
+            if normalized and normalized not in labels:
+                labels.append(normalized)
+        return sorted(labels)
+
     def _page_entries(self, wiki: KnowledgeWiki) -> list[dict]:
-        pages = self.knowledge_wiki_repo.list_pages(wiki.id, include_archived=False, limit=1000)
+        pages = self.knowledge_wiki_repo.list_pages(wiki.id, include_archived=False, limit=self.MAX_PAGES)
         return [self.serialize_page(page, include_body=False) for page in pages]
 
     def _root_index_storage_key(self, wiki: KnowledgeWiki) -> str:
@@ -1098,7 +1552,7 @@ class TenantWikiService:
         }
 
     def _write_generated_index(self, company_short_name: str, wiki: KnowledgeWiki) -> str:
-        pages = self.knowledge_wiki_repo.list_pages(wiki.id, include_archived=False, limit=1000)
+        pages = self.knowledge_wiki_repo.list_pages(wiki.id, include_archived=False, limit=self.MAX_PAGES)
         entries = [self.serialize_page(page, include_body=False) for page in pages]
         markdown = self.markdown_wiki_service.render_generic_index(entries, title=wiki.name)
         storage_key = self.markdown_wiki_service.join_storage_path(

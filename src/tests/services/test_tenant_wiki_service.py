@@ -1,3 +1,5 @@
+import hashlib
+import json
 import os
 from unittest.mock import MagicMock
 
@@ -22,6 +24,10 @@ class TestTenantWikiService:
         self.profile_repo.get_company_by_short_name.return_value = self.company
         self.storage_service = MagicMock(spec=StorageService)
         self.storage = {}
+        # Per-key storage metadata. Empty by default, which makes
+        # `_file_metadata_unchanged` return False and every page re-parse; tests
+        # that need the unchanged-file fast path register an md5 here.
+        self.file_metadata = {}
 
         def upload_bytes(*, company_short_name, storage_key, file_content, mime_type):
             self.storage[storage_key] = bytes(file_content)
@@ -42,7 +48,7 @@ class TestTenantWikiService:
                 rows.append({
                     "path": storage_key,
                     "name": os.path.basename(storage_key),
-                    "metadata": {},
+                    "metadata": dict(self.file_metadata.get(storage_key) or {}),
                 })
             return rows
 
@@ -68,6 +74,33 @@ class TestTenantWikiService:
 
     def read_storage(self, storage_key: str) -> str:
         return self.storage[storage_key].decode("utf-8")
+
+    def write_stable_storage(self, storage_key: str, markdown: str):
+        """Writes a file that reports an md5, so a later sync takes the fast path."""
+        self.write_storage(storage_key, markdown)
+        self.file_metadata[storage_key] = {
+            "md5_hash": hashlib.md5(markdown.encode("utf-8")).hexdigest(),
+        }
+
+    def write_access_manifest(self, root: str, pages: dict, **document):
+        self.storage[f"{root}/_access-manifest.json"] = json.dumps(
+            {"pages": pages, **document}
+        ).encode("utf-8")
+
+    def configure_external_wiki(self, wiki_key: str, root: str, access_control: dict | None = None):
+        settings = {"authoring_mode": "external_sync"}
+        if access_control is not None:
+            settings["access_control"] = access_control
+        return self.service.configure_wiki(
+            "acme",
+            wiki_key=wiki_key,
+            name=f"{wiki_key.title()} Wiki",
+            root_storage_key=root,
+            settings=settings,
+        )
+
+    def page_access_tags(self, wiki_id: int, path: str) -> list[str]:
+        return list(self.repo.get_page_by_path(wiki_id, path).access_tags or [])
 
     def test_sync_wiki_imports_markdown_pages_and_generates_indexes(self):
         root = "companies/acme/knowledge_wikis/sales"
@@ -686,3 +719,348 @@ class TestTenantWikiService:
 
         guide_page = self.repo.get_page_by_path(second["wiki"]["id"], "guide.md")
         assert "Updated how-to" in guide_page.body_text
+
+    # --- access manifest (per-page visibility labels) ------------------------
+
+    def test_sync_wiki_labels_pages_from_access_manifest(self):
+        root = "companies/acme/knowledge_wikis/kb"
+        self.write_storage(f"{root}/pricing.md", "# Pricing\n\nBands.\n")
+        self.write_storage(f"{root}/board/comp.md", "# Compensation\n\nRestricted.\n")
+        self.write_storage(f"{root}/orphan.md", "# Orphan\n\nNot in the manifest.\n")
+        self.write_access_manifest(
+            root,
+            {
+                "pricing.md": ["public", "comercial"],
+                "./board/comp.md": ["board"],
+                "gone.md": ["public"],
+            },
+            version="7",
+            generated_at="2026-08-11T10:00:00",
+        )
+        self.configure_external_wiki("kb", root, access_control={"mode": "dry_run"})
+
+        result = self.service.sync_wiki("acme", wiki_key="kb", root_storage_key=root)
+
+        assert result["status"] == "success"
+        wiki_id = result["wiki"]["id"]
+        assert self.page_access_tags(wiki_id, "pricing.md") == ["comercial", "public"]
+        assert self.page_access_tags(wiki_id, "board/comp.md") == ["board"]
+        # No entry in the manifest is a denial, not a default.
+        assert self.page_access_tags(wiki_id, "orphan.md") == []
+
+        access = result["sync"]["metadata"]["access_control"]
+        assert access["mode"] == "dry_run"
+        assert access["manifest_status"] == "loaded"
+        assert access["manifest_entries"] == 3
+        assert access["manifest_version"] == "7"
+        assert access["manifest_generated_at"] == "2026-08-11T10:00:00"
+        assert access["pages_without_manifest_entry"] == 1
+        assert access["pages_without_manifest_entry_sample"] == ["orphan.md"]
+        assert access["manifest_entries_without_page"] == 1
+        assert access["manifest_entries_without_page_sample"] == ["gone.md"]
+
+    def test_sync_wiki_relabels_pages_whose_markdown_did_not_change(self):
+        root = "companies/acme/knowledge_wikis/kb"
+        self.write_stable_storage(f"{root}/pricing.md", "# Pricing\n\nBands.\n")
+        self.write_access_manifest(root, {"pricing.md": ["board"]})
+        self.configure_external_wiki("kb", root, access_control={"mode": "enforce"})
+        first = self.service.sync_wiki("acme", wiki_key="kb", root_storage_key=root)
+        assert self.page_access_tags(first["wiki"]["id"], "pricing.md") == ["board"]
+
+        # Only the manifest changes. The markdown is byte-identical, so the sync
+        # takes the unchanged-file fast path -- which still has to relabel.
+        self.write_access_manifest(root, {"pricing.md": ["public"]})
+        second = self.service.sync_wiki("acme", wiki_key="kb", root_storage_key=root)
+
+        assert second["status"] == "success"
+        assert second["sync"]["pages_skipped"] == 1
+        assert second["sync"]["pages_indexed"] == 0
+        assert second["sync"]["metadata"]["access_control"]["pages_relabelled"] == 1
+        assert self.page_access_tags(second["wiki"]["id"], "pricing.md") == ["public"]
+
+    def test_sync_wiki_fails_and_touches_nothing_when_required_manifest_is_gone(self):
+        root = "companies/acme/knowledge_wikis/kb"
+        self.write_storage(f"{root}/pricing.md", "# Pricing\n\nBands.\n")
+        self.write_access_manifest(root, {"pricing.md": ["board"]})
+        self.configure_external_wiki("kb", root, access_control={"mode": "enforce"})
+        first = self.service.sync_wiki("acme", wiki_key="kb", root_storage_key=root)
+        wiki_id = first["wiki"]["id"]
+
+        self.storage.pop(f"{root}/_access-manifest.json")
+        self.write_storage(f"{root}/pricing.md", "# Pricing\n\nRewritten bands.\n")
+        result = self.service.sync_wiki("acme", wiki_key="kb", root_storage_key=root)
+
+        assert result["status"] == "error"
+        assert "_access-manifest.json" in result["error_message"]
+        assert result["sync"]["status"] == "failed"
+        # The corpus is untouched: labels kept, and the new markdown was not
+        # indexed either, so nothing is served unlabelled.
+        assert self.page_access_tags(wiki_id, "pricing.md") == ["board"]
+        assert "Rewritten" not in self.repo.get_page_by_path(wiki_id, "pricing.md").body_text
+
+    def test_sync_wiki_fails_when_required_manifest_is_invalid(self):
+        root = "companies/acme/knowledge_wikis/kb"
+        self.write_storage(f"{root}/pricing.md", "# Pricing\n\nBands.\n")
+        self.storage[f"{root}/_access-manifest.json"] = b'{"pages": {}}'
+        self.configure_external_wiki("kb", root, access_control={"mode": "enforce"})
+
+        result = self.service.sync_wiki("acme", wiki_key="kb", root_storage_key=root)
+
+        assert result["status"] == "error"
+        assert "declares no pages" in result["error_message"]
+        assert self.repo.get_page_by_path(result["sync"]["wiki_id"], "pricing.md") is None
+
+    def test_sync_wiki_fails_when_manifest_maps_the_same_page_twice(self):
+        root = "companies/acme/knowledge_wikis/kb"
+        self.write_storage(f"{root}/pricing.md", "# Pricing\n\nBands.\n")
+        self.write_access_manifest(root, {"pricing.md": ["public"], "./pricing.md": ["board"]})
+        self.configure_external_wiki("kb", root, access_control={"mode": "enforce"})
+
+        result = self.service.sync_wiki("acme", wiki_key="kb", root_storage_key=root)
+
+        assert result["status"] == "error"
+        assert "more than once with different labels" in result["error_message"]
+
+    def test_sync_wiki_without_access_control_ignores_a_missing_manifest(self):
+        root = "companies/acme/knowledge_wikis/sales"
+        self.write_storage(f"{root}/pricing.md", "# Pricing\n\nBands.\n")
+
+        result = self.service.sync_wiki("acme", wiki_key="sales", root_storage_key=root)
+
+        assert result["status"] == "success"
+        assert self.page_access_tags(result["wiki"]["id"], "pricing.md") == []
+        access = result["sync"]["metadata"]["access_control"]
+        assert access["mode"] == "off"
+        assert access["manifest_status"] == "absent"
+        assert "pages_without_manifest_entry" not in access
+
+    def test_sync_wiki_keeps_existing_labels_when_the_manifest_disappears_with_mode_off(self):
+        root = "companies/acme/knowledge_wikis/kb"
+        self.write_storage(f"{root}/pricing.md", "# Pricing\n\nBands.\n")
+        self.write_access_manifest(root, {"pricing.md": ["board"]})
+        self.configure_external_wiki("kb", root, access_control={"mode": "dry_run"})
+        first = self.service.sync_wiki("acme", wiki_key="kb", root_storage_key=root)
+        wiki_id = first["wiki"]["id"]
+
+        self.configure_external_wiki("kb", root, access_control={"mode": "off"})
+        self.storage.pop(f"{root}/_access-manifest.json")
+        self.write_storage(f"{root}/pricing.md", "# Pricing\n\nRewritten bands.\n")
+        second = self.service.sync_wiki("acme", wiki_key="kb", root_storage_key=root)
+
+        assert second["status"] == "success"
+        assert "Rewritten" in self.repo.get_page_by_path(wiki_id, "pricing.md").body_text
+        # No manifest means "leave the labels alone", not "clear them".
+        assert self.page_access_tags(wiki_id, "pricing.md") == ["board"]
+
+    def test_access_labels_are_lowercased_deduplicated_and_sorted(self):
+        root = "companies/acme/knowledge_wikis/kb"
+        self.write_storage(f"{root}/pricing.md", "# Pricing\n\nBands.\n")
+        self.write_access_manifest(
+            root,
+            {"pricing.md": [" Public ", "TECH", "tech", ""]},
+        )
+        self.configure_external_wiki("kb", root, access_control={"mode": "enforce"})
+
+        result = self.service.sync_wiki("acme", wiki_key="kb", root_storage_key=root)
+
+        assert self.page_access_tags(result["wiki"]["id"], "pricing.md") == ["public", "tech"]
+
+    def test_serialized_pages_never_carry_access_labels(self):
+        root = "companies/acme/knowledge_wikis/kb"
+        self.write_storage(f"{root}/pricing.md", "---\ntags: [sales]\n---\n# Pricing\n\nBands.\n")
+        self.write_access_manifest(root, {"pricing.md": ["board"]})
+        # Labels are synced but not enforced: this is about what the payload
+        # carries, and enforcement is covered by its own tests.
+        self.configure_external_wiki("kb", root, access_control={"mode": "off"})
+        self.service.sync_wiki("acme", wiki_key="kb", root_storage_key=root)
+
+        page = self.service.get_page("acme", wiki_key="kb", path="pricing.md")["page"]
+        results = self.service.search_pages("acme", wiki_key="kb", query="pricing")["results"]
+        index_entry = self.service.get_index("acme", wiki_key="kb")["entries"][0]
+
+        # Editorial tags are part of the payload; visibility labels never are.
+        assert page["tags"] == ["sales"]
+        assert "access_tags" not in page
+        assert "access_tags" not in results[0]
+        assert "access_tags" not in index_entry
+        assert "board" not in json.dumps(results)
+
+    # --- the filter: labels of the page against labels of the reader ---------
+
+    def setup_labelled_wiki(self, mode: str = "enforce"):
+        root = "companies/acme/knowledge_wikis/kb"
+        self.write_storage(f"{root}/public/pricing.md", "---\ntitle: Pricing\n---\n# Pricing\n\nBands.\n")
+        self.write_storage(f"{root}/board/comp.md", "---\ntitle: Compensation\n---\n# Compensation\n\nPricing of people.\n")
+        self.write_storage(f"{root}/loose.md", "---\ntitle: Loose\n---\n# Loose\n\nPricing leftovers.\n")
+        self.write_storage(f"{root}/index.md", "---\ntitle: KB Home\n---\n# KB Home\n\nSee [Comp](board/comp.md).\n")
+        self.write_access_manifest(
+            root,
+            {"public/pricing.md": ["public"], "board/comp.md": ["board"]},
+        )
+        self.configure_external_wiki("kb", root, access_control={"mode": mode})
+        return self.service.sync_wiki("acme", wiki_key="kb", root_storage_key=root)
+
+    def resolver(self, labels):
+        return lambda company_short_name, user_identifier: labels
+
+    def teardown_method(self):
+        TenantWikiService.clear_access_label_resolver()
+
+    def test_enforce_serves_only_the_pages_whose_labels_the_reader_holds(self):
+        self.setup_labelled_wiki()
+        TenantWikiService.register_access_label_resolver(self.resolver({"public"}))
+
+        allowed = self.service.get_page("acme", wiki_key="kb", path="public/pricing.md", user_identifier="dcanales")
+        denied = self.service.get_page("acme", wiki_key="kb", path="board/comp.md", user_identifier="dcanales")
+        unlabelled = self.service.get_page("acme", wiki_key="kb", path="loose.md", user_identifier="dcanales")
+
+        assert allowed["status"] == "success"
+        # A denied page is indistinguishable from one that does not exist.
+        assert denied == {"status": "error", "error_message": "page not found"}
+        assert unlabelled["status"] == "error"
+
+    def test_enforce_denies_everything_without_an_identity(self):
+        self.setup_labelled_wiki()
+        TenantWikiService.register_access_label_resolver(self.resolver({"public", "board"}))
+
+        page = self.service.get_page("acme", wiki_key="kb", path="public/pricing.md")
+
+        assert page["status"] == "error"
+
+    def test_enforce_denies_everything_when_labels_cannot_be_resolved(self):
+        self.setup_labelled_wiki()
+        TenantWikiService.register_access_label_resolver(self.resolver(None))
+
+        page = self.service.get_page("acme", wiki_key="kb", path="public/pricing.md", user_identifier="dcanales")
+        results = self.service.search_pages("acme", wiki_key="kb", query="pricing", user_identifier="dcanales")
+
+        assert page["status"] == "error"
+        assert results["results"] == []
+
+    def test_enforce_denies_everything_when_no_resolver_is_registered(self):
+        self.setup_labelled_wiki()
+
+        page = self.service.get_page("acme", wiki_key="kb", path="public/pricing.md", user_identifier="dcanales")
+
+        assert page["status"] == "error"
+
+    def test_a_resolver_that_raises_denies_instead_of_opening(self):
+        self.setup_labelled_wiki()
+
+        def broken(company_short_name, user_identifier):
+            raise RuntimeError("access control service is down")
+
+        TenantWikiService.register_access_label_resolver(broken)
+        page = self.service.get_page("acme", wiki_key="kb", path="public/pricing.md", user_identifier="dcanales")
+
+        assert page["status"] == "error"
+
+    def test_search_hides_the_existence_of_denied_pages(self):
+        self.setup_labelled_wiki()
+        TenantWikiService.register_access_label_resolver(self.resolver({"public"}))
+
+        results = self.service.search_pages("acme", wiki_key="kb", query="pricing", user_identifier="dcanales")
+
+        assert [item["path"] for item in results["results"]] == ["public/pricing.md"]
+        # Neither the title, the path nor a snippet of a denied page leaks.
+        assert "Compensation" not in json.dumps(results)
+        assert "board" not in json.dumps(results)
+
+    def test_the_readers_home_page_lists_only_what_they_may_read(self):
+        self.setup_labelled_wiki()
+        TenantWikiService.register_access_label_resolver(self.resolver({"public"}))
+
+        home = self.service.get_page("acme", wiki_key="kb", path="/", user_identifier="dcanales")
+
+        assert home["status"] == "success"
+        assert "public/pricing.md" in home["page"]["markdown"]
+        # The authored index.md links to a denied page, so it is replaced by a
+        # generated one listing only the visible pages.
+        assert "board/comp.md" not in home["page"]["markdown"]
+
+    def test_dry_run_serves_everything_and_only_reports(self, caplog):
+        self.setup_labelled_wiki(mode="dry_run")
+        TenantWikiService.register_access_label_resolver(self.resolver({"public"}))
+
+        with caplog.at_level("INFO"):
+            denied = self.service.get_page("acme", wiki_key="kb", path="board/comp.md", user_identifier="dcanales")
+            results = self.service.search_pages("acme", wiki_key="kb", query="pricing", user_identifier="dcanales")
+
+        assert denied["status"] == "success"
+        assert {item["path"] for item in results["results"]} == {
+            "public/pricing.md", "board/comp.md", "loose.md",
+        }
+        assert "would deny (dry_run)" in caplog.text
+
+    def test_a_wiki_with_access_control_off_is_untouched(self):
+        self.setup_labelled_wiki(mode="off")
+        TenantWikiService.register_access_label_resolver(self.resolver(None))
+
+        page = self.service.get_page("acme", wiki_key="kb", path="board/comp.md", user_identifier="dcanales")
+        results = self.service.search_pages("acme", wiki_key="kb", query="pricing", user_identifier="dcanales")
+
+        assert page["status"] == "success"
+        assert len(results["results"]) == 3
+
+    def test_labels_compose_with_the_callers_own_filter(self):
+        self.setup_labelled_wiki()
+        TenantWikiService.register_access_label_resolver(self.resolver({"public", "board"}))
+
+        # The reader holds both labels, but the policy filter still excludes board/.
+        denied = self.service.get_page(
+            "acme",
+            wiki_key="kb",
+            path="board/comp.md",
+            user_identifier="dcanales",
+            visibility_filter=lambda path: not path.startswith("board/"),
+        )
+        allowed = self.service.get_page(
+            "acme",
+            wiki_key="kb",
+            path="public/pricing.md",
+            user_identifier="dcanales",
+            visibility_filter=lambda path: not path.startswith("board/"),
+        )
+
+        assert denied["status"] == "error"
+        assert allowed["status"] == "success"
+
+    def test_the_admin_index_is_never_filtered_by_labels(self):
+        result = self.setup_labelled_wiki()
+        TenantWikiService.register_access_label_resolver(self.resolver(None))
+
+        index = self.service.get_index("acme", wiki_key="kb")
+
+        # The operator's view of the wiki: everything, so the panel does not go
+        # blank for a wiki under enforcement.
+        assert index["status"] == "success"
+        assert len(index["entries"]) == 3
+        assert result["wiki"]["settings"]["access_control"]["mode"] == "enforce"
+
+    def test_the_visibility_report_counts_what_a_reader_would_see(self):
+        self.setup_labelled_wiki()
+
+        report = self.service.access_visibility_report("acme", wiki_key="kb", user_labels={"public"})
+        blind = self.service.access_visibility_report("acme", wiki_key="kb", user_labels=None)
+
+        assert report["mode"] == "enforce"
+        assert (report["pages"], report["visible"], report["denied"]) == (3, 1, 2)
+        assert report["unlabelled"] == 1
+        assert report["visible_sample"] == ["public/pricing.md"]
+        assert (blind["visible"], blind["denied"]) == (0, 3)
+
+    def test_the_admin_page_viewer_bypasses_labels_explicitly(self):
+        self.setup_labelled_wiki()
+        TenantWikiService.register_access_label_resolver(self.resolver(None))
+
+        as_reader = self.service.get_page("acme", wiki_key="kb", path="board/comp.md", user_identifier="dcanales")
+        as_owner = self.service.get_page(
+            "acme",
+            wiki_key="kb",
+            path="board/comp.md",
+            bypass_access_control=True,
+        )
+
+        assert as_reader["status"] == "error"
+        assert as_owner["status"] == "success"
+        assert "Pricing of people" in as_owner["page"]["markdown"]

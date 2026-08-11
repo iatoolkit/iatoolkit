@@ -208,7 +208,40 @@ class DatabaseManager(DatabaseProvider):
         """
         Esta función se ejecuta cada vez que se establece una conexión.
         dbapi_connection es la conexión psycopg2 real.
+
+        On a database that does not have the pgvector extension yet, this is
+        where a brand-new installation dies: ``register_vector`` raises "vector
+        type not found in the database" on the very first connection, before
+        ``create_all`` has run and long before any CLI command can help. So the
+        extension is created here, once, and only after the lookup has already
+        failed — a database that has it pays nothing.
+
+        ``CREATE EXTENSION`` needs a privileged role. When the connecting role
+        does not have it, the original error is raised with the statement to run
+        by hand, because there is nothing this process can do about it.
         """
+        try:
+            register_vector(dbapi_connection)
+            return
+        except Exception as exc:
+            logging.info("pgvector is not registered yet on this database: %s", exc)
+
+        try:
+            # The failed lookup left a transaction open, and psycopg2 refuses to
+            # switch autocommit inside one — so end it and commit explicitly
+            # instead of touching the connection's mode.
+            dbapi_connection.rollback()
+            with dbapi_connection.cursor() as cursor:
+                cursor.execute("CREATE EXTENSION IF NOT EXISTS vector")
+            dbapi_connection.commit()
+            logging.info("Created the pgvector extension on this database.")
+        except Exception as exc:
+            raise RuntimeError(
+                "This database does not have the pgvector extension and the "
+                f"connecting role could not create it ({exc}). Run this once as "
+                "a privileged role: CREATE EXTENSION IF NOT EXISTS vector;"
+            ) from exc
+
         register_vector(dbapi_connection)
 
     def get_session(self):
