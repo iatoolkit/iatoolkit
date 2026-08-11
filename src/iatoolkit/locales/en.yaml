@@ -2185,6 +2185,10 @@ ui:
     load_error: "Could not load the models."
     save_error: "Could not save the model."
     save_success: "Model updated."
+    reasoning_applies_to: "Applies to {model}"
+    form_secret_value: "Your provider key"
+    secret_hint_new: "Stored encrypted for this provider. Your provider bills you directly."
+    secret_hint_stored: "A key is already stored for this provider. Paste one to replace it."
   secrets:
     title: "Secrets"
     subtitle: "Manage company secrets used by integrations and services."

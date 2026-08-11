@@ -253,9 +253,11 @@ def register_views(app):
 
     # company configuration
     configuration_view = ConfigurationApiView.as_view('configuration')
+    # No POST: adding an arbitrary new key had no caller in any frontend, and
+    # the write path is deliberately narrow — see TENANT_WRITABLE_CONFIG_KEYS.
     app.add_url_rule('/<company_short_name>/api/configuration',
                      view_func=configuration_view,
-                     methods=['GET', 'POST', 'PATCH'],)
+                     methods=['GET', 'PATCH'],)
 
     # explicit runtime reload endpoint used by admin/dashboard integrations
     app.add_url_rule('/<company_short_name>/api/load_configuration',

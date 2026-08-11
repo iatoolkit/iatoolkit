@@ -118,6 +118,7 @@ class LLMProxy:
             provider=provider,
             company_short_name=company_short_name,
             telemetry_request=telemetry_request,
+            model_config=model_config,
         )
 
         request_kwargs = self._apply_provider_request_overrides(
@@ -202,12 +203,20 @@ class LLMProxy:
         provider: str,
         company_short_name: str,
         telemetry_request: Dict[str, Any] | None = None,
+        model_config: Dict[str, Any] | None = None,
     ) -> Any:
         """
         Return an adapter instance for the given provider.
         If none exists yet, create it using a cached or new low-level client.
+
+        ``model_config`` is threaded through because whose key pays is decided
+        per model, not per provider: a company can resell one model through the
+        platform and fund another with a key of its own, and both may be served
+        by the same provider. The client cache is keyed by the resolved api key,
+        so two models of one provider on different keys get different clients
+        instead of sharing the first one created.
         """
-        client_config = self._get_client_config(company_short_name, provider)
+        client_config = self._get_client_config(company_short_name, provider, model_config=model_config)
         api_key = client_config["api_key"]
         base_url = client_config.get("base_url") or ""
         default_headers = client_config.get("default_headers") or {}
@@ -569,12 +578,19 @@ class LLMProxy:
             f"Provider not supported in _create_client_for_provider: {provider}"
         )
 
-    def _get_client_config(self, company_short_name: str, provider: str) -> dict:
+    def _get_client_config(
+        self,
+        company_short_name: str,
+        provider: str,
+        model_config: Dict[str, Any] | None = None,
+    ) -> dict:
         provider_config = self.configuration_service.get_llm_provider_config(company_short_name, provider) or {}
+        secret_ref = self._model_credential_ref(model_config)
         provider_api_key = self._get_api_key_from_config(
             company_short_name,
             provider,
             required=False,
+            secret_ref=secret_ref,
         )
         gateway_transport = self.gateway_resolver.resolve(
             company_short_name=company_short_name,
@@ -595,6 +611,7 @@ class LLMProxy:
                 company_short_name,
                 provider,
                 required=True,
+                secret_ref=secret_ref,
             )
         configured_base_url = self._get_base_url_from_config(company_short_name, provider)
         configured_headers = self._get_default_headers_from_config(company_short_name, provider)
@@ -709,7 +726,34 @@ class LLMProxy:
     # -------------------------------------------------------------------------
     # Configuration helpers
     # -------------------------------------------------------------------------
-    def _get_api_key_from_config(self, company_short_name: str, provider: str, *, required: bool = True) -> str:
+    @staticmethod
+    def _model_credential_ref(model_config: Dict[str, Any] | None) -> str | None:
+        """The secret this model is entitled to run on, when the company owns it.
+
+        `credential_owner` and `secret_key_name` come from the company's
+        catalogue entitlement, and until now nothing on the request path read
+        them: the key was resolved only from `llm.provider_api_keys`, by name. So
+        a model the catalogue said the platform pays for could still run on a
+        customer's key — whenever the customer had stored a secret under the same
+        name as the platform's variable — and be invoiced as platform-served.
+
+        Only `company` ownership overrides. `platform` deliberately falls through
+        to the deployment's mapping, which is what "we pay for this" means.
+        """
+        if not isinstance(model_config, dict):
+            return None
+        if str(model_config.get("credential_owner") or "").strip().lower() != "company":
+            return None
+        return str(model_config.get("secret_key_name") or "").strip() or None
+
+    def _get_api_key_from_config(
+        self,
+        company_short_name: str,
+        provider: str,
+        *,
+        required: bool = True,
+        secret_ref: str | None = None,
+    ) -> str:
         """
         Read the LLM API key from company configuration and environment variables.
 
@@ -730,8 +774,17 @@ class LLMProxy:
         provider_keys = llm_config.get("provider_api_keys") or {}
         env_var_name = None
 
+        # 0) El secreto de la habilitación del modelo, cuando la empresa trae su
+        #    propia key. Gana sobre el mapeo del archivo porque es la decisión
+        #    explícita y por modelo; el mapeo es del deployment y por proveedor.
+        # 0) El secreto de la habilitación del modelo, cuando la empresa trae su
+        #    propia key. Gana sobre el mapeo del archivo porque es la decisión
+        #    explícita y por modelo; el mapeo es del deployment y por proveedor.
+        if secret_ref:
+            env_var_name = secret_ref
+
         # 1) Intentar api-key específica por proveedor (si existe el bloque provider_api_keys)
-        if provider_keys and isinstance(provider_keys, dict):
+        if not env_var_name and provider_keys and isinstance(provider_keys, dict):
             env_var_name = provider_keys.get(provider)
 
         # 2) Fallback: usar api-key global si no hay específica

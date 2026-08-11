@@ -852,3 +852,81 @@ class TestLLMProxy:
 
         assert self.proxy.adapters == {}
         assert LLMProxy._clients_cache == {}
+
+
+class TestWhoseKeyRunsAModel:
+    """The credential follows the catalogue's per-model decision, not a name.
+
+    Before this, the key was resolved only from `llm.provider_api_keys[provider]`
+    — a *name*, looked up in the company's secret store first and the platform's
+    environment second. So a model the catalogue said the platform pays for ran
+    on the customer's key whenever the customer had stored a secret under the
+    same name as the platform's variable, and was invoiced as platform-served
+    anyway. Observed on a real entitlement: `gpt-5.6-sol`, owner `platform`,
+    resolving to the customer's own `OPENAI_API_KEY`.
+    """
+
+    def _proxy(self):
+        from unittest.mock import MagicMock
+        from iatoolkit.infra.llm_proxy import LLMProxy
+
+        config = MagicMock()
+        config.get_configuration.return_value = {
+            "provider_api_keys": {"openai": "PLATFORM_OPENAI_KEY"},
+        }
+        secrets = MagicMock()
+        secrets.get_secret.side_effect = lambda _company, key_name, default=None: {
+            "PLATFORM_OPENAI_KEY": "platform-value",
+            "CUSTOMER_OPENAI_KEY": "customer-value",
+        }.get(key_name, default)
+        proxy = LLMProxy.__new__(LLMProxy)
+        proxy.configuration_service = config
+        proxy.secret_provider = secrets
+        return proxy
+
+    def test_a_company_owned_model_runs_on_the_secret_it_was_given(self):
+        proxy = self._proxy()
+
+        key = proxy._get_api_key_from_config(
+            "acme", "openai",
+            secret_ref=proxy._model_credential_ref(
+                {"credential_owner": "company", "secret_key_name": "CUSTOMER_OPENAI_KEY"}
+            ),
+        )
+
+        assert key == "customer-value"
+
+    def test_a_platform_owned_model_runs_on_the_deployment_key(self):
+        # Even when the company has stored a secret of its own: `platform` is what
+        # "we pay for this" means, and it must not be overridable by a name.
+        proxy = self._proxy()
+
+        key = proxy._get_api_key_from_config(
+            "acme", "openai",
+            secret_ref=proxy._model_credential_ref(
+                {"credential_owner": "platform", "secret_key_name": "CUSTOMER_OPENAI_KEY"}
+            ),
+        )
+
+        assert key == "platform-value"
+
+    def test_no_entitlement_falls_back_to_the_provider_mapping(self):
+        # A company still on company.yaml behaves exactly as before.
+        proxy = self._proxy()
+
+        assert proxy._get_api_key_from_config("acme", "openai", secret_ref=None) == "platform-value"
+
+    def test_company_ownership_without_a_secret_does_not_override(self):
+        # enable_for_company refuses this combination, so it should not exist —
+        # and if it does, falling back beats calling the provider with nothing.
+        proxy = self._proxy()
+
+        ref = proxy._model_credential_ref({"credential_owner": "company", "secret_key_name": ""})
+
+        assert ref is None
+
+    def test_a_model_config_that_is_not_a_dict_is_ignored(self):
+        proxy = self._proxy()
+
+        assert proxy._model_credential_ref(None) is None
+        assert proxy._model_credential_ref("gpt-5") is None

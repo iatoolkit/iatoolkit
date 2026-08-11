@@ -12,6 +12,34 @@ from iatoolkit.services.auth_service import AuthService
 import logging
 
 
+#: The configuration keys a company may change about itself.
+#:
+#: An allowlist rather than a blocklist, because this endpoint writes an
+#: arbitrary dot-path into the company's own company.yaml and that file also
+#: holds settings that belong to the deployment, not to the tenant — which
+#: provider credential pays for execution (`llm.provider_api_keys`), and the
+#: address requests are sent to (`llm.<provider>.base_url`). Both are read
+#: verbatim at request time, and the credential name resolves against the
+#: platform's own environment, so a tenant able to write them could point the
+#: platform's secrets at a server of its choosing.
+#:
+#: These five are exactly what the configuration screen writes. Anything else it
+#: needs later is a deliberate addition here, not an accident.
+TENANT_WRITABLE_CONFIG_KEYS = frozenset({
+    "name",
+    "llm.reasoning_effort",
+    "llm.telemetry.enabled",
+    "branding.brand_primary_color",
+    "branding.brand_secondary_color",
+})
+
+#: Editing the company's own configuration is an administrative act. The same two
+#: roles already gate editing company.yaml as a file, and leaving the key-by-key
+#: path open to any authenticated member meant one door was locked and the other
+#: was not, on the same file.
+CONFIG_WRITE_ROLES = frozenset({"admin", "owner"})
+
+
 class ConfigurationApiView(MethodView):
     """
     API View to manage company configuration.
@@ -111,12 +139,16 @@ class ConfigurationApiView(MethodView):
     def patch(self, company_short_name: str):
         """
         Updates a specific configuration key.
-        Body: { "key": "llm.model", "value": "gpt-4" }
+        Body: { "key": "llm.reasoning_effort", "value": "high" }
         """
         try:
             auth_result = self.auth_service.verify_for_company(company_short_name)
             if not auth_result.get("success"):
                 return jsonify(auth_result), 401
+
+            role = str(auth_result.get("user_role") or "").strip().lower()
+            if role not in CONFIG_WRITE_ROLES:
+                return jsonify({'error': 'Forbidden'}), 403
 
             payload = request.get_json()
             key = payload.get('key')
@@ -124,6 +156,18 @@ class ConfigurationApiView(MethodView):
 
             if not key:
                 return jsonify({'error': 'Missing "key" in payload'}), 400
+
+            if str(key).strip() not in TENANT_WRITABLE_CONFIG_KEYS:
+                # Named in the response: the caller is the company's own admin
+                # screen, and a silent no-op would look like a save that worked.
+                logging.warning(
+                    "Refused to write config key '%s' for company '%s': not tenant-writable.",
+                    key, company_short_name,
+                )
+                return jsonify({
+                    'error': f"'{key}' is not editable here",
+                    'editable_keys': sorted(TENANT_WRITABLE_CONFIG_KEYS),
+                }), 403
 
             logging.info(f"Updating config key '{key}' for company '{company_short_name}'")
 
@@ -146,44 +190,6 @@ class ConfigurationApiView(MethodView):
             logging.exception(f"Error updating config: {e}")
             return jsonify({'status': 'error', 'message': str(e)}), 500
 
-    def post(self, company_short_name: str):
-        """
-        Adds a new configuration key.
-        Body: { "parent_key": "llm", "key": "max_tokens", "value": 2048 }
-        """
-        try:
-            auth_result = self.auth_service.verify_for_company(company_short_name, anonymous=False)
-            if not auth_result.get("success"):
-                return jsonify(auth_result), 401
-
-            payload = request.get_json()
-            parent_key = payload.get('parent_key', '')  # Optional, defaults to root
-            key = payload.get('key')
-            value = payload.get('value')
-
-            if not key:
-                return jsonify({'error': 'Missing "key" in payload'}), 400
-
-            logging.info(f"Adding config key '{key}' under '{parent_key}' for company '{company_short_name}'")
-
-            updated_config, errors = self.configuration_service.add_configuration_key(
-                company_short_name, parent_key, key, value
-            )
-
-            # Remove non-serializable objects
-            if 'company' in updated_config:
-                updated_config.pop('company')
-
-            if errors:
-                return jsonify({'status': 'invalid', 'errors': errors, 'config': updated_config}), 400
-
-            return jsonify({'status': 'success', 'config': updated_config}), 200
-
-        except FileNotFoundError:
-            return jsonify({'error': 'Configuration file not found'}), 404
-        except Exception as e:
-            logging.exception(f"Error adding config key: {e}")
-            return jsonify({'status': 'error', 'message': str(e)}), 500
 
 class ValidateConfigurationApiView(MethodView):
     """

@@ -2191,6 +2191,10 @@ ui:
     load_error: "No se pudieron cargar los modelos."
     save_error: "No se pudo guardar el modelo."
     save_success: "Modelo actualizado."
+    reasoning_applies_to: "Aplica a {model}"
+    form_secret_value: "Tu key del proveedor"
+    secret_hint_new: "Se guarda cifrada para este proveedor. Tu proveedor te factura directamente."
+    secret_hint_stored: "Ya hay una key guardada para este proveedor. Pegá otra para reemplazarla."
   secrets:
     title: "Secrets"
     subtitle: "Administra los secrets de la empresa usados por integraciones y servicios."

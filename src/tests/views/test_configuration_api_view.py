@@ -13,7 +13,7 @@ MOCK_COMPANY_SHORT_NAME = "sample_company"
 
 class TestConfigurationApiView:
     """
-    Tests for ConfigurationApiView, covering GET, PATCH, and POST methods.
+    Tests for ConfigurationApiView, covering GET and PATCH.
     """
 
     @pytest.fixture(autouse=True)
@@ -39,11 +39,12 @@ class TestConfigurationApiView:
             auth_service=self.mock_auth_service,
         )
 
-        # Enable GET, PATCH, POST methods
+        # No POST: adding an arbitrary key had no caller and the route no longer
+        # accepts it.
         self.app.add_url_rule(
             "/<company_short_name>/api/config",
             view_func=view_func,
-            methods=["GET", "PATCH", "POST"],
+            methods=["GET", "PATCH"],
         )
         self.app.add_url_rule(
             "/<company_short_name>/api/load_configuration",
@@ -70,6 +71,9 @@ class TestConfigurationApiView:
             "success": True,
             "company_short_name": MOCK_COMPANY_SHORT_NAME,
             "user_identifier": "user@test.com",
+            # The screen is administrative; writing config now requires the same
+            # role that already gated editing company.yaml as a file.
+            "user_role": "admin",
         }
 
     # --- GET Tests (Loading Configuration) ---
@@ -241,10 +245,10 @@ class TestConfigurationApiView:
 
     def test_patch_success(self):
         """PATCH should return 200 and the updated config on success."""
-        payload = {"key": "llm.model", "value": "gpt-5"}
+        payload = {"key": "llm.reasoning_effort", "value": "high"}
 
         # Mock service returning success (valid config, no errors)
-        updated_config = {"llm": {"model": "gpt-5"}, "company": MagicMock()} # 'company' obj to ensure it gets removed
+        updated_config = {"llm": {"reasoning_effort": "high"}, "company": MagicMock()} # 'company' obj to ensure it gets removed
         self.mock_config_service.update_configuration_key.return_value = (updated_config, [])
 
         resp = self.client.patch(self.config_url, json=payload)
@@ -252,19 +256,19 @@ class TestConfigurationApiView:
         assert resp.status_code == 200
         data = resp.get_json()
         assert data['status'] == 'success'
-        assert data['config']['llm']['model'] == 'gpt-5'
+        assert data['config']['llm']['reasoning_effort'] == 'high'
         assert 'company' not in data['config']
 
         self.mock_config_service.update_configuration_key.assert_called_once_with(
-            MOCK_COMPANY_SHORT_NAME, "llm.model", "gpt-5"
+            MOCK_COMPANY_SHORT_NAME, "llm.reasoning_effort", "high"
         )
 
     def test_patch_validation_error(self):
         """PATCH should return 400 if the update causes validation errors."""
-        payload = {"key": "tools", "value": []}
+        payload = {"key": "llm.reasoning_effort", "value": "nonsense"}
 
         # Mock service returning validation errors
-        updated_config = {"tools": []}
+        updated_config = {"llm": {"reasoning_effort": "nonsense"}}
         errors = ["Missing required tools"]
         self.mock_config_service.update_configuration_key.return_value = (updated_config, errors)
 
@@ -280,7 +284,7 @@ class TestConfigurationApiView:
         """PATCH should return 404 if the configuration file is not found."""
         self.mock_config_service.update_configuration_key.side_effect = FileNotFoundError()
 
-        resp = self.client.patch(self.config_url, json={"key": "k", "value": "v"})
+        resp = self.client.patch(self.config_url, json={"key": "llm.reasoning_effort", "value": "high"})
 
         assert resp.status_code == 404
         assert resp.get_json()['error'] == 'Configuration file not found'
@@ -289,62 +293,73 @@ class TestConfigurationApiView:
         """PATCH should return 500 on unexpected exceptions."""
         self.mock_config_service.update_configuration_key.side_effect = Exception("Disk error")
 
-        resp = self.client.patch(self.config_url, json={"key": "k", "value": "v"})
+        resp = self.client.patch(self.config_url, json={"key": "llm.reasoning_effort", "value": "high"})
 
         assert resp.status_code == 500
         assert resp.get_json()['status'] == 'error'
 
     # --- POST Tests (Add Configuration Key) ---
 
-    def test_post_fails_auth(self):
-        """POST should fail if authentication fails."""
-        self.mock_auth_service.verify_for_company.return_value = {"success": False, "status_code": 401}
+    # --- Who may write, and what ---
 
-        resp = self.client.post(self.config_url, json={})
+    def test_patch_refuses_a_member_who_is_not_admin_or_owner(self):
+        """The console admits editors, and this endpoint writes company.yaml.
 
-        assert resp.status_code == 401
-        self.mock_config_service.add_configuration_key.assert_not_called()
+        Editing that same file through the file API already required admin or
+        owner. Leaving the key-by-key path open to any member meant one door was
+        locked and the other was not, on the same file.
+        """
+        self.mock_auth_service.verify_for_company.return_value = {
+            "success": True,
+            "company_short_name": MOCK_COMPANY_SHORT_NAME,
+            "user_identifier": "editor@test.com",
+            "user_role": "editor",
+        }
 
-    def test_post_missing_key(self):
-        """POST should return 400 if 'key' is missing."""
-        resp = self.client.post(self.config_url, json={"parent_key": "llm", "value": 1})
+        resp = self.client.patch(self.config_url, json={"key": "llm.reasoning_effort", "value": "high"})
 
-        assert resp.status_code == 400
-        assert resp.get_json()['error'] == 'Missing "key" in payload'
+        assert resp.status_code == 403
+        self.mock_config_service.update_configuration_key.assert_not_called()
 
-    def test_post_success(self):
-        """POST should return 200 and updated config on success."""
-        payload = {"parent_key": "llm", "key": "new_param", "value": 123}
-        updated_config = {"llm": {"new_param": 123}, "company": MagicMock()}
+    def test_patch_refuses_a_key_outside_the_allowlist(self):
+        """The credential that pays for execution is not the tenant's to choose.
 
-        self.mock_config_service.add_configuration_key.return_value = (updated_config, [])
+        `llm.provider_api_keys.<provider>` names an environment variable that is
+        resolved against the platform's own environment, and `base_url` is read
+        verbatim when the request is built. Together they are a way to have the
+        platform send its own secrets to an address the tenant picked.
+        """
+        for key in ("llm.provider_api_keys.openrouter", "llm.openrouter.base_url",
+                    "connectors.iatoolkit_storage.bucket", "inference_tools._defaults.endpoint_url"):
+            self.mock_config_service.update_configuration_key.reset_mock()
 
-        resp = self.client.post(self.config_url, json=payload)
+            resp = self.client.patch(self.config_url, json={"key": key, "value": "anything"})
 
-        assert resp.status_code == 200
-        data = resp.get_json()
-        assert data['status'] == 'success'
-        assert data['config']['llm']['new_param'] == 123
-        assert 'company' not in data['config']
+            assert resp.status_code == 403, key
+            self.mock_config_service.update_configuration_key.assert_not_called()
 
-        self.mock_config_service.add_configuration_key.assert_called_once_with(
-            MOCK_COMPANY_SHORT_NAME, "llm", "new_param", 123
-        )
+    def test_the_refusal_says_what_is_editable(self):
+        # The caller is the company's own admin screen; a bare 403 would look
+        # like a bug in the screen rather than a boundary.
+        resp = self.client.patch(self.config_url, json={"key": "llm.provider_api_keys.openai", "value": "x"})
 
-    def test_post_validation_error(self):
-        """POST should return 400 if validation fails."""
-        payload = {"key": "bad_key", "value": "val"}
-        errors = ["Invalid key"]
-        self.mock_config_service.add_configuration_key.return_value = ({}, errors)
+        assert "llm.reasoning_effort" in resp.get_json()["editable_keys"]
 
-        resp = self.client.post(self.config_url, json=payload)
+    def test_the_allowlist_is_exactly_what_the_screen_writes(self):
+        """Pinned so the list cannot quietly grow.
 
-        assert resp.status_code == 400
-        data = resp.get_json()
-        assert data['status'] == 'invalid'
-        assert data['errors'] == errors
+        Every key here is one the configuration editor sends today. Adding one is
+        a decision to let a tenant change it, not a side effect of adding a field.
+        """
+        from iatoolkit.views.configuration_api_view import TENANT_WRITABLE_CONFIG_KEYS
 
-    # --- ValidateConfigurationApiView Tests (GET) ---
+        assert set(TENANT_WRITABLE_CONFIG_KEYS) == {
+            "name",
+            "llm.reasoning_effort",
+            "llm.telemetry.enabled",
+            "branding.brand_primary_color",
+            "branding.brand_secondary_color",
+        }
 
     def test_validate_fails_auth(self):
         """GET validate should fail if authentication fails."""
