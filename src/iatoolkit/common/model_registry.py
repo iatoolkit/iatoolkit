@@ -26,6 +26,26 @@ class ModelMetadata:
     history_type: HistoryType
 
 
+#: Providers a model can actually be served by: the ones `LLMProxy._build_adapter`
+#: knows how to build. Deliberately narrower than `ProviderType`, which also
+#: contains `xai` — `normalize_provider` accepts it and a client is built for it,
+#: but there is no xAI adapter, so a model declared `xai` raises "Provider not
+#: supported" on its first request. A test pins this tuple to the adapters that
+#: exist so the two cannot drift.
+#:
+#: Anything that lets a person choose a provider must offer exactly these: the
+#: value reaches `_build_adapter` verbatim, so a typo becomes a runtime failure in
+#: front of an end user, hours after it was saved.
+SERVABLE_PROVIDERS: tuple[str, ...] = (
+    "openai",
+    "anthropic",
+    "gemini",
+    "deepseek",
+    "openrouter",
+    "openai_compatible",
+)
+
+
 @singleton
 class ModelRegistry:
     """

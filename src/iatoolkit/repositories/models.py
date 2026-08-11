@@ -1249,11 +1249,6 @@ class ModelCatalogEntry(Base):
         String(16), nullable=False, default=ModelBillingPolicy.metered.value, index=True
     )
 
-    #: Capabilities a customer picks on, kept as columns rather than JSON
-    #: because the model picker filters by them.
-    context_length = Column(Integer, nullable=True)
-    supports_attachments = Column(Boolean, nullable=False, default=False)
-    supports_reasoning = Column(Boolean, nullable=False, default=False)
 
     #: Where the entry came from: `manual` or a sync source such as
     #: `openrouter`. A synced entry still needs publishing by hand.
