@@ -445,6 +445,25 @@ class TenantWikiService:
             "mcp_index_source_path": self._index_source_display_path(wiki, source_storage_key),
             "index_path": "/",
             "index_source_path": self._index_source_display_path(wiki, source_storage_key),
+            "access_control": self._access_summary(wiki),
+        }
+
+    def _access_summary(self, wiki: KnowledgeWiki) -> dict:
+        """
+        The wiki's access control state, for the admin panel: the mode in force
+        and how many pages carry labels. A page with none is denied to everyone
+        once the mode is enforce, so that count is the number an operator has to
+        look at before raising it.
+        """
+        access_control = self.wiki_access_control(wiki)
+        pages = self.knowledge_wiki_repo.list_pages(wiki.id, include_archived=False, limit=self.MAX_PAGES)
+        labelled = sum(1 for page in pages if (page.access_tags or []))
+        return {
+            **access_control,
+            "modes": list(self.ACCESS_MODES),
+            "pages": len(pages),
+            "labelled": labelled,
+            "unlabelled": len(pages) - labelled,
         }
 
     def get_page(
@@ -1003,6 +1022,96 @@ class TenantWikiService:
                 exc,
             )
             return None
+
+    def set_access_control_mode(
+        self,
+        company_short_name: str,
+        *,
+        wiki_key: str,
+        mode: str,
+        allow_dark: bool = False,
+    ) -> dict:
+        """
+        Raises or lowers a wiki's access control mode, and nothing else.
+
+        Deliberately not routed through `configure_wiki`: that one rebuilds the
+        wiki from its arguments, so calling it with only settings would rename the
+        wiki and repoint its storage prefix to the default. This touches
+        `settings.access_control` and leaves every other field alone.
+
+        Enforcing a wiki whose pages carry no labels at all would serve nothing
+        to anyone, which is never the intent, so that case is refused unless
+        `allow_dark` says otherwise.
+        """
+        company = self._get_company(company_short_name)
+        if not company:
+            return {"status": "error", "error_message": "company not found"}
+        wiki = self.knowledge_wiki_repo.get_wiki_by_key(company.id, self.normalize_wiki_key(wiki_key))
+        if not wiki:
+            return {"status": "error", "error_message": "wiki not found"}
+
+        requested_mode = str(mode or "").strip().lower()
+        if requested_mode not in self.ACCESS_MODES:
+            # Not normalized silently: an unrecognized mode here would read as
+            # 'off' and quietly turn access control off.
+            return {
+                "status": "error",
+                "error_message": f"mode must be one of {', '.join(self.ACCESS_MODES)}",
+            }
+
+        pages = self.knowledge_wiki_repo.list_pages(wiki.id, include_archived=False, limit=self.MAX_PAGES)
+        labelled = sum(1 for page in pages if (page.access_tags or []))
+        previous = self.wiki_access_control(wiki)
+        if requested_mode == self.ACCESS_MODE_ENFORCE and not labelled and not allow_dark:
+            return {
+                "status": "error",
+                "error_message": (
+                    f"wiki '{wiki.wiki_key}' has no page carrying access labels, so enforcing would "
+                    "hide all of it from everyone. Sync the access manifest first."
+                ),
+            }
+
+        settings = dict(wiki.settings if isinstance(wiki.settings, dict) else {})
+        # Reassigned rather than mutated in place: an in-place change to a JSON
+        # column is not tracked and would never be written.
+        settings["access_control"] = {
+            "mode": requested_mode,
+            "manifest": previous["manifest"],
+        }
+        wiki.settings = settings
+        self.knowledge_wiki_repo.commit()
+
+        return {
+            "status": "success",
+            "wiki_key": wiki.wiki_key,
+            "previous_mode": previous["mode"],
+            "mode": requested_mode,
+            "manifest": previous["manifest"],
+            "manifest_status": self._probe_access_manifest(company_short_name, wiki, requested_mode),
+            "pages": len(pages),
+            "labelled": labelled,
+            "unlabelled": len(pages) - labelled,
+        }
+
+    def _probe_access_manifest(self, company_short_name: str, wiki: KnowledgeWiki, mode: str) -> str:
+        """
+        Reports whether the manifest could be read right now, without failing.
+
+        Answers the question that matters after raising the mode: would the next
+        sync abort? From dry_run up the manifest is required.
+        """
+        try:
+            _pages, meta = self._load_access_manifest(
+                company_short_name,
+                wiki,
+                {"mode": self.ACCESS_MODE_OFF, "manifest": self.wiki_access_control(wiki)["manifest"]},
+            )
+        except Exception as exc:
+            return f"error: {exc}"
+        status = str(meta.get("manifest_status") or "unknown")
+        if status != "loaded" and mode != self.ACCESS_MODE_OFF:
+            return f"{status} (the next sync will abort while the mode is '{mode}')"
+        return status
 
     def access_visibility_report(
         self,

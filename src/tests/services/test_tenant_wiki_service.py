@@ -1064,3 +1064,106 @@ class TestTenantWikiService:
         assert as_reader["status"] == "error"
         assert as_owner["status"] == "success"
         assert "Pricing of people" in as_owner["page"]["markdown"]
+
+    # --- switching the mode --------------------------------------------------
+
+    def test_setting_the_mode_touches_nothing_else(self):
+        self.setup_labelled_wiki(mode="off")
+        before = self.repo.get_wiki_by_key(self.company.id, "kb")
+        name_before, root_before = before.name, before.root_storage_key
+
+        result = self.service.set_access_control_mode("acme", wiki_key="kb", mode="dry_run")
+
+        assert result["status"] == "success"
+        assert (result["previous_mode"], result["mode"]) == ("off", "dry_run")
+        assert (result["pages"], result["labelled"], result["unlabelled"]) == (3, 2, 1)
+        assert result["manifest_status"] == "loaded"
+        after = self.repo.get_wiki_by_key(self.company.id, "kb")
+        # configure_wiki would have renamed it and reset the prefix; this does not.
+        assert (after.name, after.root_storage_key) == (name_before, root_before)
+        assert after.settings["authoring_mode"] == "external_sync"
+        assert after.settings["access_control"]["mode"] == "dry_run"
+
+    def test_the_new_mode_actually_takes_effect(self):
+        self.setup_labelled_wiki(mode="off")
+        TenantWikiService.register_access_label_resolver(self.resolver({"public"}))
+
+        served = self.service.get_page("acme", wiki_key="kb", path="board/comp.md", user_identifier="dcanales")
+        self.service.set_access_control_mode("acme", wiki_key="kb", mode="enforce")
+        denied = self.service.get_page("acme", wiki_key="kb", path="board/comp.md", user_identifier="dcanales")
+
+        assert served["status"] == "success"
+        assert denied["status"] == "error"
+
+    def test_an_unknown_mode_is_refused_rather_than_read_as_off(self):
+        self.setup_labelled_wiki(mode="enforce")
+
+        result = self.service.set_access_control_mode("acme", wiki_key="kb", mode="Enforce!")
+
+        assert result["status"] == "error"
+        assert "must be one of" in result["error_message"]
+        assert self.repo.get_wiki_by_key(self.company.id, "kb").settings["access_control"]["mode"] == "enforce"
+
+    def test_enforcing_a_wiki_with_no_labels_is_refused(self):
+        root = "companies/acme/knowledge_wikis/plain"
+        self.write_storage(f"{root}/pricing.md", "# Pricing\n\nBands.\n")
+        self.configure_external_wiki("plain", root)
+        self.service.sync_wiki("acme", wiki_key="plain", root_storage_key=root)
+
+        refused = self.service.set_access_control_mode("acme", wiki_key="plain", mode="enforce")
+        forced = self.service.set_access_control_mode(
+            "acme",
+            wiki_key="plain",
+            mode="enforce",
+            allow_dark=True,
+        )
+
+        assert refused["status"] == "error"
+        assert "hide all of it" in refused["error_message"]
+        assert forced["status"] == "success"
+
+    def test_raising_the_mode_reports_a_manifest_that_would_break_the_next_sync(self):
+        self.setup_labelled_wiki(mode="off")
+        self.storage.pop("companies/acme/knowledge_wikis/kb/_access-manifest.json")
+
+        result = self.service.set_access_control_mode("acme", wiki_key="kb", mode="dry_run")
+
+        assert result["status"] == "success"
+        assert "the next sync will abort" in result["manifest_status"]
+
+    def test_setting_the_mode_on_a_missing_wiki_errors(self):
+        assert self.service.set_access_control_mode("acme", wiki_key="ghost", mode="off") == {
+            "status": "error",
+            "error_message": "wiki not found",
+        }
+
+    def test_the_admin_index_reports_the_access_control_state(self):
+        self.setup_labelled_wiki(mode="dry_run")
+
+        access = self.service.get_index("acme", wiki_key="kb")["access_control"]
+
+        assert access["mode"] == "dry_run"
+        assert access["manifest"] == "_access-manifest.json"
+        assert access["modes"] == ["off", "dry_run", "enforce"]
+        assert (access["pages"], access["labelled"], access["unlabelled"]) == (3, 2, 1)
+
+    def test_saving_the_wiki_form_does_not_turn_access_control_off(self):
+        self.setup_labelled_wiki(mode="enforce")
+
+        # What the admin form sends when someone edits the name: settings without
+        # access_control. Dropping the mode here would silently unprotect the wiki.
+        self.service.configure_wiki(
+            "acme",
+            wiki_key="kb",
+            name="KB renamed",
+            root_storage_key="companies/acme/knowledge_wikis/kb",
+            settings={"publication": "storage", "authoring_mode": "external_sync"},
+        )
+
+        wiki = self.repo.get_wiki_by_key(self.company.id, "kb")
+        assert wiki.name == "KB renamed"
+        assert wiki.settings["access_control"]["mode"] == "enforce"
+        assert self.service.wiki_access_control(wiki) == {
+            "mode": "enforce",
+            "manifest": "_access-manifest.json",
+        }
