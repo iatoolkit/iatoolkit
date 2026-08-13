@@ -349,7 +349,6 @@ class LLMProxy:
                 self.PROVIDER_OPENAI,
                 self.PROVIDER_XAI,
                 self.PROVIDER_DEEPSEEK,
-                self.PROVIDER_OPENAI_COMPATIBLE,
                 self.PROVIDER_OPENROUTER,
             })
         )

@@ -33,29 +33,58 @@ class TestOpenAICompatibleChatAdapter:
         mock_response.usage.total_tokens = 8
         return mock_response
 
-    def test_create_response_passes_reasoning_payload(self):
-        self.mock_client.chat.completions.create.return_value = self._create_mock_response()
+    def _client_with_the_real_signature(self):
+        """
+        A client whose `create` accepts exactly what chat.completions accepts.
 
-        self.adapter.create_response(
-            model="oss-model",
+        The two tests below used to assert that `reasoning` WAS forwarded, and they
+        passed: a bare MagicMock swallows any keyword. Production does not — the
+        OpenAI SDK raised `TypeError: Completions.create() got an unexpected keyword
+        argument 'reasoning'` before any request left the process. Binding the real
+        parameter list is what stops a mock from hiding that again.
+        """
+        response = self._create_mock_response()
+
+        def create(*, model, messages, reasoning_effort=None, **rest):
+            create.seen = {"model": model, "messages": messages, "reasoning_effort": reasoning_effort, **rest}
+            return response
+
+        client = MagicMock()
+        client.chat.completions.create = create
+        return client, create
+
+    def test_create_response_never_sends_the_responses_api_reasoning_argument(self):
+        client, create = self._client_with_the_real_signature()
+        adapter = OpenAICompatibleChatAdapter(client)
+
+        # A company-level `llm.reasoning_effort` reaches the proxy as this payload.
+        adapter.create_response(
+            model="meta-llama/llama-3.1-8b-instruct",
             input=[{"role": "user", "content": "Hello"}],
-            reasoning={"effort": "high"},
+            reasoning={"effort": "medium"},
         )
 
-        call_kwargs = self.mock_client.chat.completions.create.call_args.kwargs
-        assert call_kwargs["reasoning"] == {"effort": "high"}
+        assert "reasoning" not in create.seen
 
-    def test_create_response_builds_reasoning_payload_from_reasoning_effort_kwarg(self):
-        self.mock_client.chat.completions.create.return_value = self._create_mock_response()
+    def test_create_response_sends_no_reasoning_field_at_all_for_a_generic_endpoint(self):
+        client, create = self._client_with_the_real_signature()
+        adapter = OpenAICompatibleChatAdapter(client)
 
-        self.adapter.create_response(
+        adapter.create_response(
             model="oss-model",
             input=[{"role": "user", "content": "Hello"}],
             reasoning_effort="medium",
         )
 
-        call_kwargs = self.mock_client.chat.completions.create.call_args.kwargs
-        assert call_kwargs["reasoning"] == {"effort": "medium"}
+        # An arbitrary OpenAI-compatible server answers 400 to a field it does not
+        # know, so this adapter forwards neither form. A provider whose API does
+        # accept it opts in, as DeepseekAdapter does.
+        assert create.seen["reasoning_effort"] is None
+        assert "reasoning" not in create.seen
+
+    def test_the_reasoning_flags_stay_off_so_subclasses_do_not_have_to_correct_them(self):
+        assert OpenAICompatibleChatAdapter.supports_reasoning is False
+        assert OpenAICompatibleChatAdapter.supports_reasoning_effort is False
 
     def test_create_response_retries_without_tool_choice_when_provider_rejects_it(self):
         self.mock_client.chat.completions.create.side_effect = [

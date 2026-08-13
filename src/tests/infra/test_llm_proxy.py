@@ -424,7 +424,13 @@ class TestLLMProxy:
         assert adapter_kwargs["tools"] == []
         assert adapter_kwargs["tool_choice"] is None
 
-    def test_openai_compatible_applies_company_reasoning_effort_default(self):
+    def test_openai_compatible_does_not_receive_the_company_reasoning_effort_default(self):
+        """
+        The company default must stop at the proxy for this provider. When it did not,
+        a model added from /hcc with provider `openai_compatible` failed on its first
+        request with "Completions.create() got an unexpected keyword argument
+        'reasoning'" — the adapter here is a mock, which is why this went unnoticed.
+        """
         self.model_registry_mock.get_provider.return_value = "unknown"
         self.config_service_mock.get_configuration.return_value = {
             "provider_api_keys": {"openai_compatible": "OSS_KEY"}
@@ -450,7 +456,7 @@ class TestLLMProxy:
 
         self.mock_openai_compatible_adapter_instance.create_response.assert_called_once()
         adapter_kwargs = self.mock_openai_compatible_adapter_instance.create_response.call_args.kwargs
-        assert adapter_kwargs["reasoning"] == {"effort": "high"}
+        assert "reasoning" not in adapter_kwargs
 
     def test_routing_to_openrouter_provider_uses_model_config_provider(self):
         self.model_registry_mock.get_provider.return_value = "unknown"

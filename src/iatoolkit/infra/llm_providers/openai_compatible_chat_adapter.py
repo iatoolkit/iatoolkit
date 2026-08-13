@@ -22,7 +22,21 @@ class OpenAICompatibleChatAdapter:
     """
 
     supports_multimodal = False
-    supports_reasoning = True
+    #: `reasoning` is a **Responses API** parameter. This class calls
+    #: `chat.completions.create`, whose signature has no such argument, so the
+    #: OpenAI SDK raises a TypeError before any request leaves the process:
+    #: "Completions.create() got an unexpected keyword argument 'reasoning'".
+    #:
+    #: It was True here, and both subclasses overrode it to False — DeepSeek and
+    #: OpenRouter each had to correct the base. Nothing was served by this class
+    #: directly until a model with provider `openai_compatible` was added from the
+    #: catalogue, and that first request crashed.
+    supports_reasoning = False
+    #: The Chat Completions equivalent is the plain string `reasoning_effort`, and
+    #: it stays off *here*: this class targets any OpenAI-compatible server —
+    #: llama.cpp, vLLM, a private gateway — and a server that does not know the
+    #: field answers 400. A provider whose API does accept it opts in, which is
+    #: what DeepseekAdapter does.
     supports_reasoning_effort = False
     supports_reasoning_content_messages = False
     supports_metadata = False

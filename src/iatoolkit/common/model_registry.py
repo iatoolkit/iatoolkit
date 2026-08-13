@@ -163,12 +163,16 @@ class ModelRegistry:
 
     def get_capabilities(self, model: str, provider: str | None = None) -> dict:
         normalized_provider = self.normalize_provider(provider=provider, model=model)
+        # `openai_compatible` is absent on purpose. Its adapter targets any server
+        # that speaks chat.completions — llama.cpp, vLLM, a private gateway — and
+        # forwards no reasoning field, because one the server does not know earns a
+        # 400. Claiming the capability here made the tenant's Models page offer a
+        # reasoning control whose value went nowhere.
         supports_reasoning_effort = normalized_provider in {
             "openai",
             "xai",
             "openrouter",
             "deepseek",
-            "openai_compatible",
         }
         supports_text_verbosity = normalized_provider in {"openai", "xai", "openrouter"}
         supports_store = normalized_provider in {"openai", "xai"}

@@ -612,7 +612,6 @@ class QueryService:
                 "xai",
                 "openrouter",
                 "deepseek",
-                "openai_compatible",
             ))
         )
         text_verbosity_provider_supported = bool(

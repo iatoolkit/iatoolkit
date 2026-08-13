@@ -1128,7 +1128,14 @@ class TestQueryService:
         }
         assert invoke_kwargs["execution_metadata"]["llm_request_options"]["ignored_keys"] == ["text_verbosity"]
 
-    def test_llm_query_applies_prompt_reasoning_effort_for_openai_compatible_provider(self):
+    def test_llm_query_does_not_apply_prompt_reasoning_effort_for_openai_compatible_provider(self):
+        """
+        This asserted the opposite, and the assertion described a path that could
+        never complete: the effort reached OpenAICompatibleChatAdapter, which put it
+        into `chat.completions.create(reasoning=...)`, and the OpenAI SDK rejects
+        that argument outright. Both ends were mock-verified and the middle crashed.
+        A generic OpenAI-compatible endpoint now gets no reasoning field at all.
+        """
         self.mock_configuration_service.get_llm_model_config.return_value = {"provider": "openai_compatible"}
         self.mock_tool_service.get_tools_for_llm.return_value = []
         self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt content", "question", [])
@@ -1157,10 +1164,8 @@ class TestQueryService:
         )
 
         invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
-        assert invoke_kwargs["reasoning"] == {"effort": "xhigh"}
-        assert invoke_kwargs["execution_metadata"]["llm_request_options"]["applied"] == {
-            "reasoning_effort": "xhigh",
-        }
+        assert invoke_kwargs.get("reasoning") is None
+        assert "reasoning_effort" not in invoke_kwargs["execution_metadata"]["llm_request_options"]["applied"]
 
     def test_llm_query_passes_prompt_tracking_metadata(self):
         self.mock_tool_service.get_tools_for_llm.return_value = []
