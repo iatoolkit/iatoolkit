@@ -2227,6 +2227,8 @@ ui:
     form_route_base_url_hint: "The full URL requests go to, e.g. https://your-host/v1"
     form_route_api_key_env: "Credential variable"
     form_route_api_key_env_hint: "The NAME of an environment variable in this deployment, e.g. OSS_LLM_API_KEY. Never the key itself."
+    form_route_model_name: "Name served by the endpoint"
+    form_route_model_name_hint: "Optional. The exact name this endpoint answers to, e.g. meta-llama/Llama-3.1-8B-Instruct. Leave empty to send the identifier above, which is stored in lowercase."
     route_required: "This provider needs an endpoint and the name of its credential variable."
   secrets:
     title: "Secrets"

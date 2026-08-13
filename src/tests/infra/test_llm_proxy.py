@@ -424,6 +424,36 @@ class TestLLMProxy:
         assert adapter_kwargs["tools"] == []
         assert adapter_kwargs["tool_choice"] is None
 
+    def test_the_adapter_is_called_with_the_name_the_endpoint_serves(self):
+        self.model_registry_mock.get_provider.return_value = "unknown"
+        self.config_service_mock.get_configuration.return_value = {
+            "provider_api_keys": {"openai_compatible": "OSS_KEY"}
+        }
+        self.config_service_mock.get_llm_model_config.return_value = {
+            "id": "meta-llama/llama-3.1-8b-instruct",
+            "provider": "openai_compatible",
+            "route_config": {
+                "base_url": "https://yr78.endpoints.huggingface.cloud/v1",
+                "model_name": "meta-llama/Llama-3.1-8B-Instruct",
+            },
+        }
+        self.config_service_mock.get_llm_provider_config.return_value = {}
+        self.config_service_mock.get_llm_request_defaults.return_value = {}
+
+        with patch.dict(os.environ, {"OSS_KEY": "dummy"}, clear=True):
+            self.proxy.create_response(
+                company_short_name=self.company_short_name,
+                # Callers keep naming the model by its catalogue key.
+                model="meta-llama/llama-3.1-8b-instruct",
+                input=[],
+            )
+
+        adapter_kwargs = self.mock_openai_compatible_adapter_instance.create_response.call_args.kwargs
+        assert adapter_kwargs["model"] == "meta-llama/Llama-3.1-8B-Instruct"
+        # The lookups that price and meter the call still use the catalogue key, so
+        # one model cannot split into two usage lines.
+        assert self.config_service_mock.get_llm_model_config.call_args.args[1] == "meta-llama/llama-3.1-8b-instruct"
+
     def test_openai_compatible_does_not_receive_the_company_reasoning_effort_default(self):
         """
         The company default must stop at the proxy for this provider. When it did not,
@@ -1000,6 +1030,27 @@ class TestAModelCarriesItsOwnRoute:
             "acme", "openai_compatible", model_config={"route_config": {"base_url": "https://b/v1"}})
 
         assert first != second
+
+    def test_the_route_can_carry_the_exact_name_the_endpoint_serves(self):
+        # A vLLM endpoint serving `meta-llama/Llama-3.1-8B-Instruct` answered
+        # "404 - The model `meta-llama/llama-3.1-8b-instruct` does not exist" to the
+        # catalogue key, which upsert_entry lowercases.
+        proxy, _ = self._proxy()
+
+        wire = proxy._wire_model(
+            "meta-llama/llama-3.1-8b-instruct",
+            {"route_config": {"model_name": "meta-llama/Llama-3.1-8B-Instruct"}},
+        )
+
+        assert wire == "meta-llama/Llama-3.1-8B-Instruct"
+
+    def test_without_a_served_name_the_catalogue_key_goes_on_the_wire(self):
+        proxy, _ = self._proxy()
+
+        assert proxy._wire_model("deepseek-v4-pro", {}) == "deepseek-v4-pro"
+        assert proxy._wire_model("deepseek-v4-pro", {"route_config": {"base_url": "https://x/v1"}}) == "deepseek-v4-pro"
+        # Blank is the same as absent: the form submits empty strings.
+        assert proxy._wire_model("deepseek-v4-pro", {"route_config": {"model_name": "  "}}) == "deepseek-v4-pro"
 
     def test_the_routes_credential_comes_from_the_deployment_environment(self):
         proxy, env = self._proxy({"ROUTE_KEY": "from-the-deployment"})

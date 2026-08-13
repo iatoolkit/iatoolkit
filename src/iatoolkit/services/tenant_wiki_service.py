@@ -56,6 +56,10 @@ class TenantWikiService:
     ACCESS_MODE_ENFORCE = "enforce"
     ACCESS_MODES = (ACCESS_MODE_OFF, ACCESS_MODE_DRY_RUN, ACCESS_MODE_ENFORCE)
 
+    # What a withheld page answers with, instead of "not found".
+    ACCESS_STATUS_FORBIDDEN = "forbidden"
+    ACCESS_STATUS_UNAVAILABLE = "unavailable"
+
     # Resolves the visibility labels one user holds. Registered by the edition
     # that knows where they come from -- the core has no business calling a
     # tenant's access control service -- and left unset in the community edition,
@@ -137,6 +141,42 @@ class TenantWikiService:
     @classmethod
     def clear_access_label_resolver(cls) -> None:
         cls._access_label_resolver = None
+
+    @classmethod
+    def denial_event_metadata(cls, payload: Any) -> dict | None:
+        """
+        Turns a withheld-page answer into what is worth recording about it, or
+        None when the payload is not one.
+
+        Lives next to the payload it reads, so whoever changes the shape of a
+        denial changes this in the same edit. Callers decide how to store it: the
+        point of recording denials is to find pages classified more strictly than
+        they should be, without waiting for someone to complain.
+        """
+        if not isinstance(payload, dict):
+            return None
+        status = str(payload.get("status") or "").strip().lower()
+        if status not in {cls.ACCESS_STATUS_FORBIDDEN, cls.ACCESS_STATUS_UNAVAILABLE}:
+            return None
+        if not payload.get("path") or "blocked_by" not in payload:
+            # Some other subsystem's 'forbidden', not a wiki page decision.
+            return None
+
+        return {
+            "reason": str(payload.get("reason") or "").strip() or None,
+            "metadata": {
+                "access_denial": {
+                    "status": status,
+                    "blocked_by": payload.get("blocked_by"),
+                    "wiki_key": payload.get("wiki_key"),
+                    "path": payload.get("path"),
+                    "required_labels": list(payload.get("required_labels") or []),
+                    "held_labels": list(payload.get("held_labels") or []),
+                    "not_registered": bool(payload.get("not_registered")),
+                    "unlabelled_page": bool(payload.get("unlabelled_page")),
+                }
+            },
+        }
 
     @classmethod
     def page_is_visible(cls, access_tags: Any, user_labels: Any) -> bool:
@@ -548,6 +588,15 @@ class TenantWikiService:
         if page is None or page.status == KnowledgeWikiPageStatus.ARCHIVED:
             return {"status": "error", "error_message": "page not found"}
         if visibility_filter is not None and not visibility_filter(page.path):
+            # A page that exists but is withheld says so, naming the label it
+            # needs. Answering "not found" would protect the content and bury the
+            # mistake: an over-restricted page is never reported by anyone,
+            # because nobody can tell there is anything to report.
+            if isinstance(visibility_filter, AccessGate):
+                return {
+                    **visibility_filter.denial_payload(page.path),
+                    "wiki": self.serialize_wiki(wiki),
+                }
             return {"status": "error", "error_message": "page not found"}
 
         markdown = self.markdown_wiki_service.read_markdown(company_short_name, page.source_storage_key)
@@ -945,54 +994,24 @@ class TenantWikiService:
         wiki that never opted in behaves exactly as it did before. In dry_run the
         decision is computed and logged but not applied, which is how a corpus of
         this size gets switched on without a blackout. In enforce it is applied.
+
+        Returns a gate that is callable like any other filter, and that can also
+        explain a single denial — see `AccessGate.denial_payload`.
         """
         access_control = self.wiki_access_control(wiki)
         mode = access_control["mode"]
         if mode == self.ACCESS_MODE_OFF:
             return base_filter
 
-        user_labels = self._resolve_access_labels(company_short_name, user_identifier)
-        access_tags_index: dict[str, list[str]] = {}
-        index_loaded = False
-        # One line per call, not per page: a 1.268-page index would otherwise
-        # bury the log. The full picture is the `wiki-access-check` report.
-        already_logged = False
-
-        def access_tags_for(path: str):
-            nonlocal index_loaded
-            if not index_loaded:
-                access_tags_index.update({
-                    page.path: (page.access_tags or [])
-                    for page in self.knowledge_wiki_repo.list_pages(
-                        wiki.id,
-                        include_archived=False,
-                        limit=self.MAX_PAGES,
-                    )
-                })
-                index_loaded = True
-            # A path with no row is unknown, and unknown denies.
-            return access_tags_index.get(path)
-
-        def is_visible(path: str) -> bool:
-            nonlocal already_logged
-            if base_filter is not None and not base_filter(path):
-                return False
-            if self.page_is_visible(access_tags_for(path), user_labels):
-                return True
-            if not already_logged:
-                already_logged = True
-                logging.info(
-                    "Knowledge wiki access %s: company=%s wiki=%s user=%s labels=%s first_denied_path=%s",
-                    "would deny (dry_run)" if mode == self.ACCESS_MODE_DRY_RUN else "denied",
-                    company_short_name,
-                    wiki.wiki_key,
-                    user_identifier or "(none)",
-                    "unresolved" if user_labels is None else sorted(user_labels),
-                    path,
-                )
-            return mode == self.ACCESS_MODE_DRY_RUN
-
-        return is_visible
+        return AccessGate(
+            service=self,
+            company_short_name=company_short_name,
+            wiki=wiki,
+            user_identifier=user_identifier,
+            base_filter=base_filter,
+            mode=mode,
+            user_labels=self._resolve_access_labels(company_short_name, user_identifier),
+        )
 
     def _resolve_access_labels(self, company_short_name: str, user_identifier: str | None):
         if not str(user_identifier or "").strip():
@@ -2122,3 +2141,156 @@ class TenantWikiService:
             "started_at": run.started_at.isoformat() if run.started_at else None,
             "finished_at": run.finished_at.isoformat() if run.finished_at else None,
         }
+
+
+class AccessGate:
+    """
+    Decides whether one reader may see a page of one wiki, and says why not.
+
+    It is callable, so it serves as the visibility filter for bulk work (the
+    index, search) where only a yes or no is needed. For a single page,
+    `denial_payload` turns the same decision into an answer the caller can hand
+    to a model: which label the page needs, which ones the reader holds, and
+    whether the reader is registered at all.
+
+    Saying "forbidden" instead of "not found" makes a page's existence visible,
+    which is deliberate. A denial that looks like a 404 protects the content but
+    hides the mistake: a page classified more strictly than it should be is never
+    reported, because nobody can tell there is anything to report.
+    """
+
+    BLOCKED_BY_LABELS = "labels"
+    BLOCKED_BY_POLICY = "policy"
+
+    def __init__(
+        self,
+        *,
+        service: TenantWikiService,
+        company_short_name: str,
+        wiki: KnowledgeWiki,
+        user_identifier: str | None,
+        base_filter: Callable[[str], bool] | None,
+        mode: str,
+        user_labels: Any,
+    ):
+        self.service = service
+        self.company_short_name = company_short_name
+        self.wiki = wiki
+        self.user_identifier = user_identifier
+        self.base_filter = base_filter
+        self.mode = mode
+        self.user_labels = user_labels
+        self._access_tags_index: dict[str, list[str]] | None = None
+        # One log line per call, not per page: a 1.268-page index would bury the
+        # log. The full picture is the `wiki-access-check` report.
+        self._logged = False
+
+    def __call__(self, path: str) -> bool:
+        if self.base_filter is not None and not self.base_filter(path):
+            return False
+        if self.service.page_is_visible(self._access_tags_for(path), self.user_labels):
+            return True
+        self._log_once(path)
+        # dry_run computes the decision and reports it without applying it.
+        return self.mode == TenantWikiService.ACCESS_MODE_DRY_RUN
+
+    def denial_payload(self, path: str) -> dict:
+        """
+        Why this page was withheld, in a shape a model can act on.
+
+        Never carries the title, the summary or the body: the caller already knew
+        the path it asked for, and nothing else about the page needs to leak for
+        the reader to know what to request.
+        """
+        payload = {
+            "wiki_key": self.wiki.wiki_key,
+            "path": path,
+            "held_labels": sorted(self._comparable(self.user_labels)) if self.user_labels is not None else [],
+        }
+
+        if self.base_filter is not None and not self.base_filter(path):
+            # A policy rule, not a label. Naming a label here would send the
+            # reader to ask for a grant that would not change the outcome.
+            return {
+                **payload,
+                "status": TenantWikiService.ACCESS_STATUS_FORBIDDEN,
+                "blocked_by": self.BLOCKED_BY_POLICY,
+                "reason": "an access policy blocks this path",
+                "required_labels": [],
+            }
+
+        if self.user_labels is None:
+            # Not "you lack permission": nobody knows yet. Telling the reader to
+            # request a label during an outage of the access control service
+            # sends them to ask for something they may already hold.
+            return {
+                **payload,
+                "status": TenantWikiService.ACCESS_STATUS_UNAVAILABLE,
+                "blocked_by": self.BLOCKED_BY_LABELS,
+                "reason": "your access could not be verified right now; retry shortly",
+                "required_labels": [],
+            }
+
+        required = sorted(self._comparable(self._access_tags_for(path)))
+        if not required:
+            # The page carries no labels at all, so it is unreadable for everyone.
+            # That is a classification defect, not a permission decision, and it
+            # is worth saying so plainly to whoever runs into it.
+            return {
+                **payload,
+                "status": TenantWikiService.ACCESS_STATUS_FORBIDDEN,
+                "blocked_by": self.BLOCKED_BY_LABELS,
+                "reason": "this page carries no access labels, so no one can read it",
+                "required_labels": [],
+                "unlabelled_page": True,
+            }
+
+        if not self.user_labels:
+            return {
+                **payload,
+                "status": TenantWikiService.ACCESS_STATUS_FORBIDDEN,
+                "blocked_by": self.BLOCKED_BY_LABELS,
+                "reason": "you hold no access labels for this knowledge base",
+                "required_labels": required,
+                "not_registered": True,
+            }
+
+        return {
+            **payload,
+            "status": TenantWikiService.ACCESS_STATUS_FORBIDDEN,
+            "blocked_by": self.BLOCKED_BY_LABELS,
+            "reason": "this page requires an access label you do not hold",
+            "required_labels": required,
+            "not_registered": False,
+        }
+
+    def _access_tags_for(self, path: str):
+        if self._access_tags_index is None:
+            self._access_tags_index = {
+                page.path: (page.access_tags or [])
+                for page in self.service.knowledge_wiki_repo.list_pages(
+                    self.wiki.id,
+                    include_archived=False,
+                    limit=TenantWikiService.MAX_PAGES,
+                )
+            }
+        # A path with no row is unknown, and unknown denies.
+        return self._access_tags_index.get(path)
+
+    @staticmethod
+    def _comparable(value: Any) -> set[str]:
+        return TenantWikiService._comparable_labels(value)
+
+    def _log_once(self, path: str) -> None:
+        if self._logged:
+            return
+        self._logged = True
+        logging.info(
+            "Knowledge wiki access %s: company=%s wiki=%s user=%s labels=%s first_denied_path=%s",
+            "would deny (dry_run)" if self.mode == TenantWikiService.ACCESS_MODE_DRY_RUN else "denied",
+            self.company_short_name,
+            self.wiki.wiki_key,
+            self.user_identifier or "(none)",
+            "unresolved" if self.user_labels is None else sorted(self._comparable(self.user_labels)),
+            path,
+        )

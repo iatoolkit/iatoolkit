@@ -915,9 +915,19 @@ class TestTenantWikiService:
         unlabelled = self.service.get_page("acme", wiki_key="kb", path="loose.md", user_identifier="dcanales")
 
         assert allowed["status"] == "success"
-        # A denied page is indistinguishable from one that does not exist.
-        assert denied == {"status": "error", "error_message": "page not found"}
-        assert unlabelled["status"] == "error"
+        # A withheld page says so and names what it needs, so the reader can ask
+        # for it and a misclassification can be reported.
+        assert denied["status"] == "forbidden"
+        assert denied["blocked_by"] == "labels"
+        assert denied["path"] == "board/comp.md"
+        assert denied["required_labels"] == ["board"]
+        assert denied["held_labels"] == ["public"]
+        assert denied["not_registered"] is False
+        # A page the manifest never labelled is unreadable for everyone, which is
+        # a classification defect and is reported as one.
+        assert unlabelled["status"] == "forbidden"
+        assert unlabelled["unlabelled_page"] is True
+        assert unlabelled["required_labels"] == []
 
     def test_enforce_denies_everything_without_an_identity(self):
         self.setup_labelled_wiki()
@@ -925,7 +935,11 @@ class TestTenantWikiService:
 
         page = self.service.get_page("acme", wiki_key="kb", path="public/pricing.md")
 
-        assert page["status"] == "error"
+        # Nobody knows what this reader holds, so it is not "you lack permission":
+        # telling them to request a label would send them to ask for a grant they
+        # may already have.
+        assert page["status"] == "unavailable"
+        assert page["required_labels"] == []
 
     def test_enforce_denies_everything_when_labels_cannot_be_resolved(self):
         self.setup_labelled_wiki()
@@ -934,7 +948,9 @@ class TestTenantWikiService:
         page = self.service.get_page("acme", wiki_key="kb", path="public/pricing.md", user_identifier="dcanales")
         results = self.service.search_pages("acme", wiki_key="kb", query="pricing", user_identifier="dcanales")
 
-        assert page["status"] == "error"
+        assert page["status"] == "unavailable"
+        assert "retry" in page["reason"]
+        # Search stays silent: it never claimed the page exists.
         assert results["results"] == []
 
     def test_enforce_denies_everything_when_no_resolver_is_registered(self):
@@ -942,7 +958,7 @@ class TestTenantWikiService:
 
         page = self.service.get_page("acme", wiki_key="kb", path="public/pricing.md", user_identifier="dcanales")
 
-        assert page["status"] == "error"
+        assert page["status"] == "unavailable"
 
     def test_a_resolver_that_raises_denies_instead_of_opening(self):
         self.setup_labelled_wiki()
@@ -953,7 +969,7 @@ class TestTenantWikiService:
         TenantWikiService.register_access_label_resolver(broken)
         page = self.service.get_page("acme", wiki_key="kb", path="public/pricing.md", user_identifier="dcanales")
 
-        assert page["status"] == "error"
+        assert page["status"] == "unavailable"
 
     def test_search_hides_the_existence_of_denied_pages(self):
         self.setup_labelled_wiki()
@@ -1022,7 +1038,11 @@ class TestTenantWikiService:
             visibility_filter=lambda path: not path.startswith("board/"),
         )
 
-        assert denied["status"] == "error"
+        # Blocked by the policy path rule, not by a label — so no label is named,
+        # because requesting one would not change the outcome.
+        assert denied["status"] == "forbidden"
+        assert denied["blocked_by"] == "policy"
+        assert denied["required_labels"] == []
         assert allowed["status"] == "success"
 
     def test_the_admin_index_is_never_filtered_by_labels(self):
@@ -1061,7 +1081,7 @@ class TestTenantWikiService:
             bypass_access_control=True,
         )
 
-        assert as_reader["status"] == "error"
+        assert as_reader["status"] == "unavailable"
         assert as_owner["status"] == "success"
         assert "Pricing of people" in as_owner["page"]["markdown"]
 
@@ -1093,7 +1113,7 @@ class TestTenantWikiService:
         denied = self.service.get_page("acme", wiki_key="kb", path="board/comp.md", user_identifier="dcanales")
 
         assert served["status"] == "success"
-        assert denied["status"] == "error"
+        assert denied["status"] == "forbidden"
 
     def test_an_unknown_mode_is_refused_rather_than_read_as_off(self):
         self.setup_labelled_wiki(mode="enforce")
@@ -1167,3 +1187,64 @@ class TestTenantWikiService:
             "mode": "enforce",
             "manifest": "_access-manifest.json",
         }
+
+    # --- what a denial tells the reader -------------------------------------
+
+    def test_a_reader_with_no_grant_at_all_is_told_so(self):
+        self.setup_labelled_wiki()
+        # The access control service answered: this user holds nothing.
+        TenantWikiService.register_access_label_resolver(self.resolver(set()))
+
+        denied = self.service.get_page("acme", wiki_key="kb", path="board/comp.md", user_identifier="nuevo")
+
+        assert denied["status"] == "forbidden"
+        assert denied["not_registered"] is True
+        assert denied["held_labels"] == []
+        assert denied["required_labels"] == ["board"]
+        assert "no access labels" in denied["reason"]
+
+    def test_a_denial_names_every_label_that_would_open_the_page(self):
+        root = "companies/acme/knowledge_wikis/kb"
+        self.write_storage(f"{root}/shared.md", "---\ntitle: Shared\n---\n# Shared\n\nTwo areas own this.\n")
+        self.write_access_manifest(root, {"shared.md": ["risk", "finance"]})
+        self.configure_external_wiki("kb", root, access_control={"mode": "enforce"})
+        self.service.sync_wiki("acme", wiki_key="kb", root_storage_key=root)
+        TenantWikiService.register_access_label_resolver(self.resolver({"public"}))
+
+        denied = self.service.get_page("acme", wiki_key="kb", path="shared.md", user_identifier="dcanales")
+
+        # Any one of them is enough, so both are offered.
+        assert denied["required_labels"] == ["finance", "risk"]
+
+    def test_a_denial_carries_no_content_of_the_page(self):
+        self.setup_labelled_wiki()
+        TenantWikiService.register_access_label_resolver(self.resolver({"public"}))
+
+        denied = self.service.get_page("acme", wiki_key="kb", path="board/comp.md", user_identifier="dcanales")
+
+        # Existence and the label needed, nothing else: no title, no summary, no
+        # body, and no trace of the words in the page.
+        assert set(denied) == {
+            "status", "reason", "blocked_by", "wiki", "wiki_key", "path",
+            "required_labels", "held_labels", "not_registered",
+        }
+        assert "Compensation" not in json.dumps(denied)
+        assert "Pricing of people" not in json.dumps(denied)
+
+    def test_a_page_that_does_not_exist_still_says_not_found(self):
+        self.setup_labelled_wiki()
+        TenantWikiService.register_access_label_resolver(self.resolver({"public"}))
+
+        missing = self.service.get_page("acme", wiki_key="kb", path="board/nope.md", user_identifier="dcanales")
+
+        # The distinction is the point: 'forbidden' means it exists.
+        assert missing == {"status": "error", "error_message": "page not found"}
+
+    def test_dry_run_never_answers_forbidden(self):
+        self.setup_labelled_wiki(mode="dry_run")
+        TenantWikiService.register_access_label_resolver(self.resolver({"public"}))
+
+        served = self.service.get_page("acme", wiki_key="kb", path="board/comp.md", user_identifier="dcanales")
+
+        assert served["status"] == "success"
+        assert "Pricing of people" in served["page"]["markdown"]

@@ -142,7 +142,11 @@ class LLMProxy:
             request_kwargs["telemetry_execution"] = telemetry_execution
 
         # Delegate to the adapter (OpenAI, Gemini, DeepSeek, xAI, Anthropic, etc.)
-        return adapter.create_response(model=model, input=input, **request_kwargs)
+        return adapter.create_response(
+            model=self._wire_model(model, model_config),
+            input=input,
+            **request_kwargs,
+        )
 
     def describe_transport(self, company_short_name: str, model: str) -> str:
         provider = self._resolve_provider_for_company_model(
@@ -744,6 +748,23 @@ class LLMProxy:
         """
         route = (model_config or {}).get("route_config") if isinstance(model_config, dict) else None
         return dict(route) if isinstance(route, dict) else {}
+
+    @staticmethod
+    def _wire_model(model: str, model_config: Dict[str, Any] | None) -> str:
+        """The name the endpoint itself answers to, which is not always our key.
+
+        Catalogue keys are lowercased on write, because one key identifies a model
+        across entitlements, rate cards and usage rows. A server is free to be
+        case-sensitive: a vLLM endpoint serving `meta-llama/Llama-3.1-8B-Instruct`
+        answers `404 - The model does not exist` to the lowercased key.
+
+        So an entry may carry the exact served name in its route, and only the value
+        on the wire changes. Everything metered stays keyed by the catalogue key,
+        which is what keeps one model from splitting into two usage lines.
+        """
+        route = LLMProxy._model_route(model_config)
+        served_name = str(route.get("model_name") or "").strip()
+        return served_name or model
 
     @staticmethod
     def _model_credential_ref(model_config: Dict[str, Any] | None) -> str | None:

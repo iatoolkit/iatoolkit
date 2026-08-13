@@ -60,6 +60,10 @@ class RouteParam:
     is_env_name: bool = False
     #: A regular expression the value must match, or None for "any non-empty".
     pattern: str | None = None
+    #: How to finish "'base_url' does not look like ___" when the pattern refuses a
+    #: value. Declared here so a new parameter cannot inherit another one's wording:
+    #: the message for `model_name` read "does not look like a URL".
+    looks_like: str = "a valid value"
 
 
 #: What each provider needs in order to be reached, keyed by provider.
@@ -81,14 +85,23 @@ class RouteParam:
 #: `openrouter` allows both and requires neither: there is one OpenRouter for
 #: everyone and its base URL has a working default, so an entry only overrides
 #: when it has a reason to.
+#: `model_name` is optional and exists because a catalogue key is lowercased: it
+#: identifies the model across entitlements, rate cards and usage rows, so it cannot
+#: also be the name on the wire. A vLLM endpoint serving
+#: `meta-llama/Llama-3.1-8B-Instruct` answers 404 to the lowercased key. When set,
+#: it is the exact name that endpoint answers to, and only the wire value changes.
 PROVIDER_ROUTE_PARAMS: dict[str, tuple[RouteParam, ...]] = {
     "openai_compatible": (
-        RouteParam("base_url", required=True, pattern=r"^https?://\S+$"),
-        RouteParam("api_key_env", required=True, is_env_name=True, pattern=r"^[A-Z][A-Z0-9_]*$"),
+        RouteParam("base_url", required=True, pattern=r"^https?://\S+$", looks_like="a URL"),
+        RouteParam("api_key_env", required=True, is_env_name=True, pattern=r"^[A-Z][A-Z0-9_]*$",
+                   looks_like="an environment variable name"),
+        RouteParam("model_name", required=False, pattern=r"^[A-Za-z0-9._:\-/]+$",
+                   looks_like="a model name"),
     ),
     "openrouter": (
-        RouteParam("base_url", required=False, pattern=r"^https?://\S+$"),
-        RouteParam("api_key_env", required=False, is_env_name=True, pattern=r"^[A-Z][A-Z0-9_]*$"),
+        RouteParam("base_url", required=False, pattern=r"^https?://\S+$", looks_like="a URL"),
+        RouteParam("api_key_env", required=False, is_env_name=True, pattern=r"^[A-Z][A-Z0-9_]*$",
+                   looks_like="an environment variable name"),
     ),
 }
 

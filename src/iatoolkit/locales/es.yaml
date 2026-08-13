@@ -2233,6 +2233,8 @@ ui:
     form_route_base_url_hint: "La URL completa a la que van las requests, ej. https://tu-host/v1"
     form_route_api_key_env: "Variable de la credencial"
     form_route_api_key_env_hint: "El NOMBRE de una variable de entorno de este deployment, ej. OSS_LLM_API_KEY. Nunca la key."
+    form_route_model_name: "Nombre que sirve el endpoint"
+    form_route_model_name_hint: "Opcional. El nombre exacto al que responde el endpoint, ej. meta-llama/Llama-3.1-8B-Instruct. Vacío envía el identificador de arriba, que se guarda en minúsculas."
     route_required: "Este proveedor necesita un endpoint y el nombre de la variable con su credencial."
   secrets:
     title: "Secrets"
