@@ -1241,6 +1241,20 @@ class ModelCatalogEntry(Base):
     model_key = Column(String(120), nullable=False, unique=True, index=True)
     provider = Column(String(60), nullable=False, index=True)
 
+    #: How to reach this model, when reaching it is a decision: the endpoint and
+    #: the name of the environment variable holding its credential.
+    #:
+    #: A JSON object rather than columns because providers do not agree on what
+    #: they need — an Azure deployment wants a deployment name and an api version,
+    #: a gateway may want headers — and `base_url` is meaningless for the
+    #: providers whose SDK knows its own. What may go in here is declared per
+    #: provider in `PROVIDER_ROUTE_PARAMS` and validated on write: an unvalidated
+    #: blob becomes decoration, and a typo in a key is silent.
+    #:
+    #: Empty means "ask the company's own configuration", which is what every
+    #: entry did before this existed.
+    route_config = Column(JSON, nullable=False, default=dict)
+
     display_name = Column(String(120), nullable=False)
     description = Column(Text, nullable=False, default="")
 

@@ -23,6 +23,7 @@ from iatoolkit.services.telemetry_service import NoopTelemetryService
 from openai import OpenAI, Timeout         # For OpenAI and xAI (OpenAI-compatible)
 
 from typing import Dict, List, Any, Tuple
+import os
 import threading
 import logging
 from injector import inject
@@ -586,11 +587,13 @@ class LLMProxy:
     ) -> dict:
         provider_config = self.configuration_service.get_llm_provider_config(company_short_name, provider) or {}
         secret_ref = self._model_credential_ref(model_config)
+        route_api_key_env = str(self._model_route(model_config).get("api_key_env") or "").strip() or None
         provider_api_key = self._get_api_key_from_config(
             company_short_name,
             provider,
             required=False,
             secret_ref=secret_ref,
+            route_api_key_env=route_api_key_env,
         )
         gateway_transport = self.gateway_resolver.resolve(
             company_short_name=company_short_name,
@@ -612,8 +615,9 @@ class LLMProxy:
                 provider,
                 required=True,
                 secret_ref=secret_ref,
+                route_api_key_env=route_api_key_env,
             )
-        configured_base_url = self._get_base_url_from_config(company_short_name, provider)
+        configured_base_url = self._get_base_url_from_config(company_short_name, provider, model_config=model_config)
         configured_headers = self._get_default_headers_from_config(company_short_name, provider)
         effective_base_url = gateway_transport.get("base_url") or configured_base_url
         effective_headers = dict(configured_headers)
@@ -727,6 +731,20 @@ class LLMProxy:
     # Configuration helpers
     # -------------------------------------------------------------------------
     @staticmethod
+    def _model_route(model_config: Dict[str, Any] | None) -> Dict[str, Any]:
+        """The endpoint and credential variable this model carries, if any.
+
+        Comes from the catalogue entry, so two models of the same provider can sit
+        on two different endpoints — which is what `openai_compatible` could not do
+        while the endpoint lived in each company's own configuration file.
+
+        Empty means "ask the company's configuration", which is what every model
+        did before entries had routes.
+        """
+        route = (model_config or {}).get("route_config") if isinstance(model_config, dict) else None
+        return dict(route) if isinstance(route, dict) else {}
+
+    @staticmethod
     def _model_credential_ref(model_config: Dict[str, Any] | None) -> str | None:
         """The secret this model is entitled to run on, when the company owns it.
 
@@ -753,6 +771,7 @@ class LLMProxy:
         *,
         required: bool = True,
         secret_ref: str | None = None,
+        route_api_key_env: str | None = None,
     ) -> str:
         """
         Read the LLM API key from company configuration and environment variables.
@@ -774,20 +793,36 @@ class LLMProxy:
         provider_keys = llm_config.get("provider_api_keys") or {}
         env_var_name = None
 
-        # 0) El secreto de la habilitación del modelo, cuando la empresa trae su
-        #    propia key. Gana sobre el mapeo del archivo porque es la decisión
-        #    explícita y por modelo; el mapeo es del deployment y por proveedor.
-        # 0) El secreto de la habilitación del modelo, cuando la empresa trae su
-        #    propia key. Gana sobre el mapeo del archivo porque es la decisión
-        #    explícita y por modelo; el mapeo es del deployment y por proveedor.
+        # Tres orígenes, en este orden, y el orden es la decisión:
+        #
+        # 1) El secreto de la habilitación del modelo, cuando la empresa trae su
+        #    propia key. Es la decisión explícita y por modelo de quién paga, así
+        #    que gana sobre todo lo demás.
+        # 2) La credencial de la ruta del catálogo, leída del entorno del
+        #    deployment y **no** del store de secretos de la empresa: el endpoint es
+        #    del operador, y un cliente que guarde un secreto con ese nombre no
+        #    debería apropiárselo en silencio. Quien quiera pagar con su key usa (1).
+        # 3) El mapeo del archivo de la empresa, que es el respaldo para todo lo que
+        #    no tiene ruta propia — es decir, todo lo que existía antes de esto.
         if secret_ref:
             env_var_name = secret_ref
 
-        # 1) Intentar api-key específica por proveedor (si existe el bloque provider_api_keys)
+        if not env_var_name and route_api_key_env:
+            route_value = str(os.getenv(route_api_key_env) or "").strip()
+            if route_value:
+                return route_value
+            if not required:
+                return ""
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.API_KEY,
+                f"Environment variable '{route_api_key_env}', named by the catalogue entry "
+                f"for provider '{provider}', is not set in this deployment."
+            )
+
         if not env_var_name and provider_keys and isinstance(provider_keys, dict):
             env_var_name = provider_keys.get(provider)
 
-        # 2) Fallback: usar api-key global si no hay específica
+        # Compatibilidad hacia atrás: api-key global cuando no hay una por proveedor.
         if not env_var_name and llm_config.get("api-key"):
             env_var_name = llm_config["api-key"]
 
@@ -818,9 +853,20 @@ class LLMProxy:
 
         return api_key_value
 
-    def _get_base_url_from_config(self, company_short_name: str, provider: str) -> str:
+    def _get_base_url_from_config(
+        self,
+        company_short_name: str,
+        provider: str,
+        model_config: Dict[str, Any] | None = None,
+    ) -> str:
         if provider not in {self.PROVIDER_OPENAI_COMPATIBLE, self.PROVIDER_OPENROUTER}:
             return ""
+
+        # The entry's own endpoint wins: it is the operator's decision about this
+        # model, while the company's configuration is a default for the provider.
+        route_base_url = str(self._model_route(model_config).get("base_url") or "").strip()
+        if route_base_url:
+            return route_base_url
 
         provider_config = self.configuration_service.get_llm_provider_config(company_short_name, provider) or {}
         if not isinstance(provider_config, dict):

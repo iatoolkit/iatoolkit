@@ -930,3 +930,114 @@ class TestWhoseKeyRunsAModel:
 
         assert proxy._model_credential_ref(None) is None
         assert proxy._model_credential_ref("gpt-5") is None
+
+
+class TestAModelCarriesItsOwnRoute:
+    """The endpoint used to live in each company's configuration file.
+
+    So every `openai_compatible` model a company enabled resolved to the same
+    endpoint — two self-hosted models on two different endpoints were impossible,
+    while the dialog that adds them promised "one entry per route".
+    """
+
+    def _proxy(self, env=None):
+        import os
+        from unittest.mock import MagicMock, patch
+        from iatoolkit.infra.llm_proxy import LLMProxy
+
+        config = MagicMock()
+        config.get_configuration.return_value = {
+            "provider_api_keys": {"openai_compatible": "COMPANY_FILE_KEY"},
+        }
+        config.get_llm_provider_config.return_value = {"base_url_env": "COMPANY_FILE_URL"}
+        secrets = MagicMock()
+        # The company's own store, which is what `resolve_secret` reads first.
+        secrets.get_secret.side_effect = lambda _c, name, default=None: {
+            "COMPANY_FILE_KEY": "from-the-company-file",
+            "COMPANY_FILE_URL": "https://from-the-company-file/v1",
+            "ROUTE_KEY": "customer-shadowed-this",
+        }.get(name, default)
+        proxy = LLMProxy.__new__(LLMProxy)
+        proxy.configuration_service = config
+        proxy.secret_provider = secrets
+        return proxy, patch.dict(os.environ, env or {}, clear=True)
+
+    def test_the_entrys_endpoint_wins_over_the_company_file(self):
+        proxy, _ = self._proxy()
+
+        url = proxy._get_base_url_from_config(
+            "acme", "openai_compatible",
+            model_config={"route_config": {"base_url": "https://the-entry/v1"}},
+        )
+
+        assert url == "https://the-entry/v1"
+
+    def test_without_a_route_the_company_file_still_answers(self):
+        # Every entry in the catalogue today has no route, and must keep working.
+        proxy, _ = self._proxy()
+
+        url = proxy._get_base_url_from_config("acme", "openai_compatible", model_config={})
+
+        assert url == "https://from-the-company-file/v1"
+
+    def test_two_models_of_one_provider_can_sit_on_two_endpoints(self):
+        # The thing that was impossible. Asserted here because the caches are keyed
+        # by base_url, so different endpoints already mean different clients.
+        proxy, _ = self._proxy()
+
+        first = proxy._get_base_url_from_config(
+            "acme", "openai_compatible", model_config={"route_config": {"base_url": "https://a/v1"}})
+        second = proxy._get_base_url_from_config(
+            "acme", "openai_compatible", model_config={"route_config": {"base_url": "https://b/v1"}})
+
+        assert first != second
+
+    def test_the_routes_credential_comes_from_the_deployment_environment(self):
+        proxy, env = self._proxy({"ROUTE_KEY": "from-the-deployment"})
+
+        with env:
+            key = proxy._get_api_key_from_config("acme", "openai_compatible", route_api_key_env="ROUTE_KEY")
+
+        assert key == "from-the-deployment"
+
+    def test_a_customer_cannot_take_over_the_routes_credential(self):
+        """The decision this pins.
+
+        `resolve_secret` reads the company's own store before the environment, so a
+        customer that stored a secret named ROUTE_KEY would otherwise supply the
+        credential for an endpoint the operator runs and pays for — silently. A
+        customer that wants to pay with its own key has an explicit path:
+        `credential_owner = company` on its entitlement.
+        """
+        proxy, env = self._proxy({"ROUTE_KEY": "from-the-deployment"})
+
+        with env:
+            key = proxy._get_api_key_from_config("acme", "openai_compatible", route_api_key_env="ROUTE_KEY")
+
+        assert key == "from-the-deployment"
+        assert key != "customer-shadowed-this"
+
+    def test_a_variable_the_deployment_does_not_define_says_so(self):
+        # Naming a variable is not setting it, and the message has to name which.
+        from iatoolkit.common.exceptions import IAToolkitException
+
+        proxy, env = self._proxy({})
+
+        with env:
+            with pytest.raises(IAToolkitException, match="MISSING_VAR"):
+                proxy._get_api_key_from_config(
+                    "acme", "openai_compatible", route_api_key_env="MISSING_VAR", required=True
+                )
+
+    def test_the_customers_own_key_still_outranks_the_route(self):
+        # Whose key pays is the customer's decision; where it goes is the
+        # operator's. They are different questions and both are honoured.
+        proxy, env = self._proxy({"ROUTE_KEY": "from-the-deployment"})
+
+        with env:
+            key = proxy._get_api_key_from_config(
+                "acme", "openai_compatible",
+                secret_ref="COMPANY_FILE_KEY", route_api_key_env="ROUTE_KEY",
+            )
+
+        assert key == "from-the-company-file"

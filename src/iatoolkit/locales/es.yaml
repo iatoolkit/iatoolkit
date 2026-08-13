@@ -2207,6 +2207,11 @@ ui:
     form_secret_value: "Tu key del proveedor"
     secret_hint_new: "Se guarda cifrada para este proveedor. Tu proveedor te factura directamente."
     secret_hint_stored: "Ya hay una key guardada para este proveedor. Pegá otra para reemplazarla."
+    form_route_base_url: "Endpoint"
+    form_route_base_url_hint: "La URL completa a la que van las requests, ej. https://tu-host/v1"
+    form_route_api_key_env: "Variable de la credencial"
+    form_route_api_key_env_hint: "El NOMBRE de una variable de entorno de este deployment, ej. OSS_LLM_API_KEY. Nunca la key."
+    route_required: "Este proveedor necesita un endpoint y el nombre de la variable con su credencial."
   secrets:
     title: "Secrets"
     subtitle: "Administra los secrets de la empresa usados por integraciones y servicios."

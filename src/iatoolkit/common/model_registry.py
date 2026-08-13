@@ -46,6 +46,58 @@ SERVABLE_PROVIDERS: tuple[str, ...] = (
 )
 
 
+@dataclass(frozen=True)
+class RouteParam:
+    """One thing a provider needs to know before it can be reached.
+
+    `is_env_name` marks a value that is the *name* of a deployment environment
+    variable, not the secret itself: what gets stored is `OSS_LLM_API_KEY`, and the
+    value behind it is read at request time and never persisted here.
+    """
+
+    name: str
+    required: bool = True
+    is_env_name: bool = False
+    #: A regular expression the value must match, or None for "any non-empty".
+    pattern: str | None = None
+
+
+#: What each provider needs in order to be reached, keyed by provider.
+#:
+#: The single declaration behind three things: what a catalogue entry may store,
+#: what refuses to publish without it, and which fields a form draws. Kept beside
+#: SERVABLE_PROVIDERS because the two answer halves of the same question — which
+#: providers exist, and what each one needs.
+#:
+#: Most providers need nothing: their SDK knows its own endpoint, and the
+#: credential comes from the company's provider_api_keys mapping. The two that
+#: appear here are the ones whose endpoint is a decision.
+#:
+#: `openai_compatible` requires both, and that is the point of the whole feature:
+#: an entry that carries its own endpoint and credential is reachable on its own,
+#: instead of depending on a block in every company's own configuration file. Two
+#: self-hosted models on two different endpoints stop being impossible.
+#:
+#: `openrouter` allows both and requires neither: there is one OpenRouter for
+#: everyone and its base URL has a working default, so an entry only overrides
+#: when it has a reason to.
+PROVIDER_ROUTE_PARAMS: dict[str, tuple[RouteParam, ...]] = {
+    "openai_compatible": (
+        RouteParam("base_url", required=True, pattern=r"^https?://\S+$"),
+        RouteParam("api_key_env", required=True, is_env_name=True, pattern=r"^[A-Z][A-Z0-9_]*$"),
+    ),
+    "openrouter": (
+        RouteParam("base_url", required=False, pattern=r"^https?://\S+$"),
+        RouteParam("api_key_env", required=False, is_env_name=True, pattern=r"^[A-Z][A-Z0-9_]*$"),
+    ),
+}
+
+
+def route_params_for(provider: str | None) -> tuple[RouteParam, ...]:
+    """What this provider needs. Empty for the ones that need nothing."""
+    return PROVIDER_ROUTE_PARAMS.get(str(provider or "").strip().lower(), ())
+
+
 @singleton
 class ModelRegistry:
     """

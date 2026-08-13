@@ -2201,6 +2201,11 @@ ui:
     form_secret_value: "Your provider key"
     secret_hint_new: "Stored encrypted for this provider. Your provider bills you directly."
     secret_hint_stored: "A key is already stored for this provider. Paste one to replace it."
+    form_route_base_url: "Endpoint"
+    form_route_base_url_hint: "The full URL requests go to, e.g. https://your-host/v1"
+    form_route_api_key_env: "Credential variable"
+    form_route_api_key_env_hint: "The NAME of an environment variable in this deployment, e.g. OSS_LLM_API_KEY. Never the key itself."
+    route_required: "This provider needs an endpoint and the name of its credential variable."
   secrets:
     title: "Secrets"
     subtitle: "Manage company secrets used by integrations and services."
