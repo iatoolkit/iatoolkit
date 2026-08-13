@@ -1405,7 +1405,8 @@ class ConfigurationService:
         telemetry_cfg = llm_config.get("telemetry")
         return dict(telemetry_cfg) if isinstance(telemetry_cfg, dict) else {}
 
-    def get_llm_request_defaults(self, company_short_name: str) -> dict:
+    def get_llm_request_defaults(self, company_short_name: str, model_key: str | None = None) -> dict:
+        _ = model_key
         self._ensure_config_loaded(company_short_name)
         llm_config = self._loaded_configs[company_short_name].get("llm") or {}
         defaults = {"text": {}, "reasoning": {}}

@@ -360,7 +360,9 @@ class LLMProxy:
         if explicit_reasoning_effort:
             return effective_kwargs
 
-        request_defaults = self.configuration_service.get_llm_request_defaults(company_short_name) or {}
+        request_defaults = self.configuration_service.get_llm_request_defaults(
+            company_short_name, model
+        ) or {}
         default_reasoning = dict(request_defaults.get("reasoning") or {})
         default_reasoning_effort = str(default_reasoning.get("effort") or "").strip().lower()
         if not default_reasoning_effort:

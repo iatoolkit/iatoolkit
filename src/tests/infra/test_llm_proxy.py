@@ -273,6 +273,9 @@ class TestLLMProxy:
         self.mock_deepseek_adapter_instance.create_response.assert_called_once()
         adapter_kwargs = self.mock_deepseek_adapter_instance.create_response.call_args.kwargs
         assert adapter_kwargs["reasoning"] == {"effort": "high"}
+        self.config_service_mock.get_llm_request_defaults.assert_called_with(
+            self.company_short_name, "deepseek-v4-pro"
+        )
 
     def test_create_response_wraps_client_when_telemetry_request_is_enabled(self):
         self.model_registry_mock.get_provider.return_value = "openai"

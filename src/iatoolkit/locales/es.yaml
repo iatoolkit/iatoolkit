@@ -2178,6 +2178,7 @@ ui:
     col_cost: "Costo"
     col_key: "API key"
     col_enabled: "Habilitado"
+    col_reasoning: "Razonamiento"
     cost_metered: "Con medición"
     cost_not_billable: "Sin costo"
     cost_own_key: "Lo factura tu proveedor"

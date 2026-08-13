@@ -1304,6 +1304,12 @@ class CompanyModelEntitlement(Base):
 
     #: The model this company's requests use when none is specified.
     is_default = Column(Boolean, nullable=False, default=False)
+
+    #: Default reasoning effort for this company when this model answers. This
+    #: is deliberately not on the shared catalogue entry: one company may want a
+    #: cheap default while another spends more reasoning on the same route.
+    reasoning_effort = Column(String(16), nullable=True)
+
     is_active = Column(Boolean, nullable=False, default=True, index=True)
 
     created_at = Column(DateTime, default=datetime.now)
