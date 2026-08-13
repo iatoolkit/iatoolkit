@@ -33,6 +33,7 @@ from iatoolkit import current_iatoolkit
 
 
 class ToolService:
+    TOOL_NAME_MAX_LENGTH = 255
     HTTP_ALLOWED_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
     HTTP_ALLOWED_BODY_MODES = {"none", "json_map", "full_args"}
     HTTP_ALLOWED_AUTH_TYPES = {"none", "bearer", "api_key_header", "api_key_query", "basic"}
@@ -137,6 +138,34 @@ class ToolService:
             from iatoolkit.services.tenant_wiki_service import TenantWikiService
             self._knowledge_wiki_service = current_iatoolkit().get_injector().get(TenantWikiService)
         return self._knowledge_wiki_service
+
+    @classmethod
+    def normalize_tool_name(cls, tool_name: str | None) -> str:
+        candidate = str(tool_name or "").strip()
+        if not candidate:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.MISSING_PARAMETER,
+                "Tool name is required",
+            )
+
+        normalized = unicodedata.normalize("NFKD", candidate).encode("ascii", "ignore").decode("ascii")
+        normalized = normalized.lower()
+        normalized = re.sub(r"[^a-z0-9]+", "_", normalized)
+        normalized = re.sub(r"_+", "_", normalized).strip("_")
+
+        if not normalized:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "Tool name must contain letters or numbers",
+            )
+
+        if len(normalized) > cls.TOOL_NAME_MAX_LENGTH:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                f"Tool name must be {cls.TOOL_NAME_MAX_LENGTH} characters or fewer",
+            )
+
+        return normalized
 
     @classmethod
     def register_tool_lifecycle_hook(cls, hook):
@@ -1146,8 +1175,10 @@ class ToolService:
         if not company:
             raise IAToolkitException(IAToolkitException.ErrorType.INVALID_NAME, "Company not found")
 
+        normalized_name = self.normalize_tool_name(tool_data.get('key') or tool_data.get('name'))
+
         # Basic Validation
-        if not tool_data.get('name') or not tool_data.get('description'):
+        if not tool_data.get('description'):
             raise IAToolkitException(IAToolkitException.ErrorType.MISSING_PARAMETER, "Name and Description are required")
 
         tool_type = tool_data.get('tool_type', Tool.TYPE_NATIVE)
@@ -1157,7 +1188,7 @@ class ToolService:
 
         new_tool = Tool(
             company_id=company.id,
-            name=tool_data['name'],
+            name=normalized_name,
             description=tool_data['description'],
             parameters=tool_data.get('parameters', {"type": "object", "properties": {}}),
             execution_config=execution_config,
@@ -1168,7 +1199,7 @@ class ToolService:
         )
 
         # Check for existing name collision within the company
-        existing = self.llm_query_repo.get_tool_definition(company, new_tool.name)
+        existing = self.llm_query_repo.get_tool_by_name(company, new_tool.name)
         if existing:
             raise IAToolkitException(IAToolkitException.ErrorType.DUPLICATE_ENTRY, f"Tool '{new_tool.name}' already exists.")
 
@@ -1204,6 +1235,16 @@ class ToolService:
         if tool.source == Tool.SOURCE_PACK:
             raise IAToolkitException(IAToolkitException.ErrorType.INVALID_OPERATION, "Cannot modify PACK tools")
 
+        normalized_name = None
+        if 'name' in tool_data or 'key' in tool_data:
+            normalized_name = self.normalize_tool_name(tool_data.get('key') or tool_data.get('name'))
+            existing = self.llm_query_repo.get_tool_by_name(company, normalized_name)
+            if existing and existing.id != tool.id:
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.DUPLICATE_ENTRY,
+                    f"Tool '{normalized_name}' already exists.",
+                )
+
         effective_tool_type = tool_data.get('tool_type', tool.tool_type)
         effective_execution_config = tool_data.get('execution_config', tool.execution_config)
         existing_output_contract = clone_output_contract(tool.output_contract) if isinstance(tool.output_contract, dict) else None
@@ -1212,8 +1253,8 @@ class ToolService:
                                      effective_output_contract, company=company)
 
         # Update fields
-        if 'name' in tool_data:
-            tool.name = tool_data['name']
+        if normalized_name is not None:
+            tool.name = normalized_name
         if 'description' in tool_data:
             tool.description = tool_data['description']
         if 'parameters' in tool_data:

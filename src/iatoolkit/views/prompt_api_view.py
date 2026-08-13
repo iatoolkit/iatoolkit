@@ -9,6 +9,7 @@ from iatoolkit.services.prompt_service import PromptService
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.services.auth_service import AuthService
+from iatoolkit.common.exceptions import IAToolkitException
 from injector import inject
 import logging
 
@@ -96,17 +97,36 @@ class PromptApiView(MethodView):
             if not auth_result.get("success"):
                 return jsonify(auth_result), 401
 
-            data = request.get_json()
-            # If prompt_name is not in URL, check body
-            target_name = prompt_name if prompt_name else data.get('name')
+            data = request.get_json() or {}
+
+            if prompt_name:
+                target_name = prompt_name
+            else:
+                raw_target_name = data.get('key') or data.get('name')
+                target_name = PromptService.normalize_prompt_name(raw_target_name)
 
             if not target_name:
                 return jsonify({"status": "error", "message": "Prompt name is required"}), 400
+
+            if not prompt_name:
+                company = self.profile_service.get_company_by_short_name(company_short_name)
+                if not company:
+                    return jsonify({"status": "error", "message": "Company not found"}), 404
+                if self.llm_query_repo.get_prompt_by_name(company, target_name):
+                    return jsonify({"status": "error", "message": f"Prompt '{target_name}' already exists"}), 409
 
             # Reuse save_prompt logic which handles create/update
             self.prompt_service.save_prompt(company_short_name, target_name, data)
 
             return jsonify({"status": "success"})
+        except IAToolkitException as e:
+            if e.error_type in {
+                IAToolkitException.ErrorType.MISSING_PARAMETER,
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+            }:
+                return jsonify({"status": "error", "message": str(e)}), 400
+            logging.exception(f"Error creating prompt: {e}")
+            return jsonify({"status": "error", "message": str(e)}), 500
         except Exception as e:
             logging.exception(f"Error creating prompt: {e}")
             return jsonify({"status": "error", "message": str(e)}), 500

@@ -66,6 +66,12 @@ class LLMQueryRepo:
             is_active=True
         ).first()
 
+    def get_tool_by_name(self, company: Company, tool_name: str) -> Tool | None:
+        return self.session.query(Tool).filter_by(
+            company_id=company.id,
+            name=tool_name,
+        ).first()
+
     def get_system_tool(self, tool_name: str) -> Tool | None:
         return self.session.query(Tool).filter_by(
             tool_type=Tool.TYPE_SYSTEM,

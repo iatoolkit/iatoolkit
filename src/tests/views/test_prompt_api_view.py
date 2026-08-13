@@ -33,10 +33,13 @@ class TestPromptView:
 
         self.company_short_name = 'test_company'
         self.base_url = f'/{self.company_short_name}/api/prompts'
+        self.mock_company = MagicMock()
 
         # Default to successful authentication
         self.auth_service.verify_for_company.return_value = {'success': True,
                                                  'user_identifier': 'test_user_id',}
+        self.profile_service.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_prompt_by_name.return_value = None
 
         # Register the view with mocked dependencies
         prompt_view = PromptApiView.as_view("prompt",
@@ -102,6 +105,45 @@ class TestPromptView:
         self.prompt_service.save_prompt.assert_called_once_with(
             self.company_short_name, "new_prompt", payload
         )
+
+    def test_post_create_prompt_normalizes_name_when_key_is_missing(self):
+        payload = {"name": "Customer Support", "description": "desc"}
+
+        response = self.client.post(self.base_url, json=payload)
+
+        assert response.status_code == 200
+        self.prompt_service.save_prompt.assert_called_once_with(
+            self.company_short_name, "customer_support", payload
+        )
+
+    def test_post_create_prompt_prefers_explicit_key(self):
+        payload = {"name": "Customer Support", "key": "customer_support_v2", "description": "desc"}
+
+        response = self.client.post(self.base_url, json=payload)
+
+        assert response.status_code == 200
+        self.prompt_service.save_prompt.assert_called_once_with(
+            self.company_short_name, "customer_support_v2", payload
+        )
+
+    def test_post_create_prompt_rejects_duplicate_key(self):
+        payload = {"name": "Customer Support", "key": "customer_support", "description": "desc"}
+        self.llm_query_repo.get_prompt_by_name.return_value = MagicMock()
+
+        response = self.client.post(self.base_url, json=payload)
+
+        assert response.status_code == 409
+        assert response.json["status"] == "error"
+        self.prompt_service.save_prompt.assert_not_called()
+
+    def test_post_create_prompt_rejects_invalid_normalized_name(self):
+        payload = {"name": "!!!", "description": "desc"}
+
+        response = self.client.post(self.base_url, json=payload)
+
+        assert response.status_code == 400
+        assert response.json["status"] == "error"
+        self.prompt_service.save_prompt.assert_not_called()
 
     # --- DELETE Tests ---
     def test_delete_prompt(self):

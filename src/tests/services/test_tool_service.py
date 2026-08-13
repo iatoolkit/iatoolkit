@@ -35,6 +35,7 @@ class TestToolService:
         # Sin bridges registrados la validación se auto-desactiva (regla
         # pre-registry); los tests que la ejercen la pueblan explícitamente.
         self.mock_bridge_repo.get_by_company.return_value = []
+        self.mock_llm_query_repo.get_tool_by_name.return_value = None
 
         ToolService.clear_tool_lifecycle_hook()
 
@@ -1041,16 +1042,43 @@ class TestToolService:
 
     def test_create_tool_duplicate_error(self):
         """Test creating a duplicate tool throws exception."""
-        self.mock_llm_query_repo.get_tool_definition.return_value = MagicMock() # Exists
+        self.mock_llm_query_repo.get_tool_by_name.return_value = MagicMock() # Exists
 
         with pytest.raises(IAToolkitException) as exc:
             self.service.create_tool(self.company_short_name, {"name": "dup", "description": "d"})
 
         assert exc.value.error_type == IAToolkitException.ErrorType.DUPLICATE_ENTRY
 
+    def test_create_tool_normalizes_name_from_key_alias(self):
+        self.mock_llm_query_repo.add_tool.side_effect = lambda tool: tool
+
+        result = self.service.create_tool(
+            self.company_short_name,
+            {
+                "name": "Tax Calculator",
+                "key": "calculate tax",
+                "description": "Calculates tax",
+            }
+        )
+
+        assert result["name"] == "calculate_tax"
+
+    def test_create_tool_rejects_invalid_normalized_name(self):
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.create_tool(
+                self.company_short_name,
+                {
+                    "name": "!!!",
+                    "description": "Invalid",
+                }
+            )
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_PARAMETER
+
     def test_update_tool_success(self):
         """Test updating a tool."""
         existing_tool = MagicMock(spec=Tool)
+        existing_tool.id = 1
         existing_tool.tool_type = Tool.TYPE_NATIVE
         existing_tool.execution_config = None
         existing_tool.to_dict.return_value = {}
@@ -1061,6 +1089,25 @@ class TestToolService:
 
         assert existing_tool.description == "new desc"
         self.mock_llm_query_repo.commit.assert_called_once()
+
+    def test_update_tool_rejects_duplicate_name_collision(self):
+        existing_tool = MagicMock(spec=Tool)
+        existing_tool.id = 1
+        existing_tool.tool_type = Tool.TYPE_NATIVE
+        existing_tool.execution_config = None
+        self.mock_llm_query_repo.get_tool_by_id.return_value = existing_tool
+        duplicate_tool = MagicMock(spec=Tool)
+        duplicate_tool.id = 2
+        self.mock_llm_query_repo.get_tool_by_name.return_value = duplicate_tool
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.update_tool(
+                self.company_short_name,
+                1,
+                {"name": "Existing Tool"}
+            )
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.DUPLICATE_ENTRY
 
     def test_update_tool_switch_to_http_requires_execution_config(self):
         existing_tool = MagicMock(spec=Tool)

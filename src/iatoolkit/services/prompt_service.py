@@ -22,8 +22,11 @@ from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.system_prompt_catalog import build_system_prompt_payload
 from iatoolkit.services.structured_output_service import StructuredOutputService
 import logging
+import re
+import unicodedata
 
 class PromptService:
+    PROMPT_NAME_MAX_LENGTH = 255
     OUTPUT_SCHEMA_MODE_BEST_EFFORT = "best_effort"
     OUTPUT_SCHEMA_MODE_STRICT = "strict"
     OUTPUT_RESPONSE_MODE_CHAT = "chat_compatible"
@@ -75,6 +78,34 @@ class PromptService:
         self.i18n_service = i18n_service
         self.sql_service = sql_service
         self.configuration_service = configuration_service
+
+    @classmethod
+    def normalize_prompt_name(cls, prompt_name: str | None) -> str:
+        candidate = str(prompt_name or "").strip()
+        if not candidate:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.MISSING_PARAMETER,
+                "Prompt name is required",
+            )
+
+        normalized = unicodedata.normalize("NFKD", candidate).encode("ascii", "ignore").decode("ascii")
+        normalized = normalized.lower()
+        normalized = re.sub(r"[^a-z0-9]+", "_", normalized)
+        normalized = re.sub(r"_+", "_", normalized).strip("_")
+
+        if not normalized:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "Prompt name must contain letters or numbers",
+            )
+
+        if len(normalized) > cls.PROMPT_NAME_MAX_LENGTH:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                f"Prompt name must be {cls.PROMPT_NAME_MAX_LENGTH} characters or fewer",
+            )
+
+        return normalized
 
     def _normalize_execution_mode(
         self,
