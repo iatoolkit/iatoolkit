@@ -34,6 +34,22 @@ class EmbeddingClientWrapper:
         """Generates and returns an embedding for the given text."""
         raise NotImplementedError
 
+    def get_embeddings(self, texts: list[str], suppress_error_logging: bool = False) -> list[list[float]]:
+        """Embeds several texts, returning one vector per input in the same order.
+
+        The default walks the single-text path so every provider works without
+        changes; wrappers whose backend accepts a list override this with one
+        request per batch. Callers must not assume a single round trip.
+        """
+        return [
+            self.get_embedding(text, suppress_error_logging=suppress_error_logging)
+            for text in texts
+        ]
+
+    def supports_batching(self) -> bool:
+        """Whether get_embeddings issues one request per batch instead of per text."""
+        return False
+
     def get_image_embedding(self,
                             presigned_url: Optional[str] = None,
                             image_bytes: Optional[bytes] = None
@@ -70,6 +86,39 @@ class HuggingFaceClientWrapper(EmbeddingClientWrapper):
             suppress_error_logging=suppress_error_logging,
         )
         return result["embedding"]
+
+    def supports_batching(self) -> bool:
+        # Opt-in per tool: an endpoint still running a handler that predates
+        # inputs.texts would reject the batch payload, so this stays off until the
+        # deployment is confirmed via `supports_batch_embedding: true`.
+        return bool(self._tool_config().get("supports_batch_embedding"))
+
+    def _tool_config(self) -> dict:
+        try:
+            return self.inference_service._get_tool_config(self.company_short_name, self.tool_name) or {}
+        except Exception:
+            logging.debug("Could not read inference tool config for batching.", exc_info=True)
+            return {}
+
+    def get_embeddings(self, texts: list[str], suppress_error_logging: bool = False) -> list[list[float]]:
+        if not self.supports_batching():
+            return super().get_embeddings(texts, suppress_error_logging=suppress_error_logging)
+
+        result = self.inference_service.predict(
+            self.company_short_name,
+            self.tool_name,
+            {"mode": "text", "texts": list(texts)},
+            suppress_error_logging=suppress_error_logging,
+        )
+        embeddings = result.get("embeddings")
+        if not isinstance(embeddings, list) or len(embeddings) != len(texts):
+            # A silent length mismatch would pair each text with the wrong vector,
+            # which no downstream check would catch. Fail instead.
+            raise ValueError(
+                f"Batch embedding returned {len(embeddings) if isinstance(embeddings, list) else 'no'} "
+                f"vectors for {len(texts)} inputs."
+            )
+        return embeddings
 
     def get_image_embedding(self,
                             presigned_url: Optional[str] = None,
@@ -129,6 +178,24 @@ class OpenAIClientWrapper(EmbeddingClientWrapper):
         response = self.client.embeddings.create(**kwargs)
         return response.data[0].embedding
 
+    def supports_batching(self) -> bool:
+        return True
+
+    def get_embeddings(self, texts: list[str], suppress_error_logging: bool = False) -> list[list[float]]:
+        kwargs = {
+            "input": [text.replace("\n", " ") for text in texts],
+            "model": self.model,
+        }
+        if self.dimensions is not None:
+            kwargs["dimensions"] = self.dimensions
+        response = self.client.embeddings.create(**kwargs)
+        # The API documents input order, but pairing the wrong vector to a text is
+        # invisible downstream, so sort by index rather than trusting arrival order.
+        ordered = sorted(response.data, key=lambda item: item.index)
+        if len(ordered) != len(texts):
+            raise ValueError(f"Batch embedding returned {len(ordered)} vectors for {len(texts)} inputs.")
+        return [item.embedding for item in ordered]
+
 class CustomClassClientWrapper(EmbeddingClientWrapper):
     """
     Adapter for custom embedding classes defined by the user.
@@ -150,6 +217,20 @@ class CustomClassClientWrapper(EmbeddingClientWrapper):
         if isinstance(embedding, list) and len(embedding) > 0 and isinstance(embedding[0], list):
             return embedding[0]
         return embedding
+
+    def supports_batching(self) -> bool:
+        return hasattr(self.client, "get_embeddings")
+
+    def get_embeddings(self, texts: list[str], suppress_error_logging: bool = False) -> list[list[float]]:
+        if not self.supports_batching():
+            return super().get_embeddings(texts, suppress_error_logging=suppress_error_logging)
+        embeddings = self.client.get_embeddings(list(texts))
+        if not isinstance(embeddings, list) or len(embeddings) != len(texts):
+            raise ValueError(
+                f"Batch embedding returned {len(embeddings) if isinstance(embeddings, list) else 'no'} "
+                f"vectors for {len(texts)} inputs."
+            )
+        return embeddings
 
     def get_image_embedding(self,
                             presigned_url: Optional[str] = None,
@@ -503,6 +584,80 @@ class EmbeddingService:
             if not suppress_error_logging:
                 logging.error(f"Error generating embedding for text: {text[:80]}... - {e}")
             raise
+
+    # Batch defaults: 32 texts is a good round trip for short records, and the
+    # character budget guards against a few long findings blowing the payload.
+    DEFAULT_EMBED_BATCH_SIZE = 32
+    DEFAULT_EMBED_BATCH_MAX_CHARS = 40000
+
+    def embed_texts(
+            self,
+            company_short_name: str,
+            texts: list[str],
+            model_type: str = 'text',
+            batch_size: Optional[int] = None,
+            max_chars_per_batch: Optional[int] = None,
+            suppress_error_logging: bool = False,
+    ) -> list[list[float]]:
+        """Embed many texts, returning one vector per input in the same order.
+
+        Resolves the company and the client once instead of once per text, and
+        sends batches when the provider supports them. If a batch fails, its
+        texts are retried one by one so a single bad input cannot lose the rest.
+        """
+        if not texts:
+            return []
+
+        company = self.profile_repo.get_company_by_short_name(company_short_name)
+        if not company:
+            raise ValueError(self.i18n_service.t('errors.company_not_found', company_short_name=company_short_name))
+        client_wrapper = self.client_factory.get_client(company_short_name, model_type)
+
+        size = int(batch_size or self.DEFAULT_EMBED_BATCH_SIZE)
+        char_budget = int(max_chars_per_batch or self.DEFAULT_EMBED_BATCH_MAX_CHARS)
+        embeddings: list[list[float]] = []
+        for batch in self._chunk_texts(texts, size=size, char_budget=char_budget):
+            embeddings.extend(
+                self._embed_batch(
+                    client_wrapper,
+                    batch,
+                    suppress_error_logging=suppress_error_logging,
+                )
+            )
+        if len(embeddings) != len(texts):
+            raise ValueError(f"Embedded {len(embeddings)} vectors for {len(texts)} texts.")
+        return embeddings
+
+    def _embed_batch(self, client_wrapper, batch: list[str], *, suppress_error_logging: bool) -> list[list[float]]:
+        try:
+            return client_wrapper.get_embeddings(batch, suppress_error_logging=suppress_error_logging)
+        except Exception as error:
+            if len(batch) == 1 or not client_wrapper.supports_batching():
+                raise
+            logging.warning(
+                "Batch embedding of %s texts failed (%s); retrying them individually.",
+                len(batch),
+                error,
+            )
+            return [
+                client_wrapper.get_embedding(text, suppress_error_logging=suppress_error_logging)
+                for text in batch
+            ]
+
+    @staticmethod
+    def _chunk_texts(texts: list[str], *, size: int, char_budget: int):
+        """Split by count and by characters, so a few long texts do not oversize a batch."""
+        batch: list[str] = []
+        batch_chars = 0
+        for text in texts:
+            length = len(text or "")
+            if batch and (len(batch) >= size or batch_chars + length > char_budget):
+                yield batch
+                batch, batch_chars = [], 0
+            batch.append(text)
+            batch_chars += length
+        if batch:
+            yield batch
 
     def embed_image(self, company_short_name: str,
                     presigned_url: Optional[str] = None,

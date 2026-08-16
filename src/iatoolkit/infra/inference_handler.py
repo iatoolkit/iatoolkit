@@ -192,12 +192,29 @@ class EndpointHandler:
         return {"embedding": vec}
 
     def _handle_text_embedding(self, inputs: dict) -> dict:
-        text = inputs.get("text")
-        if not isinstance(text, str) or not text.strip():
-            raise ValueError("Expected inputs.text for text embedding generation.")
+        """Embed one text or a batch, in the order received.
+
+        ``inputs.text`` (str) returns ``{"embedding": [...]}`` and ``inputs.texts``
+        (list) returns ``{"embeddings": [[...], ...]}``. Both shapes are answered so
+        an endpoint running this handler stays compatible with callers that predate
+        batching. The pooling below was already batch-shaped — it computed (B, D) and
+        returned row 0 — so the batch path is the same maths without the slice.
+        """
+        texts = inputs.get("texts")
+        batched = texts is not None
+        if batched:
+            if not isinstance(texts, list) or not texts:
+                raise ValueError("Expected inputs.texts to be a non-empty list of strings.")
+            if any(not isinstance(item, str) or not item.strip() for item in texts):
+                raise ValueError("Every entry in inputs.texts must be a non-empty string.")
+        else:
+            text = inputs.get("text")
+            if not isinstance(text, str) or not text.strip():
+                raise ValueError("Expected inputs.text for text embedding generation.")
+            texts = [text]
 
         encoded_input = self.processor_instance(
-            text,
+            texts,
             padding=True,
             truncation=True,
             return_tensors='pt'
@@ -213,7 +230,10 @@ class EndpointHandler:
             min=1e-9
         )
         sentence_embeddings = torch.nn.functional.normalize(sentence_embeddings, p=2, dim=1)
-        return {"embedding": sentence_embeddings[0].cpu().tolist()}
+        vectors = sentence_embeddings.cpu().tolist()
+        if batched:
+            return {"embeddings": vectors}
+        return {"embedding": vectors[0]}
 
     # Backward-compatible alias: existing tests/callers may still refer to _handle_minilm
     def _handle_minilm(self, inputs: dict) -> dict:

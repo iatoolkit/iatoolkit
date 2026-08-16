@@ -36,6 +36,23 @@ class JinaEmbeddingsClient:
         response = self._post(payload)
         return response["data"][0]["embedding"]
 
+    def get_embeddings(self, texts: List[str]) -> List[List[float]]:
+        """Embed a batch in one request. The API already took a list; this uses it."""
+        payload = {
+            "model": self.model,
+            "normalized": self.normalized,
+            "embedding_type": "float",
+            "input": list(texts),
+        }
+        response = self._post(payload)
+        data = response["data"]
+        if len(data) != len(texts):
+            raise ValueError(f"Jina returned {len(data)} embeddings for {len(texts)} inputs.")
+        # Sort by the API's own index rather than trusting arrival order: a silent
+        # reordering would attach each vector to the wrong text.
+        ordered = sorted(data, key=lambda item: item.get("index", 0))
+        return [item["embedding"] for item in ordered]
+
     def get_image_embedding(self,
                             presigned_url: Optional[str] = None,
                             image_bytes: Optional[bytes] = None

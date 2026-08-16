@@ -5,6 +5,7 @@ import sys
 import types
 from unittest.mock import MagicMock
 
+import pytest
 import torch
 from PIL import Image
 
@@ -67,3 +68,47 @@ def test_clip_handler_converts_grayscale_base64_image_to_rgb_before_processing(m
         sys.modules.pop("iatoolkit.infra.inference_handler", None)
         if previous_module is not None:
             sys.modules["iatoolkit.infra.inference_handler"] = previous_module
+
+
+def test_text_embedding_handler_answers_both_single_and_batch_shapes(monkeypatch):
+    """The endpoint must keep serving callers that predate inputs.texts."""
+    previous_module = sys.modules.get("iatoolkit.infra.inference_handler")
+    try:
+        EndpointHandler = _load_endpoint_handler(monkeypatch)
+
+        def _tokenizer(texts, padding=True, truncation=True, return_tensors="pt"):
+            count = len(texts) if isinstance(texts, list) else 1
+            return ProcessorInputs(
+                input_ids=torch.ones((count, 3), dtype=torch.long),
+                attention_mask=torch.ones((count, 3), dtype=torch.long),
+            )
+
+        def _model(**kwargs):
+            rows = kwargs["input_ids"].shape[0]
+            return (torch.arange(rows * 3 * 4, dtype=torch.float).reshape(rows, 3, 4),)
+
+        handler = EndpointHandler.__new__(EndpointHandler)
+        handler.device = "cpu"
+        handler.processor_instance = _tokenizer
+        handler.model_instance = _model
+
+        single = handler._handle_text_embedding({"text": "hola"})
+        assert set(single) == {"embedding"}
+        assert len(single["embedding"]) == 4
+
+        batch = handler._handle_text_embedding({"texts": ["hola", "chau", "que tal"]})
+        assert set(batch) == {"embeddings"}
+        assert len(batch["embeddings"]) == 3
+        assert len(batch["embeddings"][0]) == 4
+
+        # A one-element batch must resolve to the same vector as the single path.
+        one = handler._handle_text_embedding({"texts": ["hola"]})
+        assert one["embeddings"][0] == pytest.approx(single["embedding"])
+
+        with pytest.raises(ValueError, match="non-empty list"):
+            handler._handle_text_embedding({"texts": []})
+    finally:
+        if previous_module is not None:
+            sys.modules["iatoolkit.infra.inference_handler"] = previous_module
+        else:
+            sys.modules.pop("iatoolkit.infra.inference_handler", None)

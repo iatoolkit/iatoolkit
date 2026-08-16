@@ -37,5 +37,21 @@ class InferenceEmbeddingsClient:
         except Exception as e:
             raise RuntimeError(f"Error generando embedding con InferenceClient: {e}")
 
+    def get_embeddings(self, texts: List[str]) -> List[List[float]]:
+        """Embed a batch in one call. feature_extraction accepts a list and
+        returns one row per input; the single-text path already handled that shape."""
+        try:
+            embeddings = self.client.feature_extraction(list(texts))
+            if hasattr(embeddings, "tolist"):
+                embeddings = embeddings.tolist()
+            if not isinstance(embeddings, list) or len(embeddings) != len(texts):
+                raise RuntimeError(
+                    f"feature_extraction returned {len(embeddings) if isinstance(embeddings, list) else 'no'} "
+                    f"rows for {len(texts)} inputs."
+                )
+            return embeddings
+        except Exception as e:
+            raise RuntimeError(f"Error generando embeddings en lote con InferenceClient: {e}")
+
     def get_image_embedding(self, presigned_url: Optional[str] = None, image_bytes: Optional[bytes] = None) -> List[float]:
         raise NotImplementedError("Image embedding not implemented for this client.")
