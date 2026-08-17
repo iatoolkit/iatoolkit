@@ -11,9 +11,41 @@ readme = "readme.md"
 license = "MIT"
 authors = [{ name = "Fernando Libedinsky" }]
 
+# Capabilities that carry a heavy dependency and that most deployments never
+# turn on. Each of these was already being installed by hand into whatever
+# environment happened to need it, which is why a clean install could not run
+# the whole suite: nothing declared them, so nothing could install them on
+# purpose. Declared here, `pip install iatoolkit[ocr]` is a decision instead of
+# a memory.
 [project.optional-dependencies]
+# Parsing a document with the Docling pipeline rather than the basic provider.
 docling = [
     "docling==2.72.0",
+]
+# Reading a scanned PDF. This extra is NOT enough to do OCR: pytesseract only
+# shells out to the tesseract binary, which pip cannot install. All three of
+# these have to be true, and `_get_tesseract_status()` checks them in order:
+#
+#   1. TESSERACT_ENABLED=true      — off by default, so this extra alone
+#                                    changes nothing at runtime
+#   2. this extra installed        — the only gate pip covers
+#   3. apt-get install tesseract-ocr tesseract-ocr-spa
+#                                  — the binary, and the Spanish data pack,
+#                                    because the call is image_to_string(lang="spa")
+#
+# Render's native Python runtime ships neither of the two system packages.
+# Installed in CI because the two OCR assertions in test_document_service.py
+# fake gates 1 and 3 but import pytesseract for real.
+ocr = [
+    "pytesseract==0.3.13",
+]
+# Running a model locally in `infra/inference_handler`, which imports both of
+# these at module level. Nothing in the source loads that module today — only
+# its own test does, by importlib — so treat these pins as untested: no code
+# path has exercised diffusers at any version.
+inference = [
+    "torch==2.10.0",
+    "diffusers==0.39.0",
 ]
 
 [tool.setuptools]

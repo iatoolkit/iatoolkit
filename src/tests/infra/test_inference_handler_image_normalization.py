@@ -6,8 +6,17 @@ import types
 from unittest.mock import MagicMock
 
 import pytest
-import torch
 from PIL import Image
+
+# torch arrives with the optional `inference` extra, and most installs will not
+# have it: the only thing that needs it is `infra/inference_handler`, which
+# nothing in the source imports — this test reaches it by importlib.
+#
+# A bare `import torch` here was not a failing test, it was an uncollectable
+# module, and CI runs with --maxfail=1: two skippable tests aborted the entire
+# suite. Skipping is the same contract test_docling_service.py already uses for
+# its own extra.
+torch = pytest.importorskip("torch")
 
 
 class ProcessorInputs(dict):

@@ -21,7 +21,9 @@ google-auth-httplib2==0.2.0
 google-auth-oauthlib==1.2.1
 google-cloud-core==2.4.1
 google-cloud-storage==3.0.0
-google-crc32c==1.6.0
+# 1.6.0 publishes no cp313 wheel. This was the only pin in the whole
+# dependency set that Python 3.13 required moving.
+google-crc32c==1.8.0
 google-genai==1.57.0
 google-resumable-media==2.7.2
 googleapis-common-protos==1.66.0
