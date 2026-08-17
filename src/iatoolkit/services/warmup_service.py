@@ -92,7 +92,7 @@ class WarmupService:
                     model_type=model_type,
                     suppress_error_logging=True,
                 )
-                logging.info(
+                logging.debug(
                     "🔥 Startup warm-up woke endpoint='%s' via company='%s' profile=%s trigger='%s'.",
                     host, company_short_name, label, trigger,
                 )
