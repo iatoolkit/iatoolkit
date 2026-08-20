@@ -4,6 +4,7 @@
 # IAToolkit is open source software.
 
 import base64
+import json
 import logging
 import mimetypes
 import threading
@@ -592,11 +593,41 @@ class OpenAICompatibleChatAdapter:
             return dict(text["response_format"])
         return None
 
+    @staticmethod
+    def _safe_dump_response(response: Any) -> str:
+        try:
+            if hasattr(response, "model_dump"):
+                return json.dumps(response.model_dump(), default=str)
+        except Exception:
+            pass
+        return str(response)
+
+    @staticmethod
+    def _extract_error_reason(raw_error: Any) -> Optional[str]:
+        if not raw_error:
+            return None
+        if isinstance(raw_error, dict):
+            message = raw_error.get("message")
+        else:
+            message = getattr(raw_error, "message", None)
+        return str(message) if message else str(raw_error)
+
     def _map_chat_completion_response(self, response: Any) -> LLMResponse:
         if not response.choices:
+            raw_error = getattr(response, "error", None)
+            logging.error(
+                "[%sAdapter] Response has no choices. error=%s raw_response=%s",
+                self.provider_label,
+                raw_error,
+                self._safe_dump_response(response),
+            )
+            reason = self._extract_error_reason(raw_error)
+            message = f"{self.provider_label} response has no choices."
+            if reason:
+                message = f"{message} Reason: {reason}"
             raise IAToolkitException(
                 IAToolkitException.ErrorType.LLM_ERROR,
-                f"{self.provider_label} response has no choices."
+                message,
             )
 
         choice = response.choices[0]

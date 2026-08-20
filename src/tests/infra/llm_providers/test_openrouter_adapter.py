@@ -72,6 +72,57 @@ class TestOpenRouterAdapter:
             },
         ]
 
+    def test_create_response_defaults_to_file_parser_plugin_for_pdf_attachments(self):
+        self.mock_openrouter_client.chat.completions.create.return_value = self._create_mock_response()
+
+        self.adapter.create_response(
+            model="qwen/qwen3.8-27b",
+            input=[{"role": "user", "content": "Summarize this"}],
+            attachments=[{
+                "name": "report.pdf",
+                "mime_type": "application/pdf",
+                "base64": "aGVsbG8=",
+            }],
+        )
+
+        call_kwargs = self.mock_openrouter_client.chat.completions.create.call_args.kwargs
+        assert call_kwargs["extra_body"]["plugins"] == [
+            {"id": "file-parser", "pdf": {"engine": "mistral-ocr"}}
+        ]
+
+    def test_create_response_respects_explicit_plugins_over_pdf_default(self):
+        self.mock_openrouter_client.chat.completions.create.return_value = self._create_mock_response()
+
+        self.adapter.create_response(
+            model="qwen/qwen3.8-27b",
+            input=[{"role": "user", "content": "Summarize this"}],
+            attachments=[{
+                "name": "report.pdf",
+                "mime_type": "application/pdf",
+                "base64": "aGVsbG8=",
+            }],
+            plugins=[{"id": "response-healing"}],
+        )
+
+        call_kwargs = self.mock_openrouter_client.chat.completions.create.call_args.kwargs
+        assert call_kwargs["extra_body"]["plugins"] == [{"id": "response-healing"}]
+
+    def test_create_response_omits_file_parser_plugin_without_pdf_attachments(self):
+        self.mock_openrouter_client.chat.completions.create.return_value = self._create_mock_response()
+
+        self.adapter.create_response(
+            model="qwen/qwen3.8-27b",
+            input=[{"role": "user", "content": "Hello"}],
+            attachments=[{
+                "name": "notes.txt",
+                "mime_type": "text/plain",
+                "base64": "aGVsbG8=",
+            }],
+        )
+
+        call_kwargs = self.mock_openrouter_client.chat.completions.create.call_args.kwargs
+        assert "plugins" not in call_kwargs.get("extra_body", {})
+
     def test_create_response_passes_json_schema_reasoning_metadata_and_parallel_tools(self):
         self.mock_openrouter_client.chat.completions.create.return_value = self._create_mock_response(content="{}")
 

@@ -16,6 +16,15 @@ class OpenRouterAdapter(OpenAICompatibleChatAdapter):
     supports_metadata = True
     supports_parallel_tool_calls = True
 
+    # llm_capabilities.yaml marks `application/pdf` as natively supported for
+    # every OpenRouter model, but that flag isn't verified per-model the way
+    # native images are (see AttachmentPolicyService._get_openrouter_native_image_error).
+    # Models with no native PDF support (e.g. some Qwen models) reject the raw
+    # file part and OpenRouter answers with no `choices`. Always routing PDFs
+    # through OpenRouter's own `file-parser` plugin sidesteps that per-model gap
+    # instead of trying to track which routed model does or doesn't accept PDFs.
+    _PDF_FILE_PARSER_PLUGIN = [{"id": "file-parser", "pdf": {"engine": "mistral-ocr"}}]
+
     def __init__(self, openrouter_client):
         super().__init__(openai_compatible_client=openrouter_client, provider_label="OpenRouter")
 
@@ -58,5 +67,19 @@ class OpenRouterAdapter(OpenAICompatibleChatAdapter):
             if kwargs.get(key) is not None:
                 extra_body[key] = kwargs.get(key)
 
+        if "plugins" not in extra_body and self._has_pdf_attachment(kwargs.get("attachments")):
+            extra_body["plugins"] = self._PDF_FILE_PARSER_PLUGIN
+
         if extra_body:
             call_kwargs["extra_body"] = extra_body
+
+    @staticmethod
+    def _has_pdf_attachment(attachments: Any) -> bool:
+        for attachment in attachments or []:
+            if not isinstance(attachment, dict):
+                continue
+            mime_type = str(attachment.get("mime_type") or attachment.get("type") or "").strip().lower()
+            filename = str(attachment.get("name") or attachment.get("filename") or "").strip().lower()
+            if mime_type == "application/pdf" or filename.endswith(".pdf"):
+                return True
+        return False

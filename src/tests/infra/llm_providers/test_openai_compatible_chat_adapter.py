@@ -3,8 +3,12 @@
 #
 # IAToolkit is open source software.
 
+import logging
 from unittest.mock import MagicMock
 
+import pytest
+
+from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.infra.llm_providers.openai_compatible_chat_adapter import OpenAICompatibleChatAdapter
 
 
@@ -52,6 +56,34 @@ class TestOpenAICompatibleChatAdapter:
         client = MagicMock()
         client.chat.completions.create = create
         return client, create
+
+    def test_map_chat_completion_response_logs_raw_response_when_no_choices(self, caplog):
+        mock_response = MagicMock()
+        mock_response.choices = []
+        mock_response.error = {"message": "upstream rejected the file", "code": 400}
+        mock_response.model_dump.return_value = {
+            "choices": [],
+            "error": {"message": "upstream rejected the file", "code": 400},
+        }
+
+        with caplog.at_level(logging.ERROR):
+            with pytest.raises(IAToolkitException) as excinfo:
+                self.adapter._map_chat_completion_response(mock_response)
+
+        assert "no choices" in str(excinfo.value).lower()
+        assert "upstream rejected the file" in str(excinfo.value)
+        assert "upstream rejected the file" in caplog.text
+
+    def test_map_chat_completion_response_omits_reason_when_no_error_field(self):
+        mock_response = MagicMock()
+        mock_response.choices = []
+        mock_response.error = None
+        mock_response.model_dump.return_value = {"choices": []}
+
+        with pytest.raises(IAToolkitException) as excinfo:
+            self.adapter._map_chat_completion_response(mock_response)
+
+        assert str(excinfo.value) == "OpenAI-compatible response has no choices."
 
     def test_create_response_never_sends_the_responses_api_reasoning_argument(self):
         client, create = self._client_with_the_real_signature()
