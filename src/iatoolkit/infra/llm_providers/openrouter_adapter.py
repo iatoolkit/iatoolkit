@@ -23,7 +23,14 @@ class OpenRouterAdapter(OpenAICompatibleChatAdapter):
     # file part and OpenRouter answers with no `choices`. Always routing PDFs
     # through OpenRouter's own `file-parser` plugin sidesteps that per-model gap
     # instead of trying to track which routed model does or doesn't accept PDFs.
-    _PDF_FILE_PARSER_PLUGIN = [{"id": "file-parser", "pdf": {"engine": "mistral-ocr"}}]
+    #
+    # engine="native": let the routed model read the PDF with its own
+    # multimodal capability, falling back to OpenRouter's own extraction only
+    # when the model doesn't support that. engine="mistral-ocr" used to be the
+    # default here, but it forces every PDF - regardless of model support -
+    # through OpenRouter's shared OCR pipeline, which is what produced the
+    # "document parsing engine is currently rate limited" failures.
+    _PDF_FILE_PARSER_PLUGIN = [{"id": "file-parser", "pdf": {"engine": "native"}}]
 
     def __init__(self, openrouter_client):
         super().__init__(openai_compatible_client=openrouter_client, provider_label="OpenRouter")

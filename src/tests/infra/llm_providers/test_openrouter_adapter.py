@@ -72,7 +72,7 @@ class TestOpenRouterAdapter:
             },
         ]
 
-    def test_create_response_defaults_to_file_parser_plugin_for_pdf_attachments(self):
+    def test_create_response_defaults_to_native_file_parser_plugin_for_pdf_attachments(self):
         self.mock_openrouter_client.chat.completions.create.return_value = self._create_mock_response()
 
         self.adapter.create_response(
@@ -87,7 +87,7 @@ class TestOpenRouterAdapter:
 
         call_kwargs = self.mock_openrouter_client.chat.completions.create.call_args.kwargs
         assert call_kwargs["extra_body"]["plugins"] == [
-            {"id": "file-parser", "pdf": {"engine": "mistral-ocr"}}
+            {"id": "file-parser", "pdf": {"engine": "native"}}
         ]
 
     def test_create_response_respects_explicit_plugins_over_pdf_default(self):
