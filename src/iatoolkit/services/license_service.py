@@ -27,7 +27,6 @@ class LicenseService:
             "license_type": "Community Edition",
             "plan": "Open Source (Community Edition)",
             "max_companies": 1,
-            "max_tools": 3,
             "features": {
                 "multi_tenant": False,
                 "rag_advanced": False,
@@ -46,11 +45,8 @@ class LicenseService:
     def get_max_companies(self) -> int:
         return self.limits.get("max_companies", 1)
 
-    def get_max_tools_per_company(self) -> int:
-        return self.limits.get("max_tools", 3)
-
     def get_license_info(self) -> str:
-        return f"Plan: {self.get_plan_name()}, Companies: {self.get_max_companies()}, Tools: {self.get_max_tools_per_company()}"
+        return f"Plan: {self.get_plan_name()}, Companies: {self.get_max_companies()}"
 
     # --- Restriction Validators ---
 
@@ -64,15 +60,6 @@ class LicenseService:
                 f"Company limit ({limit}) reached for plan '{self.get_plan_name()}'."
             )
 
-
-    def validate_tool_config_limit(self, tools_config: list):
-        """Validates a configuration list before processing it."""
-        limit = self.get_max_tools_per_company()
-        if limit != -1 and len(tools_config) > limit:
-            raise IAToolkitException(
-                IAToolkitException.ErrorType.PERMISSION,
-                f"Configuration defines {len(tools_config)} tools, but limit is {limit}."
-            )
 
     # --- Feature Gating Validators ---
 

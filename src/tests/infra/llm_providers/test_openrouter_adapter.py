@@ -90,6 +90,45 @@ class TestOpenRouterAdapter:
             {"id": "file-parser", "pdf": {"engine": "native"}}
         ]
 
+    def test_create_response_ignores_file_unsupported_providers_for_pdf_attachments(self):
+        self.mock_openrouter_client.chat.completions.create.return_value = self._create_mock_response()
+
+        self.adapter.create_response(
+            model="qwen/qwen3.8-27b",
+            input=[{"role": "user", "content": "Summarize this"}],
+            attachments=[{
+                "name": "report.pdf",
+                "mime_type": "application/pdf",
+                "base64": "aGVsbG8=",
+            }],
+        )
+
+        call_kwargs = self.mock_openrouter_client.chat.completions.create.call_args.kwargs
+        assert call_kwargs["extra_body"]["provider"]["ignore"] == [
+            "parasail", "akashml", "alibaba", "chutes", "reka",
+        ]
+
+    def test_create_response_merges_file_unsupported_providers_into_explicit_provider_ignore(self):
+        self.mock_openrouter_client.chat.completions.create.return_value = self._create_mock_response()
+
+        self.adapter.create_response(
+            model="qwen/qwen3.8-27b",
+            input=[{"role": "user", "content": "Summarize this"}],
+            attachments=[{
+                "name": "report.pdf",
+                "mime_type": "application/pdf",
+                "base64": "aGVsbG8=",
+            }],
+            provider={"ignore": ["deepinfra"], "sort": "price"},
+        )
+
+        call_kwargs = self.mock_openrouter_client.chat.completions.create.call_args.kwargs
+        provider_opts = call_kwargs["extra_body"]["provider"]
+        assert provider_opts["sort"] == "price"
+        assert provider_opts["ignore"] == [
+            "deepinfra", "parasail", "akashml", "alibaba", "chutes", "reka",
+        ]
+
     def test_create_response_respects_explicit_plugins_over_pdf_default(self):
         self.mock_openrouter_client.chat.completions.create.return_value = self._create_mock_response()
 

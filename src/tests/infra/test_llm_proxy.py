@@ -683,6 +683,108 @@ class TestLLMProxy:
             "sort": "latency",
         }
 
+    def test_openrouter_applies_provider_level_default_routing_config(self):
+        self.model_registry_mock.get_provider.return_value = "unknown"
+        self.config_service_mock.get_configuration.return_value = {
+            "provider_api_keys": {"openrouter": "OPENROUTER_KEY"}
+        }
+        self.config_service_mock.get_llm_model_config.return_value = {
+            "id": "openai/gpt-5.2",
+            "provider": "openrouter",
+        }
+        self.config_service_mock.get_llm_provider_config.return_value = {
+            "base_url": "https://openrouter.ai/api/v1",
+            "routing": {
+                "order": ["venice"],
+                "allow_fallbacks": False,
+            },
+        }
+
+        with patch.dict(os.environ, {"OPENROUTER_KEY": "dummy"}, clear=True):
+            self.proxy.create_response(
+                company_short_name=self.company_short_name,
+                model="openai/gpt-5.2",
+                input=[],
+            )
+
+        self.mock_openrouter_adapter_instance.create_response.assert_called_once()
+        adapter_kwargs = self.mock_openrouter_adapter_instance.create_response.call_args.kwargs
+        assert adapter_kwargs["provider"] == {
+            "order": ["venice"],
+            "allow_fallbacks": False,
+        }
+
+    def test_openrouter_model_routing_overrides_provider_level_default_routing(self):
+        self.model_registry_mock.get_provider.return_value = "unknown"
+        self.config_service_mock.get_configuration.return_value = {
+            "provider_api_keys": {"openrouter": "OPENROUTER_KEY"}
+        }
+        self.config_service_mock.get_llm_model_config.return_value = {
+            "id": "openai/gpt-5.2",
+            "provider": "openrouter",
+            "config": {
+                "routing": {
+                    "order": ["openai"],
+                }
+            },
+        }
+        self.config_service_mock.get_llm_provider_config.return_value = {
+            "base_url": "https://openrouter.ai/api/v1",
+            "routing": {
+                "order": ["venice"],
+                "allow_fallbacks": False,
+                "sort": "price",
+            },
+        }
+
+        with patch.dict(os.environ, {"OPENROUTER_KEY": "dummy"}, clear=True):
+            self.proxy.create_response(
+                company_short_name=self.company_short_name,
+                model="openai/gpt-5.2",
+                input=[],
+            )
+
+        self.mock_openrouter_adapter_instance.create_response.assert_called_once()
+        adapter_kwargs = self.mock_openrouter_adapter_instance.create_response.call_args.kwargs
+        assert adapter_kwargs["provider"] == {
+            "order": ["openai"],
+            "allow_fallbacks": False,
+            "sort": "price",
+        }
+
+    def test_openrouter_runtime_provider_overrides_provider_level_default_routing(self):
+        self.model_registry_mock.get_provider.return_value = "unknown"
+        self.config_service_mock.get_configuration.return_value = {
+            "provider_api_keys": {"openrouter": "OPENROUTER_KEY"}
+        }
+        self.config_service_mock.get_llm_model_config.return_value = {
+            "id": "openai/gpt-5.2",
+            "provider": "openrouter",
+        }
+        self.config_service_mock.get_llm_provider_config.return_value = {
+            "base_url": "https://openrouter.ai/api/v1",
+            "routing": {
+                "order": ["venice"],
+                "allow_fallbacks": False,
+            },
+        }
+
+        with patch.dict(os.environ, {"OPENROUTER_KEY": "dummy"}, clear=True):
+            self.proxy.create_response(
+                company_short_name=self.company_short_name,
+                model="openai/gpt-5.2",
+                input=[],
+                provider={"allow_fallbacks": True, "sort": "latency"},
+            )
+
+        self.mock_openrouter_adapter_instance.create_response.assert_called_once()
+        adapter_kwargs = self.mock_openrouter_adapter_instance.create_response.call_args.kwargs
+        assert adapter_kwargs["provider"] == {
+            "order": ["venice"],
+            "allow_fallbacks": True,
+            "sort": "latency",
+        }
+
     def test_get_client_config_applies_cloudflare_gateway_for_openai(self):
         self.config_service_mock.get_configuration.return_value = {
             "provider_api_keys": {"openai": "OPENAI_KEY"}

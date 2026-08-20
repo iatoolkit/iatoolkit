@@ -42,6 +42,12 @@ llm:
     base_url: https://openrouter.ai/api/v1
     http_referer: https://example.com/iatoolkit
     x_title: IAToolkit
+    # Company-wide default provider routing, applied to every OpenRouter
+    # model unless overridden per-model (available_models[].config.routing)
+    # or per-call (an explicit `provider` kwarg).
+    # routing:
+    #   order: [venice]
+    #   allow_fallbacks: false
   providers:
     openai_compatible:
       base_url_env: OSS_LLM_BASE_URL

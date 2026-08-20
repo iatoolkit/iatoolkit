@@ -132,6 +132,11 @@ class LLMProxy:
             model_config=model_config,
             request_kwargs=request_kwargs,
         )
+        request_kwargs = self._apply_provider_default_routing(
+            provider=provider,
+            provider_config=provider_config,
+            request_kwargs=request_kwargs,
+        )
         request_kwargs = self._apply_company_request_defaults(
             company_short_name=company_short_name,
             model=model,
@@ -327,6 +332,37 @@ class LLMProxy:
             effective_kwargs["provider"] = merged_provider
         elif existing_provider is None:
             effective_kwargs["provider"] = dict(openrouter_provider)
+
+        return effective_kwargs
+
+    def _apply_provider_default_routing(
+        self,
+        provider: str,
+        provider_config: Dict[str, Any],
+        request_kwargs: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Company-wide OpenRouter routing default, configured once under
+        `llm.openrouter.routing` instead of repeated on every model.
+        Applied after model-level routing so precedence stays
+        caller-explicit > per-model routing > this provider-wide default.
+        """
+        effective_kwargs = dict(request_kwargs or {})
+
+        if provider != self.PROVIDER_OPENROUTER or not isinstance(provider_config, dict):
+            return effective_kwargs
+
+        default_routing = provider_config.get("routing")
+        if not isinstance(default_routing, dict) or not default_routing:
+            return effective_kwargs
+
+        existing_provider = effective_kwargs.get("provider")
+        if isinstance(existing_provider, dict):
+            merged_provider = dict(default_routing)
+            merged_provider.update(existing_provider)
+            effective_kwargs["provider"] = merged_provider
+        elif existing_provider is None:
+            effective_kwargs["provider"] = dict(default_routing)
 
         return effective_kwargs
 

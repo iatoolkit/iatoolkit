@@ -16,21 +16,20 @@ class OpenRouterAdapter(OpenAICompatibleChatAdapter):
     supports_metadata = True
     supports_parallel_tool_calls = True
 
-    # llm_capabilities.yaml marks `application/pdf` as natively supported for
-    # every OpenRouter model, but that flag isn't verified per-model the way
-    # native images are (see AttachmentPolicyService._get_openrouter_native_image_error).
-    # Models with no native PDF support (e.g. some Qwen models) reject the raw
-    # file part and OpenRouter answers with no `choices`. Always routing PDFs
-    # through OpenRouter's own `file-parser` plugin sidesteps that per-model gap
-    # instead of trying to track which routed model does or doesn't accept PDFs.
-    #
-    # engine="native": let the routed model read the PDF with its own
-    # multimodal capability, falling back to OpenRouter's own extraction only
-    # when the model doesn't support that. engine="mistral-ocr" used to be the
-    # default here, but it forces every PDF - regardless of model support -
-    # through OpenRouter's shared OCR pipeline, which is what produced the
-    # "document parsing engine is currently rate limited" failures.
+    # Fixed at "native" by policy: a PDF attachment must reach the routed model
+    # as-is, for it to read with its own vision/multimodal capability - never
+    # silently rewritten into extracted text by OpenRouter's OCR/parsing
+    # pipeline. This only applies when nothing else already requested a plugin
+    # (see _extend_call_kwargs below); an explicit `plugins` kwarg always wins.
     _PDF_FILE_PARSER_PLUGIN = [{"id": "file-parser", "pdf": {"engine": "native"}}]
+
+    # Providers observed returning HTTP 400 on `type: "file"` content parts
+    # even when routed to a model whose aggregate catalog entry lists "file"
+    # as a supported input modality (OpenRouter's per-endpoint support lags
+    # the model-level declaration). Excluded via `provider.ignore` whenever
+    # we send a native file attachment, so routing skips them instead of
+    # failing the request.
+    _FILE_UNSUPPORTED_PROVIDERS = ("parasail", "akashml", "alibaba", "chutes", "reka")
 
     def __init__(self, openrouter_client):
         super().__init__(openai_compatible_client=openrouter_client, provider_label="OpenRouter")
@@ -74,8 +73,17 @@ class OpenRouterAdapter(OpenAICompatibleChatAdapter):
             if kwargs.get(key) is not None:
                 extra_body[key] = kwargs.get(key)
 
-        if "plugins" not in extra_body and self._has_pdf_attachment(kwargs.get("attachments")):
-            extra_body["plugins"] = self._PDF_FILE_PARSER_PLUGIN
+        if self._has_pdf_attachment(kwargs.get("attachments")):
+            if "plugins" not in extra_body:
+                extra_body["plugins"] = self._PDF_FILE_PARSER_PLUGIN
+
+            provider_opts = dict(extra_body.get("provider") or {})
+            ignore = list(provider_opts.get("ignore") or [])
+            for provider_slug in self._FILE_UNSUPPORTED_PROVIDERS:
+                if provider_slug not in ignore:
+                    ignore.append(provider_slug)
+            provider_opts["ignore"] = ignore
+            extra_body["provider"] = provider_opts
 
         if extra_body:
             call_kwargs["extra_body"] = extra_body
