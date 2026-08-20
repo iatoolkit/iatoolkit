@@ -6,7 +6,7 @@
 from injector import inject
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.i18n_service import I18nService
-from iatoolkit.repositories.models import User, Company
+from iatoolkit.repositories.models import User, Company, user_company
 from flask_bcrypt import check_password_hash
 from flask import request, has_request_context
 from iatoolkit.common.session_manager import SessionManager
@@ -24,6 +24,7 @@ import logging
 from html import escape
 from datetime import datetime
 from typing import List, Dict
+from sqlalchemy import update
 from iatoolkit.common.interfaces.signup_policy_resolver import SignupPolicyResolver
 from iatoolkit.services.signup_policy_resolver import AllowAllSignupPolicyResolver
 
@@ -71,6 +72,10 @@ class ProfileService:
             text = fallback
         return text.lower()
 
+    @staticmethod
+    def _normalize_email_value(email: str | None) -> str:
+        return str(email or "").strip().lower()
+
     def _resolve_google_names(self, email: str, google_identity: GoogleIdentity) -> tuple[str, str]:
         given_name = str(google_identity.given_name or "").strip()
         family_name = str(google_identity.family_name or "").strip()
@@ -115,6 +120,30 @@ class ProfileService:
             'user_identifier': user_identifier,
             'message': 'Login ok',
         }
+
+    def _promote_bootstrap_owner_if_needed(self, company: Company, user: User) -> None:
+        params = company.parameters if isinstance(company.parameters, dict) else {}
+        pending_admin_email = self._normalize_email_value(params.get("bootstrap_admin_email"))
+        user_email = self._normalize_email_value(getattr(user, "email", ""))
+
+        if not pending_admin_email or pending_admin_email != user_email:
+            return
+
+        self.profile_repo.session.execute(
+            update(user_company)
+            .where(
+                user_company.c.user_id == user.id,
+                user_company.c.company_id == company.id,
+            )
+            .values(role="admin")
+        )
+
+        updated_params = dict(params)
+        updated_params.pop("bootstrap_admin_email", None)
+        updated_params["workspace_owner_email"] = user_email
+        company.parameters = updated_params
+        self.profile_repo.session.add(company)
+        self.profile_repo.session.commit()
 
     def _link_user_to_google(self, user: User, google_identity: GoogleIdentity):
         user.auth_method = 'google'
@@ -574,6 +603,7 @@ class ProfileService:
                     # add new company to existing user
                     existing_user.companies.append(company)
                     self.profile_repo.save_user(existing_user)
+                    self._promote_bootstrap_owner_if_needed(company, existing_user)
                     return {"message": self.i18n_service.t('flash_messages.user_associated_success')}
 
             # add the new user
@@ -610,6 +640,7 @@ class ProfileService:
 
             # and create in the database
             self.profile_repo.create_user(new_user)
+            self._promote_bootstrap_owner_if_needed(company, new_user)
 
             # send email with verification
             if not cfg or cfg.get('verify_account', True):

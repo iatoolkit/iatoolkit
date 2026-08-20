@@ -45,9 +45,11 @@ class TestProfileService:
         self.mock_user = User(id=1, email='test@email.com', first_name='Test', last_name='User',
                               password=generate_password_hash("password").decode("utf-8"), verified=True)
         self.mock_company = Company(id=100, name='My Company', short_name='test_company')
+        self.mock_company.parameters = {}
         self.mock_repo.get_company_by_short_name.return_value = self.mock_company
         self.mock_repo.get_user_by_email.return_value = self.mock_user
         self.mock_user.companies = [self.mock_company]
+        self.mock_repo.session = MagicMock()
 
         # Simula el diccionario de traducciones cargado para la validación
         self.mock_i18n.translations = {'en': {}, 'es': {}}
@@ -205,6 +207,27 @@ class TestProfileService:
 
         assert response['message'] == 'translated:flash_messages.user_associated_success'
         self.mock_repo.save_user.assert_called_once()
+
+    def test_signup_promotes_bootstrap_owner_to_admin(self, mock_session_manager):
+        self.mock_repo.get_user_by_email.return_value = self.mock_user
+        self.mock_user.companies = []
+        self.mock_company.parameters = {"bootstrap_admin_email": "test@email.com"}
+
+        response = self.service.signup(
+            self.mock_company.short_name,
+            email='test@email.com',
+            first_name='Test',
+            last_name='User',
+            password="password",
+            confirm_password="password",
+            verification_url='http://verification'
+        )
+
+        assert response['message'] == 'translated:flash_messages.user_associated_success'
+        self.mock_repo.session.execute.assert_called_once()
+        self.mock_repo.session.commit.assert_called_once()
+        assert self.mock_company.parameters["workspace_owner_email"] == "test@email.com"
+        assert "bootstrap_admin_email" not in self.mock_company.parameters
 
     def test_signup_when_passwords_different(self, mock_session_manager):
         self.mock_repo.get_user_by_email.return_value = None

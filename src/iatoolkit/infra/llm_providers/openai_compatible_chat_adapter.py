@@ -8,7 +8,10 @@ import json
 import logging
 import mimetypes
 import threading
+import time
 from typing import Any, Dict, List, Optional
+
+import openai
 
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.infra.llm_response import LLMResponse, ToolCall, Usage
@@ -44,6 +47,16 @@ class OpenAICompatibleChatAdapter:
     supports_parallel_tool_calls = False
     supports_thinking = False
     allow_follow_up_tool_calls = True
+
+    #: `LLMProxy` builds every client with `max_retries=0` by default (see
+    #: `LLMProxy.DEFAULT_MAX_RETRIES`), so a bare transport failure - DNS,
+    #: TCP reset, TLS handshake - was previously only recovered by the RQ-level
+    #: task retry: 10s+ of wait, a full job re-run, and the earlier attempt's
+    #: error dropped (see `TaskService._record_task_retry_attempt`). Retrying a
+    #: handful of times here, right where the failure happens, recovers the
+    #: common "connection error, works on the 2nd try" case in ~1-2s instead.
+    _CONNECTION_ERROR_MAX_ATTEMPTS = 3
+    _CONNECTION_ERROR_RETRY_DELAY_SECONDS = 0.75
 
     def __init__(self, openai_compatible_client, provider_label: str = "OpenAI-compatible"):
         self.client = openai_compatible_client
@@ -168,19 +181,44 @@ class OpenAICompatibleChatAdapter:
         _ = kwargs
 
     def _create_chat_completion(self, call_kwargs: Dict[str, Any]) -> Any:
-        try:
-            return self.client.chat.completions.create(**call_kwargs)
-        except Exception as ex:
-            retry_call_kwargs = self._build_retry_without_tool_choice_kwargs(call_kwargs, ex)
-            if retry_call_kwargs is None:
+        attempt = 1
+        while True:
+            try:
+                return self.client.chat.completions.create(**call_kwargs)
+            except openai.APITimeoutError:
+                # A read/write timeout means the request may already be running
+                # upstream (a long generation just took its time) - resending it
+                # would risk paying for the same generation twice with no
+                # guarantee the retry is any faster. Let the RQ-level task retry
+                # handle this one instead of looping on it here.
                 raise
+            except openai.APIConnectionError as ex:
+                # A transport-level failure (DNS, TCP reset, TLS handshake) happens
+                # before the request reaches the provider, so retrying is safe and
+                # cheap - unlike APITimeoutError above, there's no ambiguity about
+                # whether the provider already started working on this request.
+                if attempt >= self._CONNECTION_ERROR_MAX_ATTEMPTS:
+                    raise
+                logging.warning(
+                    "[%sAdapter] Connection error calling provider (attempt %s/%s); retrying: %s",
+                    self.provider_label,
+                    attempt,
+                    self._CONNECTION_ERROR_MAX_ATTEMPTS,
+                    ex,
+                )
+                time.sleep(self._CONNECTION_ERROR_RETRY_DELAY_SECONDS)
+                attempt += 1
+            except Exception as ex:
+                retry_call_kwargs = self._build_retry_without_tool_choice_kwargs(call_kwargs, ex)
+                if retry_call_kwargs is None:
+                    raise
 
-            logging.warning(
-                "[%sAdapter] Provider rejected tool_choice for model '%s'; retrying without tool_choice.",
-                self.provider_label,
-                call_kwargs.get("model"),
-            )
-            return self.client.chat.completions.create(**retry_call_kwargs)
+                logging.warning(
+                    "[%sAdapter] Provider rejected tool_choice for model '%s'; retrying without tool_choice.",
+                    self.provider_label,
+                    call_kwargs.get("model"),
+                )
+                return self.client.chat.completions.create(**retry_call_kwargs)
 
     @staticmethod
     def _build_retry_without_tool_choice_kwargs(

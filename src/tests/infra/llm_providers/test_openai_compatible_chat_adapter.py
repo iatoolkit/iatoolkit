@@ -4,12 +4,22 @@
 # IAToolkit is open source software.
 
 import logging
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
+import httpx
+import openai
 import pytest
 
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.infra.llm_providers.openai_compatible_chat_adapter import OpenAICompatibleChatAdapter
+
+
+def _connection_error() -> openai.APIConnectionError:
+    return openai.APIConnectionError(request=httpx.Request("POST", "https://example.com"))
+
+
+def _timeout_error() -> openai.APITimeoutError:
+    return openai.APITimeoutError(request=httpx.Request("POST", "https://example.com"))
 
 
 class TestOpenAICompatibleChatAdapter:
@@ -138,3 +148,55 @@ class TestOpenAICompatibleChatAdapter:
         assert first_call_kwargs["tool_choice"] == "required"
         assert first_call_kwargs["tools"] == second_call_kwargs["tools"]
         assert "tool_choice" not in second_call_kwargs
+
+    @patch("iatoolkit.infra.llm_providers.openai_compatible_chat_adapter.time.sleep")
+    def test_create_response_retries_on_connection_error_and_succeeds(self, mock_sleep):
+        self.mock_client.chat.completions.create.side_effect = [
+            _connection_error(),
+            self._create_mock_response(),
+        ]
+
+        result = self.adapter.create_response(
+            model="oss-model",
+            input=[{"role": "user", "content": "Hello"}],
+        )
+
+        assert result.output_text == "ok"
+        assert self.mock_client.chat.completions.create.call_count == 2
+        mock_sleep.assert_called_once_with(self.adapter._CONNECTION_ERROR_RETRY_DELAY_SECONDS)
+
+    @patch("iatoolkit.infra.llm_providers.openai_compatible_chat_adapter.time.sleep")
+    def test_create_response_gives_up_after_max_connection_error_attempts(self, mock_sleep):
+        max_attempts = self.adapter._CONNECTION_ERROR_MAX_ATTEMPTS
+        self.mock_client.chat.completions.create.side_effect = [
+            _connection_error() for _ in range(max_attempts)
+        ]
+
+        with pytest.raises(IAToolkitException) as excinfo:
+            self.adapter.create_response(
+                model="oss-model",
+                input=[{"role": "user", "content": "Hello"}],
+            )
+
+        assert "connection error" in str(excinfo.value).lower()
+        assert self.mock_client.chat.completions.create.call_count == max_attempts
+        assert mock_sleep.call_count == max_attempts - 1
+
+    @patch("iatoolkit.infra.llm_providers.openai_compatible_chat_adapter.time.sleep")
+    def test_create_response_does_not_retry_on_timeout_even_though_it_is_a_connection_error_subclass(
+        self, mock_sleep
+    ):
+        # APITimeoutError IS-A APIConnectionError in the openai SDK. A slow-but-
+        # working long generation must not be blindly resent, so this must raise
+        # on the first attempt rather than fall into the connection-error retry loop.
+        self.mock_client.chat.completions.create.side_effect = _timeout_error()
+
+        with pytest.raises(IAToolkitException) as excinfo:
+            self.adapter.create_response(
+                model="oss-model",
+                input=[{"role": "user", "content": "Hello"}],
+            )
+
+        assert "timed out" in str(excinfo.value).lower()
+        assert self.mock_client.chat.completions.create.call_count == 1
+        mock_sleep.assert_not_called()
