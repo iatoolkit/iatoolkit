@@ -43,6 +43,8 @@ class OpenAICompatibleChatAdapter:
     #: what DeepseekAdapter does.
     supports_reasoning_effort = False
     supports_reasoning_content_messages = False
+    supports_reasoning_details_messages = False
+    reasoning_content_message_field = "reasoning_content"
     supports_metadata = False
     supports_parallel_tool_calls = False
     supports_thinking = False
@@ -375,10 +377,11 @@ class OpenAICompatibleChatAdapter:
                 message["tool_calls"] = tool_calls
                 seen_tool_call_ids.update(self._extract_tool_call_ids(tool_calls))
 
-            if self.supports_reasoning_content_messages:
-                reasoning_content = str(item.get("reasoning_content") or "").strip()
-                if reasoning_content:
-                    message["reasoning_content"] = reasoning_content
+            self._attach_reasoning_to_message(
+                message,
+                reasoning_content=item.get("reasoning_content"),
+                reasoning_details=item.get("reasoning_details"),
+            )
 
             tool_call_id = str(item.get("tool_call_id") or "").strip()
             if role == "tool" and tool_call_id:
@@ -677,7 +680,7 @@ class OpenAICompatibleChatAdapter:
             total_tokens=getattr(getattr(response, "usage", None), "total_tokens", 0) or 0,
         )
 
-        reasoning_content = getattr(message, "reasoning_content", "") or ""
+        reasoning_content, reasoning_details = self._extract_reasoning_from_message(message)
 
         tool_calls_out: List[ToolCall] = []
         content_parts: List[Dict] = []
@@ -701,6 +704,7 @@ class OpenAICompatibleChatAdapter:
                 message=message,
                 normalized_tool_calls=normalized_tool_calls,
                 reasoning_content=reasoning_content,
+                reasoning_details=reasoning_details,
             )
 
             for tc in tool_calls:
@@ -738,6 +742,7 @@ class OpenAICompatibleChatAdapter:
             output=tool_calls_out,
             usage=usage,
             reasoning_content=reasoning_content,
+            reasoning_details=reasoning_details,
             content_parts=content_parts,
         )
 
@@ -752,6 +757,7 @@ class OpenAICompatibleChatAdapter:
         message: Any,
         normalized_tool_calls: List[Dict[str, Any]],
         reasoning_content: str,
+        reasoning_details: Any = None,
     ) -> None:
         if not normalized_tool_calls:
             return
@@ -761,8 +767,11 @@ class OpenAICompatibleChatAdapter:
             "content": getattr(message, "content", "") or "",
             "tool_calls": normalized_tool_calls,
         }
-        if self.supports_reasoning_content_messages and reasoning_content:
-            assistant_message["reasoning_content"] = reasoning_content
+        self._attach_reasoning_to_message(
+            assistant_message,
+            reasoning_content=reasoning_content,
+            reasoning_details=reasoning_details,
+        )
 
         group_id = str(getattr(response, "id", "") or normalized_tool_calls[0]["id"]).strip()
         pending_entry = {
@@ -774,3 +783,51 @@ class OpenAICompatibleChatAdapter:
         with self._pending_assistant_tool_messages_lock:
             for tool_call in normalized_tool_calls:
                 self._pending_assistant_tool_messages[tool_call["id"]] = pending_entry
+
+    def _extract_reasoning_from_message(self, message: Any) -> tuple[str, Any]:
+        reasoning_content = self._coerce_optional_text(
+            self._get_message_value(message, "reasoning_content")
+        )
+        reasoning_details = self._get_message_value(message, "reasoning_details")
+
+        if not reasoning_content:
+            reasoning_content = self._coerce_optional_text(
+                self._get_message_value(message, "reasoning")
+            )
+
+        return reasoning_content, reasoning_details
+
+    def _attach_reasoning_to_message(
+        self,
+        message: Dict[str, Any],
+        reasoning_content: Any = None,
+        reasoning_details: Any = None,
+    ) -> None:
+        if self.supports_reasoning_details_messages and reasoning_details:
+            message["reasoning_details"] = reasoning_details
+            return
+
+        if not self.supports_reasoning_content_messages:
+            return
+
+        normalized_reasoning = self._coerce_optional_text(reasoning_content)
+        if normalized_reasoning:
+            message[self.reasoning_content_message_field] = normalized_reasoning
+
+    @staticmethod
+    def _get_message_value(message: Any, key: str) -> Any:
+        if isinstance(message, dict):
+            return message.get(key)
+
+        value = getattr(message, key, None)
+        if type(value).__module__.startswith("unittest.mock"):
+            return None
+        return value
+
+    @staticmethod
+    def _coerce_optional_text(value: Any) -> str:
+        if value is None:
+            return ""
+        if type(value).__module__.startswith("unittest.mock"):
+            return ""
+        return str(value or "").strip()

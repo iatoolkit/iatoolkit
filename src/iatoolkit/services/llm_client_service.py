@@ -758,7 +758,16 @@ class llmClient:
         if reasoning_content:
             assistant_message["reasoning_content"] = reasoning_content
 
-        has_assistant_payload = bool(assistant_message.get("content")) or bool(tool_calls) or bool(reasoning_content)
+        reasoning_details = getattr(response, "reasoning_details", None)
+        if reasoning_details:
+            assistant_message["reasoning_details"] = reasoning_details
+
+        has_assistant_payload = (
+            bool(assistant_message.get("content"))
+            or bool(tool_calls)
+            or bool(reasoning_content)
+            or bool(reasoning_details)
+        )
         if not has_assistant_payload:
             return []
 

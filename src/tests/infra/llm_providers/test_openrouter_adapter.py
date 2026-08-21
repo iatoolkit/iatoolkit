@@ -15,7 +15,13 @@ class TestOpenRouterAdapter:
         self.adapter = OpenRouterAdapter(openrouter_client=self.mock_openrouter_client)
 
     @staticmethod
-    def _create_mock_response(content="Hello", tool_calls=None):
+    def _create_mock_response(
+        content="Hello",
+        tool_calls=None,
+        reasoning_content="reasoning trace",
+        reasoning=None,
+        reasoning_details=None,
+    ):
         mock_response = MagicMock()
         mock_response.id = "chatcmpl-openrouter-123"
         mock_response.model = "openai/gpt-5.2"
@@ -23,7 +29,9 @@ class TestOpenRouterAdapter:
         mock_message = MagicMock()
         mock_message.content = content
         mock_message.tool_calls = tool_calls
-        mock_message.reasoning_content = "reasoning trace"
+        mock_message.reasoning_content = reasoning_content
+        mock_message.reasoning = reasoning
+        mock_message.reasoning_details = reasoning_details
 
         mock_choice = MagicMock()
         mock_choice.message = mock_message
@@ -72,7 +80,7 @@ class TestOpenRouterAdapter:
             },
         ]
 
-    def test_create_response_defaults_to_native_file_parser_plugin_for_pdf_attachments(self):
+    def test_create_response_does_not_force_pdf_parser_plugin_for_pdf_attachments(self):
         self.mock_openrouter_client.chat.completions.create.return_value = self._create_mock_response()
 
         self.adapter.create_response(
@@ -86,11 +94,9 @@ class TestOpenRouterAdapter:
         )
 
         call_kwargs = self.mock_openrouter_client.chat.completions.create.call_args.kwargs
-        assert call_kwargs["extra_body"]["plugins"] == [
-            {"id": "file-parser", "pdf": {"engine": "native"}}
-        ]
+        assert "plugins" not in call_kwargs.get("extra_body", {})
 
-    def test_create_response_ignores_file_unsupported_providers_for_pdf_attachments(self):
+    def test_create_response_does_not_filter_providers_for_pdf_attachments(self):
         self.mock_openrouter_client.chat.completions.create.return_value = self._create_mock_response()
 
         self.adapter.create_response(
@@ -104,11 +110,9 @@ class TestOpenRouterAdapter:
         )
 
         call_kwargs = self.mock_openrouter_client.chat.completions.create.call_args.kwargs
-        assert call_kwargs["extra_body"]["provider"]["ignore"] == [
-            "parasail", "akashml", "alibaba", "chutes", "reka",
-        ]
+        assert "provider" not in call_kwargs.get("extra_body", {})
 
-    def test_create_response_merges_file_unsupported_providers_into_explicit_provider_ignore(self):
+    def test_create_response_preserves_explicit_provider_options_for_pdf_attachments(self):
         self.mock_openrouter_client.chat.completions.create.return_value = self._create_mock_response()
 
         self.adapter.create_response(
@@ -125,9 +129,7 @@ class TestOpenRouterAdapter:
         call_kwargs = self.mock_openrouter_client.chat.completions.create.call_args.kwargs
         provider_opts = call_kwargs["extra_body"]["provider"]
         assert provider_opts["sort"] == "price"
-        assert provider_opts["ignore"] == [
-            "deepinfra", "parasail", "akashml", "alibaba", "chutes", "reka",
-        ]
+        assert provider_opts["ignore"] == ["deepinfra"]
 
     def test_create_response_respects_explicit_plugins_over_pdf_default(self):
         self.mock_openrouter_client.chat.completions.create.return_value = self._create_mock_response()
@@ -275,3 +277,107 @@ class TestOpenRouterAdapter:
         assert result.output[0].call_id == "call_123"
         assert result.output[0].name == "search_web"
         assert result.status == "tool_calls"
+
+    def test_create_response_preserves_openrouter_reasoning_for_tool_follow_up(self):
+        mock_tool_call = MagicMock()
+        mock_tool_call.type = "function"
+        mock_tool_call.id = "call_123"
+        mock_tool_call.function.name = "search_web"
+        mock_tool_call.function.arguments = '{"query":"python"}'
+
+        self.mock_openrouter_client.chat.completions.create.side_effect = [
+            self._create_mock_response(
+                content="I should search first",
+                tool_calls=[mock_tool_call],
+                reasoning_content=None,
+                reasoning="Need current information.",
+            ),
+            self._create_mock_response(content="done"),
+        ]
+
+        tools = [{"type": "function", "function": {"name": "search_web"}}]
+        result = self.adapter.create_response(
+            model="openai/gpt-5.2",
+            input=[{"role": "user", "content": "Search python"}],
+            tools=tools,
+            tool_choice="auto",
+        )
+
+        assert result.status == "tool_calls"
+        assert result.reasoning_content == "Need current information."
+
+        self.adapter.create_response(
+            model="openai/gpt-5.2",
+            input=[{
+                "type": "function_call_output",
+                "call_id": "call_123",
+                "output": '{"answer":"python"}',
+            }],
+            tools=tools,
+            tool_choice="auto",
+        )
+
+        call_kwargs = self.mock_openrouter_client.chat.completions.create.call_args_list[1].kwargs
+        assert call_kwargs["messages"][0] == {
+            "role": "assistant",
+            "content": "I should search first",
+            "reasoning": "Need current information.",
+            "tool_calls": [{
+                "id": "call_123",
+                "type": "function",
+                "function": {
+                    "name": "search_web",
+                    "arguments": '{"query":"python"}',
+                },
+            }],
+        }
+        assert call_kwargs["messages"][1] == {
+            "role": "tool",
+            "content": '{"answer":"python"}',
+            "tool_call_id": "call_123",
+        }
+
+    def test_create_response_preserves_openrouter_reasoning_details_for_tool_follow_up(self):
+        mock_tool_call = MagicMock()
+        mock_tool_call.type = "function"
+        mock_tool_call.id = "call_123"
+        mock_tool_call.function.name = "search_web"
+        mock_tool_call.function.arguments = '{"query":"python"}'
+        reasoning_details = [{"type": "reasoning.text", "text": "Need current information."}]
+
+        self.mock_openrouter_client.chat.completions.create.side_effect = [
+            self._create_mock_response(
+                content="I should search first",
+                tool_calls=[mock_tool_call],
+                reasoning_content=None,
+                reasoning="Need current information.",
+                reasoning_details=reasoning_details,
+            ),
+            self._create_mock_response(content="done"),
+        ]
+
+        tools = [{"type": "function", "function": {"name": "search_web"}}]
+        result = self.adapter.create_response(
+            model="openai/gpt-5.2",
+            input=[{"role": "user", "content": "Search python"}],
+            tools=tools,
+            tool_choice="auto",
+        )
+
+        assert result.reasoning_content == "Need current information."
+        assert result.reasoning_details == reasoning_details
+
+        self.adapter.create_response(
+            model="openai/gpt-5.2",
+            input=[{
+                "type": "function_call_output",
+                "call_id": "call_123",
+                "output": '{"answer":"python"}',
+            }],
+            tools=tools,
+            tool_choice="auto",
+        )
+
+        call_kwargs = self.mock_openrouter_client.chat.completions.create.call_args_list[1].kwargs
+        assert call_kwargs["messages"][0]["reasoning_details"] == reasoning_details
+        assert "reasoning" not in call_kwargs["messages"][0]

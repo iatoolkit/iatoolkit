@@ -33,6 +33,7 @@ class LLMResponse:
     output: List[ToolCall]  # lista de tool calls
     usage: Usage
     reasoning_content: str = None # campo opcional para Chain of Thought
+    reasoning_details: Any = None # provider-native reasoning blocks, when available
 
     # ordered list of content blocks (text and image mixed)
     # Example: [{"type": "text", "text": "..."}, {"type": "image", "source": {"type": "base64", "data": "..."}}]
@@ -55,4 +56,3 @@ class LLMResponse:
                     "type": "text",
                     "text": self.output_text
                 })
-
