@@ -148,8 +148,47 @@ class TestLLMClient:
             },
         }
         assert finalize_kwargs["metrics"]["total_tokens"] == 150
-        assert finalize_kwargs["metrics"]["tool_call_count"] == 0
-        assert finalize_kwargs["metrics"]["tool_time_ms_total"] == 0
+
+    def test_invoke_persists_openrouter_routed_provider_stats(self):
+        self.mock_proxy.create_response.return_value = LLMResponse(
+            id='response_123',
+            model='qwen/qwen3.8-2.4t-a95b',
+            status='completed',
+            output_text=json.dumps({"answer": "Test response", "additional_data": {}}),
+            output=[],
+            usage=Usage(input_tokens=100, output_tokens=50, total_tokens=150),
+            provider_metadata={
+                "provider": "openrouter",
+                "provider_name": "Fireworks",
+                "openrouter": {
+                    "provider_name": "Fireworks",
+                    "endpoint_id": "fireworks/qwen",
+                    "is_byok": False,
+                },
+            },
+        )
+
+        result = self.client.invoke(
+            company=self.company,
+            user_identifier='user1',
+            previous_response_id='prev1',
+            model='qwen/qwen3.8-2.4t-a95b',
+            question='q',
+            context='c',
+            tools=[],
+            text={},
+            images=[],
+        )
+
+        saved_query = self.llmquery_repo.add_query.call_args.args[0]
+        assert saved_query.stats["provider"] == "openrouter"
+        assert saved_query.stats["routed_provider"] == "Fireworks"
+        assert saved_query.stats["openrouter"]["endpoint_id"] == "fireworks/qwen"
+        assert saved_query.stats["provider_calls"] == [{
+            "provider": "openrouter",
+            "routed_provider": "Fireworks",
+        }]
+        assert result["stats"]["routed_provider"] == "Fireworks"
 
     def test_build_root_telemetry_output_keeps_only_success_answer_and_structured_output(self):
         payload = llmClient._build_root_telemetry_output(

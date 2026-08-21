@@ -38,6 +38,7 @@ class LLMResponse:
     # ordered list of content blocks (text and image mixed)
     # Example: [{"type": "text", "text": "..."}, {"type": "image", "source": {"type": "base64", "data": "..."}}]
     content_parts: List[Dict] = None
+    provider_metadata: Dict[str, Any] = None
 
     def __post_init__(self):
         """Asegura que output sea una lista"""
@@ -56,3 +57,6 @@ class LLMResponse:
                     "type": "text",
                     "text": self.output_text
                 })
+
+        if self.provider_metadata is None:
+            self.provider_metadata = {}

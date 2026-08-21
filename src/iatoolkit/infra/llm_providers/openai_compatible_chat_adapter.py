@@ -744,6 +744,7 @@ class OpenAICompatibleChatAdapter:
             reasoning_content=reasoning_content,
             reasoning_details=reasoning_details,
             content_parts=content_parts,
+            provider_metadata=self._extract_provider_metadata(response),
         )
 
     # Backward-compatible alias retained while the old DeepSeek-specific name
@@ -831,3 +832,7 @@ class OpenAICompatibleChatAdapter:
         if type(value).__module__.startswith("unittest.mock"):
             return ""
         return str(value or "").strip()
+
+    def _extract_provider_metadata(self, response: Any) -> Dict[str, Any]:
+        _ = response
+        return {}

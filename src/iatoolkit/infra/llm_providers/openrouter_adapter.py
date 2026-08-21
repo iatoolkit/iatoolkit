@@ -63,3 +63,93 @@ class OpenRouterAdapter(OpenAICompatibleChatAdapter):
 
         if extra_body:
             call_kwargs["extra_body"] = extra_body
+
+    def _extract_provider_metadata(self, response: Any) -> Dict[str, Any]:
+        raw_metadata = self._get_message_value(response, "openrouter_metadata")
+        metadata = self._normalize_metadata_object(raw_metadata)
+
+        provider_name = self._extract_provider_name(metadata)
+        if not provider_name:
+            provider_name = self._coerce_optional_text(
+                self._get_message_value(response, "provider_name")
+            )
+
+        provider_metadata: Dict[str, Any] = {"provider": "openrouter"}
+        if provider_name:
+            provider_metadata["provider_name"] = provider_name
+        if metadata:
+            provider_metadata["openrouter"] = metadata
+
+        return provider_metadata
+
+    @classmethod
+    def _extract_provider_name(cls, metadata: Dict[str, Any]) -> str:
+        for key in ("provider_name", "provider", "upstream_provider", "selected_provider"):
+            value = metadata.get(key)
+            if isinstance(value, dict):
+                nested = cls._extract_provider_name(value)
+                if nested:
+                    return nested
+            normalized = cls._coerce_optional_text(value)
+            if normalized:
+                return normalized
+
+        for value in metadata.values():
+            if isinstance(value, dict):
+                nested = cls._extract_provider_name(value)
+                if nested:
+                    return nested
+
+        return ""
+
+    @classmethod
+    def _normalize_metadata_object(cls, value: Any) -> Dict[str, Any]:
+        if value is None or type(value).__module__.startswith("unittest.mock"):
+            return {}
+
+        if isinstance(value, dict):
+            return cls._sanitize_metadata_dict(value)
+
+        model_dump = getattr(value, "model_dump", None)
+        if callable(model_dump):
+            try:
+                dumped = model_dump()
+                if isinstance(dumped, dict):
+                    return cls._sanitize_metadata_dict(dumped)
+            except Exception:
+                return {}
+
+        raw_dict = getattr(value, "__dict__", None)
+        if isinstance(raw_dict, dict):
+            return cls._sanitize_metadata_dict({
+                key: item
+                for key, item in raw_dict.items()
+                if not key.startswith("_") and not callable(item)
+            })
+
+        return {}
+
+    @classmethod
+    def _sanitize_metadata_dict(cls, metadata: Dict[str, Any]) -> Dict[str, Any]:
+        sanitized: Dict[str, Any] = {}
+        for key, value in dict(metadata or {}).items():
+            normalized_key = cls._coerce_optional_text(key)
+            if not normalized_key:
+                continue
+
+            if isinstance(value, dict):
+                sanitized_value = cls._sanitize_metadata_dict(value)
+            elif isinstance(value, list):
+                sanitized_value = [
+                    cls._sanitize_metadata_dict(item) if isinstance(item, dict) else item
+                    for item in value
+                    if not type(item).__module__.startswith("unittest.mock")
+                ]
+            elif type(value).__module__.startswith("unittest.mock"):
+                continue
+            else:
+                sanitized_value = value
+
+            sanitized[normalized_key] = sanitized_value
+
+        return sanitized

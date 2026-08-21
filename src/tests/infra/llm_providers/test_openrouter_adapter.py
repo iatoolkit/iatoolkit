@@ -21,6 +21,7 @@ class TestOpenRouterAdapter:
         reasoning_content="reasoning trace",
         reasoning=None,
         reasoning_details=None,
+        openrouter_metadata=None,
     ):
         mock_response = MagicMock()
         mock_response.id = "chatcmpl-openrouter-123"
@@ -40,6 +41,7 @@ class TestOpenRouterAdapter:
         mock_response.usage.prompt_tokens = 11
         mock_response.usage.completion_tokens = 6
         mock_response.usage.total_tokens = 17
+        mock_response.openrouter_metadata = openrouter_metadata
         return mock_response
 
     def test_create_response_builds_multimodal_message_parts_for_images_and_files(self):
@@ -196,6 +198,31 @@ class TestOpenRouterAdapter:
         assert isinstance(result, LLMResponse)
         assert result.output_text == "{}"
         assert result.reasoning_content == "reasoning trace"
+
+    def test_create_response_maps_openrouter_provider_metadata(self):
+        self.mock_openrouter_client.chat.completions.create.return_value = self._create_mock_response(
+            content="{}",
+            openrouter_metadata={
+                "provider_name": "Fireworks",
+                "endpoint_id": "fireworks/qwen",
+                "is_byok": False,
+            },
+        )
+
+        result = self.adapter.create_response(
+            model="qwen/qwen3.8-2.4t-a95b",
+            input=[{"role": "user", "content": "Hello"}],
+        )
+
+        assert result.provider_metadata == {
+            "provider": "openrouter",
+            "provider_name": "Fireworks",
+            "openrouter": {
+                "provider_name": "Fireworks",
+                "endpoint_id": "fireworks/qwen",
+                "is_byok": False,
+            },
+        }
 
     def test_create_response_builds_reasoning_payload_from_reasoning_effort_kwarg(self):
         self.mock_openrouter_client.chat.completions.create.return_value = self._create_mock_response()

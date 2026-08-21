@@ -1255,15 +1255,58 @@ class llmClient:
             "output_tokens": response.usage.output_tokens,
             "total_tokens": response.usage.total_tokens
         }
+        provider_stats = self._build_provider_stats(getattr(response, "provider_metadata", None))
+        if provider_stats:
+            stats_dict.update(provider_stats)
         return stats_dict
 
-    def add_stats(self, stats1: dict, stats2: dict) -> dict:
+    @staticmethod
+    def _build_provider_stats(provider_metadata: dict | None) -> dict:
+        if not isinstance(provider_metadata, dict) or not provider_metadata:
+            return {}
+
+        provider = str(provider_metadata.get("provider") or "").strip()
+        routed_provider = str(provider_metadata.get("provider_name") or "").strip()
+
+        stats: dict = {}
+        if provider:
+            stats["provider"] = provider
+        if routed_provider:
+            stats["routed_provider"] = routed_provider
+
+        openrouter_metadata = provider_metadata.get("openrouter")
+        if isinstance(openrouter_metadata, dict) and openrouter_metadata:
+            stats["openrouter"] = openrouter_metadata
+
+        provider_call = {}
+        if provider:
+            provider_call["provider"] = provider
+        if routed_provider:
+            provider_call["routed_provider"] = routed_provider
+        if provider_call:
+            stats["provider_calls"] = [provider_call]
+
+        return stats
+
+    @staticmethod
+    def add_stats(stats1: dict, stats2: dict) -> dict:
+        stats1 = dict(stats1 or {})
+        stats2 = dict(stats2 or {})
         stats_dict = {
-            "model": stats1.get('model', ''),
+            **stats1,
+            **stats2,
+            "model": stats2.get('model') or stats1.get('model', ''),
             "input_tokens": (stats1.get('input_tokens') or 0) + (stats2.get('input_tokens') or 0),
             "output_tokens": (stats1.get('output_tokens') or 0) + (stats2.get('output_tokens') or 0),
             "total_tokens": (stats1.get('total_tokens') or 0) + (stats2.get('total_tokens') or 0),
         }
+        provider_calls = []
+        for stats in (stats1, stats2):
+            for provider_call in stats.get("provider_calls") or []:
+                if isinstance(provider_call, dict) and provider_call not in provider_calls:
+                    provider_calls.append(provider_call)
+        if provider_calls:
+            stats_dict["provider_calls"] = provider_calls
         return stats_dict
 
 
