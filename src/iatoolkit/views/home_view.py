@@ -43,7 +43,10 @@ class HomeView(MethodView):
             # 2. Verificamos si el archivo de plantilla personalizado no existe.
             if not home_template:
                 # Hosted tenants do not require filesystem home templates.
-                if self.util.is_hosted_company_runtime(company_short_name):
+                if (
+                    Utility.is_hosted_company_record(company)
+                    or self.util.is_hosted_company_runtime(company_short_name)
+                ):
                     return render_template(
                         "home_hosted_default.html",
                         company_short_name=company_short_name,

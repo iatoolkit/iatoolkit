@@ -257,6 +257,26 @@ class TestLoginView:
 
         assert resp.status_code == 400
 
+    @patch("iatoolkit.views.login_view.render_template")
+    def test_failed_login_renders_hosted_default_when_template_missing_for_hosted_company(self, mock_render):
+        self.auth_service.login_local_user.return_value = {
+            "success": False,
+            "message": "Invalid credentials",
+        }
+        self.profile_service.get_company_by_short_name.return_value.runtime_mode = "hosted"
+        self.utility.get_company_template.return_value = None
+        mock_render.return_value = "HOSTED"
+
+        resp = self.client.post(
+            f"/{self.company_short_name}/login",
+            data={"email": self.email, "password": self.password, "lang": "en"},
+        )
+
+        assert resp.status_code == 400
+        assert resp.data == b"HOSTED"
+        assert mock_render.call_args[0][0] == "home_hosted_default.html"
+        assert mock_render.call_args[1]["company_short_name"] == self.company_short_name
+
     @patch("iatoolkit.views.login_view.SessionManager")
     def test_google_login_start_redirects_to_google(self, mock_session_manager):
         resp = self.client.get(f"/{self.company_short_name}/login/google?lang=es")

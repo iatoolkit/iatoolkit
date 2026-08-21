@@ -83,3 +83,16 @@ class TestHomeView:
 
         response = self.client.get("/invalid_co/home.html")
         assert response.status_code == 404
+
+    @patch('iatoolkit.views.home_view.render_template')
+    def test_missing_template_renders_hosted_default_for_hosted_company(self, mock_render_template):
+        self.test_company.runtime_mode = "hosted"
+        self.utility.get_company_template.return_value = None
+        mock_render_template.return_value = "Hosted Home"
+
+        response = self.client.get("/test_co/home.html")
+
+        assert response.status_code == 200
+        mock_render_template.assert_called_once()
+        assert mock_render_template.call_args[0][0] == "home_hosted_default.html"
+        assert mock_render_template.call_args[1]["company_short_name"] == "test_co"

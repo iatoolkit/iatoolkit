@@ -17,6 +17,7 @@ from iatoolkit.services.branding_service import BrandingService
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.views.base_login_view import BaseLoginView
+from iatoolkit.common.util import Utility
 import logging
 import secrets
 from urllib.parse import urljoin, urlparse
@@ -73,7 +74,10 @@ class LoginView(BaseLoginView):
             home_template = self.utility.get_company_template(company_short_name, template_name)
 
             if not home_template:
-                if self.utility.is_hosted_company_runtime(company_short_name):
+                if (
+                    Utility.is_hosted_company_record(company)
+                    or self.utility.is_hosted_company_runtime(company_short_name)
+                ):
                     return render_template(
                         "home_hosted_default.html",
                         company_short_name=company_short_name,

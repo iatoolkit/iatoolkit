@@ -103,6 +103,18 @@ class Utility:
             logging.exception(e)
             return None
 
+    @staticmethod
+    def is_hosted_company_record(company) -> bool:
+        if not company:
+            return False
+
+        runtime_mode = str(getattr(company, "runtime_mode", "") or "").strip().lower()
+        if runtime_mode == "hosted":
+            return True
+
+        service_model = str(getattr(company, "service_model", "") or "").strip().lower()
+        return service_model == "hosted"
+
     def is_hosted_company_runtime(self, company_short_name: str) -> bool:
         try:
             from iatoolkit.company_registry import get_company_instance
