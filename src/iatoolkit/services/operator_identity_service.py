@@ -39,6 +39,17 @@ class OperatorIdentityService:
     SETTING_NAMES = ("IAT_OPERATOR_COMPANY", "IAT_BILLING_COMPANY_SHORT_NAME")
     SETTING_NAME = SETTING_NAMES[0]
 
+    #: Held on the class, not the instance. Callers that have a repository at hand
+    #: build their own instance rather than asking the injector, so an instance
+    #: cache resolved — and logged, and queried the database — once per request
+    #: instead of once per process.
+    _resolved: str | None = None
+
+    @classmethod
+    def reset_cache(cls) -> None:
+        """Forget the resolved name. For tests: it cannot change at runtime."""
+        OperatorIdentityService._resolved = None
+
     @classmethod
     def stated_name(cls) -> str:
         """What this deployment calls its operator, without checking it exists.
@@ -57,7 +68,6 @@ class OperatorIdentityService:
     @inject
     def __init__(self, profile_repo: ProfileRepo):
         self.profile_repo = profile_repo
-        self._resolved: str | None = None
 
     def company_short_name(self) -> str:
         """The operator company, resolved once per process.
@@ -65,24 +75,24 @@ class OperatorIdentityService:
         Cached because the answer cannot change without a deployment, and this is
         read on paths that run per request and per invoice.
         """
-        if self._resolved:
-            return self._resolved
+        if OperatorIdentityService._resolved:
+            return OperatorIdentityService._resolved
 
         for setting in self.SETTING_NAMES:
             configured = (os.getenv(setting) or "").strip().lower()
             if configured:
-                self._resolved = configured
+                OperatorIdentityService._resolved = configured
                 logging.info("Operator company: '%s' (from %s).", configured, setting)
-                return self._resolved
+                return configured
 
         if self._company_exists(self.LEGACY_COMPANY_SHORT_NAME):
-            self._resolved = self.LEGACY_COMPANY_SHORT_NAME
+            OperatorIdentityService._resolved = self.LEGACY_COMPANY_SHORT_NAME
             logging.info(
                 "Operator company: '%s' (default). Set %s to name it explicitly.",
-                self._resolved,
+                OperatorIdentityService._resolved,
                 self.SETTING_NAME,
             )
-            return self._resolved
+            return OperatorIdentityService._resolved
 
         # Deliberately loud. The alternative is what used to happen: a name from
         # another deployment travels down to the payment configuration and the

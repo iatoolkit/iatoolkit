@@ -12,6 +12,16 @@ from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.operator_identity_service import OperatorIdentityService
 
 
+@pytest.fixture(autouse=True)
+def _forget_the_resolved_name():
+    """The answer is cached for the whole process, deliberately: it is read on
+    every request and on every invoice, and it cannot change without a deploy.
+    Which means a test that resolves it would otherwise decide it for the next."""
+    OperatorIdentityService.reset_cache()
+    yield
+    OperatorIdentityService.reset_cache()
+
+
 def _service(company_exists=True, raises=False):
     repo = MagicMock()
     if raises:
@@ -131,3 +141,35 @@ class TestTheNameIsNotTypedAnywhereElse:
                     culpables.append(f"{archivo.name}:{numero}")
 
         assert not culpables, f"the operator's name is typed again in: {culpables}"
+
+
+class TestItIsResolvedOncePerProcessNotPerCaller:
+    """Three identical "Operator company:" lines appeared in one boot.
+
+    The cache lived on the instance, and the callers with a repository at hand
+    build their own instance rather than asking the injector — so the answer was
+    resolved, logged, and (without the setting) queried from the database once per
+    request.
+    """
+
+    def test_a_second_instance_reuses_the_first_answer(self):
+        first, repo_first = _service(company_exists=True)
+        with patch.dict(os.environ, {}, clear=True):
+            assert first.company_short_name() == "iat_store"
+
+            second, repo_second = _service(company_exists=True)
+            assert second.company_short_name() == "iat_store"
+
+        assert repo_first.get_company_by_short_name.call_count == 1
+        repo_second.get_company_by_short_name.assert_not_called()
+
+    def test_it_is_logged_once(self, caplog):
+        import logging as _logging
+
+        with patch.dict(os.environ, {"IAT_OPERATOR_COMPANY": "integrador_x"}, clear=True):
+            with caplog.at_level(_logging.INFO):
+                for _ in range(3):
+                    _service()[0].company_short_name()
+
+        lines = [r for r in caplog.records if "Operator company" in r.getMessage()]
+        assert len(lines) == 1, f"logged {len(lines)} times"

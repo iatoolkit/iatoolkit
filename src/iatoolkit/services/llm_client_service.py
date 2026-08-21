@@ -404,7 +404,7 @@ class llmClient:
                     if key == "request_source":
                         continue
                     if value is not None:
-                        combined_stats[key] = value
+                        combined_stats[key] = self._compact_execution_metadata_for_stats(key, value)
 
             # decode the LLM response
             decoded_response = self.decode_response(response)
@@ -1308,6 +1308,57 @@ class llmClient:
         if provider_calls:
             stats_dict["provider_calls"] = provider_calls
         return stats_dict
+
+    @classmethod
+    def _compact_execution_metadata_for_stats(cls, key: str, value):
+        if key == "tool_router":
+            return cls._compact_tool_router_stats(value)
+        return value
+
+    @staticmethod
+    def _compact_tool_router_stats(metrics):
+        if not isinstance(metrics, dict):
+            return metrics
+
+        compact = {}
+        scalar_keys = (
+            "candidate_count",
+            "selected_count",
+            "selection_mode",
+            "fallback_reason",
+            "selector_latency_ms",
+            "router_skipped",
+            "hard_disable_tools",
+        )
+        for key in scalar_keys:
+            if key in metrics:
+                compact[key] = metrics.get(key)
+
+        list_count_keys = {
+            "configured_tool_names": "configured_count",
+            "matched_tool_names": "matched_count",
+            "missing_tool_names": "missing_count",
+            "forced_tool_names": "forced_count",
+            "selected_system_prompt_keys": "selected_system_prompt_count",
+        }
+        for source_key, target_key in list_count_keys.items():
+            value = metrics.get(source_key)
+            if isinstance(value, list):
+                compact[target_key] = len(value)
+
+        hook_metadata = metrics.get("hook_metadata")
+        if isinstance(hook_metadata, dict):
+            for key in ("top_k", "top_n", "min_confidence", "shadow_mode"):
+                if key in hook_metadata:
+                    compact[key] = hook_metadata.get(key)
+            selected_tool_names = hook_metadata.get("selected_tool_names")
+            if isinstance(selected_tool_names, list):
+                compact["hook_selected_count"] = len(selected_tool_names)
+            ranked_tools_preview = hook_metadata.get("ranked_tools_preview")
+            if isinstance(ranked_tools_preview, list):
+                compact["ranked_preview_count"] = len(ranked_tools_preview)
+
+        return compact
 
 
     def _create_sql_retry_prompt(self, function_name: str, sql_query: str, db_error: str) -> str:

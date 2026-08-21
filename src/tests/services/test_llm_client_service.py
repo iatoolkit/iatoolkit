@@ -231,6 +231,66 @@ class TestLLMClient:
         assert saved_query.stats["request_source"] == "iatoolkit_mcp"
         assert result["stats"]["request_source"] == "iatoolkit_mcp"
 
+    def test_invoke_compacts_tool_router_metadata_in_query_stats(self):
+        self.mock_proxy.create_response.return_value = self.mock_llm_response
+        self.llmquery_repo.add_query.side_effect = lambda query: setattr(query, "id", 42)
+
+        result = self.client.invoke(
+            company=self.company,
+            user_identifier='user1',
+            previous_response_id='prev1',
+            model='gpt-5',
+            question='q',
+            context='c',
+            tools=[],
+            text={},
+            images=[],
+            execution_metadata={
+                "tool_router": {
+                    "candidate_count": 30,
+                    "selected_count": 2,
+                    "selection_mode": "prompt_explicit",
+                    "fallback_reason": None,
+                    "selector_latency_ms": 0,
+                    "router_skipped": True,
+                    "configured_tool_names": ["contract_signatures", "gestor_search"],
+                    "matched_tool_names": ["contract_signatures", "gestor_search"],
+                    "missing_tool_names": [],
+                    "forced_tool_names": ["iat_memory_search"],
+                    "hook_metadata": {
+                        "top_k": 8,
+                        "selected_tool_names": ["contract_signatures", "gestor_search"],
+                        "ranked_tools_preview": [
+                            {"name": "contract_signatures", "score": 0.91},
+                            {"name": "gestor_search", "score": 0.72},
+                        ],
+                    },
+                }
+            },
+        )
+
+        saved_query = self.llmquery_repo.add_query.call_args.args[0]
+        tool_router_stats = saved_query.stats["tool_router"]
+        assert tool_router_stats == {
+            "candidate_count": 30,
+            "selected_count": 2,
+            "selection_mode": "prompt_explicit",
+            "fallback_reason": None,
+            "selector_latency_ms": 0,
+            "router_skipped": True,
+            "configured_count": 2,
+            "matched_count": 2,
+            "missing_count": 0,
+            "forced_count": 1,
+            "top_k": 8,
+            "hook_selected_count": 2,
+            "ranked_preview_count": 2,
+        }
+        assert "configured_tool_names" not in tool_router_stats
+        assert "matched_tool_names" not in tool_router_stats
+        assert "hook_metadata" not in tool_router_stats
+        assert result["stats"]["tool_router"] == tool_router_stats
+
     def test_invoke_formats_whatsapp_answers_as_plaintext(self):
         self.mock_proxy.create_response.return_value = LLMResponse(
             id='response_wa', model='gpt-4o', status='completed',
