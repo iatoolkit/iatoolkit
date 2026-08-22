@@ -1,5 +1,17 @@
 # locales/es.yaml
 emails:
+  invoice_issued:
+    subject: "Factura {invoice_id} · {company_name}"
+    title: "Tu factura del período"
+    greeting: "Hola,"
+    intro: "Emitimos la factura del período {period_start} al {period_end} para {company_name}."
+    total_label: "Total a pagar"
+    period_label: "Período"
+    due_label: "Pagar antes del"
+    invoice_label: "Factura"
+    transfer_title: "Datos para transferir"
+    reference_note: "Indica el número de factura {invoice_id} en la referencia de la transferencia."
+    footer: "Si ya realizaste el pago, ignora este correo."
   google_welcome:
     subject: "Bienvenido a IAToolkit"
     title: "Tu cuenta IAToolkit está lista"
