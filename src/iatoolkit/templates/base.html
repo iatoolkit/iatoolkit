@@ -57,7 +57,10 @@
             "target": "#page-content-wrapper"
         };
 
-        {% if flashed_messages %}
+        {# Una plantilla puede dibujar sus propios avisos y apagar este camino:
+           la consola de hosting lo hace, porque un mensaje que obliga a actuar no
+           puede irse solo a los siete segundos. #}
+        {% if flashed_messages and not suppress_toasts %}
             {% for category, message in flashed_messages %}
                 // El método, no solo la clase: `toastr.info` agrega `toast-info`
                 // al final y le ganaba a la clase que veníamos calculando, así
