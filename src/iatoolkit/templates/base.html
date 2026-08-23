@@ -59,15 +59,23 @@
 
         {% if flashed_messages %}
             {% for category, message in flashed_messages %}
-                var toastClass = 'toast-info'; // default class
-                if ('{{ category }}' === 'error') {
-                    toastClass = 'toast-error';
-                } else if ('{{ category }}' === 'success') {
-                    toastClass = 'toast-success';
+                // El método, no solo la clase: `toastr.info` agrega `toast-info`
+                // al final y le ganaba a la clase que veníamos calculando, así
+                // que un error se veía igual que un aviso cualquiera.
+                var category = '{{ category }}';
+                var show = toastr.info;
+                if (category === 'error') {
+                    show = toastr.error;
+                } else if (category === 'success') {
+                    show = toastr.success;
+                } else if (category === 'warning') {
+                    show = toastr.warning;
                 }
-
-                // Llama a Toastr usando la opción 'toastClass' para aplicar nuestro estilo
-                toastr.info("{{ message }}", null, { "toastClass": "toast " + toastClass });
+                show("{{ message }}", null, { "toastClass": "toast toast-" + (
+                    category === 'error' ? 'error' :
+                    category === 'success' ? 'success' :
+                    category === 'warning' ? 'warning' : 'info'
+                ) });
 
             {% endfor %}
         {% endif %}
