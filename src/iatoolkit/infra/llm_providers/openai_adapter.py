@@ -92,12 +92,16 @@ class OpenAIAdapter:
         Important cases:
         - Assistant messages with `tool_calls` must become top-level `function_call` items.
         - `function_call_output` items must not include internal-only fields such as `status`.
+        - Without `previous_response_id`, include client-side `context_history` before
+          the current turn so OpenAI can run from locally managed history if needed.
         - When continuing from a prior response with `previous_response_id`, tool follow-ups
           should only append the `function_call_output` items because the previous response
           already contains the originating user/assistant turns on OpenAI's side.
         """
-        _ = context_history
-        combined_input: List[Dict[str, Any]] = list(input_items or [])
+        combined_input: List[Dict[str, Any]] = []
+        if not previous_response_id:
+            combined_input.extend(context_history or [])
+        combined_input.extend(input_items or [])
 
         has_function_outputs = any(
             isinstance(item, dict) and item.get("type") == "function_call_output"

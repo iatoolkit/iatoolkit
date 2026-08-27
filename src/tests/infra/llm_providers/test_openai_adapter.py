@@ -270,6 +270,57 @@ class TestOpenAIAdapter:
             'prompt_variant': 'baseline',
         }
 
+    def test_create_response_includes_context_history_without_previous_response_id(self):
+        mock_response = MagicMock()
+        mock_response.id = 'resp-client-history'
+        mock_response.model = 'gpt-4.1'
+        mock_response.status = 'completed'
+        mock_response.output = []
+        mock_response.output_text = 'ok'
+        mock_response.usage = None
+        self.mock_openai_client.responses.create.return_value = mock_response
+
+        context_history = [
+            {'role': 'system', 'content': 'Base context'},
+            {'role': 'user', 'content': 'Earlier question'},
+            {'role': 'assistant', 'content': 'Earlier answer'},
+        ]
+        input_data = [{'role': 'user', 'content': 'Current question'}]
+
+        self.adapter.create_response(
+            model='gpt-4.1',
+            input=input_data,
+            context_history=context_history,
+        )
+
+        call_kwargs = self.mock_openai_client.responses.create.call_args.kwargs
+        assert call_kwargs['input'] == context_history + input_data
+        assert 'previous_response_id' not in call_kwargs
+
+    def test_create_response_ignores_context_history_with_previous_response_id(self):
+        mock_response = MagicMock()
+        mock_response.id = 'resp-server-history'
+        mock_response.model = 'gpt-4.1'
+        mock_response.status = 'completed'
+        mock_response.output = []
+        mock_response.output_text = 'ok'
+        mock_response.usage = None
+        self.mock_openai_client.responses.create.return_value = mock_response
+
+        context_history = [{'role': 'user', 'content': 'Should stay local'}]
+        input_data = [{'role': 'user', 'content': 'Current question'}]
+
+        self.adapter.create_response(
+            model='gpt-4.1',
+            input=input_data,
+            previous_response_id='resp_previous',
+            context_history=context_history,
+        )
+
+        call_kwargs = self.mock_openai_client.responses.create.call_args.kwargs
+        assert call_kwargs['previous_response_id'] == 'resp_previous'
+        assert call_kwargs['input'] == input_data
+
     def test_create_response_maps_specific_function_tool_choice(self):
         mock_response = MagicMock()
         mock_response.id = 'id'
