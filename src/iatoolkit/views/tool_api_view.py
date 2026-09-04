@@ -67,14 +67,34 @@ class ToolApiView(MethodView):
             logging.exception(f"Tool API Error (GET): {e}")
             return jsonify({"error": "Internal server error"}), 500
 
+    def _require_admin_auth(self, company_short_name: str) -> dict | tuple:
+        """
+        Creating or changing a tool defines code the agent will execute for every
+        user of the tenant (HTTP targets, inference endpoints, execution_config),
+        so it's an admin capability. Regular chat users and plain API keys pass
+        verify_for_company but must not be able to write tool definitions.
+        """
+        auth_result = self.auth_service.verify_for_company(company_short_name)
+        if not auth_result.get("success"):
+            status_code = auth_result.get("status_code", 401)
+            if status_code == 403:
+                return jsonify({"error": "Forbidden"}), 403
+            return jsonify(auth_result), status_code
+
+        role = str(auth_result.get("user_role") or "").strip().lower()
+        if role not in {"admin", "owner"}:
+            return jsonify({"error": "Forbidden"}), 403
+
+        return auth_result
+
     def post(self, company_short_name: str):
         """
         POST /<company>/api/tools -> Create a new tool
         Body: { "name": "...", "description": "...", "tool_type": "...", ... }
         """
-        auth_result = self.auth_service.verify_for_company(company_short_name)
-        if not auth_result.get("success"):
-            return jsonify(auth_result), auth_result.get("status_code", 401)
+        auth_result = self._require_admin_auth(company_short_name)
+        if isinstance(auth_result, tuple):
+            return auth_result
 
         try:
             data = request.get_json() or {}
@@ -96,9 +116,9 @@ class ToolApiView(MethodView):
         """
         PUT /<company>/api/tools/<id> -> Update an existing tool
         """
-        auth_result = self.auth_service.verify_for_company(company_short_name)
-        if not auth_result.get("success"):
-            return jsonify(auth_result), auth_result.get("status_code", 401)
+        auth_result = self._require_admin_auth(company_short_name)
+        if isinstance(auth_result, tuple):
+            return auth_result
 
         try:
             data = request.get_json() or {}
@@ -123,9 +143,9 @@ class ToolApiView(MethodView):
         """
         DELETE /<company>/api/tools/<id> -> Delete a tool
         """
-        auth_result = self.auth_service.verify_for_company(company_short_name)
-        if not auth_result.get("success"):
-            return jsonify(auth_result), auth_result.get("status_code", 401)
+        auth_result = self._require_admin_auth(company_short_name)
+        if isinstance(auth_result, tuple):
+            return auth_result
 
         try:
             actor = auth_result.get("user_identifier")

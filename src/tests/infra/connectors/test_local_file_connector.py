@@ -112,3 +112,66 @@ class TestLocalFileConnector:
 
         assert exc.value.error_type == IAToolkitException.ErrorType.FILE_IO_ERROR
         assert "Error eliminando el archivo" in str(exc.value)
+
+
+class TestLocalFileConnectorRootConfinement:
+    """Storage keys can come from API callers; the connector must never read,
+    write or delete outside its configured root directory."""
+
+    def _connector(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("ROOT_DIR_LOCAL_FILES", raising=False)
+        root = tmp_path / "storage"
+        root.mkdir()
+        (root / "companies" / "acme").mkdir(parents=True)
+        (root / "companies" / "acme" / "doc.txt").write_bytes(b"inside")
+        (tmp_path / "secret.txt").write_bytes(b"outside")
+        return LocalFileConnector(str(root)), root, tmp_path
+
+    def test_reads_relative_key_and_absolute_path_inside_root(self, tmp_path, monkeypatch):
+        connector, root, _ = self._connector(tmp_path, monkeypatch)
+
+        assert connector.get_file_content("companies/acme/doc.txt") == b"inside"
+        # list_files() hands back absolute paths; those must keep working.
+        assert connector.get_file_content(str(root / "companies" / "acme" / "doc.txt")) == b"inside"
+
+    @pytest.mark.parametrize("escape", [
+        "../secret.txt",
+        "companies/../../secret.txt",
+        "companies/acme/../../../secret.txt",
+    ])
+    def test_rejects_traversal_keys(self, tmp_path, monkeypatch, escape):
+        connector, _, _ = self._connector(tmp_path, monkeypatch)
+
+        with pytest.raises(IAToolkitException) as excinfo:
+            connector.get_file_content(escape)
+        assert excinfo.value.error_type == IAToolkitException.ErrorType.PERMISSION
+
+    def test_rejects_absolute_path_outside_root(self, tmp_path, monkeypatch):
+        connector, _, outside_dir = self._connector(tmp_path, monkeypatch)
+
+        for method, args in (
+            (connector.get_file_content, (str(outside_dir / "secret.txt"),)),
+            (connector.delete_file, (str(outside_dir / "secret.txt"),)),
+            (connector.upload_file, (str(outside_dir / "planted.txt"), b"x")),
+        ):
+            with pytest.raises(IAToolkitException) as excinfo:
+                method(*args)
+            assert excinfo.value.error_type == IAToolkitException.ErrorType.PERMISSION
+
+        assert (outside_dir / "secret.txt").read_bytes() == b"outside"
+        assert not (outside_dir / "planted.txt").exists()
+
+    def test_rejects_symlink_escaping_root(self, tmp_path, monkeypatch):
+        connector, root, outside_dir = self._connector(tmp_path, monkeypatch)
+        (root / "companies" / "acme" / "link.txt").symlink_to(outside_dir / "secret.txt")
+
+        with pytest.raises(IAToolkitException) as excinfo:
+            connector.get_file_content("companies/acme/link.txt")
+        assert excinfo.value.error_type == IAToolkitException.ErrorType.PERMISSION
+
+    def test_rejects_empty_key(self, tmp_path, monkeypatch):
+        connector, _, _ = self._connector(tmp_path, monkeypatch)
+
+        with pytest.raises(IAToolkitException) as excinfo:
+            connector.get_file_content("")
+        assert excinfo.value.error_type == IAToolkitException.ErrorType.INVALID_PARAMETER

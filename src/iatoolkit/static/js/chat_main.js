@@ -3,6 +3,65 @@ let isRequestInProgress = false;
 let abortController = null;
 let selectedPrompt = null; // Will hold a lightweight prompt object
 
+// Allowlist-style sanitizer for the HTML answer returned by the backend. The
+// server already sanitizes it (LLMClientService.format_html -> nh3), but this is
+// the last line before .append()/.html() parse it into the live DOM, and the
+// model echoes tenant data (SQL rows, RAG documents, tool results) where an
+// <img onerror> or javascript: link could be planted. Parses into an inert
+// document, drops executable elements, event-handler attributes and
+// script-bearing URLs, and returns the surviving markup.
+function sanitizeHtmlFragment(html) {
+    const source = String(html || '');
+    if (!source) return '';
+    if (typeof DOMParser === 'undefined') {
+        return $('<div>').text(source).html();
+    }
+
+    const BLOCKED_TAGS = new Set([
+        'script', 'style', 'iframe', 'frame', 'frameset', 'object', 'embed', 'applet',
+        'link', 'meta', 'base', 'form', 'input', 'button', 'textarea', 'select', 'option',
+        'svg', 'math', 'template', 'noscript',
+    ]);
+    const URL_ATTRS = new Set(['href', 'src', 'xlink:href', 'action', 'formaction', 'srcset', 'poster', 'background', 'data']);
+
+    const isUnsafeUrl = (value, attrName, tagName) => {
+        // Strip whitespace/control chars browsers ignore ("java\tscript:").
+        const normalized = String(value || '').replace(/[\u0000-\u0020\u007f-\u00a0]/g, '').toLowerCase();
+        if (normalized.startsWith('javascript:') || normalized.startsWith('vbscript:')) return true;
+        if (normalized.startsWith('data:')) {
+            return !(tagName === 'img' && attrName === 'src' && normalized.startsWith('data:image/'));
+        }
+        return false;
+    };
+
+    const doc = new DOMParser().parseFromString(source, 'text/html');
+    const walk = (node) => {
+        Array.from(node.children).forEach((el) => {
+            const tag = el.tagName.toLowerCase();
+            if (BLOCKED_TAGS.has(tag)) {
+                el.remove();
+                return;
+            }
+            Array.from(el.attributes).forEach((attr) => {
+                const name = attr.name.toLowerCase();
+                if (name.startsWith('on') || name === 'style' || name === 'srcdoc') {
+                    el.removeAttribute(attr.name);
+                    return;
+                }
+                if (URL_ATTRS.has(name) && isUnsafeUrl(attr.value, name, tag)) {
+                    el.removeAttribute(attr.name);
+                }
+            });
+            if (tag === 'a') {
+                el.setAttribute('rel', 'noopener noreferrer');
+            }
+            walk(el);
+        });
+    };
+    walk(doc.body);
+    return doc.body.innerHTML;
+}
+
 $(document).ready(function () {
     // Si viene un Token retornado por login con APY-KEY se gatilla el redeem a una sesion de flask
         if (window.redeemToken) {
@@ -177,7 +236,7 @@ function processBotResponse(responseData) {
     // A. Texto: Usamos 'answer' porque contiene el HTML procesado y limpio del backend.
     // Evitamos usar content_parts[type=text] porque contiene el JSON crudo del LLM.
     if (responseData.answer) {
-        answerSection.append(responseData.answer);
+        answerSection.append(sanitizeHtmlFragment(responseData.answer));
     }
 
     // B. Imágenes: Iteramos content_parts buscando SOLO imágenes para adjuntarlas.
@@ -207,7 +266,8 @@ function processBotResponse(responseData) {
                 toastr.error('Memoria no está disponible.');
                 return;
             }
-            const plainText = $('<div>').html(responseData.answer || '').text().trim();
+            // Even a detached element parses <img src onerror> and fires it - sanitize first.
+            const plainText = $('<div>').html(sanitizeHtmlFragment(responseData.answer || '')).text().trim();
             await window.saveItemToMemory({
                 item_type: 'chat_assistant_message',
                 content_text: plainText,

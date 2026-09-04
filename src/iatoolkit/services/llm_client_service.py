@@ -12,6 +12,7 @@ from iatoolkit.common.model_registry import ModelRegistry
 from injector import inject
 import time
 import markdown2
+import nh3
 import os
 import logging
 import json
@@ -1393,10 +1394,19 @@ class llmClient:
 
         # Heurística simple: si contiene tags, lo tratamos como HTML ya renderizable
         if re.search(r"</?[a-zA-Z][\s\S]*>", answer):
-            return answer.replace("\n", "")
+            html_answer = answer.replace("\n", "")
+        else:
+            html_answer = markdown2.markdown(answer).replace("\n", "")
 
-        html_answer = markdown2.markdown(answer).replace("\n", "")
-        return html_answer
+        # The result is injected into the chat DOM as HTML (and stored, then shown
+        # again in the admin monitoring inspector). The model echoes whatever it
+        # was fed - SQL rows, RAG documents, tool results - so an <img onerror>,
+        # <svg onload> or javascript: link planted in tenant data would otherwise
+        # run in every viewer's browser, including admins'. nh3 is an allowlist
+        # sanitizer: it keeps the formatting markdown2 produces (headings, lists,
+        # tables, code, links, images) and strips scripts, event handlers,
+        # iframes/objects and javascript:/data: URLs.
+        return nh3.clean(html_answer)
 
     def format_plaintext(self, answer: str):
         if not answer:

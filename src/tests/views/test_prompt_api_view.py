@@ -37,7 +37,8 @@ class TestPromptView:
 
         # Default to successful authentication
         self.auth_service.verify_for_company.return_value = {'success': True,
-                                                 'user_identifier': 'test_user_id',}
+                                                 'user_identifier': 'test_user_id',
+                                                 'user_role': 'admin'}
         self.profile_service.get_company_by_short_name.return_value = self.mock_company
         self.llm_query_repo.get_prompt_by_name.return_value = None
 
@@ -205,4 +206,29 @@ class TestPromptView:
         response = self.client.put(f"{self.base_url}/any_prompt", json={})
 
         assert response.status_code == 401
+        self.prompt_service.save_prompt.assert_not_called()
+
+    def test_put_requires_admin_role(self):
+        """A regular authenticated tenant user must not be able to write prompt
+        templates - they're rendered server-side for every user of the tenant."""
+        self.auth_service.verify_for_company.return_value = {
+            'success': True,
+            'user_identifier': 'regular_user',
+            'user_role': 'user',
+        }
+
+        response = self.client.put(f"{self.base_url}/sales_prompt", json={"content": "x"})
+
+        assert response.status_code == 403
+        self.prompt_service.save_prompt.assert_not_called()
+
+    def test_post_requires_admin_role(self):
+        self.auth_service.verify_for_company.return_value = {
+            'success': True,
+            'user_identifier': 'regular_user',
+        }
+
+        response = self.client.post(self.base_url, json={"key": "new_prompt", "content": "x"})
+
+        assert response.status_code == 403
         self.prompt_service.save_prompt.assert_not_called()

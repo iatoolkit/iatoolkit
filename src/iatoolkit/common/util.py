@@ -9,7 +9,16 @@ from iatoolkit.common.exceptions import IAToolkitException
 from flask import request
 from injector import inject
 import os
-from jinja2 import Environment, FileSystemLoader
+from jinja2 import FileSystemLoader
+# Prompt templates are authored by tenant users through the GUI/API, not by the
+# operator running this server, so they must render in a sandbox: a plain
+# jinja2.Environment lets a template walk `cycler.__init__.__globals__.os` (or
+# any object's __class__/__mro__/__subclasses__) straight into the interpreter
+# and execute commands on the host. ImmutableSandboxedEnvironment blocks
+# underscore-prefixed attribute access, unsafe callables, and state-mutating
+# methods while leaving everything a prompt legitimately needs (variables,
+# loops, conditionals, filters, includes) intact.
+from jinja2.sandbox import ImmutableSandboxedEnvironment
 from datetime import datetime, date
 from decimal import Decimal
 import yaml
@@ -33,7 +42,7 @@ class Utility:
             template_dir = os.path.dirname(template_pathname)
             template_file = os.path.basename(template_pathname)
 
-            env = Environment(loader=FileSystemLoader(template_dir))
+            env = ImmutableSandboxedEnvironment(loader=FileSystemLoader(template_dir))
             template = env.get_template(template_file)
 
             # Explicit kwargs should win over client_data to preserve rich objects
@@ -71,7 +80,7 @@ class Utility:
             else:
                 loader = None  # Sin loader, no se pueden incluir plantillas desde archivos.
 
-            env = Environment(loader=loader)
+            env = ImmutableSandboxedEnvironment(loader=loader)
             template = env.from_string(template_string)
 
             # Explicit kwargs should win over client_data to preserve rich objects

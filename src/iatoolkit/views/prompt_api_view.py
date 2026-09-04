@@ -74,11 +74,31 @@ class PromptApiView(MethodView):
                 f"unexpected error getting company prompts: {e}")
             return jsonify({"error_message": str(e)}), 500
 
+    def _require_admin_auth(self, company_short_name: str) -> dict | tuple:
+        """
+        Prompt content is a Jinja template rendered server-side for every user
+        of the tenant, so writing it is an admin capability: even sandboxed, a
+        template author can shape what every agent says and does. Regular chat
+        users / plain API keys pass verify_for_company but must not get here.
+        """
+        auth_result = self.auth_service.verify_for_company(company_short_name)
+        if not auth_result.get("success"):
+            status_code = auth_result.get("status_code", 401)
+            if status_code == 403:
+                return jsonify({"error": "Forbidden"}), 403
+            return jsonify(auth_result), status_code
+
+        role = str(auth_result.get("user_role") or "").strip().lower()
+        if role not in {"admin", "owner"}:
+            return jsonify({"error": "Forbidden"}), 403
+
+        return auth_result
+
     def put(self, company_short_name, prompt_name):
         try:
-            auth_result = self.auth_service.verify_for_company(company_short_name)
-            if not auth_result.get("success"):
-                return jsonify(auth_result), 401
+            auth_result = self._require_admin_auth(company_short_name)
+            if isinstance(auth_result, tuple):
+                return auth_result
 
             data = request.get_json()
 
@@ -93,9 +113,9 @@ class PromptApiView(MethodView):
     def post(self, company_short_name, prompt_name=None):
         """Creates a new prompt."""
         try:
-            auth_result = self.auth_service.verify_for_company(company_short_name)
-            if not auth_result.get("success"):
-                return jsonify(auth_result), 401
+            auth_result = self._require_admin_auth(company_short_name)
+            if isinstance(auth_result, tuple):
+                return auth_result
 
             data = request.get_json() or {}
 

@@ -78,6 +78,45 @@ class TestUtil:
 
         assert prompt == "Empresa=acme nombre=Acme Consumer"
 
+    @pytest.mark.parametrize("payload", [
+        # Classic Jinja2 SSTI gadgets: walk from a global/literal to the interpreter.
+        "{{ cycler.__init__.__globals__['os'].popen('id').read() }}",
+        "{{ ''.__class__.__mro__[1].__subclasses__() }}",
+        "{{ company.__class__.__init__.__globals__ }}",
+        # client_data keys are unpacked into the context, so `rut` is the variable.
+        "{{ rut.__class__.__mro__ }}",
+    ])
+    def test_render_prompt_from_string_is_sandboxed_against_ssti(self, payload):
+        """Prompt templates come from tenant users via the GUI/API, so the
+        renderer must block the underscore-attribute escape hatches that turn a
+        template into remote code execution on the host."""
+        with pytest.raises(IAToolkitException) as excinfo:
+            self.util.render_prompt_from_string(
+                template_string=payload,
+                client_data={"rut": "1-9"},
+                company=MagicMock(),
+            )
+
+        assert excinfo.value.error_type == IAToolkitException.ErrorType.TEMPLATE_ERROR
+
+    def test_render_prompt_from_string_sandbox_keeps_legitimate_features(self):
+        """The sandbox must not break what real prompts use: variables, attribute
+        access on context objects, loops, conditionals and filters."""
+        company = MagicMock()
+        company.name = "Acme"
+
+        prompt = self.util.render_prompt_from_string(
+            template_string=(
+                "{{ company.name | upper }}:"
+                "{% for item in items %}{{ item }}{% if not loop.last %},{% endif %}{% endfor %}"
+                "|{{ missing | default('n/a') }}|{{ meta.get('k', 'd') }}"
+            ),
+            client_data={"items": ["a", "b"], "meta": {"k": "v"}},
+            company=company,
+        )
+
+        assert prompt == "ACME:a,b|n/a|v"
+
     def test_serialize_datetime(self):
         """Test serialización de datetime"""
         test_datetime = datetime(2024, 1, 1, 12, 0, 0)

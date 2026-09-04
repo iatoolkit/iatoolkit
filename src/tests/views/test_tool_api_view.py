@@ -25,8 +25,8 @@ class TestToolApiView:
         self.mock_tool_service = MagicMock(spec=ToolService)
         self.mock_dispatcher = MagicMock(spec=Dispatcher)
 
-        # Default Auth Success
-        self.mock_auth.verify_for_company.return_value = {"success": True, "status_code": 200}
+        # Default Auth Success (admin: tool writes are an admin capability)
+        self.mock_auth.verify_for_company.return_value = {"success": True, "status_code": 200, "user_role": "admin"}
 
         # View setup
         view = ToolApiView.as_view(
@@ -204,6 +204,30 @@ class TestToolApiView:
 
         resp = self.client.delete(f'/{self.MOCK_COMPANY}/api/tools/1')
         assert resp.status_code == 409
+
+    # --- ROLE GATE ON WRITES ---
+
+    def test_tool_writes_require_admin_role(self):
+        """A regular tenant user (or plain API key) can read tools but must not
+        create/update/delete them: tool definitions are code the agent runs for
+        every user of the tenant."""
+        self.mock_auth.verify_for_company.return_value = {
+            "success": True, "status_code": 200, "user_identifier": "regular", "user_role": "user",
+        }
+
+        assert self.client.post(f'/{self.MOCK_COMPANY}/api/tools', json={"name": "x", "description": "y"}).status_code == 403
+        assert self.client.put(f'/{self.MOCK_COMPANY}/api/tools/1', json={"description": "y"}).status_code == 403
+        assert self.client.delete(f'/{self.MOCK_COMPANY}/api/tools/1').status_code == 403
+
+        self.mock_tool_service.create_tool.assert_not_called()
+        self.mock_tool_service.update_tool.assert_not_called()
+        self.mock_tool_service.delete_tool.assert_not_called()
+
+    def test_tool_writes_forbidden_without_any_role(self):
+        self.mock_auth.verify_for_company.return_value = {"success": True, "status_code": 200}
+
+        assert self.client.post(f'/{self.MOCK_COMPANY}/api/tools', json={"name": "x", "description": "y"}).status_code == 403
+        self.mock_tool_service.create_tool.assert_not_called()
 
     # --- EXECUTE NATIVE ---
 

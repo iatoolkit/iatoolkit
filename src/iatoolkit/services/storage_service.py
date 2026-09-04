@@ -234,8 +234,34 @@ class StorageService:
             logging.error(error_msg)
             raise IAToolkitException(IAToolkitException.ErrorType.FILE_IO_ERROR, error_msg)
 
+    @staticmethod
+    def _validate_storage_key(storage_key: str) -> str:
+        """
+        Defensive check shared by every read/delete: a storage key must never
+        walk up with `..` (or carry NUL bytes). Absolute paths are deliberately
+        left to the connector - LocalFileConnector confines them to its root,
+        and its list_files() legitimately hands back absolute paths that flow
+        into here. Callers that accept keys from untrusted input additionally
+        enforce the `companies/<tenant>/` prefix (see
+        AttachmentResolutionService._validate_existing_storage_key); this guard
+        is the floor that applies even to internally sourced keys.
+        """
+        normalized = str(storage_key or "").strip()
+        segments = normalized.replace("\\", "/").split("/")
+        if (
+            not normalized
+            or "\x00" in normalized
+            or any(segment in {".", ".."} for segment in segments)
+        ):
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                "Invalid storage key.",
+            )
+        return normalized
+
     def get_document_content(self, company_short_name: str, storage_key: str) -> bytes:
         """Retrieves raw content via the configured connector."""
+        storage_key = self._validate_storage_key(storage_key)
         try:
             connector = self._get_connector(company_short_name)
             return connector.get_file_content(storage_key)
@@ -247,6 +273,7 @@ class StorageService:
         """
         Deletes a document from the configured storage.
         """
+        storage_key = self._validate_storage_key(storage_key)
         try:
             connector = self._get_connector(company_short_name)
             connector.delete_file(storage_key)

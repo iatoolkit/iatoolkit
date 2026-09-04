@@ -182,3 +182,48 @@ class TestStorageService(unittest.TestCase):
         args = self.mock_connector_instance.upload_file.call_args.kwargs
         self.assertEqual(args['content'], content)
         self.assertEqual(args['content_type'], mime)
+
+
+class TestStorageServiceKeyValidation(unittest.TestCase):
+    """Read/delete must reject keys that walk up the tree before they reach any
+    connector; absolute paths are the connector's call (LocalFileConnector
+    confines them to its root, and list_files() legitimately yields them)."""
+
+    def setUp(self):
+        self.factory_patch = patch('iatoolkit.services.storage_service.FileConnectorFactory')
+        self.mock_factory = self.factory_patch.start()
+        self.mock_connector_instance = MagicMock(spec=FileConnector)
+        self.mock_factory.create.return_value = self.mock_connector_instance
+        self.mock_config_service = MagicMock(spec=ConfigurationService)
+        self.mock_config_service.get_configuration.return_value = {
+            "iatoolkit_storage": {"type": "s3", "bucket": "bucket-x", "auth_env": {}}
+        }
+        self.service = StorageService(
+            config_service=self.mock_config_service,
+            secret_provider=MagicMock(spec=SecretProvider),
+        )
+
+    def tearDown(self):
+        self.factory_patch.stop()
+
+    def test_rejects_traversal_keys_on_read_and_delete(self):
+        for key in ("../etc/passwd", "companies/acme/../../other/doc.pdf", "companies/acme/./x", "", "a\x00b"):
+            with self.assertRaises(IAToolkitException) as ctx:
+                self.service.get_document_content("acme", key)
+            self.assertEqual(ctx.exception.error_type, IAToolkitException.ErrorType.INVALID_PARAMETER)
+            with self.assertRaises(IAToolkitException) as ctx:
+                self.service.delete_file("acme", key)
+            self.assertEqual(ctx.exception.error_type, IAToolkitException.ErrorType.INVALID_PARAMETER)
+
+        self.mock_connector_instance.get_file_content.assert_not_called()
+        self.mock_connector_instance.delete_file.assert_not_called()
+
+    def test_valid_keys_reach_the_connector(self):
+        self.mock_connector_instance.get_file_content.return_value = b"data"
+
+        assert self.service.get_document_content("acme", "companies/acme/documents/u1/f.pdf") == b"data"
+        # Absolute paths (as returned by LocalFileConnector.list_files) pass through.
+        self.service.get_document_content("acme", "/srv/storage/companies/acme/doc.txt")
+
+        self.mock_connector_instance.get_file_content.assert_any_call("companies/acme/documents/u1/f.pdf")
+        self.mock_connector_instance.get_file_content.assert_any_call("/srv/storage/companies/acme/doc.txt")

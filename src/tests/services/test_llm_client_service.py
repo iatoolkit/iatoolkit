@@ -1231,3 +1231,59 @@ class TestLLMClient:
         assert result["structured_output"] == {"employees": [{"id": 1}]}
         assert result["schema_applied"] is False
         assert result["schema_valid"] is None
+
+
+class TestFormatHtmlSanitization:
+    """format_html output is injected into the chat DOM as HTML and stored for the
+    admin inspector; the model echoes tenant data (SQL rows, RAG docs, tool
+    results), so anything executable planted there must be stripped."""
+
+    def setup_method(self):
+        self.tiktoken_patcher = patch('iatoolkit.services.llm_client_service.tiktoken')
+        self.tiktoken_patcher.start()
+        self.client = llmClient(
+            llmquery_repo=MagicMock(),
+            util=MagicMock(),
+            llm_proxy=MagicMock(),
+            model_registry=MagicMock(spec=ModelRegistry),
+            storage_service=MagicMock(spec=StorageService),
+            telemetry_service=MagicMock(),
+        )
+
+    def teardown_method(self):
+        patch.stopall()
+
+    @pytest.mark.parametrize("payload", [
+        '<img src=x onerror="alert(1)">',
+        '<svg onload=alert(1)></svg>',
+        '<a href="javascript:alert(1)">click</a>',
+        '<iframe srcdoc="<script>alert(1)</script>"></iframe>',
+        '<p onmouseover=alert(1)>hover</p>',
+        '<script>alert(1)</script><b>after</b>',
+    ])
+    def test_format_html_strips_executable_markup_from_raw_html_answers(self, payload):
+        html = self.client.format_html(payload)
+
+        lowered = html.lower()
+        assert "<script" not in lowered
+        assert "onerror" not in lowered and "onload" not in lowered and "onmouseover" not in lowered
+        assert "javascript:" not in lowered
+        assert "<iframe" not in lowered and "<svg" not in lowered
+
+    def test_format_html_strips_executable_markup_embedded_in_markdown(self):
+        # Pure markdown (no literal tags, so it takes the markdown2 branch) whose
+        # rendered link would carry a javascript: URL.
+        html = self.client.format_html('# Title\n\nSee [here](javascript:alert(1)) now\n\n- item')
+
+        assert "<h1>" in html and "<li>" in html
+        assert "javascript:" not in html.lower()
+        assert "here" in html
+
+    def test_format_html_keeps_markdown_formatting_and_safe_links(self):
+        html = self.client.format_html(
+            "## Report\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n[docs](https://example.com/x) and `code`"
+        )
+
+        assert "<h2>" in html
+        assert "<code>" in html
+        assert 'href="https://example.com/x"' in html
