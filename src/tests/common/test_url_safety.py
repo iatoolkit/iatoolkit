@@ -155,3 +155,99 @@ class TestFetchWithSafeRedirects:
             with pytest.raises(IAToolkitException) as excinfo:
                 fetch_with_safe_redirects("https://8.8.8.8/start", max_redirects=2)
         assert "redirected too many times" in excinfo.value.message
+
+
+class TestPrivateHostAllowlist:
+    """``allowed_private_hosts`` exists for the deployment whose callback target is
+    internal on purpose (portal-api on 172.19.x). It opens the *private* ranges for
+    a named host and nothing else: the ranges an SSRF payload wants stay shut even
+    when listed, because this list comes from tenant configuration."""
+
+    PRIVATE_PAIR = [
+        (2, 1, 6, "", ("172.19.169.164", 0)),
+        (2, 1, 6, "", ("172.19.164.97", 0)),
+    ]
+
+    def test_allows_listed_host_that_resolves_to_private_addresses(self):
+        with patch("iatoolkit.common.url_safety.socket.getaddrinfo", return_value=self.PRIVATE_PAIR):
+            parsed = assert_public_http_url(
+                "https://portal-api.example.com/hook",
+                allowed_private_hosts=("portal-api.example.com",),
+            )
+        assert parsed.hostname == "portal-api.example.com"
+
+    def test_same_host_is_still_rejected_when_not_listed(self):
+        with patch("iatoolkit.common.url_safety.socket.getaddrinfo", return_value=self.PRIVATE_PAIR):
+            with pytest.raises(IAToolkitException) as excinfo:
+                assert_public_http_url("https://portal-api.example.com/hook")
+        assert "resolves to a private or reserved address" in excinfo.value.message
+
+    @pytest.mark.parametrize("entry", [
+        "https://portal-api.example.com/hook",   # the whole URL, pasted from a config
+        "http://portal-api.example.com",
+        "portal-api.example.com:8443",
+        "portal-api.example.com/hook",
+        "  PORTAL-API.example.com.  ",
+    ])
+    def test_entry_is_reduced_to_the_bare_hostname(self, entry):
+        # A listed entry that never matched would look like correct config while
+        # the callback kept failing with the same opaque error.
+        with patch("iatoolkit.common.url_safety.socket.getaddrinfo", return_value=self.PRIVATE_PAIR):
+            assert_public_http_url(
+                "https://portal-api.example.com/hook", allowed_private_hosts=(entry,)
+            )
+
+    def test_listing_does_not_open_loopback_or_metadata_ranges(self):
+        # 169.254.169.254 is the whole point of the guard; configuration must not
+        # be able to reach it, so a listed host that resolves there still fails.
+        resolved = [(2, 1, 6, "", ("169.254.169.254", 0))]
+        with patch("iatoolkit.common.url_safety.socket.getaddrinfo", return_value=resolved):
+            with pytest.raises(IAToolkitException) as excinfo:
+                assert_public_http_url(
+                    "https://sneaky.example.com/x",
+                    allowed_private_hosts=("sneaky.example.com",),
+                )
+        assert "loopback, link-local or reserved" in excinfo.value.message
+
+    @pytest.mark.parametrize("url, host", [
+        ("https://127.0.0.1/x", "127.0.0.1"),
+        ("https://169.254.169.254/latest/meta-data", "169.254.169.254"),
+        ("https://localhost/x", "localhost"),
+        ("https://svc.internal/x", "svc.internal"),
+    ])
+    def test_listing_does_not_open_blocked_literals_or_local_names(self, url, host):
+        with pytest.raises(IAToolkitException) as excinfo:
+            assert_public_http_url(url, allowed_private_hosts=(host,))
+        assert "host is not allowed" in excinfo.value.message
+
+    def test_allows_listed_private_literal_ip(self):
+        assert_public_http_url("https://172.19.1.160/x", allowed_private_hosts=("172.19.1.160",))
+
+        with pytest.raises(IAToolkitException):
+            assert_public_http_url("https://172.19.1.160/x")
+
+    def test_empty_and_blank_entries_are_ignored(self):
+        with patch("iatoolkit.common.url_safety.socket.getaddrinfo", return_value=self.PRIVATE_PAIR):
+            with pytest.raises(IAToolkitException):
+                assert_public_http_url(
+                    "https://portal-api.example.com/hook",
+                    allowed_private_hosts=("", "   ", None),
+                )
+
+    def test_redirect_hops_honour_the_allowlist(self):
+        # fetch_with_safe_redirects re-validates every hop, so it has to carry the
+        # allowlist too or an internal download would fail on the second hop only.
+        hop = MagicMock()
+        hop.status_code = 302
+        hop.headers = {"Location": "https://portal-api.example.com/file"}
+        final = MagicMock()
+        final.status_code = 200
+        final.headers = {}
+
+        with patch("iatoolkit.common.url_safety.socket.getaddrinfo", return_value=self.PRIVATE_PAIR):
+            with patch("iatoolkit.common.url_safety.requests.get", side_effect=[hop, final]):
+                result = fetch_with_safe_redirects(
+                    "https://8.8.8.8/start",
+                    allowed_private_hosts=("portal-api.example.com",),
+                )
+        assert result is final

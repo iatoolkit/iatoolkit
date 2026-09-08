@@ -19,6 +19,10 @@ as well, and a public URL can 302 to one. This module therefore:
 * resolves hostnames and rejects them when ANY resolved address falls in those
   ranges (fail-closed on a private answer; fail-open only when the name cannot
   be resolved at all, since that request could not have reached anything);
+* accepts an operator-configured ``allowed_private_hosts`` list, so a deployment
+  whose callback or download target is legitimately internal (portal-backend on
+  172.19.x and the like) can name that host instead of loosening the guard for
+  everyone - loopback, link-local and reserved stay unreachable even when listed;
 * offers ``fetch_with_safe_redirects`` which never lets ``requests`` follow a
   redirect blindly: every hop is re-validated with the same rules.
 
@@ -89,10 +93,42 @@ def resolve_host_classifications(hostname: str) -> list[str] | None:
     return classifications
 
 
+def _normalize_host_allowlist(allowed_hosts) -> frozenset[str]:
+    """Reduces every entry to the bare hostname ``urlparse`` will hand us, so the
+    comparison cannot silently miss.
+
+    Accepts what an operator actually types in a config file: a hostname, a
+    hostname with a port, or the whole callback URL
+    (``https://portal-api.example.com/hook``). An entry that never matched would
+    look like correct configuration while the target kept failing with the same
+    opaque error, which is the worst outcome available here.
+    """
+    normalized = set()
+    for entry in allowed_hosts or ():
+        text = str(entry or "").strip().lower()
+        if not text:
+            continue
+        if "://" in text:
+            text = urlparse(text).hostname or ""
+        elif text.startswith("["):
+            # Bracketed IPv6 literal ("[fd00::1]:8443") - the colons are part of
+            # the address, so it cannot go through the host:port split below.
+            text = text[1:].split("]", 1)[0]
+        else:
+            # host[:port][/path] with no scheme: urlparse would read the whole
+            # thing as a path, so strip the port and path by hand.
+            text = text.split("/", 1)[0].split(":", 1)[0]
+        text = text.strip().rstrip(".")
+        if text:
+            normalized.add(text)
+    return frozenset(normalized)
+
+
 def assert_public_http_url(
     url: str,
     *,
     allowed_schemes: tuple[str, ...] = ("https",),
+    allowed_private_hosts: tuple[str, ...] = (),
     error_type: IAToolkitException.ErrorType = IAToolkitException.ErrorType.INVALID_PARAMETER,
     label: str = "URL",
 ) -> ParseResult:
@@ -100,6 +136,16 @@ def assert_public_http_url(
     Raises IAToolkitException(error_type) unless ``url`` is an absolute URL with
     an allowed scheme whose host is a public internet address (literal or via
     DNS). Returns the parsed URL on success.
+
+    ``allowed_private_hosts`` is the operator's escape hatch for the legitimate
+    case this guard otherwise blocks: a target that is internal on purpose, such
+    as a callback back into the deployment's own network. A host named there is
+    accepted when it is **private** (RFC1918 & friends), by literal IP or via
+    DNS. It is still rejected when it is loopback, link-local, multicast,
+    reserved or unspecified - those are the ranges an SSRF payload actually
+    wants (127.0.0.1, ::1, 169.254.169.254), and the tenant configuration that
+    feeds this list is editable by tenant admins, who are not the platform
+    operator. The blocked local *names* stay blocked for the same reason.
     """
     normalized = str(url or "").strip()
     parsed = urlparse(normalized)
@@ -116,18 +162,29 @@ def assert_public_http_url(
     if hostname in _BLOCKED_HOSTNAMES or hostname.endswith(_BLOCKED_HOST_SUFFIXES):
         raise IAToolkitException(error_type, f"{label} host is not allowed.")
 
+    host_allows_private = hostname in _normalize_host_allowlist(allowed_private_hosts)
+
     ip_value = _to_ip_or_none(hostname)
     if ip_value is not None:
-        if classify_ip(ip_value) != "public":
-            raise IAToolkitException(error_type, f"{label} host is not allowed.")
-        return parsed
+        classification = classify_ip(ip_value)
+        if classification == "public" or (classification == "private" and host_allows_private):
+            return parsed
+        raise IAToolkitException(error_type, f"{label} host is not allowed.")
 
     classifications = resolve_host_classifications(hostname)
-    if classifications and any(kind != "public" for kind in classifications):
-        raise IAToolkitException(
-            error_type,
-            f"{label} host is not allowed (resolves to a private or reserved address).",
-        )
+    if classifications:
+        # 'blocked' is never openable from configuration - see the docstring.
+        if any(kind == "blocked" for kind in classifications):
+            raise IAToolkitException(
+                error_type,
+                f"{label} host is not allowed "
+                "(resolves to a loopback, link-local or reserved address).",
+            )
+        if any(kind == "private" for kind in classifications) and not host_allows_private:
+            raise IAToolkitException(
+                error_type,
+                f"{label} host is not allowed (resolves to a private or reserved address).",
+            )
     return parsed
 
 
@@ -135,6 +192,7 @@ def fetch_with_safe_redirects(
     url: str,
     *,
     allowed_schemes: tuple[str, ...] = ("https",),
+    allowed_private_hosts: tuple[str, ...] = (),
     error_type: IAToolkitException.ErrorType = IAToolkitException.ErrorType.INVALID_PARAMETER,
     label: str = "URL",
     max_redirects: int = 3,
@@ -151,7 +209,11 @@ def fetch_with_safe_redirects(
     current_url = str(url or "").strip()
     for _ in range(max_redirects + 1):
         assert_public_http_url(
-            current_url, allowed_schemes=allowed_schemes, error_type=error_type, label=label
+            current_url,
+            allowed_schemes=allowed_schemes,
+            allowed_private_hosts=allowed_private_hosts,
+            error_type=error_type,
+            label=label,
         )
         response = requests.get(current_url, allow_redirects=False, **requests_kwargs)
         location = response.headers.get("Location") if response.status_code in _REDIRECT_STATUSES else None
