@@ -1093,6 +1093,9 @@ ui:
     cron_daily_at_3: "diariamente a las 03:00"
     cron_weekdays_at_9: "lunes a viernes a las 09:00"
     timezone: "Zona horaria"
+    parameters: "Parámetros"
+    arguments_help: "Se envía al destino en cada ejecución."
+    arguments_help_pipeline: 'Filtros del pipeline: {"filters": {...}}'
     execution: "Ejecución"
     queue: "Cola"
     timeout_seconds: "Timeout (segundos)"

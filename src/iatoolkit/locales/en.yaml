@@ -1078,6 +1078,9 @@ ui:
     cron_daily_at_3: "daily at 03:00"
     cron_weekdays_at_9: "weekdays at 09:00"
     timezone: "Timezone"
+    parameters: "Parameters"
+    arguments_help: "Sent to the target on every run."
+    arguments_help_pipeline: 'Pipeline filters: {"filters": {...}}'
     execution: "Execution"
     queue: "Queue"
     timeout_seconds: "Timeout (seconds)"
