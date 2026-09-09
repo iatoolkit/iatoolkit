@@ -358,6 +358,7 @@ class Tool(Base):
 
     # source of the definition (Source of Truth)
     SOURCE_SYSTEM = 'SYSTEM'
+    SOURCE_EXTENSION = 'EXTENSION'  # registered by an installed runtime extension
     SOURCE_YAML = 'YAML'         # defined in company.yaml
     SOURCE_USER = 'USER'         # defined via GUI/API
     SOURCE_PACK = 'PACK'         # materialized by enterprise control-plane

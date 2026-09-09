@@ -983,6 +983,8 @@ class ToolService:
         desired_names.discard("")
 
         for name, tool in existing_by_name.items():
+            if tool.source == Tool.SOURCE_EXTENSION:
+                continue
             if name not in desired_names and bool(tool.is_active):
                 return True
 
@@ -1042,6 +1044,8 @@ class ToolService:
             desired_names.discard("")
             deactivated_tools = 0
             for name, tool in existing_by_name.items():
+                if tool.source == Tool.SOURCE_EXTENSION:
+                    continue
                 if name in desired_names or not bool(tool.is_active):
                     continue
                 tool.is_active = False

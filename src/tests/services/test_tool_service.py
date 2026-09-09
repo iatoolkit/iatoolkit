@@ -330,6 +330,26 @@ class TestToolService:
         assert removed_tool.is_active is False
         self.mock_llm_query_repo.commit.assert_called_once()
 
+    def test_sync_system_tools_preserves_tools_owned_by_extensions(self):
+        external_tool = MagicMock(spec=Tool)
+        external_tool.name = "iat_gmail_capture"
+        external_tool.description = "Gmail capture"
+        external_tool.parameters = {"type": "object"}
+        external_tool.output_contract = None
+        external_tool.tool_type = Tool.TYPE_SYSTEM
+        external_tool.company_id = None
+        external_tool.source = Tool.SOURCE_EXTENSION
+        external_tool.is_active = True
+        self.mock_llm_query_repo.list_system_tools.return_value = [external_tool]
+
+        with patch("iatoolkit.services.tool_service.SYSTEM_TOOLS_DEFINITIONS", []), \
+             patch("iatoolkit.services.tool_service.get_system_tools_catalog_source", return_value="yaml"):
+            result = self.service.sync_system_tools_if_catalog_changed()
+
+        assert result["data"]["status"] == "skipped"
+        assert external_tool.is_active is True
+        self.mock_llm_query_repo.commit.assert_not_called()
+
     def test_create_tool_normalizes_output_contract(self):
         payload = {
             "name": "generate_banner",
