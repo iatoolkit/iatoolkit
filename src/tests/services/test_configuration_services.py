@@ -496,6 +496,28 @@ class TestConfigurationService:
         # Assert
         assert errors == []
 
+    def test_validate_configuration_accepts_mcp_server_url(self):
+        valid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        valid_config["mcp"] = {"server_url": "https://mcp.acme.example/acme/mcp"}
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = valid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert errors == []
+
+    def test_validate_configuration_rejects_invalid_mcp_server_url(self):
+        invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        invalid_config["mcp"] = {"server_url": "http://mcp.acme.example/acme/mcp"}
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = invalid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert any("mcp.server_url" in e and "absolute HTTPS" in e for e in errors)
+
     def test_validate_configuration_accepts_embedding_provider_startup_warmup(self):
         valid_config = copy.deepcopy(MOCK_VALID_CONFIG)
         valid_config["embedding_provider"]["warmup_on_startup"] = True

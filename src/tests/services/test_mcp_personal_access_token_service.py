@@ -227,9 +227,32 @@ class TestMcpTokenService:
         result = self.service.get_company_token_connection("acme", 8)
 
         assert result["data"]["token"] == "iatmcp_saved"
-        assert result["data"]["mcp_server_url"] == "https://mcp.iatoolkit.com/acme/mcp/"
+        assert result["data"]["mcp_server_url"] == "https://mcp.iatoolkit.com/acme/mcp"
         assert '"Authorization": "Bearer iatmcp_saved"' in result["data"]["connection_snippet"]
         self.mock_utility.decrypt_key.assert_called_once_with("encrypted:iatmcp_saved")
+
+    def test_get_company_token_connection_uses_configured_mcp_server_url(self):
+        token = McpToken(
+            id=8,
+            company_id=self.company.id,
+            subject_type=McpToken.SUBJECT_TYPE_SERVICE,
+            subject_identifier="service:mcp",
+            created_by_identifier="admin@acme.com",
+            name="OpenAI Agents",
+            token_hash="x" * 64,
+            token_encrypted="encrypted:iatmcp_saved",
+            expires_at=datetime.now() + timedelta(days=1),
+        )
+        self.mock_repo.get_token_by_id.return_value = token
+        self.service.configuration_service = MagicMock()
+        self.service.configuration_service.get_configuration.return_value = {
+            "server_url": "https://mcp.acme.example/acme/mcp/",
+        }
+
+        result = self.service.get_company_token_connection("acme", 8)
+
+        assert result["data"]["mcp_server_url"] == "https://mcp.acme.example/acme/mcp"
+        assert '"url": "https://mcp.acme.example/acme/mcp"' in result["data"]["connection_snippet"]
 
     def test_get_company_token_connection_requires_encrypted_token(self):
         token = McpToken(

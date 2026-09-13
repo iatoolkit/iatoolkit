@@ -4,6 +4,8 @@ import hashlib
 import os
 import secrets
 from datetime import datetime, timedelta
+from typing import Any
+from urllib.parse import quote, urlparse
 
 from injector import inject
 from sqlalchemy.exc import IntegrityError
@@ -12,6 +14,7 @@ from iatoolkit.common.util import Utility
 from iatoolkit.repositories.mcp_token_repo import McpTokenRepo
 from iatoolkit.repositories.models import McpToken
 from iatoolkit.repositories.profile_repo import ProfileRepo
+from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.i18n_service import I18nService
 
 
@@ -28,11 +31,13 @@ class McpTokenService:
         profile_repo: ProfileRepo,
         token_repo: McpTokenRepo,
         utility: Utility,
+        configuration_service: ConfigurationService | None = None,
     ):
         self.i18n_service = i18n_service
         self.profile_repo = profile_repo
         self.token_repo = token_repo
         self.utility = utility
+        self.configuration_service = configuration_service
 
     def list_user_tokens(self, company_short_name: str, user_identifier: str) -> dict:
         company, error = self._get_company(company_short_name)
@@ -136,7 +141,7 @@ class McpTokenService:
             return {"error": self.i18n_service.t("errors.auth.mcp_pat_token_unavailable"), "status_code": 409}
 
         raw_token = self.utility.decrypt_key(token.token_encrypted)
-        mcp_server_url = self.build_mcp_server_url(company_short_name)
+        mcp_server_url = self.resolve_mcp_server_url(company_short_name)
         payload = self._token_to_dict(token)
         payload["token"] = raw_token
         payload["mcp_server_url"] = mcp_server_url
@@ -172,6 +177,48 @@ class McpTokenService:
             "token_id": token.id,
         }
 
+    def resolve_mcp_server_url(self, company_short_name: str) -> str:
+        configured_url = self._configured_mcp_server_url(company_short_name)
+        if configured_url:
+            return configured_url
+        return self.build_mcp_server_url(company_short_name)
+
+    def _configured_mcp_server_url(self, company_short_name: str) -> str | None:
+        if self.configuration_service is None:
+            return None
+        try:
+            mcp_config = self.configuration_service.get_configuration(company_short_name, "mcp") or {}
+        except Exception:
+            return None
+        if not isinstance(mcp_config, dict):
+            return None
+        raw_url = (
+            mcp_config.get("server_url")
+            or mcp_config.get("public_server_url")
+            or mcp_config.get("public_url")
+        )
+        if not raw_url:
+            raw_base_url = (
+                mcp_config.get("public_base_url")
+                or mcp_config.get("base_url")
+                or mcp_config.get("public_base")
+            )
+            if raw_base_url:
+                raw_url = f"{str(raw_base_url).rstrip('/')}/{quote(str(company_short_name or '').strip(), safe='')}/mcp"
+        return self._normalize_mcp_server_url(raw_url, company_short_name=company_short_name)
+
+    @staticmethod
+    def _normalize_mcp_server_url(raw_url: Any, *, company_short_name: str) -> str | None:
+        url = str(raw_url or "").strip()
+        if not url:
+            return None
+        if any(ch.isspace() for ch in url):
+            raise ValueError(f"Invalid MCP server_url for tenant '{company_short_name}': whitespace is not allowed.")
+        parsed = urlparse(url)
+        if parsed.scheme != "https" or not parsed.netloc:
+            raise ValueError(f"Invalid MCP server_url for tenant '{company_short_name}': URL must be absolute HTTPS.")
+        return url.rstrip("/")
+
     @staticmethod
     def build_mcp_server_url(company_short_name: str) -> str:
         public_base_url = str(
@@ -180,7 +227,8 @@ class McpTokenService:
             or "https://mcp.iatoolkit.com"
         ).strip()
         public_base_url = public_base_url.rstrip("/")
-        return f"{public_base_url}/{company_short_name}/mcp/"
+        tenant = quote(str(company_short_name or "").strip(), safe="")
+        return f"{public_base_url}/{tenant}/mcp"
 
     @staticmethod
     def build_mcp_connection_snippet(

@@ -492,6 +492,13 @@ class ConfigurationService:
         if not config.get("name"):
             add_error("General", "Missing required key: 'name'")
 
+        mcp_config = config.get("mcp")
+        if mcp_config is not None:
+            if not isinstance(mcp_config, dict):
+                add_error("mcp", "Must be a dictionary.")
+            else:
+                self._validate_mcp_url_config(mcp_config, add_error)
+
         # 2. LLM section
         if not isinstance(config.get("llm"), dict):
             add_error("llm", "Missing or invalid 'llm' section.")
@@ -1252,6 +1259,21 @@ class ConfigurationService:
             logging.error(error_summary)
 
         return errors
+
+    @staticmethod
+    def _validate_mcp_url_config(mcp_config: dict, add_error) -> None:
+        for key in ("server_url", "public_server_url", "public_url", "public_base_url", "base_url", "public_base"):
+            if key not in mcp_config or mcp_config.get(key) in (None, ""):
+                continue
+            raw_url = str(mcp_config.get(key) or "").strip()
+            if not raw_url:
+                continue
+            if any(ch.isspace() for ch in raw_url):
+                add_error(f"mcp.{key}", "Whitespace is not allowed.")
+                continue
+            parsed = urlparse(raw_url)
+            if parsed.scheme != "https" or not parsed.netloc:
+                add_error(f"mcp.{key}", "URL must be absolute HTTPS.")
 
 
     def _set_nested_value(self, data: dict, key: str, value):
