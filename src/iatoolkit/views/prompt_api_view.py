@@ -57,6 +57,8 @@ class PromptApiView(MethodView):
                 meta["execution_mode"] = PromptService.execution_mode_for_agent_role(agent_role)
                 meta["queue_tier"] = runtime_policy["queue_tier"]
                 meta["context_policy"] = runtime_policy["context"]
+                meta["runtime_provider"] = runtime_policy["runtime_provider"]
+                meta["runtime_config"] = runtime_policy["runtime_config"]
 
                 return jsonify({
                     "meta": meta,

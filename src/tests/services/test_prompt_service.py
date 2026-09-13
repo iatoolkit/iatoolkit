@@ -35,6 +35,9 @@ class TestPromptService:
         prompt.llm_request_options = {}
         prompt.tool_policy = {}
         prompt.context_policy = {}
+        prompt.runtime_policy = {}
+        prompt.runtime_provider = 'query_service'
+        prompt.runtime_config = {}
         return prompt
 
     @pytest.fixture(autouse=True)
@@ -125,6 +128,8 @@ class TestPromptService:
                             'enabled': True,
                         }
                     },
+                    'runtime_provider': 'query_service',
+                    'runtime_config': {},
                 }],
             }]
         }
@@ -677,6 +682,53 @@ properties:
 
         saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
         assert saved_prompt.queue_tier == 'low'
+
+    def test_save_prompt_persists_runtime_provider_and_config(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_category_by_name.return_value = None
+
+        self.prompt_service.save_prompt(
+            'test_co',
+            'openai_agent_prompt',
+            {
+                'content': 'Prompt text',
+                'runtime_provider': 'openai_agents',
+                'runtime_config': {
+                    'environment': {'type': 'openai_hosted'},
+                    'mcp': {'enabled': True, 'server_url': 'https://mcp.example.test'},
+                },
+            },
+        )
+
+        saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
+        assert saved_prompt.runtime_provider == 'openai_agents'
+        assert saved_prompt.runtime_config == {
+            'environment': {'type': 'openai_hosted'},
+            'mcp': {'enabled': True, 'server_url': 'https://mcp.example.test'},
+        }
+
+    def test_save_prompt_preserves_existing_runtime_provider_when_omitted(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_category_by_name.return_value = None
+        existing_prompt = MagicMock(spec=Prompt)
+        existing_prompt.agent_role = 'operations'
+        existing_prompt.queue_tier = 'default'
+        existing_prompt.context_policy = {}
+        existing_prompt.runtime_provider = 'openai_agents'
+        existing_prompt.runtime_config = {'environment': {'type': 'openai_hosted'}}
+        self.prompt_service.get_prompt_definition = MagicMock(return_value=existing_prompt)
+
+        self.prompt_service.save_prompt(
+            'test_co',
+            'existing_openai_prompt',
+            {
+                'content': 'Prompt text',
+            },
+        )
+
+        saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
+        assert saved_prompt.runtime_provider == 'openai_agents'
+        assert saved_prompt.runtime_config == {'environment': {'type': 'openai_hosted'}}
 
     def test_save_prompt_persists_llm_request_options(self):
         self.profile_repo.get_company_by_short_name.return_value = self.mock_company

@@ -356,6 +356,27 @@ class TestLLMQueryRepo:
         assert result.id == prompt.id
         assert result.queue_tier == "low"
 
+    def test_create_or_update_prompt_persists_runtime_provider(self):
+        new_prompt = Prompt(
+            name="p_openai_runtime",
+            company_id=self.company.id,
+            description="OpenAI runtime",
+            filename="openai_runtime.prompt",
+            runtime_policy={
+                "version": 1,
+                "role": "operations",
+                "queue_tier": "default",
+                "runtime_provider": "openai_agents",
+                "runtime_config": {"environment": {"type": "openai_hosted"}},
+            },
+        )
+
+        result = self.repo.create_or_update_prompt(new_prompt)
+        self.session.commit()
+
+        assert result.runtime_provider == "openai_agents"
+        assert result.runtime_config == {"environment": {"type": "openai_hosted"}}
+
     def test_create_prompt_category(self):
         """Test creating a new prompt category."""
         new_category = PromptCategory(name="Cat1", order=1, company_id=self.company.id)

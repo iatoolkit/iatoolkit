@@ -566,6 +566,48 @@ class TestConfigurationService:
         errors = self.service.validate_configuration(self.COMPANY_NAME)
         assert errors == []
 
+    def test_validate_configuration_accepts_prompt_runtime_provider(self):
+        valid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        valid_config["prompts"]["prompt_list"][0]["runtime_policy"] = {
+            "role": "operations",
+            "queue_tier": "default",
+            "runtime_provider": "openai_agents",
+            "runtime_config": {"environment": {"type": "openai_hosted"}},
+        }
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = valid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert errors == []
+
+    def test_validate_configuration_rejects_invalid_prompt_runtime_provider(self):
+        invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        invalid_config["prompts"]["prompt_list"][0]["runtime_policy"] = {
+            "runtime_provider": "openrouter",
+        }
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = invalid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert any("runtime_policy.runtime_provider" in e for e in errors)
+
+    def test_validate_configuration_rejects_non_object_prompt_runtime_config(self):
+        invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        invalid_config["prompts"]["prompt_list"][0]["runtime_policy"] = {
+            "runtime_config": "openai_hosted",
+        }
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = invalid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert any("runtime_policy.runtime_config" in e for e in errors)
+
     def test_validate_configuration_accepts_braintrust_telemetry(self):
         valid_config = copy.deepcopy(MOCK_VALID_CONFIG)
         valid_config["llm"]["telemetry"] = {

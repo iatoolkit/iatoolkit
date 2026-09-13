@@ -15,6 +15,7 @@ from collections import defaultdict
 from iatoolkit.repositories.models import (
     Prompt,
     PromptAgentRole,
+    PromptRuntimeProvider,
     PromptCategory,
     Company,
 )
@@ -51,6 +52,8 @@ class PromptService:
     TOOL_POLICY_MODE_EXPLICIT = "explicit"
     QUEUE_TIER_DEFAULT = "default"
     QUEUE_TIER_LOW = "low"
+    RUNTIME_PROVIDER_QUERY_SERVICE = PromptRuntimeProvider.QUERY_SERVICE.value
+    RUNTIME_PROVIDER_OPENAI_AGENTS = PromptRuntimeProvider.OPENAI_AGENTS.value
     EXECUTION_MODE_CONVERSATIONAL = "conversational"
     EXECUTION_MODE_AGENTIC = "agentic"
     AGENT_ROLE_WORKSPACE_CHAT = PromptAgentRole.WORKSPACE_CHAT.value
@@ -251,10 +254,26 @@ class PromptService:
         return cls.QUEUE_TIER_DEFAULT
 
     @classmethod
+    def normalize_runtime_provider_value(cls, runtime_provider: str | None) -> str:
+        candidate = str(runtime_provider or cls.RUNTIME_PROVIDER_QUERY_SERVICE).strip().lower()
+        if candidate in {
+            cls.RUNTIME_PROVIDER_QUERY_SERVICE,
+            cls.RUNTIME_PROVIDER_OPENAI_AGENTS,
+        }:
+            return candidate
+        return cls.RUNTIME_PROVIDER_QUERY_SERVICE
+
+    @classmethod
+    def normalize_runtime_config(cls, runtime_config: dict | None) -> dict:
+        return dict(runtime_config or {}) if isinstance(runtime_config, dict) else {}
+
+    @classmethod
     def normalize_runtime_policy(cls, runtime_policy: dict | None) -> dict:
         policy = runtime_policy if isinstance(runtime_policy, dict) else {}
         role = cls.normalize_agent_role_value(policy.get("role"))
         queue_tier = cls.normalize_queue_tier_value(policy.get("queue_tier"))
+        runtime_provider = cls.normalize_runtime_provider_value(policy.get("runtime_provider"))
+        runtime_config = cls.normalize_runtime_config(policy.get("runtime_config"))
         raw_context = policy.get("context")
         context = cls.normalize_context_policy(
             raw_context if isinstance(raw_context, dict) else None,
@@ -265,6 +284,8 @@ class PromptService:
             "role": role,
             "queue_tier": queue_tier,
             "context": context,
+            "runtime_provider": runtime_provider,
+            "runtime_config": runtime_config,
         }
 
     @classmethod
@@ -278,6 +299,17 @@ class PromptService:
     @classmethod
     def get_runtime_policy_context(cls, runtime_policy: dict | None) -> dict:
         return cls.normalize_runtime_policy(runtime_policy).get("context", cls.default_context_policy_for_agent_role(None))
+
+    @classmethod
+    def get_runtime_policy_provider(cls, runtime_policy: dict | None) -> str:
+        return cls.normalize_runtime_policy(runtime_policy).get(
+            "runtime_provider",
+            cls.RUNTIME_PROVIDER_QUERY_SERVICE,
+        )
+
+    @classmethod
+    def get_runtime_policy_config(cls, runtime_policy: dict | None) -> dict:
+        return cls.normalize_runtime_policy(runtime_policy).get("runtime_config", {})
 
     def _normalize_output_schema_mode(self, output_schema_mode: str | None) -> str:
         candidate = str(output_schema_mode or self.OUTPUT_SCHEMA_MODE_BEST_EFFORT).strip().lower()
@@ -689,6 +721,8 @@ class PromptService:
                         'llm_request_options': dict(getattr(p, 'llm_request_options', None) or {}),
                         'tool_policy': dict(getattr(p, 'tool_policy', None) or {}),
                         'context_policy': runtime_policy["context"],
+                        'runtime_provider': runtime_policy["runtime_provider"],
+                        'runtime_config': runtime_policy["runtime_config"],
                     })
 
                 categorized_prompts.append({
@@ -809,6 +843,16 @@ class PromptService:
                 "role": role_value,
                 "queue_tier": queue_tier_value,
                 "context": context_value,
+                "runtime_provider": data.get(
+                    "runtime_provider",
+                    getattr(existing_prompt, "runtime_provider", existing_runtime_policy["runtime_provider"])
+                    if existing_prompt is not None else existing_runtime_policy["runtime_provider"],
+                ),
+                "runtime_config": data.get(
+                    "runtime_config",
+                    getattr(existing_prompt, "runtime_config", existing_runtime_policy["runtime_config"])
+                    if existing_prompt is not None else existing_runtime_policy["runtime_config"],
+                ),
             })
         agent_role = runtime_policy["role"]
         force_free_text_output = (

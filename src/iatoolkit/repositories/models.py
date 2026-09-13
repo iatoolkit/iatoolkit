@@ -45,6 +45,11 @@ class PromptAgentRole(str, enum.Enum):
     OPERATIONS = "operations"
 
 
+class PromptRuntimeProvider(str, enum.Enum):
+    QUERY_SERVICE = "query_service"
+    OPENAI_AGENTS = "openai_agents"
+
+
 class PromptResourceType(str, enum.Enum):
     SQL_SOURCE = "sql_source"
     RAG_COLLECTION = "rag_collection"
@@ -895,6 +900,29 @@ class Prompt(Base):
     @context_policy.setter
     def context_policy(self, value: dict | None):
         self._set_runtime_policy_value("context", dict(value or {}))
+
+    @property
+    def runtime_provider(self) -> str:
+        provider = str((self.runtime_policy or {}).get("runtime_provider") or "").strip().lower()
+        if provider in {item.value for item in PromptRuntimeProvider}:
+            return provider
+        return PromptRuntimeProvider.QUERY_SERVICE.value
+
+    @runtime_provider.setter
+    def runtime_provider(self, value: str | None):
+        provider = str(value or "").strip().lower()
+        if provider not in {item.value for item in PromptRuntimeProvider}:
+            provider = PromptRuntimeProvider.QUERY_SERVICE.value
+        self._set_runtime_policy_value("runtime_provider", provider)
+
+    @property
+    def runtime_config(self) -> dict:
+        runtime_config = (self.runtime_policy or {}).get("runtime_config")
+        return dict(runtime_config or {}) if isinstance(runtime_config, dict) else {}
+
+    @runtime_config.setter
+    def runtime_config(self, value: dict | None):
+        self._set_runtime_policy_value("runtime_config", dict(value or {}))
 
 
 class PromptResourceBinding(Base):

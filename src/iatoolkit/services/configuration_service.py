@@ -784,6 +784,7 @@ class ConfigurationService:
             "operations",
         }
         allowed_queue_tiers = {"default", "low"}
+        allowed_runtime_providers = {"query_service", "openai_agents"}
         allowed_output_schema_modes = {"best_effort", "strict"}
         allowed_output_response_modes = {"chat_compatible", "structured_only"}
         allowed_attachment_modes = {"extracted_only", "native_only", "native_plus_extracted"}
@@ -835,6 +836,20 @@ class ConfigurationService:
                     f"prompts[{i}].runtime_policy.queue_tier",
                     f"Unsupported runtime_policy.queue_tier '{queue_tier}'. Must be one of: {sorted(allowed_queue_tiers)}.",
                 )
+                continue
+
+            runtime_provider = str(runtime_policy.get("runtime_provider", "") or "").strip().lower()
+            if runtime_provider and runtime_provider not in allowed_runtime_providers:
+                add_error(
+                    f"prompts[{i}].runtime_policy.runtime_provider",
+                    "Unsupported runtime_policy.runtime_provider "
+                    f"'{runtime_provider}'. Must be one of: {sorted(allowed_runtime_providers)}.",
+                )
+                continue
+
+            runtime_config = runtime_policy.get("runtime_config")
+            if runtime_config is not None and not isinstance(runtime_config, dict):
+                add_error(f"prompts[{i}].runtime_policy.runtime_config", "Must be a dictionary.")
                 continue
 
             if prompt_cat and prompt_cat not in category_set:
