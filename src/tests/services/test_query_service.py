@@ -46,6 +46,14 @@ class TestQueryService:
         self.model_registry.get_provider.return_value = "openai"
         self.model_registry.get_history_type.return_value = "server_side"
         self.mock_configuration_service.get_llm_model_config.return_value = None
+        # The company default is read through the same resolution the model
+        # picker uses, so the double answers from whatever llm block a test set.
+        self.mock_configuration_service.get_llm_configuration.side_effect = (
+            lambda company_short_name: (
+                (self.mock_configuration_service.get_configuration.return_value or {}).get("model"),
+                [],
+            )
+        )
         self.mock_llm_client.count_tokens.return_value = 123
         self.mock_telemetry_service.resolve_execution_request.return_value = {}
 
@@ -2163,3 +2171,49 @@ class TestQueryService:
             MOCK_LOCAL_USER_ID,
             query_text=None,
         )
+
+
+class TestTheCompanyDefaultModel:
+    """What answers when neither the caller nor the prompt names a model.
+
+    It is read through `get_llm_configuration`, the same resolution the model
+    picker uses, so a company backed by the model catalogue gets the default its
+    entitlements carry rather than a `llm.model` line that may name a model it
+    can no longer use.
+    """
+
+    def setup_method(self):
+        self.configuration_service = MagicMock(spec=ConfigurationService)
+        self.service = QueryService.__new__(QueryService)
+        self.service.configuration_service = self.configuration_service
+
+    def _default(self, raw_model):
+        self.configuration_service.get_llm_configuration.return_value = (raw_model, [])
+        return self.service._resolve_model("acme", None, None)
+
+    def test_the_configured_default_answers(self):
+        assert self._default("gpt-5-mini") == "gpt-5-mini"
+
+    def test_an_explicit_model_wins_over_the_default(self):
+        self.configuration_service.get_llm_configuration.return_value = ("gpt-5-mini", [])
+
+        assert self.service._resolve_model("acme", "claude-5", None) == "claude-5"
+        self.configuration_service.get_llm_configuration.assert_not_called()
+
+    def test_the_prompt_model_wins_over_the_default(self):
+        self.configuration_service.get_llm_configuration.return_value = ("gpt-5-mini", [])
+
+        resolved = self.service._resolve_model("acme", None, {"llm_model": "claude-5"})
+
+        assert resolved == "claude-5"
+
+    def test_a_default_written_as_a_list_still_names_a_model(self):
+        # Seen in the wild: `llm.model:` with a single item under it. Untouched,
+        # the list reached the provider SDK and failed there as
+        # "'list' object has no attribute 'lower'", far from the line at fault.
+        assert self._default(["gpt-5.5"]) == "gpt-5.5"
+
+    def test_an_empty_default_resolves_to_nothing(self):
+        assert self._default([]) is None
+        assert self._default(None) is None
+        assert self._default("   ") is None

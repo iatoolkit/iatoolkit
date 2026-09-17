@@ -209,10 +209,53 @@ class QueryService:
             if prompt_model:
                 effective_model = prompt_model
         if not effective_model:
-            llm_config = self.configuration_service.get_configuration(company_short_name, 'llm')
-            if llm_config and llm_config.get('model'):
-                effective_model = llm_config['model']
+            # Asked of the same resolution the model picker uses, not of the raw
+            # `llm.model` key: on a company backed by the model catalogue the
+            # default travels with its entitlements, so a YAML default the
+            # company can no longer use does not keep being sent.
+            default_model, _ = self.configuration_service.get_llm_configuration(company_short_name)
+            effective_model = self._coerce_model_name(default_model, company_short_name)
         return effective_model
+
+    @staticmethod
+    def _coerce_model_name(raw_model, company_short_name: str) -> Optional[str]:
+        """The configured default as a model name, or None.
+
+        A malformed `llm.model` — a list is the one seen in the wild — used to
+        travel untouched into the provider SDK and fail there as
+        "'list' object has no attribute 'lower'", which reads like a bug in the
+        toolkit rather than a line to fix in the company's configuration. The
+        first usable entry is taken so the company keeps working, and the log
+        says what to correct.
+        """
+        if isinstance(raw_model, str):
+            return raw_model.strip() or None
+        if raw_model is None:
+            return None
+        if isinstance(raw_model, (list, tuple)):
+            for item in raw_model:
+                candidate = str(item or "").strip()
+                if candidate:
+                    logging.warning(
+                        "Company '%s' declares llm.model as a %s; using '%s'. "
+                        "It must be a single model name — list alternatives under llm.available_models.",
+                        company_short_name,
+                        type(raw_model).__name__,
+                        candidate,
+                    )
+                    return candidate
+            return None
+
+        candidate = str(raw_model).strip()
+        if not candidate:
+            return None
+        logging.warning(
+            "Company '%s' declares llm.model as a %s; using '%s'. It must be a single model name.",
+            company_short_name,
+            type(raw_model).__name__,
+            candidate,
+        )
+        return candidate
 
     def _get_history_type(self, company_short_name: str, model: str) -> str:
         provider = self._get_provider(company_short_name, model)

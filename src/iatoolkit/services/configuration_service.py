@@ -505,6 +505,16 @@ class ConfigurationService:
         else:
             if not config.get("llm", {}).get("model"):
                 add_error("llm", "Missing required key: 'model'")
+            elif not isinstance(config.get("llm", {}).get("model"), str):
+                # 'model' names the one model that answers when nothing else
+                # picks one. A list here reads as valid YAML and travels all the
+                # way to the provider SDK, where it surfaces as
+                # "'list' object has no attribute 'lower'" — a config mistake
+                # wearing a runtime error's clothes.
+                add_error(
+                    "llm.model",
+                    "Must be a single model name. To offer several, list them under 'available_models'.",
+                )
             if not config.get("llm", {}).get("provider_api_keys"):
                 add_error("llm", "Missing required key: 'provider_api_keys'")
             allowed_reasoning_efforts = {"minimal", "low", "medium", "high", "xhigh"}

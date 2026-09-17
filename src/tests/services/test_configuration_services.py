@@ -496,6 +496,19 @@ class TestConfigurationService:
         # Assert
         assert errors == []
 
+    def test_validate_configuration_rejects_a_list_as_the_default_model(self):
+        """`llm.model` names one model; a list there reads as valid YAML and
+        only fails much later, inside the provider SDK."""
+        invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        invalid_config["llm"]["model"] = ["gpt-5.5"]
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = invalid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert any("llm.model" in e and "single model name" in e for e in errors)
+
     def test_validate_configuration_accepts_mcp_server_url(self):
         valid_config = copy.deepcopy(MOCK_VALID_CONFIG)
         valid_config["mcp"] = {"server_url": "https://mcp.acme.example/acme/mcp"}

@@ -464,7 +464,9 @@ class IAToolkit:
         binder.bind(ParsingProviderResolver, to=ParsingProviderResolver)
         binder.bind(DoclingParsingProvider, to=DoclingParsingProvider)
         binder.bind(BasicParsingProvider, to=BasicParsingProvider)
-        binder.bind(PromptService, to=PromptService)
+        # this class can be setup before by iatoolkit enterprise
+        if not is_bound(self._injector, PromptService):
+            binder.bind(PromptService, to=PromptService)
         binder.bind(ExcelService, to=ExcelService)
         binder.bind(PdfService, to=PdfService)
         binder.bind(MailService, to=MailService)
@@ -480,7 +482,19 @@ class IAToolkit:
         binder.bind(BrandingService, to=BrandingService)
         binder.bind(I18nService, to=I18nService)
         binder.bind(LanguageService, to=LanguageService)
-        binder.bind(ConfigurationService, to=ConfigurationService)
+        # this class can be setup before by iatoolkit enterprise.
+        #
+        # Binding it unconditionally overwrote that override for the rest of this
+        # method and, crucially, for `_instantiate_company_instances()` a few
+        # steps later: anything built there — `TaskExecutorRegistry` is a
+        # singleton, so its whole graph froze — kept the community
+        # ConfigurationService for the life of the process, while every later
+        # `injector.get()` got the enterprise one. Prompts answered from the web
+        # and failed from the worker: the task executor's copy knew nothing of
+        # the model catalogue, so an OpenRouter model was routed by guessing at
+        # its name.
+        if not is_bound(self._injector, ConfigurationService):
+            binder.bind(ConfigurationService, to=ConfigurationService)
         binder.bind(TelemetryService, to=TelemetryService)
         binder.bind(EmbeddingService, to=EmbeddingService)
         binder.bind(HistoryManagerService, to=HistoryManagerService)

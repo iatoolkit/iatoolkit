@@ -287,3 +287,57 @@ class TestIAToolkit(unittest.TestCase):
         mock_cors.assert_called_once()
         call_kwargs = mock_cors.call_args[1]
         self.assertIn('https://a.com', call_kwargs['origins'])
+
+
+class TestEnterpriseOverridesSurviveTheDefaults(unittest.TestCase):
+    """Bindings enterprise registers before boot must outlive the community defaults.
+
+    Enterprise binds its subclasses first, then calls create_iatoolkit(). The
+    defaults used to overwrite two of them, and not just for a moment:
+    `_instantiate_company_instances()` runs later in that same boot and builds
+    singletons, so the task executor graph froze holding the community classes
+    while every later injector.get() returned the enterprise ones. A prompt then
+    answered from the web and failed from the worker — the worker's copy knew
+    nothing of the model catalogue and routed an OpenRouter model by guessing at
+    its name.
+    """
+
+    def setUp(self):
+        import iatoolkit.core as iat_module
+        iat_module._iatoolkit_instance = None
+
+    @staticmethod
+    def _bound_class(injector, interface):
+        return injector.binder._bindings[interface].provider._cls
+
+    def test_a_pre_registered_override_is_not_replaced_by_the_default(self):
+        from iatoolkit.services.configuration_service import ConfigurationService
+        from iatoolkit.services.prompt_service import PromptService
+
+        class OverriddenConfigurationService(ConfigurationService):
+            pass
+
+        class OverriddenPromptService(PromptService):
+            pass
+
+        toolkit = IAToolkit.__new__(IAToolkit)
+        toolkit._injector = Injector()
+        toolkit._injector.binder.bind(ConfigurationService, to=OverriddenConfigurationService)
+        toolkit._injector.binder.bind(PromptService, to=OverriddenPromptService)
+
+        toolkit._bind_services(toolkit._injector.binder)
+
+        assert self._bound_class(toolkit._injector, ConfigurationService) is OverriddenConfigurationService
+        assert self._bound_class(toolkit._injector, PromptService) is OverriddenPromptService
+
+    def test_without_an_override_the_default_still_answers(self):
+        from iatoolkit.services.configuration_service import ConfigurationService
+        from iatoolkit.services.prompt_service import PromptService
+
+        toolkit = IAToolkit.__new__(IAToolkit)
+        toolkit._injector = Injector()
+
+        toolkit._bind_services(toolkit._injector.binder)
+
+        assert self._bound_class(toolkit._injector, ConfigurationService) is ConfigurationService
+        assert self._bound_class(toolkit._injector, PromptService) is PromptService
