@@ -168,6 +168,12 @@ class LLMProxy:
             return "direct"
         return f"{vendor}/{mode}"
 
+    def describe_provider(self, company_short_name: str, model: str) -> str:
+        return self._resolve_provider_for_company_model(
+            company_short_name=company_short_name,
+            model=model,
+        )
+
     # -------------------------------------------------------------------------
     # Provider resolution
     # -------------------------------------------------------------------------

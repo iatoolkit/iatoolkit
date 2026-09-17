@@ -161,13 +161,15 @@ class llmClient:
         try:
             start_time = time.time()
             reasoning_mode = str((reasoning_payload or {}).get("effort") or "none").strip().lower() or "none"
+            provider = self._describe_llm_provider(company.short_name, model)
             transport_mode = self.llm_proxy.describe_transport(company.short_name, model)
             logging.info(
                 (
-                    "calling llm model '%s' with %s tokens...and %s images...and %s native attachments..."
-                    "and reasoning mode '%s'...and transport '%s'..."
+                    "calling llm model '%s' with provider '%s'...and %s tokens...and %s images..."
+                    "and %s native attachments...and reasoning mode '%s'...and transport '%s'..."
                 ),
                 model,
+                provider,
                 self.count_tokens(context, context_history),
                 len(images),
                 len(attachments),
@@ -1288,6 +1290,18 @@ class llmClient:
             stats["provider_calls"] = [provider_call]
 
         return stats
+
+    def _describe_llm_provider(self, company_short_name: str, model: str) -> str:
+        describe_provider = getattr(self.llm_proxy, "describe_provider", None)
+        if not callable(describe_provider):
+            return "unknown"
+        try:
+            provider = describe_provider(company_short_name, model)
+        except Exception:
+            logging.exception("Failed to describe LLM provider for model '%s'", model)
+            return "unknown"
+        normalized = str(provider or "").strip().lower()
+        return normalized or "unknown"
 
     @staticmethod
     def add_stats(stats1: dict, stats2: dict) -> dict:

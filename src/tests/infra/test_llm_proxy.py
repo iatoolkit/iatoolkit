@@ -253,6 +253,20 @@ class TestLLMProxy:
         assert timeout.connect == 10.0
         assert timeout.read == 300.0
 
+    def test_describe_provider_uses_model_config_provider(self):
+        self.model_registry_mock.get_provider.return_value = "unknown"
+        self.config_service_mock.get_llm_model_config.return_value = {
+            "id": "deepseek/deepseek-v4.1-flash",
+            "provider": "openrouter",
+        }
+
+        provider = self.proxy.describe_provider(
+            self.company_short_name,
+            "deepseek/deepseek-v4.1-flash",
+        )
+
+        assert provider == "openrouter"
+
     def test_deepseek_applies_company_reasoning_effort_default(self):
         self.model_registry_mock.get_provider.return_value = "deepseek"
         self.config_service_mock.get_configuration.return_value = {

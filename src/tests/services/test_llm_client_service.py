@@ -1,6 +1,7 @@
 # tests/test_llm_client.py
 
 import pytest
+import logging
 from unittest.mock import patch, MagicMock
 from sqlalchemy.orm.exc import DetachedInstanceError
 from iatoolkit.services.llm_client_service import llmClient
@@ -23,6 +24,8 @@ class TestLLMClient:
         self.model_registry_mock = MagicMock(spec=ModelRegistry)
         self.storage_service_mock = MagicMock(spec=StorageService)
         self.mock_proxy = MagicMock()
+        self.mock_proxy.describe_provider.return_value = "unknown"
+        self.mock_proxy.describe_transport.return_value = "direct"
         self.injector_mock = MagicMock()
         self.telemetry_service_mock = MagicMock()
         self.model_registry_mock.resolve_request_params.return_value = {
@@ -95,6 +98,25 @@ class TestLLMClient:
         self.llmquery_repo.add_query.assert_called_once()
         saved_query = self.llmquery_repo.add_query.call_args.args[0]
         assert saved_query.response["additional_data"] == {}
+
+    def test_invoke_logs_resolved_provider(self, caplog):
+        self.mock_proxy.create_response.return_value = self.mock_llm_response
+        self.mock_proxy.describe_provider.return_value = "openrouter"
+
+        with caplog.at_level(logging.INFO):
+            self.client.invoke(
+                company=self.company,
+                user_identifier='user1',
+                previous_response_id='prev1',
+                model='deepseek/deepseek-v4.1-flash',
+                question='q',
+                context='c',
+                tools=[],
+                text={},
+                images=[{"base64": "abc"}],
+            )
+
+        assert "calling llm model 'deepseek/deepseek-v4.1-flash' with provider 'openrouter'" in caplog.text
 
     def test_invoke_persists_telemetry_stats_when_execution_returns_trace(self):
         telemetry_execution = TelemetryExecution(
