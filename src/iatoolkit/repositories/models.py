@@ -451,7 +451,7 @@ class DocumentImage(Base):
     __tablename__ = 'iat_document_images'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    document_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_documents.id', ondelete='CASCADE'), nullable=False)
+    document_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_documents.id', ondelete='CASCADE'), nullable=False, index=True)
 
     page = Column(Integer, nullable=True)
     image_index = Column(Integer, nullable=True)
@@ -612,7 +612,7 @@ class VSDoc(Base):
     company_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_companies.id',
                     ondelete='CASCADE'), nullable=False)
     document_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_documents.id',
-                        ondelete='CASCADE'), nullable=False)
+                        ondelete='CASCADE'), nullable=False, index=True)
     text = Column(Text, nullable=False)
     meta = Column(JSON_NATIVE, nullable=True)
 
@@ -632,7 +632,7 @@ class VSImage(Base):
     company_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_companies.id',
                                             ondelete='CASCADE'), nullable=False)
     document_image_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_document_images.id',
-                                                   ondelete='CASCADE'), nullable=False)
+                                                   ondelete='CASCADE'), nullable=False, index=True)
 
     # Vector dimension depends on the multimodal model (e.g., CLIP uses 512 or 768)
     embedding = Column(Vector, nullable=False)
