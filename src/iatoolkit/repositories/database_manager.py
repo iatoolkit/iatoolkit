@@ -4,6 +4,7 @@
 # IAToolkit is open source software.
 
 # database_manager.py
+import os
 from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.dialects import registry
 from sqlalchemy.orm import sessionmaker, scoped_session
@@ -21,6 +22,15 @@ class DatabaseManager(DatabaseProvider):
     )
     _DEFAULT_CONNECT_TIMEOUT = 60
     MAX_RESULT_ROWS = 2000
+    #: Connections each pool may hold. Every process opens one pool per database it
+    #: touches, so the ceiling a deployment must respect is
+    #: processes x databases x (pool_size + max_overflow), against the server's
+    #: max_connections. A worker fleet of 16 processes over two databases on a 103-slot
+    #: instance exhausted it with the previous 10/20, and the papers pipeline lost two of
+    #: every three ingestions to "FATAL: remaining connection slots are reserved".
+    #: Override per service with IAT_DB_POOL_SIZE / IAT_DB_MAX_OVERFLOW.
+    DEFAULT_POOL_SIZE = 3
+    DEFAULT_MAX_OVERFLOW = 5
 
     @inject
     def __init__(self,
@@ -51,8 +61,8 @@ class DatabaseManager(DatabaseProvider):
             raw_engine = create_engine(
                 self.engine_url,
                 echo=False,
-                pool_size=10,  # per worker
-                max_overflow=20,
+                pool_size=self._resolve_pool_setting("IAT_DB_POOL_SIZE", self.DEFAULT_POOL_SIZE),
+                max_overflow=self._resolve_pool_setting("IAT_DB_MAX_OVERFLOW", self.DEFAULT_MAX_OVERFLOW),
                 pool_timeout=30,
                 pool_recycle=1800,
                 pool_pre_ping=True,
@@ -88,6 +98,21 @@ class DatabaseManager(DatabaseProvider):
 
     def _is_mysql(self) -> bool:
         return self.backend == 'mysql'
+
+    @staticmethod
+    def _resolve_pool_setting(env_name: str, default: int) -> int:
+        raw_value = str(os.getenv(env_name, "") or "").strip()
+        if not raw_value:
+            return default
+        try:
+            value = int(raw_value)
+        except (TypeError, ValueError):
+            logging.warning("%s=%r is not an integer; using %s", env_name, raw_value, default)
+            return default
+        if value < 0:
+            logging.warning("%s=%s is negative; using %s", env_name, value, default)
+            return default
+        return value
 
     @classmethod
     def _normalize_timeout(cls, timeout: int | str | None) -> int:

@@ -92,8 +92,8 @@ class TestDatabaseManager:
         self.mock_create_engine.assert_called_with(
             "redshift+redshift_connector://user:pass@example.com:5439/dev?sslmode=require",
             echo=False,
-            pool_size=10,
-            max_overflow=20,
+            pool_size=DatabaseManager.DEFAULT_POOL_SIZE,
+            max_overflow=DatabaseManager.DEFAULT_MAX_OVERFLOW,
             pool_timeout=30,
             pool_recycle=1800,
             pool_pre_ping=True,
@@ -324,3 +324,34 @@ class TestDatabaseManager:
                 # Check that warning was logged
                 mock_logging.warning.assert_called_once()
                 assert "Could not inspect columns" in mock_logging.warning.call_args[0][0]
+
+
+class TestDatabaseManagerPoolSizing:
+    """Every process opens one pool per database it touches, so the connection ceiling a
+    deployment must respect is processes x databases x (pool_size + max_overflow). A fleet
+    of 16 workers over two databases on a 103-slot Postgres exhausted it with the previous
+    10/20 and lost two of every three ingestions to "remaining connection slots are
+    reserved", so the sizing is configurable per service rather than baked in."""
+
+    def test_defaults_are_used_when_the_environment_is_silent(self, monkeypatch):
+        monkeypatch.delenv("IAT_DB_POOL_SIZE", raising=False)
+        monkeypatch.delenv("IAT_DB_MAX_OVERFLOW", raising=False)
+
+        assert DatabaseManager._resolve_pool_setting("IAT_DB_POOL_SIZE", DatabaseManager.DEFAULT_POOL_SIZE) == DatabaseManager.DEFAULT_POOL_SIZE
+        assert DatabaseManager._resolve_pool_setting("IAT_DB_MAX_OVERFLOW", DatabaseManager.DEFAULT_MAX_OVERFLOW) == DatabaseManager.DEFAULT_MAX_OVERFLOW
+
+    def test_the_environment_overrides_the_default(self, monkeypatch):
+        monkeypatch.setenv("IAT_DB_POOL_SIZE", "1")
+
+        assert DatabaseManager._resolve_pool_setting("IAT_DB_POOL_SIZE", 3) == 1
+
+    def test_zero_is_honoured_because_sqlalchemy_reads_it_as_unbounded_overflow(self, monkeypatch):
+        monkeypatch.setenv("IAT_DB_MAX_OVERFLOW", "0")
+
+        assert DatabaseManager._resolve_pool_setting("IAT_DB_MAX_OVERFLOW", 5) == 0
+
+    @pytest.mark.parametrize("value", ["", "   ", "abc", "-1", "3.5"])
+    def test_an_unusable_value_falls_back_instead_of_crashing_startup(self, monkeypatch, value):
+        monkeypatch.setenv("IAT_DB_POOL_SIZE", value)
+
+        assert DatabaseManager._resolve_pool_setting("IAT_DB_POOL_SIZE", 3) == 3
