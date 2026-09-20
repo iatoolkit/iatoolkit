@@ -1,5 +1,6 @@
 # tests/services/test_configuration_services.py
 
+import logging
 import pytest
 from unittest.mock import Mock, patch, call
 import copy
@@ -1301,3 +1302,55 @@ class TestConfigurationService:
 
         errors = self.service.validate_configuration(self.COMPANY_NAME)
         assert all("Missing required key: 'category'" not in e for e in errors)
+
+
+class TestConfigurationServiceTenantNameGuard:
+    """The tenant name arrives from the URL, so it is attacker-controlled.
+
+    A scanner walking a wordlist of leaked-secret filenames (.env.json, .env.backup1, ...)
+    reaches the configuration service through the language before_request hook, which runs
+    on every request regardless of authentication. Each probe used to log a warning about a
+    missing company.yaml and leave an entry in the config cache keyed by its own input.
+    """
+
+    def _service(self):
+        return ConfigurationService(
+            utility=Mock(spec=Utility),
+            llm_query_repo=Mock(spec=LLMQueryRepo),
+            profile_repo=Mock(spec=ProfileRepo),
+            asset_repo=Mock(spec=AssetRepository),
+            secret_provider=Mock(spec=SecretProvider),
+            model_registry=ModelRegistry(),
+        )
+
+    @pytest.mark.parametrize("short_name", ["neuroscope", "maxxa", "mois_analytics", "polo-maitencillo", " Neuroscope "])
+    def test_real_tenant_names_are_accepted(self, short_name):
+        assert ConfigurationService._is_well_formed_company_short_name(short_name) is True
+
+    @pytest.mark.parametrize(
+        "short_name",
+        [".env.json", ".env.backup1", ".env", "../etc/passwd", "", None, "a" * 64, "has space"],
+    )
+    def test_names_a_tenant_could_never_have_are_rejected(self, short_name):
+        assert ConfigurationService._is_well_formed_company_short_name(short_name) is False
+
+    def test_a_malformed_name_never_reaches_the_asset_repository(self):
+        # The asset lookup is the expensive part and, on a database-backed installation,
+        # a query per probe.
+        service = self._service()
+
+        config = service._load_and_merge_configs(".env.backup1")
+
+        service.asset_repo.exists.assert_not_called()
+        assert config["id"] == ".env.backup1"
+
+    def test_a_real_tenant_without_configuration_still_warns(self, caplog):
+        # The warning is worth keeping for an actual tenant: that one is a misconfiguration
+        # someone has to fix, not noise from the internet.
+        service = self._service()
+        service.asset_repo.exists.return_value = False
+
+        with caplog.at_level(logging.WARNING):
+            service._load_and_merge_configs("neuroscope")
+
+        assert any("neuroscope" in record.message for record in caplog.records)

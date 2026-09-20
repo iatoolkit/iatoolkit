@@ -13,6 +13,7 @@ from iatoolkit.services.structured_output_service import StructuredOutputService
 from injector import inject
 import logging
 import os
+import re
 from urllib.parse import urlparse
 
 
@@ -1472,30 +1473,23 @@ class ConfigurationService:
         """
         main_config_filename = "company.yaml"
 
+        # Requests carry the tenant in the URL, so anything on the internet can ask this
+        # service to load a configuration for a name of its choosing. A scanner walking a
+        # wordlist of leaked-secret filenames (.env.json, .env.backup1, ...) reached here
+        # through the language before_request hook: every probe logged a warning about a
+        # missing company.yaml and left an entry in _loaded_configs keyed by its own input.
+        if not self._is_well_formed_company_short_name(company_short_name):
+            logging.debug("Ignoring configuration request for malformed tenant name: %r", company_short_name)
+            return self._minimal_configuration(company_short_name)
+
         # verify existence of the main configuration file
         if not self.asset_repo.exists(company_short_name, AssetType.CONFIG, main_config_filename):
-            logging.warning(f"Main configuration file not found: {main_config_filename}")
-
-            # return the minimal configuration needed for starting the IAToolkit
-            # this is a for solving a chicken/egg problem when trying to migrate the configuration
-            # from filesystem to database in enterprise installation
-            # see create_assets cli command in enterprise-iatoolkit)
-            return {
-                'id': company_short_name,
-                'name': company_short_name,
-                'llm': {'model': 'gpt-5', 'provider_api_keys': {'openai': ''}},
-                'data_sources': {'sql': []},
-                'tools': [],
-                'prompts': {'prompt_categories': [], 'prompt_list': []},
-                'branding': {},
-                'onboarding_cards': [],
-                'help_content': {
-                    'example_questions': [],
-                    'data_sources': [],
-                    'best_practices': [],
-                    'capabilities': {'can_do': [], 'cannot_do': []},
-                },
-                }
+            logging.warning(
+                "Main configuration file not found for company '%s': %s",
+                company_short_name,
+                main_config_filename,
+            )
+            return self._minimal_configuration(company_short_name)
 
         # read text and parse
         yaml_content = self.asset_repo.read_text(company_short_name, AssetType.CONFIG, main_config_filename)
@@ -1513,6 +1507,41 @@ class ConfigurationService:
                 config[key] = None
 
         return config
+
+    #: A tenant short name as the platform issues them. Anything else is not a tenant that
+    #: could exist, so it is rejected before it reaches the asset repository or the cache.
+    COMPANY_SHORT_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,62}$")
+
+    @classmethod
+    def _is_well_formed_company_short_name(cls, company_short_name) -> bool:
+        # Normalized the way the platform itself normalizes a tenant before looking it up,
+        # so a caller passing a name with padding or casing is not treated as hostile.
+        normalized = str(company_short_name or "").strip().lower()
+        return bool(cls.COMPANY_SHORT_NAME_RE.match(normalized))
+
+    @staticmethod
+    def _minimal_configuration(company_short_name: str) -> dict:
+        """The smallest configuration that still lets IAToolkit boot.
+
+        Solves a chicken/egg problem when migrating configuration from the filesystem to
+        the database in an enterprise installation - see the create_assets CLI command.
+        """
+        return {
+            'id': company_short_name,
+            'name': company_short_name,
+            'llm': {'model': 'gpt-5', 'provider_api_keys': {'openai': ''}},
+            'data_sources': {'sql': []},
+            'tools': [],
+            'prompts': {'prompt_categories': [], 'prompt_list': []},
+            'branding': {},
+            'onboarding_cards': [],
+            'help_content': {
+                'example_questions': [],
+                'data_sources': [],
+                'best_practices': [],
+                'capabilities': {'can_do': [], 'cannot_do': []},
+            },
+        }
 
     def _get_prompt_config(self, config):
         prompts_config = config.get('prompts', {})
