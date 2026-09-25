@@ -16,9 +16,12 @@ Global IAToolkit architecture context:
 
 Environment rules:
 
-- Always use project virtualenv
-- Python path: ./venv/bin/python
-- Use PYTHONPATH=./src
+- Dependencies are managed with uv: `pyproject.toml` + `uv.lock`, environment in
+  `.venv`, created and updated by `uv sync`.
+- Python path: `./.venv/bin/python`, or run through `uv run <cmd>`.
+- The legacy `venv/` is no longer maintained by uv and will drift — do not use it.
+- `PYTHONPATH=./src` is no longer needed: `pyproject.toml` declares `pythonpath`
+  and `testpaths` for pytest.
 
 Testing:
-./venv/bin/python -m pytest
+uv run pytest

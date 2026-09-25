@@ -132,6 +132,17 @@ inference = [
     "diffusers==0.39.0",
 ]
 
+# Installed by `uv sync` (uv syncs the `dev` group by default) but never shipped
+# to anyone installing `iatoolkit`. This exists because two OCR assertions in
+# test_document_service.py import pytesseract for real while faking the other two
+# gates, so without it a clean `uv sync` leaves the suite failing on a missing
+# optional extra rather than on anything a developer changed. Keep the pin in
+# step with the `ocr` extra above.
+[dependency-groups]
+dev = [
+  "pytesseract==0.3.13",
+]
+
 [tool.setuptools]
 package-dir = {"" = "src"}
 
@@ -145,3 +156,16 @@ version = { attr = "iatoolkit.__version__" }
 
 [tool.setuptools.package-data]
 iatoolkit = ["templates/**/*", "static/**/*", "locales/*.yaml", "config/*.yaml", "config/system_prompts/*.prompt"]
+
+# Declared so the suite behaves identically however it is launched. Before this,
+# the layout worked only by accident: `src/tests/__init__.py` made pytest insert
+# `src` on sys.path, and the documented command supplied `PYTHONPATH=./src` by
+# hand. An IDE that ran pytest without that variable was relying on the accident,
+# and a bare `pytest` from the repo root also walked `build/`.
+#
+# - testpaths: the suite lives in `src/tests`; nothing else is collected.
+# - pythonpath: puts `src` on sys.path regardless of whether the project happens
+#   to be installed in the environment, so a fresh checkout runs the tests.
+[tool.pytest.ini_options]
+testpaths = ["src/tests"]
+pythonpath = ["src"]

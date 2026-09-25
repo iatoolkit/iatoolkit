@@ -26,7 +26,13 @@ they are the ones that cause damage when missed.
 
 ## Environment
 
-- Always use the project virtualenv: `./venv/bin/python`
-- `PYTHONPATH=./src`
-- Tests: `PYTHONPATH=./src ./venv/bin/python -m pytest`
+- Dependencies are managed with **uv**. The project environment is `.venv`,
+  created and updated by `uv sync` from `pyproject.toml` + `uv.lock`. Add or
+  change a dependency there, never with `pip install` into the environment.
+- Run anything inside it with `uv run <cmd>`, or call `./.venv/bin/python`
+  directly. The legacy `venv/` is no longer maintained by uv and will drift —
+  do not use it.
+- Tests: `uv run pytest`. `pyproject.toml` declares `testpaths` and
+  `pythonpath`, so `PYTHONPATH=./src` is no longer needed and the suite behaves
+  the same from the CLI and from PyCharm.
 - Do not create GitHub branches unless Fernando asks.
