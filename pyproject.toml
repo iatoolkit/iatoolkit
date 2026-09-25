@@ -76,9 +76,6 @@ dependencies = [
   "PyJWT==2.10.1",
   "PyMuPDF==1.25.0",
   "python-dotenv==1.0.1",
-  "pytest==8.3.4",
-  "pytest-cov==5.0.0",
-  "pytest-mock==3.14.0",
   "python-dateutil==2.9.0.post0",
   "python-docx==1.1.2",
   "pytz==2025.2",
@@ -138,9 +135,17 @@ inference = [
 # gates, so without it a clean `uv sync` leaves the suite failing on a missing
 # optional extra rather than on anything a developer changed. Keep the pin in
 # step with the `ocr` extra above.
+#
+# pytest and its plugins live here too, not in [project.dependencies]. They were
+# runtime dependencies until now, which meant every deployment built with
+# `uv sync --no-dev` still shipped them, and four downstream repositories were
+# borrowing this package's test runner instead of declaring one.
 [dependency-groups]
 dev = [
   "pytesseract==0.3.13",
+  "pytest>=8.3,<9",
+  "pytest-cov>=5,<6",
+  "pytest-mock>=3.14,<4",
 ]
 
 [tool.setuptools]

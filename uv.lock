@@ -1635,9 +1635,6 @@ dependencies = [
     { name = "pyjwt", extra = ["crypto"] },
     { name = "pymupdf" },
     { name = "pymysql" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "pytest-mock" },
     { name = "python-dateutil" },
     { name = "python-docx" },
     { name = "python-dotenv" },
@@ -1675,6 +1672,9 @@ ocr = [
 [package.dev-dependencies]
 dev = [
     { name = "pytesseract" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "pytest-mock" },
 ]
 
 [package.metadata]
@@ -1738,9 +1738,6 @@ requires-dist = [
     { name = "pymupdf", specifier = "==1.25.0" },
     { name = "pymysql", specifier = "==1.1.1" },
     { name = "pytesseract", marker = "extra == 'ocr'", specifier = "==0.3.13" },
-    { name = "pytest", specifier = "==8.3.4" },
-    { name = "pytest-cov", specifier = "==5.0.0" },
-    { name = "pytest-mock", specifier = "==3.14.0" },
     { name = "python-dateutil", specifier = "==2.9.0.post0" },
     { name = "python-docx", specifier = "==1.1.2" },
     { name = "python-dotenv", specifier = "==1.0.1" },
@@ -1766,7 +1763,12 @@ requires-dist = [
 provides-extras = ["docling", "ocr", "inference"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytesseract", specifier = "==0.3.13" }]
+dev = [
+    { name = "pytesseract", specifier = "==0.3.13" },
+    { name = "pytest", specifier = ">=8.3,<9" },
+    { name = "pytest-cov", specifier = ">=5,<6" },
+    { name = "pytest-mock", specifier = ">=3.14,<4" },
+]
 
 [[package]]
 name = "idna"
