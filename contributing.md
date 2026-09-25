@@ -13,7 +13,7 @@ It's people like you that make open source such a great community.
 
 1.  Fork the repository and clone it locally.
 2.  Create a virtual environment: `python -m venv venv` and activate it.
-3.  Install the dependencies: `pip install -r requirements.txt`.
+3.  Install the dependencies: `pip install -e .` (or `uv sync`, which installs them from `uv.lock`).
 4.  Set up your local `.env` file based on `.env.example`.
 5.  Run the tests to ensure everything is working: `pytest`.
 

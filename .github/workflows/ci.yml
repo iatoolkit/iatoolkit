@@ -28,11 +28,11 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # One install, not two: pyproject takes its dependencies from
-          # requirements.txt through dynamic metadata, so installing the package
-          # installs them. The separate `pip install -r requirements.txt || true`
-          # this replaces was both redundant and silent — the `|| true` meant an
-          # unresolvable dependency set passed CI without a word.
+          # One install, not two: the dependencies are declared in pyproject under
+          # [project.dependencies], so installing the package installs them. The
+          # separate `pip install -r requirements.txt || true` this replaces was
+          # both redundant and silent — the `|| true` meant an unresolvable
+          # dependency set passed CI without a word.
           #
           # `[ocr]` adds pytesseract. It is 40KB of pure Python, and without it
           # the two OCR assertions in test_document_service.py fail rather than

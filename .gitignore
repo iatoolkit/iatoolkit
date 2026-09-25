@@ -9,6 +9,8 @@ __pycache__/
 
 # Virtualenv
 venv/
+# uv creates its environment here; the repo's own venv/ above stays for PyCharm.
+.venv/
 .env/
 .env
 SOURCES.txt

@@ -37,7 +37,7 @@ First, set up your local environment and install the necessary dependencies.
 
 3.  **Install Dependencies**:
     ```bash
-    pip install -r requirements.txt
+    pip install -e .
     ```
 
 ### Step 2: Environment Configuration
