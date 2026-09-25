@@ -59,9 +59,6 @@ dependencies = [
   "idna==3.10",
   "injector==0.22.0",
   "Jinja2==3.1.5",
-  "langchain==0.3.19",
-  "langchain-core==0.3.35",
-  "langchain-text-splitters==0.3.6",
   "markdown2==2.5.3",
   "nh3==0.3.7",
   "openai==2.8.1",
@@ -91,7 +88,10 @@ dependencies = [
   "sqlalchemy-redshift==1.0.0",
   "redshift_connector==2.1.14",
   "tiktoken==0.8.0",
-  "tokenizers>=0.22.0",
+  # tokenizers is not declared: nothing here imports it, and the only
+  # package that needs it is transformers, which arrives through the
+  # docling and inference extras and pulls its own. Declaring it put 8MB
+  # of Rust bindings into every install that uses neither.
   "websocket-client==1.8.0",
   "websockets==14.1",
   "Werkzeug==3.1.3",

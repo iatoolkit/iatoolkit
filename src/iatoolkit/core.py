@@ -415,7 +415,6 @@ class IAToolkit:
     def _bind_services(self, binder: Binder):
         from iatoolkit.services.query_service import QueryService
         from iatoolkit.services.api_key_service import ApiKeyService
-        from iatoolkit.services.benchmark_service import BenchmarkService
         from iatoolkit.services.parsers.parsing_service import ParsingService
         from iatoolkit.services.parsers.provider_factory import ParsingProviderFactory
         from iatoolkit.services.parsers.provider_resolver import ParsingProviderResolver
@@ -458,7 +457,6 @@ class IAToolkit:
 
         binder.bind(QueryService, to=QueryService)
         binder.bind(ApiKeyService, to=ApiKeyService)
-        binder.bind(BenchmarkService, to=BenchmarkService)
         binder.bind(ParsingService, to=ParsingService)
         binder.bind(ParsingProviderFactory, to=ParsingProviderFactory)
         binder.bind(ParsingProviderResolver, to=ParsingProviderResolver)

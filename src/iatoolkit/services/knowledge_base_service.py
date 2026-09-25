@@ -12,7 +12,7 @@ from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.services.storage_service import StorageService
 from iatoolkit.services.parsers.parsing_service import ParsingService
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from iatoolkit.common.text_splitter import RecursiveCharacterTextSplitter
 from iatoolkit.services.visual_kb_service import VisualKnowledgeBaseService
 from sqlalchemy import desc, func
 from typing import Any
@@ -50,7 +50,8 @@ class KnowledgeBaseService:
         self.profile_service = profile_service
         self.i18n_service = i18n_service
 
-        # Configure LangChain for intelligent text splitting
+        # Chunking for the RAG index. These numbers decide how the corpus is
+        # embedded, so changing them means re-ingesting what is already stored.
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
             chunk_overlap=100,
@@ -83,7 +84,7 @@ class KnowledgeBaseService:
         Synchronously processes a document through the entire RAG pipeline:
         1. Saves initial metadata and raw content reference to the SQL Document table.
         2. Parses content via configured parsing provider (docling/basic/custom).
-        3. Splits the text into semantic chunks using LangChain.
+        3. Splits the text into semantic chunks.
         4. Vectorizes and saves chunks to the Vector Store (VSRepo).
         5. Updates the document status to ACTIVE or FAILED.
 
