@@ -1440,6 +1440,7 @@ ui:
     definitions_filter_summary: "Mostrando {visible} de {total} pipelines"
     definition_last_run: "Última ejecución"
     definition_no_runs: "Sin ejecuciones"
+    definition_column_id: "ID"
     definition_column_pipeline: "Pipeline"
     definition_column_input: "Entrada"
     definition_column_steps: "Pasos"

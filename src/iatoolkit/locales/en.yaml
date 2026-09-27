@@ -1425,6 +1425,7 @@ ui:
     definitions_filter_summary: "Showing {visible} of {total} pipelines"
     definition_last_run: "Last run"
     definition_no_runs: "No runs"
+    definition_column_id: "ID"
     definition_column_pipeline: "Pipeline"
     definition_column_input: "Input"
     definition_column_steps: "Steps"
