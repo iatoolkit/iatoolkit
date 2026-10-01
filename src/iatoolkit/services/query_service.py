@@ -963,6 +963,30 @@ class QueryService:
             return False
         return any(marker in error_text for marker in cls._PREVIOUS_RESPONSE_NOT_FOUND_MARKERS)
 
+    @staticmethod
+    def build_execution_trace(*,
+                               prompt_name: str | None,
+                               client_data: dict | None,
+                               input_files: list | None) -> dict:
+        """
+        What an agent execution needs to be replayed later. Inputs are taken
+        as the caller sent them, before build_user_turn_prompt merges them with
+        the user profile; keys starting with "_" are internal plumbing.
+        """
+        trace = {}
+        normalized_prompt_name = str(prompt_name or "").strip()
+        if normalized_prompt_name:
+            trace["prompt_name"] = normalized_prompt_name
+            safe_client_data = client_data if isinstance(client_data, dict) else {}
+            trace["prompt_inputs"] = {
+                key: value
+                for key, value in safe_client_data.items()
+                if not str(key or "").startswith("_")
+            }
+        if isinstance(input_files, list) and input_files:
+            trace["input_files"] = [dict(item) for item in input_files if isinstance(item, dict)]
+        return trace
+
     def _invoke_with_history_recovery(self,
                                       *,
                                       company,
@@ -984,7 +1008,8 @@ class QueryService:
                                       telemetry_request: dict | None,
                                       prompt_output_contract: dict,
                                       history_handle: HistoryHandle,
-                                      ignore_history: bool) -> tuple[dict, HistoryHandle]:
+                                      ignore_history: bool,
+                                      execution_trace: dict | None = None) -> tuple[dict, HistoryHandle]:
         previous_response_id = history_handle.request_params.get('previous_response_id')
         context_history = history_handle.request_params.get('context_history')
 
@@ -1009,6 +1034,7 @@ class QueryService:
                 request_metadata=request_metadata,
                 telemetry_request=telemetry_request,
                 response_contract=prompt_output_contract if prompt_output_contract.get("schema") else None,
+                execution_trace=execution_trace,
             )
             return response, history_handle
         except Exception as invoke_error:
@@ -1067,6 +1093,7 @@ class QueryService:
                 request_metadata=request_metadata,
                 telemetry_request=telemetry_request,
                 response_contract=prompt_output_contract if prompt_output_contract.get("schema") else None,
+                execution_trace=execution_trace,
             )
             return response, retry_history_handle
 
@@ -1377,10 +1404,16 @@ class QueryService:
                   client_data: dict = {},
                   task_id: Optional[int] = None,
                   ignore_history: bool = False,
-                  files: list = []
+                  files: list = [],
+                  input_files: list | None = None
                   ) -> dict:
         try:
             stage_started_at = time.time()
+            execution_trace = self.build_execution_trace(
+                prompt_name=prompt_name,
+                client_data=client_data,
+                input_files=input_files,
+            )
             request_source = None
 
             logging.debug(
@@ -1742,6 +1775,7 @@ class QueryService:
                 prompt_output_contract=prompt_output_contract,
                 history_handle=history_handle,
                 ignore_history=ignore_history,
+                execution_trace=execution_trace,
             )
             log_stage("invoke_with_history_recovery")
 

@@ -344,6 +344,54 @@ class TestQueryService:
             "project": "acme-prod",
         }
 
+    def test_llm_query_forwards_execution_trace_for_prompt_executions(self):
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("User prompt", "Hi", [])
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': 'existing_id'}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_context_builder.get_prompt_output_contract.return_value = {"prompt_name": "sales_prompt"}
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'Hello'}
+        input_files = [{"filename": "a.pdf", "type": "application/pdf", "storage_key": "companies/x/invocation_inputs/1/a.pdf"}]
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            model='gpt-test',
+            prompt_name="sales_prompt",
+            client_data={"customer_id": "c-1", "_communication": {"channel": "whatsapp"}},
+            input_files=input_files,
+        )
+
+        trace = self.mock_llm_client.invoke.call_args.kwargs["execution_trace"]
+        assert trace == {
+            "prompt_name": "sales_prompt",
+            "prompt_inputs": {"customer_id": "c-1"},
+            "input_files": input_files,
+        }
+
+    def test_llm_query_chat_execution_trace_has_no_prompt_fields(self):
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("User prompt", "Hi", [])
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'previous_response_id': 'existing_id'}
+            return False
+
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'Hello'}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            question="Hi",
+            model='gpt-test',
+            client_data={"source": "chat"},
+        )
+
+        assert self.mock_llm_client.invoke.call_args.kwargs["execution_trace"] == {}
+
     def test_llm_query_passes_chat_request_source_to_telemetry_service(self):
         user_prompt = "User prompt with context"
         effective_q = "Hi"

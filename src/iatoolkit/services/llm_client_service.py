@@ -131,7 +131,8 @@ class llmClient:
                execution_metadata: Optional[Dict[str, Any]] = None,
                request_metadata: Optional[Dict[str, str]] = None,
                telemetry_request: Optional[Dict[str, Any]] = None,
-               response_contract: Optional[Dict[str, Any]] = None
+               response_contract: Optional[Dict[str, Any]] = None,
+               execution_trace: Optional[Dict[str, Any]] = None
                ) -> dict:
 
         self._assert_runtime_not_suspended(company)
@@ -426,7 +427,8 @@ class llmClient:
                              response=self.serialize_response(response, decoded_response),
                              function_calls=f_calls,
                              stats=combined_stats,
-                             answer_time=stats['response_time']
+                             answer_time=stats['response_time'],
+                             **self._execution_trace_columns(execution_trace)
                              )
             self.llmquery_repo.add_query(query)
             telemetry_execution.finalize(
@@ -503,6 +505,7 @@ class llmClient:
                              response={},
                              valid_response=False,
                              function_calls=f_calls,
+                             **self._execution_trace_columns(execution_trace)
                              )
             self.llmquery_repo.add_query(query)
             telemetry_execution.finalize(
@@ -1323,6 +1326,24 @@ class llmClient:
         if provider_calls:
             stats_dict["provider_calls"] = provider_calls
         return stats_dict
+
+    @staticmethod
+    def _execution_trace_columns(execution_trace: Optional[Dict[str, Any]]) -> dict:
+        """Maps the caller's execution trace onto the LLMQuery trace columns."""
+        if not isinstance(execution_trace, dict):
+            return {}
+
+        columns = {}
+        prompt_name = str(execution_trace.get("prompt_name") or "").strip()
+        if prompt_name:
+            columns["prompt_name"] = prompt_name
+        prompt_inputs = execution_trace.get("prompt_inputs")
+        if isinstance(prompt_inputs, dict):
+            columns["prompt_inputs"] = prompt_inputs
+        input_files = execution_trace.get("input_files")
+        if isinstance(input_files, list) and input_files:
+            columns["input_files"] = input_files
+        return columns
 
     @classmethod
     def _compact_execution_metadata_for_stats(cls, key: str, value):

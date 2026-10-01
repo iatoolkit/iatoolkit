@@ -9,7 +9,7 @@ from sqlalchemy import Column, Integer, BigInteger, String, DateTime, Enum, Text
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm import relationship, class_mapper
 from sqlalchemy.sql import func
-from sqlalchemy import UniqueConstraint
+from sqlalchemy import UniqueConstraint, Index
 from sqlalchemy.dialects.postgresql import JSONB
 from datetime import datetime
 from pgvector.sqlalchemy import Vector
@@ -597,6 +597,19 @@ class LLMQuery(Base):
     answer_time = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.now)
     task_id = Column(Integer, default=None, nullable=True)
+
+    # Execution trace: enough to replay an agent execution later (model
+    # evaluations). prompt_inputs are the caller's raw inputs, before they are
+    # merged with the user profile; input_files hold storage references only,
+    # never file content.
+    prompt_name = Column(String, nullable=True)
+    prompt_inputs = Column(JSON, nullable=True)
+    input_files = Column(JSON, nullable=True)
+    input_files_purged_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index('ix_iat_queries_company_prompt_created', 'company_id', 'prompt_name', 'created_at'),
+    )
 
     company = relationship("Company", back_populates="llm_queries")
 

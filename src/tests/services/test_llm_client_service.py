@@ -253,6 +253,55 @@ class TestLLMClient:
         assert saved_query.stats["request_source"] == "iatoolkit_mcp"
         assert result["stats"]["request_source"] == "iatoolkit_mcp"
 
+    def test_invoke_persists_execution_trace_columns(self):
+        self.mock_proxy.create_response.return_value = self.mock_llm_response
+        self.llmquery_repo.add_query.side_effect = lambda query: setattr(query, "id", 42)
+        input_files = [{"filename": "a.pdf", "type": "application/pdf", "storage_key": "companies/x/invocation_inputs/1/a.pdf"}]
+
+        self.client.invoke(
+            company=self.company,
+            user_identifier='user1',
+            previous_response_id='prev1',
+            model='gpt-5',
+            question='q',
+            context='c',
+            tools=[],
+            text={},
+            images=[],
+            execution_trace={
+                "prompt_name": "sales_prompt",
+                "prompt_inputs": {"customer_id": "c-1"},
+                "input_files": input_files,
+            },
+        )
+
+        saved_query = self.llmquery_repo.add_query.call_args.args[0]
+        assert saved_query.prompt_name == "sales_prompt"
+        assert saved_query.prompt_inputs == {"customer_id": "c-1"}
+        assert saved_query.input_files == input_files
+        assert saved_query.input_files_purged_at is None
+
+    def test_invoke_without_execution_trace_leaves_trace_columns_empty(self):
+        self.mock_proxy.create_response.return_value = self.mock_llm_response
+        self.llmquery_repo.add_query.side_effect = lambda query: setattr(query, "id", 42)
+
+        self.client.invoke(
+            company=self.company,
+            user_identifier='user1',
+            previous_response_id='prev1',
+            model='gpt-5',
+            question='q',
+            context='c',
+            tools=[],
+            text={},
+            images=[],
+        )
+
+        saved_query = self.llmquery_repo.add_query.call_args.args[0]
+        assert saved_query.prompt_name is None
+        assert saved_query.prompt_inputs is None
+        assert saved_query.input_files is None
+
     def test_invoke_compacts_tool_router_metadata_in_query_stats(self):
         self.mock_proxy.create_response.return_value = self.mock_llm_response
         self.llmquery_repo.add_query.side_effect = lambda query: setattr(query, "id", 42)
@@ -901,6 +950,21 @@ class TestLLMClient:
         log_arg = self.llmquery_repo.add_query.call_args[0][0]
         assert log_arg.valid_response is False
         assert "API Communication Error" in log_arg.output
+
+    def test_invoke_error_log_keeps_execution_trace(self):
+        self.mock_proxy.create_response.side_effect = Exception("API Communication Error")
+
+        with pytest.raises(IAToolkitException, match="Error calling LLM API"):
+            self.client.invoke(
+                company=self.company, user_identifier='user1', previous_response_id='prev1',
+                model='gpt-5', question='q', context='c', tools=[], text={}, images=[],
+                execution_trace={"prompt_name": "sales_prompt", "prompt_inputs": {"customer_id": "c-1"}},
+            )
+
+        log_arg = self.llmquery_repo.add_query.call_args[0][0]
+        assert log_arg.valid_response is False
+        assert log_arg.prompt_name == "sales_prompt"
+        assert log_arg.prompt_inputs == {"customer_id": "c-1"}
 
     def test_invoke_logs_error_with_captured_company_id_when_company_becomes_detached(self):
         class FlakyCompany:
