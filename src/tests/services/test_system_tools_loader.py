@@ -31,6 +31,50 @@ tools:
     ]
 
 
+def test_parse_system_tools_catalog_keeps_execution_config_side_effects():
+    payload = """
+version: 1
+pack:
+  key: system
+  name: System Tools
+tools:
+  - function_name: mailer
+    description: Sends mail
+    execution_config:
+      side_effects: true
+    parameters:
+      type: object
+      properties: {}
+"""
+    result = system_tools._parse_system_tools_catalog(payload)
+    assert result[0]["execution_config"] == {"side_effects": True}
+
+
+def test_parse_system_tools_catalog_rejects_non_boolean_side_effects():
+    payload = """
+version: 1
+pack:
+  key: system
+  name: System Tools
+tools:
+  - function_name: mailer
+    description: Sends mail
+    execution_config:
+      side_effects: "yes"
+    parameters:
+      type: object
+      properties: {}
+"""
+    with pytest.raises(ValueError, match="side_effects must be a boolean"):
+        system_tools._parse_system_tools_catalog(payload)
+
+
+def test_shipped_catalog_marks_only_send_email_with_side_effects():
+    catalog = system_tools._parse_system_tools_catalog(system_tools._read_system_tools_catalog_text())
+    marked = [item["function_name"] for item in catalog if (item.get("execution_config") or {}).get("side_effects")]
+    assert marked == ["iat_send_email"]
+
+
 def test_parse_system_tools_catalog_accepts_routing_force_include_capability():
     payload = """
 tools:

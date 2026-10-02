@@ -274,6 +274,7 @@ class TestToolService:
         existing_tool.description = "d"
         existing_tool.parameters = {"type": "object"}
         existing_tool.output_contract = None
+        existing_tool.execution_config = None
         existing_tool.tool_type = Tool.TYPE_SYSTEM
         existing_tool.company_id = None
         existing_tool.source = Tool.SOURCE_SYSTEM
@@ -290,6 +291,33 @@ class TestToolService:
         assert result["data"]["reason"] == "no_changes"
         self.mock_llm_query_repo.create_or_update_tool.assert_not_called()
         self.mock_llm_query_repo.commit.assert_not_called()
+
+    def test_sync_system_tools_detects_a_new_side_effects_flag_as_drift(self):
+        existing_tool = MagicMock(spec=Tool)
+        existing_tool.name = "iat_send_email"
+        existing_tool.description = "d"
+        existing_tool.parameters = {"type": "object"}
+        existing_tool.output_contract = None
+        existing_tool.execution_config = None
+        existing_tool.tool_type = Tool.TYPE_SYSTEM
+        existing_tool.company_id = None
+        existing_tool.source = Tool.SOURCE_SYSTEM
+        existing_tool.is_active = True
+        self.mock_llm_query_repo.list_system_tools.return_value = [existing_tool]
+        self.service.system_handlers["iat_send_email"] = MagicMock()
+
+        definitions = [{
+            "function_name": "iat_send_email",
+            "description": "d",
+            "parameters": {"type": "object"},
+            "execution_config": {"side_effects": True},
+        }]
+        with patch("iatoolkit.services.tool_service.SYSTEM_TOOLS_DEFINITIONS", definitions), \
+             patch("iatoolkit.services.tool_service.get_system_tools_catalog_source", return_value="yaml"):
+            self.service.sync_system_tools_if_catalog_changed()
+
+        upserted = self.mock_llm_query_repo.create_or_update_tool.call_args.args[0]
+        assert upserted.execution_config == {"side_effects": True}
 
     def test_sync_system_tools_if_catalog_changed_upserts_and_deactivates_removed(self):
         changed_tool = MagicMock(spec=Tool)
@@ -655,6 +683,25 @@ class TestToolService:
         # Verified implicitly by delete_tool called once.
 
         self.mock_llm_query_repo.commit.assert_called_once()
+
+    def test_sync_company_tools_keeps_yaml_execution_config(self):
+        self.mock_llm_query_repo.get_company_tools.return_value = []
+
+        self.service.sync_company_tools(self.company_short_name, [
+            {
+                'function_name': 'open_ticket',
+                'description': 'Opens a ticket',
+                'params': {},
+                'execution_config': {'side_effects': True},
+            },
+            {'function_name': 'read_ticket', 'description': 'Reads a ticket', 'params': {}},
+        ])
+
+        tools = [call.args[0] for call in self.mock_llm_query_repo.create_or_update_tool.call_args_list]
+        assert tools[0].execution_config == {'side_effects': True}
+        assert tools[0].has_side_effects is True
+        assert tools[1].execution_config is None
+        assert tools[1].has_side_effects is False
 
     def test_sync_company_tools_rollback_on_exception(self):
         """

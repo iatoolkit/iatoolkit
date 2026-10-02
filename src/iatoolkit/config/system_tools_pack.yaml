@@ -128,6 +128,9 @@ tools:
         - orientation
   - function_name: iat_send_email
     description: iatoolkit mail system. envia mails cuando un usuario lo solicita.
+    # Sends a real email: simulated, never sent, when an evaluation replays an agent.
+    execution_config:
+      side_effects: true
     routing_profile:
       tags:
         - email

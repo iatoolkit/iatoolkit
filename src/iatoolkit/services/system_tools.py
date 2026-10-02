@@ -56,6 +56,13 @@ def _validate_system_tool_entry(entry: dict, index: int) -> dict:
     routing_profile = entry.get("routing_profile")
     normalized_routing_profile = _validate_routing_profile(routing_profile, index)
 
+    execution_config = entry.get("execution_config")
+    if execution_config is not None:
+        if not isinstance(execution_config, dict):
+            raise ValueError(f"tools[{index}].execution_config must be an object")
+        if "side_effects" in execution_config and not isinstance(execution_config["side_effects"], bool):
+            raise ValueError(f"tools[{index}].execution_config.side_effects must be a boolean")
+
     normalized = {
         "function_name": function_name,
         "description": description,
@@ -67,6 +74,8 @@ def _validate_system_tool_entry(entry: dict, index: int) -> dict:
         normalized["routing"] = normalized_routing
     if normalized_routing_profile is not None:
         normalized["routing_profile"] = normalized_routing_profile
+    if execution_config is not None:
+        normalized["execution_config"] = copy.deepcopy(execution_config)
     return normalized
 
 

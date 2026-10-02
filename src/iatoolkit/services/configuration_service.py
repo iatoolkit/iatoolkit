@@ -790,6 +790,12 @@ class ConfigurationService:
                 add_error(f"tools[{i}]", "Missing required key: 'description'")
             if not isinstance(tool.get("params"), dict):
                 add_error(f"tools[{i}]", "'params' key must be a dictionary.")
+            execution_config = tool.get("execution_config")
+            if execution_config is not None:
+                if not isinstance(execution_config, dict):
+                    add_error(f"tools[{i}].execution_config", "Must be a dictionary.")
+                elif "side_effects" in execution_config and not isinstance(execution_config["side_effects"], bool):
+                    add_error(f"tools[{i}].execution_config.side_effects", "Must be true or false.")
 
         # 6. Prompts
         prompt_list, categories_config = self._get_prompt_config(config)

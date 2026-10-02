@@ -337,6 +337,53 @@ class TestDispatcher:
         )
         assert result == {"status": "success", "data": {"id": 1}}
 
+    def _http_tool(self, **execution_config):
+        return Tool(
+            name="http_orders",
+            tool_type=Tool.TYPE_HTTP,
+            execution_config={
+                "version": 1,
+                "request": {"method": "POST", "url": "https://api.example.com/orders"},
+                **execution_config,
+            },
+        )
+
+    def test_dispatch_simulates_side_effect_tools_in_evaluations(self):
+        self.mock_tool_service.get_tool_definition.return_value = self._http_tool(side_effects=True)
+        hook = MagicMock()
+        Dispatcher.register_tool_execution_hook(hook)
+        try:
+            result = self.dispatcher.dispatch(
+                "sample", "http_orders", _iat_runtime_source="evaluation", order_id=1,
+            )
+        finally:
+            Dispatcher.clear_tool_execution_hook()
+
+        assert result["status"] == "simulated"
+        self.mock_http_tool_service.execute.assert_not_called()
+        events = [call.kwargs["event"] for call in hook.call_args_list]
+        assert events == ["before_dispatch", "after_dispatch"]
+        assert hook.call_args_list[1].kwargs["status"] == "simulated"
+
+    def test_dispatch_runs_side_effect_tools_outside_evaluations(self):
+        self.mock_tool_service.get_tool_definition.return_value = self._http_tool(side_effects=True)
+        self.mock_http_tool_service.execute.return_value = {"status": "success"}
+
+        result = self.dispatcher.dispatch("sample", "http_orders", _iat_runtime_source="agent", order_id=1)
+
+        assert result == {"status": "success"}
+        self.mock_http_tool_service.execute.assert_called_once()
+
+    def test_dispatch_runs_read_only_tools_in_evaluations(self):
+        self.mock_tool_service.get_tool_definition.return_value = self._http_tool()
+        self.mock_http_tool_service.execute.return_value = {"status": "success"}
+
+        result = self.dispatcher.dispatch(
+            "sample", "http_orders", _iat_runtime_source="evaluation", order_id=1,
+        )
+
+        assert result == {"status": "success"}
+
     def test_dispatch_http_tool_does_not_require_registered_company(self):
         """HTTP tool dispatch should not depend on company registry instances."""
         registry = get_company_registry()

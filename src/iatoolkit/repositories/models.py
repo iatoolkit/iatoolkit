@@ -385,6 +385,17 @@ class Tool(Base):
 
     company = relationship('Company', back_populates='tools')
 
+    @property
+    def has_side_effects(self) -> bool:
+        """Whether calling this tool changes something outside the conversation.
+
+        Declared explicitly with `execution_config.side_effects: true`; tools
+        are read-only unless they say otherwise. Model evaluations replay real
+        executions and simulate these tools instead of running them.
+        """
+        config = self.execution_config if isinstance(self.execution_config, dict) else {}
+        return config.get("side_effects") is True
+
     def to_dict(self):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
 

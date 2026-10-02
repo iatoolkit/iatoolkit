@@ -14,6 +14,11 @@ from time import perf_counter
 from uuid import uuid4
 
 
+#: request_source of the executions a model evaluation replays. Tools that
+#: declare side effects are simulated for them instead of being run.
+EVALUATION_REQUEST_SOURCE = "evaluation"
+
+
 class Dispatcher:
     # System tools whose answer depends on who is asking, so the dispatcher
     # injects the identity server-side. The wiki tools are here because a page's
@@ -157,6 +162,22 @@ class Dispatcher:
             arguments=dict(kwargs),
         )
         started_at = perf_counter()
+        if self._is_simulated_call(tool_def, _iat_runtime_source):
+            result = self._simulated_result(function_name)
+            self._notify_tool_execution_hook(
+                "after_dispatch",
+                execution_id=execution_id,
+                company_short_name=company_short_name,
+                function_name=function_name,
+                user_identifier=user_identifier,
+                runtime_source=_iat_runtime_source,
+                tool_def=tool_def,
+                arguments=dict(kwargs),
+                status="simulated",
+                duration_ms=int(round((perf_counter() - started_at) * 1000)),
+                result=result,
+            )
+            return result
         try:
             result = self._dispatch_resolved_tool(
                 company_short_name=company_short_name,
@@ -194,6 +215,24 @@ class Dispatcher:
                 error=exc,
             )
             raise
+
+    @staticmethod
+    def _is_simulated_call(tool_def, runtime_source: str | None) -> bool:
+        if str(runtime_source or "").strip().lower() != EVALUATION_REQUEST_SOURCE:
+            return False
+        return bool(getattr(tool_def, "has_side_effects", False))
+
+    @staticmethod
+    def _simulated_result(function_name: str) -> dict:
+        # Returned to the model in place of the real call, so the agent can keep
+        # going: the evaluation measures its reasoning, not this action's outcome.
+        return {
+            "status": "simulated",
+            "message": (
+                f"Action '{function_name}' was not executed: this is a model evaluation "
+                "and the tool has side effects. Continue as if it had succeeded."
+            ),
+        }
 
     def _dispatch_resolved_tool(
         self,

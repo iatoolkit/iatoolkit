@@ -4,6 +4,7 @@
 # IAToolkit is open source software.
 
 from injector import inject
+import copy
 import os
 import json
 import logging
@@ -930,6 +931,7 @@ class ToolService:
                     name=function['function_name'],
                     description=function['description'],
                     parameters=function['parameters'],
+                    execution_config=copy.deepcopy(function.get("execution_config")),
                     output_contract=clone_output_contract(function.get("output_contract")),
                     tool_type=Tool.TYPE_SYSTEM,
                     source=Tool.SOURCE_SYSTEM,
@@ -972,6 +974,7 @@ class ToolService:
             and tool.description == definition.get("description")
             and (tool.parameters or {}) == (definition.get("parameters") or {})
             and (tool.output_contract or {}) == (definition.get("output_contract") or {})
+            and (tool.execution_config or {}) == (definition.get("execution_config") or {})
         )
 
     def _system_tools_catalog_has_drift(
@@ -1032,6 +1035,7 @@ class ToolService:
                     name=function_name,
                     description=function.get("description"),
                     parameters=function.get("parameters") or {},
+                    execution_config=copy.deepcopy(function.get("execution_config")),
                     output_contract=clone_output_contract(function.get("output_contract")),
                     tool_type=Tool.TYPE_SYSTEM,
                     source=Tool.SOURCE_SYSTEM,
@@ -1128,6 +1132,7 @@ class ToolService:
                     name=name,
                     description=tool_data['description'],
                     parameters=tool_data['params'],
+                    execution_config=copy.deepcopy(tool_data.get('execution_config')),
                     output_contract=clone_output_contract(tool_data.get('output_contract')),
 
                     tool_type=Tool.TYPE_NATIVE,
