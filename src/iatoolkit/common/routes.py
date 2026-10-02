@@ -299,7 +299,13 @@ def register_views(app):
                 return redirect(signed_url)
 
             # Fallback path: stream bytes from storage through Flask.
-            file_bytes = storage_service.get_document_content(company_short_name, storage_key)
+            try:
+                file_bytes = storage_service.get_document_content(company_short_name, storage_key)
+            except IAToolkitException as e:
+                if e.error_type != IAToolkitException.ErrorType.FILE_IO_ERROR:
+                    raise
+                # Generated downloads are deleted after the tenant's retention.
+                abort(404, "This file has expired or is no longer available.")
             guessed_mime, _ = mimetypes.guess_type(output_filename)
             return send_file(
                 BytesIO(file_bytes),
