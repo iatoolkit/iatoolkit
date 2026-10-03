@@ -147,6 +147,19 @@ class TestIAToolkit(unittest.TestCase):
 
         warmup_service.warmup_startup_configured_companies.assert_called_once_with(trigger="core_startup")
 
+    def test_run_configured_startup_warmup_releases_its_thread_session(self):
+        # The session is per thread, so only the warm-up thread can hand back
+        # the connection it used to read the endpoint credentials.
+        toolkit = IAToolkit({})
+        toolkit._injector = MagicMock()
+        toolkit._injector.get.return_value.warmup_startup_configured_companies.side_effect = RuntimeError("cold")
+        toolkit.db_manager = MagicMock()
+
+        thread = toolkit._run_configured_startup_warmup()
+        thread.join(timeout=5)
+
+        toolkit.db_manager.remove_session.assert_called_once_with()
+
     @patch('iatoolkit.core.DatabaseManager')
     def test_setup_database_failure_missing_uri(self, mock_db_cls):
         """Test that missing DATABASE_URI raises IAToolkitException."""

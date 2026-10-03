@@ -175,6 +175,13 @@ class IAToolkit:
                     logging.info("🔥 Startup warm-up completed for endpoints=%s", woken_endpoints)
             except Exception:
                 logging.exception("⚠️ Startup warm-up failed.")
+            finally:
+                # The scoped session is per thread: whatever this thread read
+                # (the endpoint's credentials, from the secrets table) keeps its
+                # connection "idle in transaction" until the thread's own session
+                # is removed - and nothing else ever removes it.
+                if self.db_manager is not None:
+                    self.db_manager.remove_session()
 
         thread = threading.Thread(target=_run_warmup, name="iatoolkit-startup-warmup", daemon=True)
         thread.start()
