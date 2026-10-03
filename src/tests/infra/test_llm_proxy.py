@@ -334,6 +334,32 @@ class TestLLMProxy:
         adapter_kwargs = self.mock_openai_adapter_instance.create_response.call_args.kwargs
         assert adapter_kwargs["telemetry_execution"] is telemetry_execution
 
+    def test_create_response_releases_the_database_transaction_before_the_provider_call(self):
+        # The model can take minutes; the request's connection must not wait
+        # "idle in transaction" with it.
+        self.model_registry_mock.get_provider.return_value = "openai"
+        self.config_service_mock.get_configuration.return_value = {"api-key": "LLM_KEY"}
+        order = []
+        self.mock_openai_adapter_instance.create_response.side_effect = (
+            lambda **kwargs: order.append("provider")
+        )
+
+        with patch.object(
+            LLMProxy, "_release_database_transaction", side_effect=lambda: order.append("release")
+        ):
+            with patch.dict(os.environ, {"LLM_KEY": "dummy"}, clear=True):
+                self.proxy.create_response(
+                    company_short_name=self.company_short_name,
+                    model="gpt-5",
+                    input=[],
+                )
+
+        assert order == ["release", "provider"]
+
+    def test_release_database_transaction_tolerates_no_running_toolkit(self):
+        with patch("iatoolkit.current_iatoolkit", side_effect=RuntimeError("no toolkit")):
+            LLMProxy._release_database_transaction()
+
     def test_client_uses_provider_timeout_and_retry_config(self):
         self.config_service_mock.get_configuration.return_value = {"api-key": "KEY"}
         self.config_service_mock.get_llm_provider_config.return_value = {

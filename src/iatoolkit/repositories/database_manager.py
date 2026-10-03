@@ -324,6 +324,37 @@ class DatabaseManager(DatabaseProvider):
     def remove_session(self):
         self.scoped_session.remove()
 
+    def release_idle_transaction(self) -> bool:
+        """
+        Ends the current session's transaction and returns its connection to the
+        pool, before a call that waits on something other than the database.
+
+        Any read opens a transaction that lasts until the next commit, so a
+        session that read config or secrets and then waited minutes on an LLM
+        held its connection "idle in transaction" the whole time. A web process
+        serves many requests from one small pool, and a few such waits were
+        enough to time out every other request.
+
+        Commits rather than rolls back: a rollback expires every loaded object
+        and would discard writes already flushed. The session factory keeps
+        objects on commit, so callers go on using what they loaded. Leaves the
+        session alone when it has pending changes - committing them here would
+        be the caller's decision, not ours.
+        """
+        try:
+            if not self.scoped_session.registry.has():
+                return False
+            session = self.scoped_session.registry()
+            if not session.in_transaction():
+                return False
+            if session.new or session.dirty or session.deleted:
+                return False
+            session.commit()
+            return True
+        except Exception as e:
+            logging.debug("Could not release the idle database transaction: %s", e)
+            return False
+
     # -- execution methods ----
 
     def execute_query(self, query: str, commit: bool = False, params: dict | None = None) -> list[dict] | dict:

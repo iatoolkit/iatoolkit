@@ -89,6 +89,23 @@ class LLMProxy:
                 self._telemetry_service = NoopTelemetryService()
         return self._telemetry_service
 
+    @staticmethod
+    def _release_database_transaction() -> None:
+        """
+        Hands the request's database connection back to the pool before the
+        provider call. Resolved lazily, like telemetry: the proxy is also built
+        outside a running toolkit (tests, scripts), where there is nothing to
+        release.
+        """
+        try:
+            from iatoolkit import current_iatoolkit
+            from iatoolkit.repositories.database_manager import DatabaseManager
+
+            db_manager = current_iatoolkit().get_injector().get(DatabaseManager)
+        except Exception:
+            return
+        db_manager.release_idle_transaction()
+
     # -------------------------------------------------------------------------
     # Public API
     # -------------------------------------------------------------------------
@@ -145,6 +162,10 @@ class LLMProxy:
         )
         if telemetry_execution is not None:
             request_kwargs["telemetry_execution"] = telemetry_execution
+
+        # Everything the call needs from the database is resolved by now; the
+        # model can take minutes, and the connection should not wait with it.
+        self._release_database_transaction()
 
         # Delegate to the adapter (OpenAI, Gemini, DeepSeek, xAI, Anthropic, etc.)
         return adapter.create_response(
