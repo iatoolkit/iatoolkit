@@ -295,6 +295,69 @@ class ProfileService:
             "profile": profile
         }
 
+    def _account_user(self, company_short_name: str, session_info: dict):
+        profile = session_info.get("profile") or {}
+        method = (profile.get("extras") or {}).get("auth_method")
+        if not profile.get("user_is_local") and method != "google":
+            return None
+        user = self.profile_repo.get_user_by_email(session_info["user_identifier"])
+        company = self.profile_repo.get_company_by_short_name(company_short_name)
+        if not user or not company or not self.profile_repo.get_user_role_in_company(company.id, user.id):
+            return None
+        return user
+
+    def get_account_profile(self, company_short_name: str, session_info: dict) -> dict:
+        profile = session_info.get("profile") or {}
+        user = self._account_user(company_short_name, session_info)
+        method = str(user.auth_method or "local") if user else "corporate"
+        return {
+            "first_name": user.first_name if user else "",
+            "last_name": user.last_name if user else "",
+            "full_name": f"{user.first_name} {user.last_name}" if user else profile.get("user_fullname", ""),
+            "email": profile.get("user_email") or session_info["user_identifier"],
+            "role": profile.get("user_role") or "user",
+            "auth_method": method,
+            "can_edit_name": bool(user and method == "local"),
+            "language": self.lang_service.get_current_language(),
+            "language_is_browser_only": user is None,
+        }
+
+    def update_account(self, company_short_name: str, session_info: dict, *, action: str,
+                       first_name: str = "", last_name: str = "", language: str = "") -> dict:
+        if session_info.get("company_short_name") != company_short_name or not session_info.get("profile"):
+            return {"error": "ui.account.update_failed", "status_code": 403}
+        user = self._account_user(company_short_name, session_info)
+        profile = dict(session_info["profile"])
+        identifier = session_info["user_identifier"]
+        try:
+            if action == "update_profile":
+                if not user or str(user.auth_method or "local") != "local":
+                    return {"error": "ui.account.managed_identity", "status_code": 403}
+                first_name, last_name = first_name.strip(), last_name.strip()
+                if not all(0 < len(value) <= 100 and not any(ord(c) < 32 for c in value)
+                           for value in (first_name, last_name)):
+                    return {"error": "ui.account.invalid_name"}
+                self.profile_repo.update_user(identifier, first_name=first_name, last_name=last_name)
+                profile["user_fullname"] = f"{first_name} {last_name}"
+            elif action == "update_preferences":
+                if language not in {"es", "en"}:
+                    return {"error": "errors.general.unsupported_language"}
+                if user:
+                    self.profile_repo.update_user(identifier, preferred_language=language)
+                else:
+                    preferences = SessionManager.get("account_languages", {})
+                    preferences.setdefault(company_short_name, {})[identifier] = language
+                    SessionManager.set("account_languages", preferences)
+                profile["language"] = language
+            else:
+                return {"error": "ui.account.update_failed"}
+            self.session_context.save_profile_data(company_short_name, identifier, profile)
+            return {"success": True}
+        except Exception:
+            self._safe_rollback()
+            logging.exception("Failed to update account for %s/%s", company_short_name, identifier)
+            return {"error": "ui.account.update_failed", "status_code": 500}
+
     def update_user_language(self, user_identifier: str, new_lang: str) -> dict:
         """
         Business logic to update a user's preferred language.

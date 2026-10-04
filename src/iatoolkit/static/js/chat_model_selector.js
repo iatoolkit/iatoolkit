@@ -127,12 +127,8 @@ window.currentLlmReasoningEffort = window.currentLlmReasoningEffort || null;
     }
 
     /**
-     * Inicializa el estado de currentLlmModel usando SIEMPRE la config de company.yaml:
-     * 1) defaultLlmModel (company.yaml)
-     * 2) si no existe o no está en la lista, usa el primer modelo disponible.
-     *
-     * No se lee nada de localStorage en este punto: cada apertura de chat
-     * arranca desde la configuración de la compañía.
+     * Internal navigation between chat and account preserves the selection.
+     * A fresh chat still starts from company.yaml, never from localStorage.
      */
     function initCurrentModel() {
         const models = getAvailableModels();
@@ -140,7 +136,10 @@ window.currentLlmReasoningEffort = window.currentLlmReasoningEffort || null;
 
         let resolved = null;
 
-        if (defaultId && models.some(m => m.id === defaultId)) {
+        const carriedId = window.chatHeaderSelection?.model;
+        if (carriedId && models.some(m => m.id === carriedId)) {
+            resolved = carriedId;
+        } else if (defaultId && models.some(m => m.id === defaultId)) {
             resolved = defaultId;
         } else if (models.length > 0) {
             resolved = models[0].id;
@@ -151,7 +150,9 @@ window.currentLlmReasoningEffort = window.currentLlmReasoningEffort || null;
     }
 
     function initCurrentReasoningEffort() {
-        const candidate = String(window.defaultLlmReasoningEffort || '').trim().toLowerCase();
+        const effort = window.chatHeaderSelection?.model === window.currentLlmModel
+            ? window.chatHeaderSelection.reasoningEffort : window.defaultLlmReasoningEffort;
+        const candidate = String(effort || '').trim().toLowerCase();
         const allowed = getAllowedReasoningEfforts(getActiveModelMetadata());
         window.currentLlmReasoningEffort = allowed.includes(candidate) ? candidate : null;
         if (!modelSupportsReasoning(getActiveModelMetadata())) {

@@ -67,6 +67,14 @@ li {
     color: var(--brand-header-text);
 }
 
+.chat-shared-header { gap: 8px 16px; flex-wrap: wrap; }
+.chat-shared-header > div { min-width: 0; max-width: 100%; }
+.chat-shared-header > div:last-child { flex-wrap: wrap; gap: 8px 0; }
+.chat-shared-header > div:last-child > a { overflow-wrap: anywhere; }
+.chat-shared-header > div:last-child > div:last-child { flex-wrap: wrap; justify-content: center; row-gap: 8px; max-width: 100%; }
+.chat-brand-link, .chat-brand-link:hover { color: inherit; text-decoration: none; }
+.chat-brand-link:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
+
 /* Estilos para el contenedor del chat y mensajes para que exista scroll */
 #chat-container {
     flex-grow: 1;

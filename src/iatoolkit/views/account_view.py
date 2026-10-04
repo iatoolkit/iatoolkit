@@ -1,162 +1,89 @@
 from __future__ import annotations
 
-from flask import flash, redirect, render_template, request, url_for
+import secrets
+
+from flask import abort, flash, redirect, render_template, request, session, url_for
 from flask.views import MethodView
 from injector import inject
 
 from iatoolkit.services.branding_service import BrandingService
+from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.i18n_service import I18nService
-from iatoolkit.services.mcp_token_service import McpTokenService
 from iatoolkit.services.profile_service import ProfileService
 
 
 class AccountView(MethodView):
-    DEFAULT_SECTION = "general"
-    TOKENS_SECTION = "mcp_tokens"
+    DEFAULT_SECTION = "profile"
 
     @inject
-    def __init__(
-        self,
-        profile_service: ProfileService,
-        branding_service: BrandingService,
-        i18n_service: I18nService,
-        mcp_token_service: McpTokenService,
-    ):
+    def __init__(self, profile_service: ProfileService, branding_service: BrandingService,
+                 i18n_service: I18nService, config_service: ConfigurationService):
         self.profile_service = profile_service
         self.branding_service = branding_service
         self.i18n_service = i18n_service
-        self.mcp_token_service = mcp_token_service
+        self.config_service = config_service
 
     def get(self, company_short_name: str):
-        resolved = self._resolve_session(company_short_name)
-        if not isinstance(resolved, tuple):
-            return resolved
-        company, session_info = resolved
-        return self._render_account_page(
-            company_short_name,
-            company,
-            session_info,
-            active_section=self._resolve_active_section(),
-        )
+        company, session_info = self._resolve_session(company_short_name)
+        return self._render_account_page(company_short_name, company, session_info,
+                                         active_section=self._resolve_active_section())
 
     def post(self, company_short_name: str):
-        resolved = self._resolve_session(company_short_name)
-        if not isinstance(resolved, tuple):
-            return resolved
-        company, session_info = resolved
-        user_identifier = session_info["user_identifier"]
+        company, session_info = self._resolve_session(company_short_name)
+        action = request.form.get("action")
+        if action not in {"update_profile", "update_preferences"}:
+            abort(400)
+        expected = session.get("account_csrf_token", "")
+        if not expected or not secrets.compare_digest(expected, request.form.get("csrf_token", "")):
+            abort(400)
 
-        created_token = None
-        created_token_id = None
-        active_section = self._resolve_active_section(default=self.TOKENS_SECTION)
-        action = str(request.form.get("action") or "").strip()
-        if action == "create_token":
-            result = self.mcp_token_service.create_user_token(
-                company_short_name,
-                user_identifier,
-                name=request.form.get("name"),
-                expires_in_days=request.form.get("expires_in_days"),
-                created_by_identifier=user_identifier,
-            )
-            if result.get("error"):
-                flash(result["error"], "error")
-            else:
-                payload = result.get("data") or {}
-                created_token = (payload.get("token") or "").strip() or None
-                created_token_id = payload.get("id")
-                flash(self.i18n_service.t("ui.account.mcp_token_created_flash"), "success")
-        elif action == "revoke_token":
-            result = self.mcp_token_service.revoke_user_token(
-                company_short_name,
-                user_identifier,
-                token_id=int(request.form.get("token_id") or 0),
-            )
-            if result.get("error"):
-                flash(result["error"], "error")
-            else:
-                flash(self.i18n_service.t("ui.account.mcp_token_revoked_flash"), "success")
-        else:
-                flash(self.i18n_service.t("ui.account.mcp_token_unknown_action"), "error")
-
-        return self._render_account_page(
-            company_short_name,
-            company,
-            session_info,
-            created_token=created_token,
-            created_token_id=created_token_id,
-            active_section=active_section,
+        section = "profile" if action == "update_profile" else "preferences"
+        result = self.profile_service.update_account(
+            company_short_name, session_info, action=action,
+            first_name=request.form.get("first_name", ""),
+            last_name=request.form.get("last_name", ""),
+            language=request.form.get("language", ""),
         )
+        if result.get("error"):
+            flash(self.i18n_service.t(result["error"]), "error")
+            return self._render_account_page(company_short_name, company, session_info,
+                                             active_section=section), result.get("status_code", 400)
+        if action == "update_preferences":
+            flash(self.i18n_service.t("ui.account.saved", lang=request.form["language"]), "success")
+        else:
+            flash(self.i18n_service.t("ui.account.saved"), "success")
+        return redirect(url_for("account", company_short_name=company_short_name, section=section), code=303)
 
-    def _resolve_active_section(self, default: str | None = None) -> str:
-        allowed_sections = {self.DEFAULT_SECTION, self.TOKENS_SECTION}
-        candidate = str(request.values.get("section") or default or self.DEFAULT_SECTION).strip().lower()
-        return candidate if candidate in allowed_sections else self.DEFAULT_SECTION
+    def _resolve_active_section(self) -> str:
+        section = request.args.get("section", self.DEFAULT_SECTION)
+        return section if section in {"profile", "preferences"} else self.DEFAULT_SECTION
 
     def _resolve_session(self, company_short_name: str):
         company = self.profile_service.get_company_by_short_name(company_short_name)
         if not company:
-            return render_template(
-                "error.html",
-                message=self.i18n_service.t("errors.templates.company_not_found"),
-            ), 404
+            abort(404)
+        info = self.profile_service.get_current_session_info(company_short_name=company_short_name) or {}
+        if not info.get("user_identifier") or info.get("company_short_name") != company_short_name or not info.get("profile"):
+            abort(redirect(url_for("home", company_short_name=company_short_name)))
+        return company, info
 
-        session_info = self.profile_service.get_current_session_info(company_short_name=company_short_name)
-        user_identifier = (session_info or {}).get("user_identifier")
-        session_company = (session_info or {}).get("company_short_name")
-        if not user_identifier or session_company != company_short_name:
-            return redirect(url_for("home", company_short_name=company_short_name))
-
-        return company, session_info
-
-    def _render_account_page(
-        self,
-        company_short_name: str,
-        company,
-        session_info: dict,
-        *,
-        created_token: str | None = None,
-        created_token_id: int | None = None,
-        active_section: str | None = None,
-    ):
-        branding_data = self.branding_service.get_company_branding(company_short_name)
-        tokens_result = self.mcp_token_service.list_user_tokens(company_short_name, session_info["user_identifier"])
-        tokens = (tokens_result.get("data") or []) if not tokens_result.get("error") else []
-        mcp_server_url = self.mcp_token_service.build_mcp_server_url(company_short_name)
-        created_token_connection_snippet = None
-        if created_token:
-            created_token_connection_snippet = self.mcp_token_service.build_mcp_connection_snippet(
-                company_short_name=company_short_name,
-                mcp_server_url=mcp_server_url,
-                bearer_token=created_token,
-            )
-
+    def _render_account_page(self, company_short_name: str, company, session_info: dict, *,
+                             active_section: str | None = None, template_name: str = "account.html",
+                             extra_context: dict | None = None):
+        # Enterprise extends this shell with the user's external connections.
+        if "account_csrf_token" not in session:
+            session["account_csrf_token"] = secrets.token_urlsafe(32)
+        default_model, models = self.config_service.get_llm_configuration(company_short_name)
+        defaults = self.config_service.get_llm_request_defaults(company_short_name) or {}
         return render_template(
-            "account.html",
-            company=company,
-            company_short_name=company_short_name,
-            user_identifier=session_info["user_identifier"],
-            branding=branding_data,
-            tokens=tokens,
-            created_token=created_token,
-            created_token_id=created_token_id,
-            mcp_server_url=mcp_server_url,
-            created_token_connection_snippet=created_token_connection_snippet,
+            template_name, **(extra_context or {}), company=company,
+            company_short_name=company_short_name, user_identifier=session_info["user_identifier"],
+            branding=self.branding_service.get_company_branding(company_short_name),
+            account=self.profile_service.get_account_profile(company_short_name, session_info),
+            account_csrf_token=session["account_csrf_token"],
+            llm_default_model=default_model,
+            llm_available_models=models,
+            llm_default_reasoning_effort=str((defaults.get("reasoning") or {}).get("effort") or "").strip().lower(),
+            account_toolbar=True,
             active_section=active_section or self.DEFAULT_SECTION,
-        )
-
-    @staticmethod
-    def _build_mcp_server_url(company_short_name: str) -> str:
-        return McpTokenService.build_mcp_server_url(company_short_name)
-
-    @staticmethod
-    def _build_mcp_connection_snippet(
-        *,
-        company_short_name: str,
-        mcp_server_url: str,
-        bearer_token: str | None = None,
-    ) -> str:
-        return McpTokenService.build_mcp_connection_snippet(
-            company_short_name=company_short_name,
-            mcp_server_url=mcp_server_url,
-            bearer_token=bearer_token,
         )

@@ -75,9 +75,10 @@ class LanguageService:
     def get_current_language(self) -> str:
         """
             Determines and caches the language for the current request using a priority order:
-            1. Company's default language from company.yaml ('locale').
-            2. Query parameter '?lang=<code>' (e.g., 'en', 'es').
-            3. System-wide fallback language ('es').
+            1. The signed-in user's saved preference.
+            2. Company's default language from company.yaml ('locale').
+            3. Query parameter '?lang=<code>' (e.g., 'en', 'es').
+            4. System-wide fallback language ('es').
             """
         if 'locale_ctx' in g:
             return g.lang
@@ -111,8 +112,28 @@ class LanguageService:
         return g.locale_ctx
 
     def _resolve_locale_string(self) -> str:
-        # Priority 1: Company Config (source of truth)
+        # Personal preferences apply only to the signed-in identity in this tenant.
         company_short_name = self._get_company_short_name()
+        sessions = SessionManager.get('company_sessions')
+        entry = sessions.get(company_short_name, {}) if isinstance(sessions, dict) else {}
+        identifier = entry.get('user_identifier')
+        if identifier:
+            preferences = SessionManager.get('account_languages')
+            selected = (preferences.get(company_short_name, {}).get(identifier)
+                        if isinstance(preferences, dict) else None)
+            if selected in self.LOCALE_DEFINITIONS:
+                return selected
+            try:
+                user = self.profile_repo.get_user_by_email(identifier)
+                company = self.profile_repo.get_company_by_short_name(company_short_name)
+                if (user and company and user.preferred_language in self.LOCALE_DEFINITIONS
+                        and self.profile_repo.get_user_role_in_company(company.id, user.id)):
+                    return user.preferred_language
+            except Exception:
+                self._safe_rollback()
+                logging.warning('Could not load personal language preference')
+
+        # Company locale remains the default for visitors and unset preferences.
         if company_short_name:
             # cnfig returns something like 'es_ES' o 'en_US'
             try:
