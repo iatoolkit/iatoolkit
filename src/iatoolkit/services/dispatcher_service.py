@@ -31,6 +31,11 @@ class Dispatcher:
         "iat_wiki_get_page",
     }
     _tool_execution_hook = None
+    # Tool types this module executes itself; an extension cannot take them over.
+    BUILTIN_TOOL_TYPES = frozenset({"SYSTEM", "INFERENCE", "HTTP", "NATIVE"})
+    # Executors for tool types an extension owns (e.g. Enterprise's MCP client
+    # for tool_type='MCP'). This module knows nothing about what they do.
+    _tool_type_handlers: dict = {}
 
     @inject
     def __init__(self,
@@ -79,6 +84,33 @@ class Dispatcher:
     @classmethod
     def clear_tool_execution_hook(cls):
         cls._tool_execution_hook = None
+
+    @classmethod
+    def register_tool_type_handler(cls, tool_type: str, handler):
+        """
+        Registers the executor for tools whose tool_type is not built in.
+        handler is called as:
+
+            handler(company_short_name=..., function_name=..., tool_def=...,
+                    user_identifier=..., runtime_source=..., arguments={...})
+
+        and returns the tool result, exactly like a native tool would.
+        """
+        normalized = str(tool_type or "").strip().upper()
+        if not normalized:
+            raise ValueError("tool_type is required")
+        if normalized in cls.BUILTIN_TOOL_TYPES:
+            raise ValueError(f"Tool type '{normalized}' is built in and cannot be overridden")
+        if not callable(handler):
+            raise ValueError("handler must be callable")
+        cls._tool_type_handlers = {**cls._tool_type_handlers, normalized: handler}
+
+    @classmethod
+    def clear_tool_type_handler(cls, tool_type: str):
+        normalized = str(tool_type or "").strip().upper()
+        cls._tool_type_handlers = {
+            key: value for key, value in cls._tool_type_handlers.items() if key != normalized
+        }
 
     def _notify_tool_execution_hook(self, event: str, **payload) -> None:
         hook = type(self)._tool_execution_hook
@@ -184,6 +216,7 @@ class Dispatcher:
                 function_name=function_name,
                 user_identifier=user_identifier,
                 tool_def=tool_def,
+                runtime_source=_iat_runtime_source,
                 **kwargs,
             )
             self._notify_tool_execution_hook(
@@ -241,6 +274,7 @@ class Dispatcher:
         function_name: str,
         user_identifier: str | None,
         tool_def,
+        runtime_source: str | None = None,
         **kwargs,
     ) -> dict:
         # 2. Dispatch based on Tool Type
@@ -320,6 +354,17 @@ class Dispatcher:
                                          f"Error executing native tool '{method_name}': {str(e)}") from e
 
         else:
+            handler = type(self)._tool_type_handlers.get(str(tool_def.tool_type or "").strip().upper())
+            if handler:
+                logging.debug(f"Dispatching {tool_def.tool_type} tool: {function_name}")
+                return handler(
+                    company_short_name=company_short_name,
+                    function_name=function_name,
+                    tool_def=tool_def,
+                    user_identifier=user_identifier,
+                    runtime_source=runtime_source,
+                    arguments=dict(kwargs),
+                )
             raise IAToolkitException(
                 IAToolkitException.ErrorType.EXTERNAL_SOURCE_ERROR,
                 f"Unknown tool type '{tool_def.tool_type}'"

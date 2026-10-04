@@ -1191,6 +1191,11 @@ class ToolService:
             raise IAToolkitException(IAToolkitException.ErrorType.MISSING_PARAMETER, "Name and Description are required")
 
         tool_type = tool_data.get('tool_type', Tool.TYPE_NATIVE)
+        if str(tool_type or '').strip().upper() == Tool.TYPE_MCP:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_OPERATION,
+                "MCP tools are imported from a registered MCP server, not created by hand",
+            )
         execution_config = tool_data.get('execution_config')
         output_contract = normalize_output_contract(tool_data.get('output_contract'))
         self._validate_tool_contract(tool_type, execution_config, output_contract, company=company)
@@ -1243,6 +1248,13 @@ class ToolService:
             raise IAToolkitException(IAToolkitException.ErrorType.INVALID_OPERATION, "Cannot modify System Tools")
         if tool.source == Tool.SOURCE_PACK:
             raise IAToolkitException(IAToolkitException.ErrorType.INVALID_OPERATION, "Cannot modify PACK tools")
+        if tool.source == Tool.SOURCE_MCP:
+            return self._update_mcp_tool(company_short_name, tool, tool_data, actor_identifier)
+        if str(tool_data.get('tool_type') or '').strip().upper() == Tool.TYPE_MCP:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_OPERATION,
+                "A tool cannot be turned into an MCP tool; import it from its MCP server",
+            )
 
         normalized_name = None
         if 'name' in tool_data or 'key' in tool_data:
@@ -1276,6 +1288,43 @@ class ToolService:
             tool.tool_type = tool_data['tool_type']
         if 'is_active' in tool_data:
             tool.is_active = tool_data['is_active']
+
+        self.llm_query_repo.commit()
+        self._notify_tool_lifecycle_hook(
+            event=self.TOOL_EVENT_UPDATED,
+            company_short_name=company_short_name,
+            tool_obj=tool,
+            actor_identifier=actor_identifier,
+        )
+        return tool.to_dict()
+
+    MCP_TOOL_EDITABLE_FIELDS = ('description', 'is_active')
+
+    def _update_mcp_tool(self, company_short_name: str, tool, tool_data: dict,
+                         actor_identifier: str | None) -> dict:
+        """
+        An imported MCP tool mirrors a tool on its server: its name, schema and
+        execution config come from there (and agents reference the name), so
+        only what stays local can change here.
+        """
+        unsupported = sorted(
+            key for key in tool_data.keys()
+            if key not in self.MCP_TOOL_EDITABLE_FIELDS
+        )
+        if unsupported:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_OPERATION,
+                f"MCP tools only allow editing {list(self.MCP_TOOL_EDITABLE_FIELDS)}; "
+                f"{unsupported} come from the MCP server",
+            )
+
+        if 'description' in tool_data:
+            description = str(tool_data.get('description') or '').strip()
+            if not description:
+                raise IAToolkitException(IAToolkitException.ErrorType.MISSING_PARAMETER, "Description is required")
+            tool.description = description
+        if 'is_active' in tool_data:
+            tool.is_active = bool(tool_data['is_active'])
 
         self.llm_query_repo.commit()
         self._notify_tool_lifecycle_hook(

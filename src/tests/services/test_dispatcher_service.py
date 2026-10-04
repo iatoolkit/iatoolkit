@@ -429,3 +429,90 @@ class TestDispatcher:
             self.dispatcher.dispatch("any_company", "some_action")
 
         assert "Company 'any_company' not configured" in str(excinfo.value)
+
+
+class TestDispatcherToolTypeHandlers:
+    """Tool types an extension owns (e.g. Enterprise's MCP client) run through a
+    registered handler; the dispatcher knows nothing about what they do."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        self.mock_tool_service = MagicMock(spec=ToolService)
+        self.dispatcher = Dispatcher(
+            llmquery_repo=MagicMock(spec=LLMQueryRepo),
+            inference_service=MagicMock(),
+            util=MagicMock(spec=Utility),
+        )
+        self.dispatcher._tool_service = self.mock_tool_service
+        Dispatcher.clear_tool_execution_hook()
+        yield
+        Dispatcher.clear_tool_type_handler(Tool.TYPE_MCP)
+
+    def _tool(self, tool_type=Tool.TYPE_MCP):
+        tool_def = MagicMock(spec=Tool)
+        tool_def.tool_type = tool_type
+        tool_def.has_side_effects = False
+        self.mock_tool_service.get_tool_definition.return_value = tool_def
+        return tool_def
+
+    def test_registered_handler_executes_its_tool_type(self):
+        tool_def = self._tool()
+        handler = MagicMock(return_value={"status": "success"})
+        Dispatcher.register_tool_type_handler("mcp", handler)
+
+        result = self.dispatcher.dispatch(
+            "acme",
+            "linear_create_issue",
+            user_identifier="ana@acme.com",
+            _iat_runtime_source="chat_ui",
+            title="Bug",
+        )
+
+        assert result == {"status": "success"}
+        handler.assert_called_once_with(
+            company_short_name="acme",
+            function_name="linear_create_issue",
+            tool_def=tool_def,
+            user_identifier="ana@acme.com",
+            runtime_source="chat_ui",
+            arguments={"title": "Bug"},
+        )
+
+    def test_unregistered_tool_type_is_rejected(self):
+        self._tool()
+
+        with pytest.raises(IAToolkitException) as excinfo:
+            self.dispatcher.dispatch("acme", "linear_create_issue")
+
+        assert "Unknown tool type 'MCP'" in str(excinfo.value)
+
+    def test_cleared_handler_no_longer_runs(self):
+        self._tool()
+        Dispatcher.register_tool_type_handler(Tool.TYPE_MCP, MagicMock())
+        Dispatcher.clear_tool_type_handler(Tool.TYPE_MCP)
+
+        with pytest.raises(IAToolkitException):
+            self.dispatcher.dispatch("acme", "linear_create_issue")
+
+    @pytest.mark.parametrize("builtin", ["SYSTEM", "INFERENCE", "HTTP", "native"])
+    def test_builtin_tool_types_cannot_be_taken_over(self, builtin):
+        with pytest.raises(ValueError):
+            Dispatcher.register_tool_type_handler(builtin, MagicMock())
+
+    def test_handler_must_be_callable(self):
+        with pytest.raises(ValueError):
+            Dispatcher.register_tool_type_handler(Tool.TYPE_MCP, "not-callable")
+
+    def test_handler_errors_reach_the_execution_hook(self):
+        self._tool()
+        hook = MagicMock()
+        Dispatcher.register_tool_execution_hook(hook)
+        Dispatcher.register_tool_type_handler(Tool.TYPE_MCP, MagicMock(side_effect=RuntimeError("boom")))
+        try:
+            with pytest.raises(RuntimeError):
+                self.dispatcher.dispatch("acme", "linear_create_issue")
+        finally:
+            Dispatcher.clear_tool_execution_hook()
+
+        after = [call for call in hook.call_args_list if call.kwargs.get("event") == "after_dispatch"]
+        assert after and after[-1].kwargs["status"] == "error"

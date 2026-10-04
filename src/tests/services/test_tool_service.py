@@ -1604,3 +1604,99 @@ class TestToolService:
         assert len(result) == 1
         assert result[0]['strict'] is False
         assert result[0]['parameters']['additionalProperties'] is False
+
+
+class TestToolServiceMcpTools:
+    """Tools imported from an MCP server mirror that server: they are never
+    created by hand, and only their local description and active flag change."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        self.mock_llm_query_repo = MagicMock(spec=LLMQueryRepo)
+        self.mock_profile_repo = MagicMock(spec=ProfileRepo)
+        self.mock_llm_query_repo.get_tool_by_name.return_value = None
+        ToolService.clear_tool_lifecycle_hook()
+        self.service = ToolService(
+            llm_query_repo=self.mock_llm_query_repo,
+            profile_repo=self.mock_profile_repo,
+            sql_service=MagicMock(spec=SqlService),
+            excel_service=MagicMock(spec=ExcelService),
+            pdf_service=MagicMock(spec=PdfService),
+            mail_service=MagicMock(spec=MailService),
+            knowledge_base_service=MagicMock(spec=KnowledgeBaseService),
+            visual_kb_service=MagicMock(spec=VisualKnowledgeBaseService),
+            visual_tool_service=MagicMock(spec=VisualToolService),
+            web_search_service=MagicMock(),
+            bridge_repo=MagicMock(spec=BridgeRepo),
+        )
+        company = MagicMock(spec=Company)
+        company.id = 1
+        self.mock_profile_repo.get_company_by_short_name.return_value = company
+
+    def _mcp_tool(self):
+        tool = MagicMock(spec=Tool)
+        tool.id = 7
+        tool.name = "linear_create_issue"
+        tool.tool_type = Tool.TYPE_MCP
+        tool.source = Tool.SOURCE_MCP
+        tool.description = "Create an issue"
+        tool.is_active = True
+        tool.execution_config = {"version": 1, "mcp": {"server_id": 3, "remote_name": "create_issue"}}
+        tool.to_dict.return_value = {"id": 7}
+        self.mock_llm_query_repo.get_tool_by_id.return_value = tool
+        return tool
+
+    def test_create_rejects_mcp_tool_type(self):
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.create_tool("acme", {
+                "name": "linear_create_issue",
+                "description": "x",
+                "tool_type": "MCP",
+            })
+        assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_OPERATION
+        self.mock_llm_query_repo.add_tool.assert_not_called()
+
+    def test_update_mcp_tool_changes_description_and_active_flag(self):
+        tool = self._mcp_tool()
+
+        self.service.update_tool("acme", 7, {"description": "Crea un issue en Linear", "is_active": False})
+
+        assert tool.description == "Crea un issue en Linear"
+        assert tool.is_active is False
+        assert tool.execution_config["mcp"]["remote_name"] == "create_issue"
+        self.mock_llm_query_repo.commit.assert_called_once()
+
+    @pytest.mark.parametrize("field,value", [
+        ("name", "other"),
+        ("parameters", {"type": "object", "properties": {}}),
+        ("execution_config", None),
+        ("tool_type", "NATIVE"),
+    ])
+    def test_update_mcp_tool_rejects_server_owned_fields(self, field, value):
+        tool = self._mcp_tool()
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.update_tool("acme", 7, {field: value})
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_OPERATION
+        assert tool.execution_config["mcp"]["server_id"] == 3
+        self.mock_llm_query_repo.commit.assert_not_called()
+
+    def test_update_mcp_tool_requires_a_description(self):
+        self._mcp_tool()
+
+        with pytest.raises(IAToolkitException):
+            self.service.update_tool("acme", 7, {"description": "  "})
+
+    def test_regular_tool_cannot_become_mcp(self):
+        tool = MagicMock(spec=Tool)
+        tool.id = 1
+        tool.tool_type = Tool.TYPE_NATIVE
+        tool.source = Tool.SOURCE_USER
+        tool.execution_config = None
+        self.mock_llm_query_repo.get_tool_by_id.return_value = tool
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.service.update_tool("acme", 1, {"tool_type": "MCP"})
+
+        assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_OPERATION

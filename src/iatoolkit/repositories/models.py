@@ -360,6 +360,7 @@ class Tool(Base):
     TYPE_NATIVE = 'NATIVE'       # executed by company class in Python
     TYPE_INFERENCE = 'INFERENCE' # executed by InferenceService
     TYPE_HTTP = 'HTTP'           # executed by HttpToolService
+    TYPE_MCP = 'MCP'             # executed by the handler an extension registers (Dispatcher.register_tool_type_handler)
 
     # source of the definition (Source of Truth)
     SOURCE_SYSTEM = 'SYSTEM'
@@ -367,6 +368,7 @@ class Tool(Base):
     SOURCE_YAML = 'YAML'         # defined in company.yaml
     SOURCE_USER = 'USER'         # defined via GUI/API
     SOURCE_PACK = 'PACK'         # materialized by enterprise control-plane
+    SOURCE_MCP = 'MCP'           # imported from an external MCP server
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     company_id = Column(Integer,

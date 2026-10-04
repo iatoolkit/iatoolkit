@@ -53,6 +53,10 @@ function sanitizeHtmlFragment(html) {
                 }
             });
             if (tag === 'a') {
+                // A link in an answer never replaces the chat: following it in
+                // the same tab loses the conversation on screen (e.g. the link to
+                // connect an external MCP account).
+                el.setAttribute('target', '_blank');
                 el.setAttribute('rel', 'noopener noreferrer');
             }
             walk(el);
