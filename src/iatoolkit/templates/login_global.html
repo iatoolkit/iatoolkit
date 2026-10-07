@@ -2,8 +2,33 @@
 
 {% block title %}{{ t('ui.global_login.title') }}{% endblock %}
 
+{% block styles %}
+<style>
+    /* No company yet, so no company branding: the page wears IAToolkit's own. */
+    :root {
+        --brand-primary-color: #4A55A2;
+        --brand-secondary-color: #3A448A;
+        --brand-text-on-primary: #ffffff;
+    }
+    body { background: linear-gradient(180deg, #ffffff 0%, #f1f3fb 100%); min-height: 100vh; }
+    .iat-brand { display: inline-flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.35rem; color: #1d2541; text-decoration: none; }
+    .iat-brand-mark { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: #4A55A2; color: #fff; }
+    /* Self-contained: this page does not load the company-home stylesheet. */
+    .global-login .branded-form-container { background: #fff; border-radius: 12px; padding: 32px; border-top: 4px solid #4A55A2; box-shadow: 0 8px 28px rgba(29, 37, 65, .10); }
+    .global-login .btn-branded-primary { background: #4A55A2; border: 1px solid #4A55A2; color: #fff; }
+    .global-login .btn-branded-primary:hover { background: #3A448A; border-color: #3A448A; color: #fff; }
+    .global-login .form-control:focus { border-color: #4A55A2; box-shadow: 0 0 0 .2rem rgba(74, 85, 162, .18); }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="container my-5">
+<div class="container my-5 global-login">
+    <div class="text-center mb-4">
+        <span class="iat-brand">
+            <span class="iat-brand-mark" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6 1l1.2 3.6L11 6 7.2 7.4 6 11 4.8 7.4 1 6l3.8-1.4z"/><path d="M12 9l.7 1.8 1.8.7-1.8.7L12 14l-.7-1.8-1.8-.7 1.8-.7z"/></svg></span>
+            <span>IAToolkit</span>
+        </span>
+    </div>
     <div class="row justify-content-center">
         <div class="col-md-6 col-lg-5">
             <div class="branded-form-container">
