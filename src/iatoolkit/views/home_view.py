@@ -36,6 +36,11 @@ class HomeView(MethodView):
             self._trigger_warmup(company_short_name, "home_pre_login")
 
             branding_data = self.branding_service.get_company_branding(company_short_name)
+            invitation_context = self.profile_service.signup_invitation_context(company_short_name, None)
+            login_context = (
+                {"signup_invitation_required": True}
+                if isinstance(invitation_context, tuple) and invitation_context[0] is True else {}
+            )
 
             template_name = self.util.get_template_by_language("home")
             home_template = self.util.get_company_template(company_short_name, template_name)
@@ -52,6 +57,7 @@ class HomeView(MethodView):
                         company_short_name=company_short_name,
                         company=company,
                         branding=branding_data,
+                        **login_context,
                     )
 
                 message = self.i18n_service.t(
@@ -70,6 +76,7 @@ class HomeView(MethodView):
                 home_template,
                 company_short_name=company_short_name,
                 branding=branding_data,
+                **login_context,
             )
         except Exception as e:
             message = self.i18n_service.t('errors.templates.processing_error', error=str(e))

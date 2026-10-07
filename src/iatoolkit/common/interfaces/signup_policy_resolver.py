@@ -31,3 +31,20 @@ class SignupPolicyResolver(ABC):
         invite_token: str | None = None,
     ) -> SignupPolicyDecision:
         """Evaluates whether the email can sign up for the target company."""
+
+    def requires_invitation(self, company_short_name: str) -> bool:
+        return False
+
+    def invitation_email(self, company_short_name: str, invite_token: str | None) -> str | None:
+        return None
+
+    def claim_signup(
+        self,
+        company_short_name: str,
+        email: str,
+        invite_token: str | None = None,
+        *,
+        verified_email: bool = False,
+    ) -> bool:
+        """Claim an invitation in the same transaction that creates membership."""
+        return True

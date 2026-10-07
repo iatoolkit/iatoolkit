@@ -4,7 +4,7 @@
 # IAToolkit is open source software.
 
 from flask.views import MethodView
-from flask import render_template, request, url_for, redirect, flash
+from flask import render_template, request, url_for, redirect, flash, make_response
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.branding_service import BrandingService
 from iatoolkit.services.i18n_service import I18nService
@@ -34,11 +34,32 @@ class SignupView(MethodView):
 
         branding_data = self.branding_service.get_company_branding(company_short_name)
         current_lang = request.args.get("lang") or "en"
+        invite_token = request.args.get("invite_token")
+        invitation_context = self.profile_service.signup_invitation_context(company_short_name, invite_token)
+        invitation_required, invited_email = (
+            invitation_context if isinstance(invitation_context, tuple) else (False, None)
+        )
+        if invitation_required and not invited_email:
+            response = make_response(render_template(
+                'error.html',
+                message=self.i18n_service.t('errors.signup.invitation_required'),
+            ), 403)
+            response.headers['Referrer-Policy'] = 'no-referrer'
+            response.headers['Cache-Control'] = 'no-store'
+            return response
 
-        return render_template('signup.html',
-                               company_short_name=company_short_name,
-                               branding=branding_data,
-                               lang=current_lang)
+        template_context = {
+            "company_short_name": company_short_name,
+            "branding": branding_data,
+            "lang": current_lang,
+        }
+        if invitation_required or invited_email:
+            template_context.update(invite_token=invite_token, invited_email=invited_email)
+        response = make_response(render_template('signup.html', **template_context))
+        if invitation_required or invited_email:
+            response.headers['Referrer-Policy'] = 'no-referrer'
+            response.headers['Cache-Control'] = 'no-store'
+        return response
 
     def post(self, company_short_name: str):
         try:
@@ -75,18 +96,32 @@ class SignupView(MethodView):
 
             if "error" in response:
                 flash(response["error"], 'error')
-                return render_template(
-                    'signup.html',
-                    company_short_name=company_short_name,
-                    branding=branding_data,
-                    lang=current_lang,
-                    form_data={
+                template_context = {
+                    "company_short_name": company_short_name,
+                    "branding": branding_data,
+                    "lang": current_lang,
+                    "form_data": {
                         "first_name": first_name,
                         "last_name": last_name,
                         "email": email,
                         "password": password,
                         "confirm_password": confirm_password
-                    }), 400
+                    },
+                }
+                if invite_token:
+                    invitation_context = self.profile_service.signup_invitation_context(
+                        company_short_name, invite_token,
+                    )
+                    if isinstance(invitation_context, tuple) and (invitation_context[0] or invitation_context[1]):
+                        template_context.update(
+                            invite_token=invite_token,
+                            invited_email=invitation_context[1],
+                        )
+                response = make_response(render_template('signup.html', **template_context), 400)
+                if invite_token:
+                    response.headers['Referrer-Policy'] = 'no-referrer'
+                    response.headers['Cache-Control'] = 'no-store'
+                return response
 
             flash(response["message"], 'success')
             return redirect(url_for('home', company_short_name=company_short_name, lang=current_lang))

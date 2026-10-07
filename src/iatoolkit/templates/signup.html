@@ -39,11 +39,13 @@
                         {% endif %}
 
                         <form action="{{ url_for('signup', company_short_name=company_short_name) }}" method="post">
+                            {% if invite_token %}<input type="hidden" name="invite_token" value="{{ invite_token }}">{% endif %}
                             <div class="mb-3">
                                 <label for="email" class="form-label text-secondary">{{ t('ui.signup.email_label') }}</label>
                                 <input type="email" autocomplete="off" id="email" name="email"
                                        class="form-control" required
-                                       value="{{ form_data.email if form_data else '' }}">
+                                       value="{{ invited_email or (form_data.email if form_data else '') }}"
+                                       {% if invited_email %}readonly{% endif %}>
                             </div>
 
                             <div class="row">

@@ -69,6 +69,11 @@ class LoginView(BaseLoginView):
 
         if not auth_response['success']:
             flash(auth_response["message"], 'error')
+            invitation_context = self.profile_service.signup_invitation_context(company_short_name, None)
+            login_context = (
+                {"signup_invitation_required": True}
+                if isinstance(invitation_context, tuple) and invitation_context[0] is True else {}
+            )
 
             # Resolve the correct template name based on language (e.g., home_en.html or home_es.html)
             template_name = self.utility.get_template_by_language("home")
@@ -85,6 +90,7 @@ class LoginView(BaseLoginView):
                         company=company,
                         branding=branding_data,
                         form_data={"email": email},
+                        **login_context,
                     ), 400
 
                 return render_template('error.html',
@@ -96,6 +102,7 @@ class LoginView(BaseLoginView):
                 company=company,
                 branding=branding_data,
                 form_data={"email": email},
+                **login_context,
             ), 400
 
         user_identifier = auth_response['user_identifier']

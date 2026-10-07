@@ -129,8 +129,11 @@ tools:
   - function_name: iat_send_email
     description: iatoolkit mail system. envia mails cuando un usuario lo solicita.
     # Sends a real email: simulated, never sent, when an evaluation replays an agent.
+    # Not destructive (it changes nothing that existed) and not open-world for MCP
+    # annotations: it goes through the tenant's own mail service.
     execution_config:
       side_effects: true
+      destructive: false
     routing_profile:
       tags:
         - email
@@ -559,6 +562,9 @@ tools:
         - metadata_filter
   - function_name: iat_web_search
     description: Realiza una búsqueda web externa para obtener información pública actualizada.
+    # Reaches the public internet: openWorldHint in MCP annotations.
+    execution_config:
+      open_world: true
     routing_profile:
       tags:
         - web

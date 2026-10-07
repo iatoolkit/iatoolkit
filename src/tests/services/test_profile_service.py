@@ -727,6 +727,27 @@ class TestProfileService:
         assert response['success'] is False
         assert response['reason_code'] == 'SIGNUP_NOT_ALLOWED'
 
+    def test_login_with_google_rejects_failed_invitation_claim(self, mock_session_manager):
+        google_identity = GoogleIdentity(
+            subject='google-sub-new', email='newuser@email.com', email_verified=True,
+        )
+        self.mock_repo.get_user_by_google_sub.return_value = None
+        self.mock_repo.get_user_by_email.return_value = None
+        resolver = MagicMock()
+        resolver.evaluate_signup.return_value.allowed = True
+        resolver.evaluate_signup.return_value.metadata = {}
+        resolver.claim_signup.return_value = False
+        self.service.signup_policy_resolver = resolver
+
+        response = self.service.login_with_google(self.mock_company.short_name, google_identity)
+
+        assert response['success'] is False
+        assert response['reason_code'] == 'SIGNUP_NOT_ALLOWED'
+        resolver.claim_signup.assert_called_once_with(
+            self.mock_company.short_name, 'newuser@email.com', verified_email=True,
+        )
+        self.mock_repo.create_user.assert_not_called()
+
     def test_update_user_language_success(self, mock_session_manager):
         """
         Tests that update_user_language calls the repository with correct arguments

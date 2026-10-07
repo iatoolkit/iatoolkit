@@ -300,3 +300,30 @@ def test_get_system_tool_routing_profile():
             "cost": {"penalty": 0.1},
         }
         assert system_tools.get_system_tool_routing_profile("tool_missing") is None
+
+
+@pytest.mark.parametrize("flag", ["destructive", "open_world"])
+def test_parse_system_tools_catalog_rejects_non_boolean_annotation_flags(flag):
+    payload = f"""
+version: 1
+pack:
+  key: system
+  name: System Tools
+tools:
+  - function_name: mailer
+    description: Sends mail
+    execution_config:
+      {flag}: "yes"
+    parameters:
+      type: object
+      properties: {{}}
+"""
+    with pytest.raises(ValueError, match=f"{flag} must be a boolean"):
+        system_tools._parse_system_tools_catalog(payload)
+
+
+def test_shipped_catalog_declares_mcp_annotation_hints():
+    catalog = system_tools._parse_system_tools_catalog(system_tools._read_system_tools_catalog_text())
+    configs = {item["function_name"]: item.get("execution_config") or {} for item in catalog}
+    assert configs["iat_send_email"] == {"side_effects": True, "destructive": False}
+    assert configs["iat_web_search"] == {"open_world": True}

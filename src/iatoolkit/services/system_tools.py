@@ -60,8 +60,11 @@ def _validate_system_tool_entry(entry: dict, index: int) -> dict:
     if execution_config is not None:
         if not isinstance(execution_config, dict):
             raise ValueError(f"tools[{index}].execution_config must be an object")
-        if "side_effects" in execution_config and not isinstance(execution_config["side_effects"], bool):
-            raise ValueError(f"tools[{index}].execution_config.side_effects must be a boolean")
+        for flag in ("side_effects", "destructive", "open_world"):
+            if flag in execution_config and not isinstance(execution_config[flag], bool):
+                raise ValueError(f"tools[{index}].execution_config.{flag} must be a boolean")
+        if "title" in execution_config and not isinstance(execution_config["title"], str):
+            raise ValueError(f"tools[{index}].execution_config.title must be a string")
 
     normalized = {
         "function_name": function_name,

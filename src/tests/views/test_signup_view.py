@@ -93,6 +93,31 @@ class TestSignupView:
         )
 
     @patch("iatoolkit.views.signup_view.render_template")
+    def test_invitation_only_signup_requires_valid_link(self, mock_render_template):
+        mock_render_template.return_value = "<html></html>"
+        self.profile_service.signup_invitation_context.return_value = (True, None)
+
+        response = self.client.get("/test_company/signup")
+
+        assert response.status_code == 403
+        mock_render_template.assert_called_once_with(
+            'error.html', message='translated:errors.signup.invitation_required',
+        )
+
+    @patch("iatoolkit.views.signup_view.render_template")
+    def test_invitation_link_prefills_invited_email(self, mock_render_template):
+        mock_render_template.return_value = "<html></html>"
+        self.profile_service.signup_invitation_context.return_value = (
+            True, 'invited@example.com',
+        )
+
+        response = self.client.get("/test_company/signup?invite_token=secret")
+
+        assert response.status_code == 200
+        assert mock_render_template.call_args.kwargs['invite_token'] == 'secret'
+        assert mock_render_template.call_args.kwargs['invited_email'] == 'invited@example.com'
+
+    @patch("iatoolkit.views.signup_view.render_template")
     def test_post_with_error(self, mock_render_template):
         mock_render_template.return_value = "<html></html>"
         self.profile_service.signup.return_value = {'error': 'El usuario ya existe'}

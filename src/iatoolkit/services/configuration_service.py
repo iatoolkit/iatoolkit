@@ -794,8 +794,14 @@ class ConfigurationService:
             if execution_config is not None:
                 if not isinstance(execution_config, dict):
                     add_error(f"tools[{i}].execution_config", "Must be a dictionary.")
-                elif "side_effects" in execution_config and not isinstance(execution_config["side_effects"], bool):
-                    add_error(f"tools[{i}].execution_config.side_effects", "Must be true or false.")
+                else:
+                    # side_effects drives evaluations; destructive / open_world / title
+                    # feed the MCP tool annotations.
+                    for flag in ("side_effects", "destructive", "open_world"):
+                        if flag in execution_config and not isinstance(execution_config[flag], bool):
+                            add_error(f"tools[{i}].execution_config.{flag}", "Must be true or false.")
+                    if "title" in execution_config and not isinstance(execution_config["title"], str):
+                        add_error(f"tools[{i}].execution_config.title", "Must be a string.")
 
         # 6. Prompts
         prompt_list, categories_config = self._get_prompt_config(config)

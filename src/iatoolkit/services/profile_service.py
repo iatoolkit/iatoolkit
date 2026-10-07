@@ -68,6 +68,16 @@ class ProfileService:
         except Exception as rollback_error:
             logging.warning(f"ProfileService rollback failed: {rollback_error}")
 
+    def signup_invitation_context(
+        self, company_short_name: str, invite_token: str | None,
+    ) -> tuple[bool, str | None]:
+        required = self.signup_policy_resolver.requires_invitation(company_short_name)
+        email = (
+            self.signup_policy_resolver.invitation_email(company_short_name, invite_token)
+            if invite_token else None
+        )
+        return required, email
+
     @staticmethod
     def _normalize_name_value(value: str | None, fallback: str) -> str:
         text = str(value or "").strip()
@@ -579,6 +589,7 @@ class ProfileService:
                 )
                 policy_metadata = dict(policy_decision.metadata or {})
                 if not policy_decision.allowed:
+                    self._safe_rollback()
                     logging.info(
                         "Google login blocked by signup policy. company=%s email=%s policy=%s metadata=%s",
                         company_short_name,
@@ -595,6 +606,15 @@ class ProfileService:
                     return {
                         "success": False,
                         "message": message,
+                        "reason_code": "SIGNUP_NOT_ALLOWED",
+                    }
+                if not self.signup_policy_resolver.claim_signup(
+                    company_short_name, email, verified_email=True,
+                ):
+                    self._safe_rollback()
+                    return {
+                        "success": False,
+                        "message": self.i18n_service.t('errors.signup.signup_not_allowed'),
                         "reason_code": "SIGNUP_NOT_ALLOWED",
                     }
                 user.companies.append(company)
@@ -755,6 +775,11 @@ class ProfileService:
                     return {"error": self.i18n_service.t('errors.signup.user_already_registered', email=email)}
                 else:
                     # add new company to existing user
+                    if not self.signup_policy_resolver.claim_signup(
+                        company_short_name, email, invite_token,
+                    ):
+                        self._safe_rollback()
+                        return {"error": self.i18n_service.t('errors.signup.signup_not_allowed')}
                     existing_user.companies.append(company)
                     self.profile_repo.save_user(existing_user)
                     self._promote_bootstrap_owner_if_needed(company, existing_user)
@@ -790,6 +815,11 @@ class ProfileService:
                             )
 
             # associate new company to user
+            if not self.signup_policy_resolver.claim_signup(
+                company_short_name, email, invite_token,
+            ):
+                self._safe_rollback()
+                return {"error": self.i18n_service.t('errors.signup.signup_not_allowed')}
             new_user.companies.append(company)
 
             # and create in the database
