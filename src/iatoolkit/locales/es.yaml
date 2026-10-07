@@ -627,7 +627,9 @@ ui:
   admin:
     workspace: "Recursos"
     team_invitations: "Invitaciones"
+    team_invite_user: "Invitar usuario"
     team_invite_none: "Todavía no hay invitaciones."
+    team_invite_loading: "Cargando invitaciones..."
     team_invite_email: "Correo"
     team_invite_pending: "Pendiente"
     team_invite_accepted: "Aceptada"

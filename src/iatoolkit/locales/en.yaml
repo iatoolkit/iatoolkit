@@ -613,7 +613,9 @@ ui:
   admin:
     workspace: "Workspace"
     team_invitations: "Invitations"
+    team_invite_user: "Invite user"
     team_invite_none: "No invitations yet."
+    team_invite_loading: "Loading invitations..."
     team_invite_email: "Email"
     team_invite_pending: "Pending"
     team_invite_accepted: "Accepted"
