@@ -510,6 +510,107 @@ class TestProfileService:
         assert 'translated:errors.general.unexpected_error' == response['error']
         self.mock_i18n.t.assert_called_with('errors.general.unexpected_error', error='mail error')
 
+    def test_authenticate_local_credentials_does_not_open_company_session(self, mock_session_manager):
+        response = self.service.authenticate_local_credentials('test@email.com', 'password')
+
+        assert response == {'success': True, 'user_identifier': 'test@email.com'}
+        mock_session_manager.set.assert_not_called()
+        self.mock_session_context.save_profile_data.assert_not_called()
+
+    def test_authenticate_local_credentials_does_not_require_membership(self, mock_session_manager):
+        self.mock_user.companies = []
+
+        response = self.service.authenticate_local_credentials('test@email.com', 'password')
+
+        assert response['success'] is True
+
+    def test_authenticate_local_credentials_rejects_bad_password(self, mock_session_manager):
+        response = self.service.authenticate_local_credentials('test@email.com', 'wrong')
+
+        assert response == {'success': False, 'message': 'translated:errors.auth.invalid_password'}
+
+    def test_authenticate_local_credentials_rejects_unverified_user(self, mock_session_manager):
+        self.mock_user.verified = False
+
+        response = self.service.authenticate_local_credentials('test@email.com', 'password')
+
+        assert response == {'success': False, 'message': 'translated:errors.services.account_not_verified'}
+
+    def test_authenticate_local_credentials_rejects_google_user(self, mock_session_manager):
+        self.mock_user.auth_method = 'google'
+
+        response = self.service.authenticate_local_credentials('test@email.com', 'password')
+
+        assert response['message'] == 'translated:errors.auth.google_account_requires_google_login'
+
+    def test_identify_google_user_matches_existing_user_without_changes(self, mock_session_manager):
+        google_identity = GoogleIdentity(
+            subject='google-sub-1', email='Test@Email.com', email_verified=True,
+            given_name='Test', family_name='User',
+        )
+        self.mock_repo.get_user_by_google_sub.return_value = None
+
+        response = self.service.identify_google_user(google_identity)
+
+        assert response == {'success': True, 'user_identifier': 'test@email.com'}
+        self.mock_repo.get_user_by_email.assert_called_once_with('test@email.com')
+        assert self.mock_user.google_sub is None
+        self.mock_repo.save_user.assert_not_called()
+        self.mock_repo.create_user.assert_not_called()
+
+    def test_identify_google_user_does_not_create_unknown_user(self, mock_session_manager):
+        google_identity = GoogleIdentity(
+            subject='google-sub-1', email='new@email.com', email_verified=True,
+            given_name='New', family_name='User',
+        )
+        self.mock_repo.get_user_by_google_sub.return_value = None
+        self.mock_repo.get_user_by_email.return_value = None
+
+        response = self.service.identify_google_user(google_identity)
+
+        assert response['success'] is False
+        assert response['reason_code'] == 'USER_NOT_FOUND'
+        self.mock_repo.create_user.assert_not_called()
+
+    def test_identify_google_user_requires_verified_email(self, mock_session_manager):
+        google_identity = GoogleIdentity(
+            subject='google-sub-1', email='test@email.com', email_verified=False,
+            given_name='Test', family_name='User',
+        )
+
+        response = self.service.identify_google_user(google_identity)
+
+        assert response['reason_code'] == 'GOOGLE_EMAIL_NOT_VERIFIED'
+
+    def test_identify_google_user_rejects_other_google_subject(self, mock_session_manager):
+        google_identity = GoogleIdentity(
+            subject='google-sub-2', email='test@email.com', email_verified=True,
+            given_name='Test', family_name='User',
+        )
+        self.mock_repo.get_user_by_google_sub.return_value = None
+        self.mock_user.auth_method = 'google'
+        self.mock_user.google_sub = 'google-sub-1'
+
+        response = self.service.identify_google_user(google_identity)
+
+        assert response['reason_code'] == 'GOOGLE_ACCOUNT_CONFLICT'
+
+    def test_global_identity_round_trip(self, mock_session_manager):
+        self.service.set_global_identity('test@email.com', 'local')
+
+        mock_session_manager.set_permanent.assert_called_once_with(True)
+        key, stored = mock_session_manager.set.call_args.args
+        assert key == 'global_identity'
+        assert stored['user_identifier'] == 'test@email.com'
+        assert stored['auth_method'] == 'local'
+        assert isinstance(stored['authenticated_at'], int)
+
+        mock_session_manager.get.return_value = stored
+        assert self.service.get_global_identity() == stored
+
+        mock_session_manager.get.return_value = None
+        assert self.service.get_global_identity() is None
+
     def test_login_with_google_converts_existing_local_user(self, mock_session_manager):
         google_identity = GoogleIdentity(
             subject='google-sub-1',

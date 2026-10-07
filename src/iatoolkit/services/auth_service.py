@@ -22,6 +22,8 @@ class AuthService:
     Centralized service for handling authentication for all incoming requests.
     It determines the user's identity based on either a Flask session cookie or an API Key.
     """
+    # access-log scope for logins that are not tied to a company
+    GLOBAL_ACCESS_SCOPE = '*'
 
     @inject
     def __init__(self, profile_service: ProfileService,
@@ -184,6 +186,82 @@ class AuthService:
                 user_identifier=auth_response.get('user_identifier'),
             )
 
+        return auth_response
+
+    def login_global_local_user(self, email: str, password: str) -> dict:
+        # company-less login: authenticates the person, the company is chosen later
+        auth_response = self.profile_service.authenticate_local_credentials(email=email, password=password)
+        if not auth_response.get('success'):
+            self.log_access(
+                company_short_name=self.GLOBAL_ACCESS_SCOPE,
+                user_identifier=email,
+                auth_type='local',
+                outcome='failure',
+                reason_code='INVALID_CREDENTIALS',
+            )
+            return auth_response
+
+        self.profile_service.set_global_identity(auth_response['user_identifier'], 'local')
+        self.log_access(
+            company_short_name=self.GLOBAL_ACCESS_SCOPE,
+            auth_type='local',
+            outcome='success',
+            user_identifier=auth_response['user_identifier'],
+        )
+        return auth_response
+
+    def login_global_google_user(self, code: str, state: str, nonce: str, redirect_uri: str) -> dict:
+        try:
+            google_identity = self.google_auth_client.exchange_code_for_identity(
+                code=code,
+                state=state,
+                nonce=nonce,
+                redirect_uri=redirect_uri,
+            )
+        except GoogleAuthError as exc:
+            self.log_access(
+                company_short_name=self.GLOBAL_ACCESS_SCOPE,
+                auth_type='google',
+                outcome='failure',
+                reason_code=exc.reason_code,
+            )
+            return {
+                'success': False,
+                'reason_code': exc.reason_code,
+                'message': self.i18n_service.t(exc.message_key),
+            }
+        except Exception:
+            logging.exception("Unexpected Google auth client failure in company-less login.")
+            self.log_access(
+                company_short_name=self.GLOBAL_ACCESS_SCOPE,
+                auth_type='google',
+                outcome='failure',
+                reason_code='GOOGLE_AUTH_UNEXPECTED_ERROR',
+            )
+            return {
+                'success': False,
+                'reason_code': 'GOOGLE_AUTH_UNEXPECTED_ERROR',
+                'message': self.i18n_service.t('errors.auth.google_login_failed'),
+            }
+
+        auth_response = self.profile_service.identify_google_user(google_identity)
+        if not auth_response.get('success'):
+            self.log_access(
+                company_short_name=self.GLOBAL_ACCESS_SCOPE,
+                auth_type='google',
+                outcome='failure',
+                reason_code=auth_response.get('reason_code', 'GOOGLE_LOGIN_FAILED'),
+                user_identifier=google_identity.email,
+            )
+            return auth_response
+
+        self.profile_service.set_global_identity(auth_response['user_identifier'], 'google')
+        self.log_access(
+            company_short_name=self.GLOBAL_ACCESS_SCOPE,
+            auth_type='google',
+            outcome='success',
+            user_identifier=auth_response['user_identifier'],
+        )
         return auth_response
 
     def verify(self, anonymous: bool = False, company_short_name: str = None) -> dict:

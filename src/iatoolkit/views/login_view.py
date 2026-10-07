@@ -10,6 +10,7 @@ from injector import inject
 from iatoolkit.common.session_manager import SessionManager
 from iatoolkit.infra.google_auth_client import GoogleAuthClient
 from iatoolkit.services.profile_service import ProfileService
+from iatoolkit.services.auth_service import AuthService
 from iatoolkit.services.jwt_service import JWTService
 from iatoolkit.services.query_service import QueryService
 from iatoolkit.services.prompt_service import PromptService
@@ -206,6 +207,9 @@ class GoogleLoginCallbackView(BaseLoginView):
         current_lang = (pending_state or {}).get('lang') or request.args.get('lang') or 'en'
         next_target = _normalize_safe_next_target((pending_state or {}).get('next_target'))
 
+        if pending_state and pending_state.get('global'):
+            return self._finish_global_login(state, code, oauth_error, pending_states, pending_state)
+
         if not pending_state or not company_short_name:
             logging.warning("Google login callback missing or expired oauth state. state=%s", state)
             flash(self.i18n_service.t('errors.auth.google_login_failed'), 'error')
@@ -301,6 +305,126 @@ class GoogleLoginCallbackView(BaseLoginView):
                 company_short_name=company_short_name,
                 message=message,
             ), 500
+
+
+    def _finish_global_login(self, state, code, oauth_error, pending_states, pending_state):
+        current_lang = pending_state.get('lang') or 'en'
+        next_target = _normalize_safe_next_target(pending_state.get('next_target'))
+
+        pending_states.pop(state, None)
+        if pending_states:
+            SessionManager.set('google_oauth_states', pending_states)
+        else:
+            SessionManager.remove('google_oauth_states')
+
+        if oauth_error or not code:
+            logging.warning(
+                "Company-less Google login returned oauth error. error=%s code_present=%s",
+                oauth_error,
+                bool(code),
+            )
+            flash(self.i18n_service.t('errors.auth.google_login_failed'), 'error')
+            return redirect(url_for('global_login', lang=current_lang, next=next_target))
+
+        auth_response = self.auth_service.login_global_google_user(
+            code=code,
+            state=state,
+            nonce=pending_state.get('nonce', ''),
+            redirect_uri=url_for('login_google_callback', _external=True),
+        )
+        if not auth_response.get('success'):
+            flash(auth_response.get('message') or self.i18n_service.t('errors.auth.google_login_failed'), 'error')
+            return redirect(url_for('global_login', lang=current_lang, next=next_target))
+
+        return redirect(_global_login_destination(next_target, current_lang))
+
+
+def _global_login_destination(next_target: str | None, lang: str) -> str:
+    if next_target:
+        return urljoin(request.url_root, next_target.lstrip('/'))
+    return url_for('root_redirect', lang=lang)
+
+
+class GlobalLoginView(MethodView):
+    """
+    Company-less login. It identifies the person and returns to `next`; it does
+    not open a company session. Whoever sent the user here (e.g. an MCP
+    authorization) chooses the company among the user's memberships.
+    """
+    @inject
+    def __init__(self, auth_service: AuthService, i18n_service: I18nService):
+        self.auth_service = auth_service
+        self.i18n_service = i18n_service
+
+    def get(self):
+        return self._render(
+            lang=request.args.get('lang') or 'en',
+            next_target=_normalize_safe_next_target(request.args.get('next')),
+        )
+
+    def post(self):
+        current_lang = request.form.get('lang') or request.args.get('lang') or 'en'
+        next_target = _normalize_safe_next_target(request.form.get('next') or request.args.get('next'))
+        email = request.form.get('email')
+
+        auth_response = self.auth_service.login_global_local_user(
+            email=email,
+            password=request.form.get('password'),
+        )
+        if not auth_response.get('success'):
+            flash(auth_response.get('message'), 'error')
+            return self._render(lang=current_lang, next_target=next_target, email=email), 400
+
+        return redirect(_global_login_destination(next_target, current_lang))
+
+    def _render(self, *, lang: str, next_target: str | None, email: str | None = None):
+        return render_template(
+            'login_global.html',
+            lang=lang,
+            login_next=next_target,
+            form_data={'email': email or ''},
+        )
+
+
+class GlobalGoogleLoginStartView(MethodView):
+    @inject
+    def __init__(self, google_auth_client: GoogleAuthClient, i18n_service: I18nService):
+        self.google_auth_client = google_auth_client
+        self.i18n_service = i18n_service
+
+    def get(self):
+        current_lang = request.args.get('lang') or 'en'
+        next_target = _normalize_safe_next_target(request.args.get('next'))
+
+        if not self.google_auth_client.is_enabled():
+            flash(self.i18n_service.t('errors.auth.google_login_not_available'), 'error')
+            return redirect(url_for('global_login', lang=current_lang, next=next_target))
+
+        state = secrets.token_urlsafe(24)
+        nonce = secrets.token_urlsafe(24)
+        pending_states = SessionManager.get('google_oauth_states', {})
+        if not isinstance(pending_states, dict):
+            pending_states = {}
+        pending_states[state] = {
+            'nonce': nonce,
+            'global': True,
+            'lang': current_lang,
+        }
+        if next_target:
+            pending_states[state]['next_target'] = next_target
+        SessionManager.set('google_oauth_states', pending_states)
+
+        try:
+            authorization_url = self.google_auth_client.build_authorization_url(
+                redirect_uri=url_for('login_google_callback', _external=True),
+                state=state,
+                nonce=nonce,
+            )
+        except Exception:
+            flash(self.i18n_service.t('errors.auth.google_login_failed'), 'error')
+            return redirect(url_for('global_login', lang=current_lang, next=next_target))
+
+        return redirect(authorization_url)
 
 
 class FinalizeContextView(MethodView):

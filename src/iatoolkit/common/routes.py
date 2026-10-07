@@ -33,6 +33,8 @@ def register_views(app):
         LoginView,
         GoogleLoginStartView,
         GoogleLoginCallbackView,
+        GlobalLoginView,
+        GlobalGoogleLoginStartView,
         FinalizeContextView,
     )
     from iatoolkit.views.configuration_api_view import ConfigurationApiView, ValidateConfigurationApiView
@@ -72,6 +74,13 @@ def register_views(app):
     app.add_url_rule(
         '/auth/google/callback',
         view_func=GoogleLoginCallbackView.as_view('login_google_callback')
+    )
+
+    # company-less login: identifies the person, the caller picks the company
+    app.add_url_rule('/auth/login', view_func=GlobalLoginView.as_view('global_login'))
+    app.add_url_rule(
+        '/auth/login/google',
+        view_func=GlobalGoogleLoginStartView.as_view('global_login_google_start')
     )
 
     # Chat Route (Direct Access)

@@ -21,6 +21,7 @@ import random
 import re
 import string
 import logging
+import time
 from html import escape
 from datetime import datetime
 from typing import List, Dict
@@ -30,6 +31,8 @@ from iatoolkit.services.signup_policy_resolver import AllowAllSignupPolicyResolv
 
 
 class ProfileService:
+    GLOBAL_IDENTITY_SESSION_KEY = 'global_identity'
+
     @inject
     def __init__(self,
                  i18n_service: I18nService,
@@ -159,22 +162,110 @@ class ProfileService:
         if not str(user.last_name or "").strip():
             user.last_name = last_name
 
-    def login(self, company_short_name: str, email: str, password: str) -> dict:
+    def _check_local_credentials(self, email: str, password: str) -> tuple[User | None, dict | None]:
+        # check if user exists
+        user = self.profile_repo.get_user_by_email(email)
+        if not user:
+            return None, {'success': False, 'message': self.i18n_service.t('errors.auth.user_not_found')}
+
+        if self._is_google_auth_user(user):
+            return None, {
+                'success': False,
+                'message': self.i18n_service.t('errors.auth.google_account_requires_google_login')
+            }
+
+        # check the encrypted password
+        if not user.password or not check_password_hash(user.password, password):
+            return None, {'success': False, 'message': self.i18n_service.t('errors.auth.invalid_password')}
+
+        return user, None
+
+    def authenticate_local_credentials(self, email: str, password: str) -> dict:
+        """
+        Checks email and password without tying the user to a company and
+        without opening a company session. Used by the company-less login,
+        where the company is chosen afterwards among the user's memberships.
+        """
         try:
-            # check if user exists
+            user, error = self._check_local_credentials(email, password)
+            if error:
+                return error
+
+            if not user.verified:
+                return {'success': False,
+                        "message": self.i18n_service.t('errors.services.account_not_verified')}
+
+            return {'success': True, 'user_identifier': user.email}
+        except Exception as e:
+            self._safe_rollback()
+            logging.error(f"Error in authenticate_local_credentials: {e}")
+            return {'success': False, "message": str(e)}
+
+    def identify_google_user(self, google_identity: GoogleIdentity) -> dict:
+        """
+        Resolves an existing user from a Google identity without creating the
+        user, linking the Google account or adding a company membership: the
+        company-less login only lets in people who already belong somewhere.
+        """
+        email = str(google_identity.email or "").strip().lower()
+        if not email or not google_identity.email_verified:
+            return {
+                "success": False,
+                "message": self.i18n_service.t('errors.auth.google_email_not_verified'),
+                "reason_code": "GOOGLE_EMAIL_NOT_VERIFIED",
+            }
+
+        user = self.profile_repo.get_user_by_google_sub(google_identity.subject)
+        if user:
+            if str(user.email or "").strip().lower() != email:
+                return {
+                    "success": False,
+                    "message": self.i18n_service.t('errors.auth.google_account_email_changed'),
+                    "reason_code": "GOOGLE_EMAIL_CHANGED",
+                }
+        else:
             user = self.profile_repo.get_user_by_email(email)
             if not user:
-                return {'success': False, 'message': self.i18n_service.t('errors.auth.user_not_found')}
-
-            if self._is_google_auth_user(user):
                 return {
-                    'success': False,
-                    'message': self.i18n_service.t('errors.auth.google_account_requires_google_login')
+                    "success": False,
+                    "message": self.i18n_service.t('errors.auth.user_not_found'),
+                    "reason_code": "USER_NOT_FOUND",
+                }
+            if self._is_google_auth_user(user) and user.google_sub and user.google_sub != google_identity.subject:
+                return {
+                    "success": False,
+                    "message": self.i18n_service.t('errors.auth.google_account_conflict'),
+                    "reason_code": "GOOGLE_ACCOUNT_CONFLICT",
                 }
 
-            # check the encrypted password
-            if not user.password or not check_password_hash(user.password, password):
-                return {'success': False, 'message': self.i18n_service.t('errors.auth.invalid_password')}
+        return {"success": True, "user_identifier": user.email}
+
+    def set_global_identity(self, user_identifier: str, auth_method: str):
+        """
+        Records who authenticated through the company-less login. It is not a
+        company session: no profile is built and no company page trusts it.
+        """
+        SessionManager.set_permanent(True)
+        SessionManager.set(self.GLOBAL_IDENTITY_SESSION_KEY, {
+            'user_identifier': user_identifier,
+            'auth_method': auth_method,
+            'authenticated_at': int(time.time()),
+        })
+
+    def get_global_identity(self) -> dict | None:
+        identity = SessionManager.get(self.GLOBAL_IDENTITY_SESSION_KEY)
+        if not isinstance(identity, dict) or not identity.get('user_identifier'):
+            return None
+        return identity
+
+    def clear_global_identity(self):
+        SessionManager.remove(self.GLOBAL_IDENTITY_SESSION_KEY)
+
+    def login(self, company_short_name: str, email: str, password: str) -> dict:
+        try:
+            user, error = self._check_local_credentials(email, password)
+            if error:
+                return error
 
             company = self.profile_repo.get_company_by_short_name(company_short_name)
             if not company:

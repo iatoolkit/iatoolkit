@@ -274,6 +274,10 @@ ui:
       pending_review: "Pending review"
       revoked: "Revoked"
 
+  global_login:
+    title: "Sign in to IAToolkit"
+    intro: "Sign in with the account you use in IAToolkit. You will choose the company next."
+
   login_widget:
     title: "Sign In"
     welcome_message: "Enter your credentials or register to access this platform."

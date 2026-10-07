@@ -404,6 +404,89 @@ class TestAuthServiceLoginFlows:
             user_identifier=self.email
         )
 
+    def test_login_global_local_user_sets_global_identity(self):
+        self.mock_profile_service.authenticate_local_credentials.return_value = {
+            'success': True,
+            'user_identifier': self.email,
+        }
+
+        with self.app.test_request_context():
+            result = self.service.login_global_local_user(email=self.email, password='secret')
+
+        assert result['success'] is True
+        self.mock_profile_service.set_global_identity.assert_called_once_with(self.email, 'local')
+        self.mock_profile_service.set_session_for_user.assert_not_called()
+        self.mock_log_access.assert_called_once_with(
+            company_short_name='*',
+            auth_type='local',
+            outcome='success',
+            user_identifier=self.email,
+        )
+
+    def test_login_global_local_user_failure_sets_nothing(self):
+        self.mock_profile_service.authenticate_local_credentials.return_value = {
+            'success': False,
+            'message': 'bad password',
+        }
+
+        with self.app.test_request_context():
+            result = self.service.login_global_local_user(email=self.email, password='wrong')
+
+        assert result['success'] is False
+        self.mock_profile_service.set_global_identity.assert_not_called()
+        self.mock_log_access.assert_called_once_with(
+            company_short_name='*',
+            user_identifier=self.email,
+            auth_type='local',
+            outcome='failure',
+            reason_code='INVALID_CREDENTIALS',
+        )
+
+    def test_login_global_google_user_identifies_without_company(self):
+        google_identity = GoogleIdentity(
+            subject='sub-123',
+            email=self.email,
+            email_verified=True,
+            given_name='Test',
+            family_name='User',
+        )
+        self.mock_google_auth_client.exchange_code_for_identity.return_value = google_identity
+        self.mock_profile_service.identify_google_user.return_value = {
+            'success': True,
+            'user_identifier': self.email,
+        }
+
+        with self.app.test_request_context():
+            result = self.service.login_global_google_user(
+                code='auth-code',
+                state='oauth-state',
+                nonce='oauth-nonce',
+                redirect_uri='https://app.test/auth/google/callback',
+            )
+
+        assert result['success'] is True
+        self.mock_profile_service.identify_google_user.assert_called_once_with(google_identity)
+        self.mock_profile_service.login_with_google.assert_not_called()
+        self.mock_profile_service.set_global_identity.assert_called_once_with(self.email, 'google')
+
+    def test_login_global_google_user_handles_google_auth_error(self):
+        self.mock_google_auth_client.exchange_code_for_identity.side_effect = GoogleAuthError(
+            'GOOGLE_TOKEN_INVALID', 'errors.auth.google_login_failed'
+        )
+
+        with self.app.test_request_context():
+            result = self.service.login_global_google_user(
+                code='auth-code',
+                state='oauth-state',
+                nonce='oauth-nonce',
+                redirect_uri='https://app.test/auth/google/callback',
+            )
+
+        assert result['success'] is False
+        assert result['reason_code'] == 'GOOGLE_TOKEN_INVALID'
+        self.mock_profile_service.set_global_identity.assert_not_called()
+
+
 class TestAuthServiceLogAccess:
     """
     Tests the log_access() method directly to ensure it correctly

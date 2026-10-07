@@ -288,6 +288,10 @@ ui:
       revoked: "Revocado"
 
 
+  global_login:
+    title: "Iniciar sesión en IAToolkit"
+    intro: "Ingresa con la cuenta que usas en IAToolkit. Después podrás elegir la empresa."
+
   login_widget:
     title: "Iniciar Sesión"
     welcome_message: "Ingresa tus credenciales o registrate para acceder a la plataforma."
