@@ -5,6 +5,7 @@
 
 from io import BytesIO
 import mimetypes
+import os
 from flask import render_template, redirect, url_for, current_app, abort, send_file
 from flask import jsonify
 from iatoolkit.common.exceptions import IAToolkitException
@@ -58,6 +59,18 @@ def register_views(app):
     # below - health checkers commonly only treat 2xx as healthy, and this
     # must stay reachable even if the company registry or DB is degraded.
     app.add_url_rule('/', endpoint='liveness', view_func=lambda: ("ok", 200))
+
+    # Browsers and MCP clients (Claude shows it as the connector icon) ask the
+    # host for /favicon.ico regardless of the page.
+    app.add_url_rule(
+        '/favicon.ico',
+        endpoint='favicon',
+        view_func=lambda: send_file(
+            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'static', 'images', 'favicon.ico'),
+            mimetype='image/vnd.microsoft.icon',
+            max_age=86400,
+        ),
+    )
 
     # assign root '/' to our new redirect logic
     app.add_url_rule('/home', view_func=RootRedirectView.as_view('root_redirect'))

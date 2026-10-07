@@ -40,3 +40,17 @@ class TestRoutes:
         patch.stopall()
 
 
+
+
+def test_favicon_ico_is_served_from_core_static():
+    from flask import Flask
+    from iatoolkit.common.routes import register_views
+
+    app = Flask(__name__)
+    register_views(app)
+    with app.test_client() as client:
+        response = client.get("/favicon.ico")
+
+    assert response.status_code == 200
+    assert response.mimetype == "image/vnd.microsoft.icon"
+    assert response.data[:4] == b"\x00\x00\x01\x00"
