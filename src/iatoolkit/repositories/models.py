@@ -622,6 +622,10 @@ class LLMQuery(Base):
 
     __table_args__ = (
         Index('ix_iat_queries_company_prompt_created', 'company_id', 'prompt_name', 'created_at'),
+        # Executions that did not run as a task (synchronous agent calls). They are a
+        # tiny fraction of the table, which the Agents monitor would otherwise scan whole.
+        Index('ix_iat_queries_company_created_untasked', company_id, created_at.desc(),
+              postgresql_where=task_id.is_(None)),
     )
 
     company = relationship("Company", back_populates="llm_queries")
