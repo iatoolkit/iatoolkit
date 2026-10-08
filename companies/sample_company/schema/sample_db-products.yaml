@@ -1,4 +1,4 @@
-product:
+products:
   description: "Tabla de Productos: Contiene información detallada sobre cada producto vendido, incluyendo precio, stock y a qué categoría y proveedor pertenece."
   columns:
     ProductID:
