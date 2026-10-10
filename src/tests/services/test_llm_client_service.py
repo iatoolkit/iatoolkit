@@ -793,24 +793,23 @@ class TestLLMClient:
         with patch('iatoolkit.current_iatoolkit', return_value=toolkit_mock):
             tool_call = ToolCall('call1', 'function_call', 'test_func', '{"a": 1}')
             response_with_tools = LLMResponse('r1', 'gpt-4o', 'completed', '', [tool_call], Usage(10, 5, 15))
-            self.mock_proxy.create_response.return_value = response_with_tools
+            self.mock_proxy.create_response.side_effect = [response_with_tools, self.mock_llm_response]
 
-            with pytest.raises(IAToolkitException, match="Dispatch error en tool test_func"):
-                self.client.invoke(
-                    company=self.company,
-                    user_identifier='user1',
-                    previous_response_id='prev1',
-                    model='gpt-5',
-                    question='q',
-                    context='c',
-                    tools=[{}],
-                    text={},
-                    images=[],
-                )
+            self.client.invoke(
+                company=self.company,
+                user_identifier='user1',
+                previous_response_id='prev1',
+                model='gpt-5',
+                question='q',
+                context='c',
+                tools=[{}],
+                text={},
+                images=[],
+            )
 
         finish_event = telemetry_execution.log_child_span.call_args.args[1]
         assert finish_event["metadata"]["status"] == "error"
-        assert "Dispatch error en tool test_func" in finish_event["metadata"]["error_message"]
+        assert "error en dispatch para tool 'test_func'" in finish_event["metadata"]["error_message"]
         telemetry_execution.end_child_span.assert_called_once_with(tool_span)
 
     def test_invoke_records_tool_child_span_for_sql_retry_generation(self):

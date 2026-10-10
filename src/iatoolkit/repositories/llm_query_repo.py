@@ -14,6 +14,7 @@ from iatoolkit.repositories.models import (
 from injector import inject
 from iatoolkit.repositories.database_manager import DatabaseManager
 from sqlalchemy import or_, and_
+from iatoolkit.repositories.models import CONTEXT_INIT_REQUEST_SOURCE
 from typing import List
 
 
@@ -34,10 +35,17 @@ class LLMQueryRepo:
         self.session.commit()
         return query
 
+    @staticmethod
+    def not_context_init():
+        """Filter for rows that are a conversation turn, not a context initialization."""
+        request_source = LLMQuery.stats["request_source"].as_string()
+        return or_(request_source.is_(None), request_source != CONTEXT_INIT_REQUEST_SOURCE)
+
     # get user query history
     def get_history(self, company: Company, user_identifier: str, limit: int = 100) -> list[LLMQuery]:
         return self.session.query(LLMQuery).filter(
             LLMQuery.user_identifier == user_identifier,
+            self.not_context_init(),
         ).filter_by(company_id=company.id).order_by(LLMQuery.created_at.desc()).limit(limit).all()
 
 

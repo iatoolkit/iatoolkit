@@ -745,3 +745,28 @@ class TestLLMQueryRepo:
             assert result.description == "Desc Actualizada"
             assert result.parameters == {'a': 2}
             assert result.system_function is True
+
+
+def test_get_history_skips_context_init_rows():
+    from iatoolkit.repositories.database_manager import DatabaseManager
+    from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
+    from iatoolkit.repositories.models import Company, LLMQuery, CONTEXT_INIT_REQUEST_SOURCE
+
+    db_manager = DatabaseManager('sqlite:///:memory:')
+    db_manager.create_all()
+    session = db_manager.get_session()
+    company = Company(name='acme', short_name='acme')
+    session.add(company)
+    session.commit()
+    session.add_all([
+        LLMQuery(company_id=company.id, user_identifier='u1', query='[context_init]', output='',
+                 stats={"request_source": CONTEXT_INIT_REQUEST_SOURCE, "total_tokens": 30000}),
+        LLMQuery(company_id=company.id, user_identifier='u1', query='hola', output='respuesta',
+                 stats={"request_source": "chat_ui", "total_tokens": 100}),
+        LLMQuery(company_id=company.id, user_identifier='u1', query='legacy', output='sin stats'),
+    ])
+    session.commit()
+
+    history = LLMQueryRepo(db_manager).get_history(company, 'u1')
+
+    assert sorted(q.query for q in history) == ['hola', 'legacy']

@@ -4,7 +4,7 @@
 # IAToolkit is open source software.
 
 from iatoolkit.infra.llm_proxy import LLMProxy
-from iatoolkit.repositories.models import Company, LLMQuery
+from iatoolkit.repositories.models import Company, LLMQuery, CONTEXT_INIT_REQUEST_SOURCE
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from sqlalchemy.exc import SQLAlchemyError, OperationalError
 from iatoolkit.common.util import Utility
@@ -37,6 +37,28 @@ TELEMETRY_REDACTED_VALUE = "[REDACTED]"
 class llmClient:
     _llm_clients_cache = {}      # class attribute, for the clients cache
     _clients_cache_lock = threading.Lock()  # secure lock cache access
+
+    # A tool round is one model response that asks for tools, however many it
+    # asks for in parallel. The budget bounds rounds, not calls: a round is what
+    # costs a full model call with the whole context, and what a looping model
+    # repeats. `llm.max_tool_rounds` in company.yaml overrides the default,
+    # clamped to the ceiling so a typo cannot remove the bound.
+    DEFAULT_MAX_TOOL_ROUNDS = 25
+    MAX_TOOL_ROUNDS_CEILING = 100
+    # Rounds in a row where every call failed before the model is made to answer
+    # without tools. Retrying a broken tool rarely fixes it and spends the budget.
+    MAX_CONSECUTIVE_FAILED_TOOL_ROUNDS = 3
+    TOOL_ERROR_MESSAGE_MAX_LENGTH = 2000
+    TOOL_ERROR_INSTRUCTION = (
+        "La herramienta falló y no devolvió datos. No inventes su resultado. "
+        "Si el error lo permite, corrige los argumentos y reintenta; si no, usa otra "
+        "herramienta o explica al usuario qué información no se pudo obtener."
+    )
+    TOOL_LOOP_FAILURES_NOTICE = (
+        "AVISO: varias llamadas seguidas a herramientas fallaron. Las herramientas quedan "
+        "deshabilitadas para esta respuesta: responde ahora con la información que ya "
+        "tienes e indica qué no se pudo obtener."
+    )
 
     @inject
     def __init__(self,
@@ -132,7 +154,8 @@ class llmClient:
                request_metadata: Optional[Dict[str, str]] = None,
                telemetry_request: Optional[Dict[str, Any]] = None,
                response_contract: Optional[Dict[str, Any]] = None,
-               execution_trace: Optional[Dict[str, Any]] = None
+               execution_trace: Optional[Dict[str, Any]] = None,
+               max_tool_rounds: Optional[int] = None,
                ) -> dict:
 
         self._assert_runtime_not_suspended(company)
@@ -144,8 +167,18 @@ class llmClient:
         f_call_time = 0
         history_messages = []
         response = None
+        # Token usage of every model call made so far. Kept outside the try so a
+        # failure halfway through the loop still records what was consumed.
+        stats = {}
+        stats_fcall = {}
+        query_saved = False
         sql_retry_count = 0
         force_tool_name = None
+        max_tool_rounds = self._resolve_max_tool_rounds(max_tool_rounds)
+        tool_round_count = 0
+        tool_error_count = 0
+        consecutive_failed_rounds = 0
+        tool_loop_stop_reason = None
         company_id = getattr(company, "id", None)
 
         # Resolve per-model defaults and apply overrides (without mutating inputs).
@@ -222,149 +255,206 @@ class llmClient:
                 raise IAToolkitException(IAToolkitException.ErrorType.LLM_ERROR, error_message)
 
             while True:
-                # check if there are function calls to execute
-                function_calls = False
-                stats_fcall = {}
-                has_pending_tool_calls = any(
-                    tool_call.type == "function_call" for tool_call in (response.output or [])
-                )
-                if has_pending_tool_calls:
-                    pending_response_history_messages = self._build_history_messages_from_response(response)
-                    response_assistant_messages = [
-                        message
-                        for message in pending_response_history_messages
-                        if isinstance(message, dict) and message.get("role") == "assistant"
-                    ]
-                    if response_assistant_messages:
-                        input_messages.extend(response_assistant_messages)
+                pending_tool_calls = [
+                    tool_call for tool_call in (response.output or [])
+                    if tool_call.type == "function_call"
+                ]
+                if not pending_tool_calls:
+                    break           # no more function calls, the answer to send back to llm
 
-                for tool_call in response.output:
-                    if tool_call.type != "function_call":
-                        continue
+                if tool_loop_stop_reason:
+                    # The model was told to answer without tools and asked for
+                    # one anyway (a provider ignored tool_choice='none'). Asking
+                    # again would only loop, so keep whatever text it produced.
+                    logging.warning(
+                        f"[{company.short_name}] model requested tools after the tool loop was "
+                        f"stopped ({tool_loop_stop_reason}); returning its last response."
+                    )
+                    break
 
-                    # execute the function call through the dispatcher
-                    fcall_time = time.time()
-                    function_name = tool_call.name
+                pending_response_history_messages = self._build_history_messages_from_response(response)
+                response_assistant_messages = [
+                    message
+                    for message in pending_response_history_messages
+                    if isinstance(message, dict) and message.get("role") == "assistant"
+                ]
+                if response_assistant_messages:
+                    input_messages.extend(response_assistant_messages)
 
-                    try:
-                        args = json.loads(tool_call.arguments)
-                    except Exception as e:
-                        logging.error(f"[Dispatcher] json.loads failed: {e}")
-                        raise
-                    logging.debug(f"[Dispatcher] Parsed args = {args}")
-
-                    tool_call_id = str(getattr(tool_call, "call_id", "") or "").strip()
-                    tool_span = None
-                    tool_status = None
-                    tool_result_for_telemetry = None
-                    tool_error_message = None
-                    tool_output_type = None
-                    tool_attachments_count = 0
-                    tool_elapsed_seconds = 0.0
-
-                    try:
-                        call_kwargs = dict(args)
-                        if images:
-                            call_kwargs["request_images"] = images
-
-                        tool_span = telemetry_execution.start_child_span(
-                            name=f"tool.{function_name}",
-                            span_type="tool",
-                            event=self._build_tool_telemetry_start_event(
-                                company_short_name=company.short_name,
-                                function_name=function_name,
-                                call_id=tool_call_id,
-                                args=call_kwargs,
-                                request_source=request_source,
-                            ),
+                if tool_round_count >= max_tool_rounds:
+                    # Budget spent: none of these calls runs. Every call id still
+                    # needs an output, so each one carries the instruction to answer.
+                    tool_loop_stop_reason = "tool_budget_exhausted"
+                    logging.warning(
+                        f"[{company.short_name}] tool budget of {max_tool_rounds} rounds exhausted; "
+                        f"skipping {len(pending_tool_calls)} pending tool call(s) and forcing a final answer."
+                    )
+                    for tool_call in pending_tool_calls:
+                        output = self._serialize_tool_output(
+                            self._build_tool_budget_exhausted_output(tool_call.name, max_tool_rounds)
                         )
+                        for messages in (input_messages, history_messages):
+                            messages.append({
+                                "type": "function_call_output",
+                                "call_id": tool_call.call_id,
+                                "status": "completed",
+                                "output": output,
+                            })
+                else:
+                    tool_round_count += 1
+                    round_failed_calls = 0
+                    last_tool_output_message = None
+
+                    for tool_call in pending_tool_calls:
+                        # execute the function call through the dispatcher
+                        fcall_time = time.time()
+                        function_name = tool_call.name
+                        tool_call_id = str(getattr(tool_call, "call_id", "") or "").strip()
+                        tool_span = None
+                        tool_status = None
+                        tool_result_for_telemetry = None
+                        tool_error_message = None
+                        tool_output_type = None
+                        tool_attachments_count = 0
+                        tool_elapsed_seconds = 0.0
+                        tool_native_attachments = []
 
                         try:
-                            result = self.dispatcher.dispatch(
-                                company_short_name=company.short_name,
-                                function_name=function_name,
-                                user_identifier=user_identifier,
-                                _iat_runtime_source=request_source,
-                                **call_kwargs
-                            )
-                            force_tool_name = None
-                            tool_status = "completed"
-                        except IAToolkitException as e:
-                            if (e.error_type == IAToolkitException.ErrorType.DATABASE_ERROR and
-                                sql_retry_count < self.MAX_SQL_RETRIES):
-                                sql_retry_count += 1
-                                sql_query_with_error = args.get('query', 'No se pudo extraer la consulta.')
-                                original_db_error = str(e.__cause__) if e.__cause__ else str(e)
-
-                                logging.warning(
-                                        f"Error de SQL capturado, intentando corregir con el LLM (Intento {sql_retry_count}/{self.MAX_SQL_RETRIES}).")
-                                result = self._create_sql_retry_prompt(function_name, sql_query_with_error, original_db_error)
-
-                                # force the next call to be this function
-                                force_tool_name = function_name
-                                tool_status = "retry_generated"
-                            else:
-                                error_message = f"**LLM_DISPATCHER** error en dispatch para tool: '{function_name}': {str(e)}"
-                                tool_status = "error"
-                                tool_error_message = error_message
-                                raise IAToolkitException(IAToolkitException.ErrorType.CALL_ERROR, error_message)
+                            args = json.loads(tool_call.arguments)
+                            if not isinstance(args, dict):
+                                raise ValueError("tool arguments must be a JSON object")
                         except Exception as e:
-                            error_message = f"Dispatch error en tool {function_name} con args {args} -******- {str(e)}"
-                            tool_status = "error"
-                            tool_error_message = error_message
-                            raise IAToolkitException(IAToolkitException.ErrorType.CALL_ERROR, error_message)
+                            logging.error(f"[Dispatcher] invalid arguments for tool '{function_name}': {e}")
+                            args = None
+                        logging.debug(f"[Dispatcher] Parsed args = {args}")
 
-                        result, tool_native_attachments = self._split_tool_result_and_native_attachments(result)
-                        active_attachments = self._merge_native_attachments(active_attachments, tool_native_attachments)
-                        tool_result_for_telemetry = result
-                        tool_output_type = type(result).__name__
-                        tool_attachments_count = len(tool_native_attachments or [])
+                        try:
+                            call_kwargs = dict(args or {})
+                            if images:
+                                call_kwargs["request_images"] = images
 
-                        # add the return value into the list of messages
-                        input_messages.append({
-                            "type": "function_call_output",
-                            "call_id": tool_call.call_id,
-                            "status": "completed",
-                            "output": self._serialize_tool_output(result)
-                        })
-                        history_messages.append({
-                            "type": "function_call_output",
-                            "call_id": tool_call.call_id,
-                            "status": "completed",
-                            "output": self._serialize_tool_output(result),
-                        })
-                        function_calls = True
-                    finally:
-                        tool_elapsed_seconds = time.time() - fcall_time
-                        telemetry_execution.log_child_span(
-                            tool_span,
-                            self._build_tool_telemetry_finish_event(
-                                function_name=function_name,
-                                call_id=tool_call_id,
-                                status=tool_status,
-                                elapsed_seconds=tool_elapsed_seconds,
-                                result=tool_result_for_telemetry,
-                                error_message=tool_error_message,
-                                output_type=tool_output_type,
-                                attachments_count=tool_attachments_count,
-                            ),
+                            tool_span = telemetry_execution.start_child_span(
+                                name=f"tool.{function_name}",
+                                span_type="tool",
+                                event=self._build_tool_telemetry_start_event(
+                                    company_short_name=company.short_name,
+                                    function_name=function_name,
+                                    call_id=tool_call_id,
+                                    args=call_kwargs,
+                                    request_source=request_source,
+                                ),
+                            )
+
+                            if args is None:
+                                tool_status = "error"
+                                tool_error_message = (
+                                    f"Los argumentos de '{function_name}' no son un objeto JSON válido."
+                                )
+                                result = self._build_tool_error_output(
+                                    function_name, "INVALID_ARGUMENTS", tool_error_message
+                                )
+                            else:
+                                try:
+                                    result = self.dispatcher.dispatch(
+                                        company_short_name=company.short_name,
+                                        function_name=function_name,
+                                        user_identifier=user_identifier,
+                                        _iat_runtime_source=request_source,
+                                        **call_kwargs
+                                    )
+                                    force_tool_name = None
+                                    tool_status = "completed"
+                                except Exception as e:
+                                    if is_worker_timeout_signal(e):
+                                        raise
+                                    if (isinstance(e, IAToolkitException) and
+                                            e.error_type == IAToolkitException.ErrorType.DATABASE_ERROR and
+                                            sql_retry_count < self.MAX_SQL_RETRIES):
+                                        sql_retry_count += 1
+                                        sql_query_with_error = args.get('query', 'No se pudo extraer la consulta.')
+                                        original_db_error = str(e.__cause__) if e.__cause__ else str(e)
+
+                                        logging.warning(
+                                                f"Error de SQL capturado, intentando corregir con el LLM (Intento {sql_retry_count}/{self.MAX_SQL_RETRIES}).")
+                                        result = self._create_sql_retry_prompt(function_name, sql_query_with_error, original_db_error)
+
+                                        # force the next call to be this function
+                                        force_tool_name = function_name
+                                        tool_status = "retry_generated"
+                                    else:
+                                        # The model gets the error back and decides: fix the
+                                        # arguments, try another tool, or tell the user.
+                                        error_type = (
+                                            e.error_type.name if isinstance(e, IAToolkitException)
+                                            else type(e).__name__
+                                        )
+                                        tool_status = "error"
+                                        tool_error_message = f"error en dispatch para tool '{function_name}': {str(e)}"
+                                        logging.warning(f"[{company.short_name}] {tool_error_message}")
+                                        result = self._build_tool_error_output(function_name, error_type, str(e))
+
+                            if tool_status == "error":
+                                round_failed_calls += 1
+                                tool_error_count += 1
+                            else:
+                                result, tool_native_attachments = self._split_tool_result_and_native_attachments(result)
+                                active_attachments = self._merge_native_attachments(active_attachments, tool_native_attachments)
+                            tool_result_for_telemetry = result
+                            tool_output_type = type(result).__name__
+                            tool_attachments_count = len(tool_native_attachments or [])
+
+                            # add the return value into the list of messages
+                            last_tool_output_message = {
+                                "type": "function_call_output",
+                                "call_id": tool_call.call_id,
+                                "status": "completed",
+                                "output": self._serialize_tool_output(result)
+                            }
+                            input_messages.append(last_tool_output_message)
+                            history_messages.append(dict(last_tool_output_message))
+                        finally:
+                            tool_elapsed_seconds = time.time() - fcall_time
+                            telemetry_execution.log_child_span(
+                                tool_span,
+                                self._build_tool_telemetry_finish_event(
+                                    function_name=function_name,
+                                    call_id=tool_call_id,
+                                    status=tool_status,
+                                    elapsed_seconds=tool_elapsed_seconds,
+                                    result=tool_result_for_telemetry,
+                                    error_message=tool_error_message,
+                                    output_type=tool_output_type,
+                                    attachments_count=tool_attachments_count,
+                                ),
+                            )
+                            telemetry_execution.end_child_span(tool_span)
+
+                        # log the function call parameters and execution time in secs
+                        elapsed = tool_elapsed_seconds
+                        f_call_identity = {function_name: args, 'time': f'{elapsed:.1f}' }
+                        f_calls.append(f_call_identity)
+                        f_call_time += elapsed
+
+                        logging.info(f"[{company.short_name}] end execution of tool: {function_name} in {elapsed:.1f} secs.")
+
+                    if round_failed_calls == len(pending_tool_calls):
+                        consecutive_failed_rounds += 1
+                    else:
+                        consecutive_failed_rounds = 0
+
+                    if consecutive_failed_rounds >= self.MAX_CONSECUTIVE_FAILED_TOOL_ROUNDS:
+                        tool_loop_stop_reason = "repeated_tool_failures"
+                        logging.warning(
+                            f"[{company.short_name}] {consecutive_failed_rounds} consecutive tool rounds failed; "
+                            f"forcing a final answer without tools."
                         )
-                        telemetry_execution.end_child_span(tool_span)
-
-                    # log the function call parameters and execution time in secs
-                    elapsed = tool_elapsed_seconds
-                    f_call_identity = {function_name:args, 'time': f'{elapsed:.1f}' }
-                    f_calls.append(f_call_identity)
-                    f_call_time += elapsed
-
-                    logging.info(f"[{company.short_name}] end execution of tool: {function_name} in {elapsed:.1f} secs.")
-
-                if not function_calls:
-                    break           # no more function calls, the answer to send back to llm
+                        last_tool_output_message["output"] += "\n\n" + self.TOOL_LOOP_FAILURES_NOTICE
 
                 # send results back to the LLM
                 tool_choice_value = "auto"
-                if force_tool_name:
+                if tool_loop_stop_reason:
+                    tool_choice_value = "none"
+                elif force_tool_name:
                     tool_choice_value = "required"
 
                 response = self.llm_proxy.create_response(
@@ -399,6 +489,10 @@ class llmClient:
             combined_stats = self.add_stats(stats, stats_fcall)
             combined_stats["tool_call_count"] = len(f_calls)
             combined_stats["tool_time_ms_total"] = int(round(f_call_time * 1000))
+            combined_stats["tool_round_count"] = tool_round_count
+            combined_stats["tool_error_count"] = tool_error_count
+            if tool_loop_stop_reason:
+                combined_stats["tool_loop_stop_reason"] = tool_loop_stop_reason
             if isinstance(execution_metadata, dict):
                 combined_stats = dict(combined_stats or {})
                 request_source = str(execution_metadata.get("request_source") or "").strip().lower()
@@ -431,6 +525,7 @@ class llmClient:
                              **self._execution_trace_columns(execution_trace)
                              )
             self.llmquery_repo.add_query(query)
+            query_saved = True
             telemetry_execution.finalize(
                 query_id=query.id,
                 success=decoded_response.get('status', False),
@@ -450,7 +545,7 @@ class llmClient:
                 self.llmquery_repo.commit()
                 combined_stats = dict(query.stats or {})
             logging.info(f"finish llm call in {int(time.time() - start_time)} secs..")
-            if function_calls:
+            if f_calls:
                 logging.info(f"time within the function calls {f_call_time:.1f} secs.")
 
             result = {
@@ -496,6 +591,21 @@ class llmClient:
         except Exception as e:
             error_message= str(e)
 
+            # The calls that succeeded before the failure were paid for: record
+            # them, unless the success row already did (a failure after it was
+            # saved would otherwise count the same tokens twice).
+            error_stats = {}
+            if not query_saved:
+                error_stats = self._build_partial_usage_stats(
+                    stats=stats,
+                    stats_fcall=stats_fcall,
+                    model=model,
+                    execution_metadata=execution_metadata,
+                    tool_call_count=len(f_calls),
+                    tool_round_count=tool_round_count,
+                    tool_error_count=tool_error_count,
+                )
+
             # log the error in the llm_query table
             query = LLMQuery(user_identifier=user_identifier,
                              company_id=company_id,
@@ -505,6 +615,7 @@ class llmClient:
                              response={},
                              valid_response=False,
                              function_calls=f_calls,
+                             stats=error_stats,
                              **self._execution_trace_columns(execution_trace)
                              )
             self.llmquery_repo.add_query(query)
@@ -515,7 +626,7 @@ class llmClient:
             )
             telemetry_stats = telemetry_execution.build_stats()
             if telemetry_stats:
-                query.stats = {"telemetry": telemetry_stats}
+                query.stats = {**error_stats, "telemetry": telemetry_stats}
                 self.llmquery_repo.commit()
 
             # in case of context error
@@ -544,6 +655,69 @@ class llmClient:
         if result:
             payload["result"] = result
         return payload
+
+    def _build_partial_usage_stats(self,
+                                   stats: dict,
+                                   stats_fcall: dict,
+                                   model: str,
+                                   execution_metadata: Optional[Dict[str, Any]],
+                                   tool_call_count: int,
+                                   tool_round_count: int,
+                                   tool_error_count: int) -> dict:
+        """Usage of an execution that failed halfway; empty when no model call succeeded."""
+        usage = self.add_stats(stats, stats_fcall)
+        if not usage.get("total_tokens") and not usage.get("input_tokens") and not usage.get("output_tokens"):
+            return {}
+
+        usage["model"] = model
+        usage["failed"] = True
+        usage["tool_call_count"] = tool_call_count
+        usage["tool_round_count"] = tool_round_count
+        usage["tool_error_count"] = tool_error_count
+        request_source = str((execution_metadata or {}).get("request_source") or "").strip().lower()
+        if request_source:
+            usage["request_source"] = request_source
+        return usage
+
+    def _resolve_max_tool_rounds(self, value) -> int:
+        if isinstance(value, bool):
+            value = None
+        try:
+            rounds = int(value) if value is not None else None
+        except (TypeError, ValueError):
+            logging.warning(f"Invalid max_tool_rounds {value!r}; using {self.DEFAULT_MAX_TOOL_ROUNDS}.")
+            rounds = None
+        if rounds is None or rounds < 1:
+            return self.DEFAULT_MAX_TOOL_ROUNDS
+        return min(rounds, self.MAX_TOOL_ROUNDS_CEILING)
+
+    def _build_tool_error_output(self, function_name: str, error_type: str, message: str) -> dict:
+        message = str(message or "").strip() or "Error desconocido."
+        if len(message) > self.TOOL_ERROR_MESSAGE_MAX_LENGTH:
+            message = message[:self.TOOL_ERROR_MESSAGE_MAX_LENGTH] + "…"
+        return {
+            "status": "error",
+            "tool": function_name,
+            "error_type": error_type,
+            "message": message,
+            "instruction": self.TOOL_ERROR_INSTRUCTION,
+        }
+
+    @staticmethod
+    def _build_tool_budget_exhausted_output(function_name: str, max_tool_rounds: int) -> dict:
+        return {
+            "status": "not_executed",
+            "tool": function_name,
+            "error_type": "TOOL_BUDGET_EXHAUSTED",
+            "message": (
+                f"Se alcanzó el límite de {max_tool_rounds} rondas de herramientas para esta "
+                "respuesta, así que esta llamada no se ejecutó."
+            ),
+            "instruction": (
+                "No pidas más herramientas. Responde ahora con la información que ya tienes "
+                "e indica qué quedó pendiente."
+            ),
+        }
 
     @staticmethod
     def _serialize_tool_output(result) -> str:
@@ -803,13 +977,17 @@ class llmClient:
 
         return serialized
 
+    CONTEXT_INIT_QUERY_LABEL = "[context_init]"
+
     def set_company_context(self,
             company: Company,
             company_base_context: str,
-            model) -> str:
+            model,
+            user_identifier: Optional[str] = None) -> str:
 
         logging.info(f"initializing model '{model}' with company context: {self.count_tokens(company_base_context)} tokens...")
 
+        start_time = time.time()
         try:
             response = self.llm_proxy.create_response(
                 company_short_name=company.short_name,
@@ -826,7 +1004,48 @@ class llmClient:
             logging.error(error_message)
             raise IAToolkitException(IAToolkitException.ErrorType.LLM_ERROR, error_message)
 
+        self._record_context_init_usage(company, model, user_identifier, response, start_time)
         return response.id
+
+    def _record_context_init_usage(self, company: Company, model: str, user_identifier: Optional[str],
+                                   response, start_time: float) -> None:
+        """Logs the tokens of a context initialization as its own iat_queries row.
+
+        The whole company context goes to the model on every initialization and
+        the provider bills it like any other call. It is not a question, so the
+        row is marked with `stats.request_source = context_init`; readers that
+        list a user's conversation skip it, while usage and billing count it.
+
+        A failure to record never fails the initialization: the context already
+        exists at the provider, and failing here would make the user pay for a
+        second one on retry.
+        """
+        try:
+            answer_time = int(time.time() - start_time)
+            stats = self.get_stats(response)
+            stats["model"] = model
+            stats["request_source"] = CONTEXT_INIT_REQUEST_SOURCE
+            stats["response_time"] = answer_time
+            self.llmquery_repo.add_query(LLMQuery(
+                user_identifier=str(user_identifier or "").strip() or "system",
+                company_id=getattr(company, "id", None),
+                task_id=None,
+                query=self.CONTEXT_INIT_QUERY_LABEL,
+                output="",
+                response={"response_id": getattr(response, "id", None)},
+                valid_response=True,
+                function_calls=[],
+                stats=stats,
+                answer_time=answer_time,
+            ))
+        except Exception as e:
+            if is_worker_timeout_signal(e):
+                raise
+            logging.error(f"[{company.short_name}] could not record context init usage: {e}")
+            try:
+                self.llmquery_repo.rollback()
+            except Exception:
+                pass
 
     def _process_generated_images(self, response, company_short_name: str):
         """

@@ -593,6 +593,12 @@ class MemoryPageSource(Base):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
 
 
+#: request_source of the iat_queries row that records a context initialization:
+#: the company context sent once to start a server-side conversation. Its tokens
+#: are billed, but it is not a question, so conversation readers skip it.
+CONTEXT_INIT_REQUEST_SOURCE = "context_init"
+
+
 class LLMQuery(Base):
     """Logs a query made to the LLM, including input, output, and metadata."""
     __tablename__ = 'iat_queries'

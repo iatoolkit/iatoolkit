@@ -108,6 +108,41 @@ class TestGeminiAdapter:
         assert usage.output_tokens == 30
         assert usage.total_tokens == 150
 
+    def test_extract_usage_metadata_counts_reasoning_and_tool_use_tokens(self):
+        usage = self.adapter._extract_usage_metadata(
+            self._create_mock_gemini_response(
+                text_content="Hola mundo",
+                usage_metadata={
+                    "prompt_token_count": 1000,
+                    "tool_use_prompt_token_count": 200,
+                    "candidates_token_count": 50,
+                    "thoughts_token_count": 400,
+                    "total_token_count": 1650,
+                },
+            )
+        )
+
+        assert usage.input_tokens == 1200
+        assert usage.output_tokens == 450
+        assert usage.total_tokens == 1650
+
+    def test_extract_usage_metadata_treats_missing_counters_as_zero(self):
+        usage = self.adapter._extract_usage_metadata(
+            self._create_mock_gemini_response(
+                text_content="Hola mundo",
+                usage_metadata={
+                    "prompt_token_count": 100,
+                    "candidates_token_count": None,
+                    "thoughts_token_count": None,
+                    "total_token_count": None,
+                },
+            )
+        )
+
+        assert usage.input_tokens == 100
+        assert usage.output_tokens == 0
+        assert usage.total_tokens == 100
+
     def test_create_response_text_with_history(self):
         """Prueba una llamada simple que devuelve solo texto."""
         mock_response = self._create_mock_gemini_response(text_content="Hola mundo")

@@ -110,6 +110,9 @@ llm:
   default_attachment_mode: extracted_only
   default_attachment_fallback: extract
 
+  # Tool loop budget: model responses that request tools, per answer
+  max_tool_rounds: 25
+
   # Optional provider capability overrides for attachment planner
   capabilities_overrides:
     openai:
@@ -152,6 +155,13 @@ llm:
   - `extract`
   - `fail`
 - `capabilities_overrides` (optional): per provider capability override map.
+- `max_tool_rounds` (optional, default `25`, capped at `100`): how many tool rounds
+  one answer may take. A round is one model response that requests tools, however
+  many it requests in parallel. When the budget is spent, the pending calls are not
+  executed and the model is asked to answer with what it has (`tool_choice: none`).
+  Independently, after 3 consecutive rounds in which every call failed, tools are
+  disabled for the rest of that answer. `stats.tool_loop_stop_reason` on the query
+  records either stop (`tool_budget_exhausted` or `repeated_tool_failures`).
 - `api-key` (legacy optional fallback): global API key reference.
 
 ## 4.3 `embedding_provider` (default text embeddings)

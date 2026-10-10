@@ -748,6 +748,14 @@ class QueryService:
             "If helpful for continuity or saved user context, call `iat_memory_search` before answering."
         ).strip()
 
+    def _resolve_company_max_tool_rounds(self, company_short_name: str) -> int | None:
+        """`llm.max_tool_rounds` from company.yaml; None lets the client apply its default."""
+        llm_config = self.configuration_service.get_configuration(company_short_name, "llm") or {}
+        value = llm_config.get("max_tool_rounds") if isinstance(llm_config, dict) else None
+        if isinstance(value, bool) or not isinstance(value, int):
+            return None
+        return value
+
     def _resolve_company_attachment_defaults(self, company_short_name: str, prompt_name: str | None = None) -> dict:
         llm_config = self.configuration_service.get_configuration(company_short_name, "llm") or {}
 
@@ -1012,6 +1020,7 @@ class QueryService:
                                       execution_trace: dict | None = None) -> tuple[dict, HistoryHandle]:
         previous_response_id = history_handle.request_params.get('previous_response_id')
         context_history = history_handle.request_params.get('context_history')
+        max_tool_rounds = self._resolve_company_max_tool_rounds(company_short_name)
 
         try:
             response = self.llm_client.invoke(
@@ -1035,6 +1044,7 @@ class QueryService:
                 telemetry_request=telemetry_request,
                 response_contract=prompt_output_contract if prompt_output_contract.get("schema") else None,
                 execution_trace=execution_trace,
+                max_tool_rounds=max_tool_rounds,
             )
             return response, history_handle
         except Exception as invoke_error:
@@ -1094,6 +1104,7 @@ class QueryService:
                 telemetry_request=telemetry_request,
                 response_contract=prompt_output_contract if prompt_output_contract.get("schema") else None,
                 execution_trace=execution_trace,
+                max_tool_rounds=max_tool_rounds,
             )
             return response, retry_history_handle
 

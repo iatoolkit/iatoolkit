@@ -60,7 +60,8 @@ class HistoryManagerService:
             response_id = self.llm_client.set_company_context(
                 company=company,
                 company_base_context=prepared_context,
-                model=model
+                model=model,
+                user_identifier=user_identifier,
             )
             self.session_context.save_last_response_id(company_short_name, user_identifier, response_id, model=model)
             self.session_context.save_initial_response_id(company_short_name, user_identifier, response_id, model=model)

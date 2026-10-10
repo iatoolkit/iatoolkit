@@ -700,23 +700,34 @@ class GeminiAdapter:
         return {}
 
     def _extract_usage_metadata(self, gemini_response) -> Usage:
-        """Extraer información de uso de tokens de manera segura"""
+        """Extraer información de uso de tokens de manera segura.
+
+        Gemini reports the tokens it bills in four counters. `candidates_token_count`
+        excludes the model's reasoning (`thoughts_token_count`), which Google bills as
+        output, and `prompt_token_count` excludes the results of its built-in tools
+        (`tool_use_prompt_token_count`), billed as input. Reading only the first two
+        priced every thinking model's reasoning at zero.
+        """
         input_tokens = 0
         output_tokens = 0
         total_tokens = 0
 
-        try:
-            # Verificar si existe usage_metadata
-            if hasattr(gemini_response, 'usage_metadata') and gemini_response.usage_metadata:
-                usage_metadata = gemini_response.usage_metadata
+        def _count(metadata, name: str) -> int:
+            value = getattr(metadata, name, None)
+            return value if isinstance(value, int) and value > 0 else 0
 
-                # Acceder a los atributos directamente, no con .get()
-                if hasattr(usage_metadata, 'prompt_token_count'):
-                    input_tokens = usage_metadata.prompt_token_count
-                if hasattr(usage_metadata, 'candidates_token_count'):
-                    output_tokens = usage_metadata.candidates_token_count
-                if hasattr(usage_metadata, 'total_token_count'):
-                    total_tokens = usage_metadata.total_token_count
+        try:
+            usage_metadata = getattr(gemini_response, 'usage_metadata', None)
+            if usage_metadata:
+                input_tokens = (
+                    _count(usage_metadata, 'prompt_token_count')
+                    + _count(usage_metadata, 'tool_use_prompt_token_count')
+                )
+                output_tokens = (
+                    _count(usage_metadata, 'candidates_token_count')
+                    + _count(usage_metadata, 'thoughts_token_count')
+                )
+                total_tokens = _count(usage_metadata, 'total_token_count')
 
         except Exception as e:
             logging.warning(f"No se pudo extraer usage_metadata de Gemini: {e}")
