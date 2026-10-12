@@ -126,7 +126,7 @@ class TestTheNameIsNotTypedAnywhereElse:
         raiz = pathlib.Path(__file__).resolve().parents[3]
         repos = [raiz / "src" / "iatoolkit",
                  raiz.parent / "iatoolkit-enterprise" / "src" / "iat_enterprise",
-                 raiz.parent / "iatoolkit-website" / "src" / "website"]
+                 raiz.parent / "iatoolkit-hosted" / "src" / "website"]
 
         culpables = []
         for repo in repos:
