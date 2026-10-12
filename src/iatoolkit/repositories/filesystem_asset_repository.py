@@ -1,10 +1,11 @@
 from iatoolkit.common.interfaces.asset_storage import AssetRepository, AssetType
+from iatoolkit.common.company_paths import get_company_root
 from pathlib import Path
 
 
 class FileSystemAssetRepository(AssetRepository):
     def _get_path(self, company_short_name: str, asset_type: AssetType, filename: str = "") -> Path:
-        return Path("companies") / company_short_name / asset_type.value / filename
+        return get_company_root(company_short_name) / asset_type.value / filename
 
     def exists(self, company_short_name: str, asset_type: AssetType, filename: str) -> bool:
         return self._get_path(company_short_name, asset_type, filename).is_file()

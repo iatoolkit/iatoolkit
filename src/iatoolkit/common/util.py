@@ -98,7 +98,8 @@ class Utility:
 
     def get_company_template(self, company_short_name: str, template_name: str) -> str:
         # 1. get the path to the company specific template
-        template_path = os.path.join(os.getcwd(), f'companies/{company_short_name}/templates/{template_name}')
+        from iatoolkit.common.company_paths import get_company_root
+        template_path = os.path.join(os.getcwd(), str(get_company_root(company_short_name) / 'templates' / template_name))
         if not os.path.exists(template_path):
             return None
 

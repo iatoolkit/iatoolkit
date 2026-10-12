@@ -114,6 +114,9 @@ class IAToolkit:
         # Step 7: load company configuration file
         self._hydrate_company_configuration()
 
+        # Step 7b: web routes, templates and static files owned by each company
+        self._register_company_blueprints()
+
         # Step 8: Finalize setup within the application context
         self._setup_redis_sessions()
 
@@ -559,6 +562,31 @@ class IAToolkit:
             except Exception as e:
                 logging.error(f"❌ Failed to register configuration for '{company_short_name}': {e}")
                 raise e
+
+    def _register_company_blueprints(self):
+        from iatoolkit.company_registry import get_company_registry
+
+        registered = []
+        for company_short_name, company_instance in get_company_registry().get_all_company_instances().items():
+            blueprint = company_instance.get_blueprint()
+            if blueprint is None:
+                continue
+            # The blueprint name is the namespace of the company's endpoints, so
+            # it must be the company itself: anything else could collide with
+            # another tenant or with the platform.
+            if blueprint.name != company_short_name:
+                raise RuntimeError(
+                    f"Company '{company_short_name}' returned a blueprint named "
+                    f"'{blueprint.name}'; it must be named '{company_short_name}'."
+                )
+            self.app.register_blueprint(blueprint)
+            registered.append(company_short_name)
+
+        if registered:
+            # FlaskInjector wraps the views that exist when it runs, and the first
+            # pass ran before any company was loaded.
+            FlaskInjector(app=self.app, injector=self._injector)
+            logging.info(f"✅ Company blueprints registered: {', '.join(registered)}")
 
     def _setup_cli_commands(self):
         from iatoolkit.cli_commands import register_core_commands

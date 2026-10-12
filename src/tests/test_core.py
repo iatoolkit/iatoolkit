@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import MagicMock, patch, ANY
 import os
 import pytest
-from flask import Flask
+from flask import Flask, Blueprint
 from datetime import timedelta
 from iatoolkit.core import IAToolkit, current_iatoolkit, create_app
 from iatoolkit.common.exceptions import IAToolkitException
@@ -49,6 +49,7 @@ class TestIAToolkit(unittest.TestCase):
                 patch.object(toolkit, '_setup_redis_sessions') as mock_setup_redis, \
                 patch.object(toolkit, '_setup_cors') as mock_setup_cors, \
                 patch.object(toolkit, '_setup_cli_commands') as mock_setup_cli, \
+                patch.object(toolkit, '_register_company_blueprints') as mock_register_blueprints, \
                 patch.object(toolkit, '_run_configured_startup_warmup') as mock_startup_warmup:
             # Act
             app = toolkit.create_iatoolkit()
@@ -71,6 +72,7 @@ class TestIAToolkit(unittest.TestCase):
             mock_setup_redis.assert_called_once()
             mock_setup_cors.assert_called_once()
             mock_setup_cli.assert_called_once()
+            mock_register_blueprints.assert_called_once()
             mock_startup_warmup.assert_called_once()
 
     def test_singleton_pattern(self):
@@ -226,6 +228,57 @@ class TestIAToolkit(unittest.TestCase):
 
         mock_register_core.assert_called_once_with(toolkit.app)
         mock_company_instance.register_cli_commands.assert_called_once_with(toolkit.app)
+
+    @patch('iatoolkit.core.FlaskInjector')
+    @patch('iatoolkit.company_registry.get_company_registry')
+    def test_register_company_blueprints_registers_and_rewraps_views(self, mock_get_registry, mock_flask_injector):
+        toolkit = IAToolkit({})
+        toolkit.app = Flask(__name__)
+        toolkit._injector = MagicMock()
+
+        blueprint = Blueprint('acme', __name__)
+        blueprint.add_url_rule('/acme/home', endpoint='home', view_func=lambda: 'ok')
+        with_routes = MagicMock()
+        with_routes.get_blueprint.return_value = blueprint
+        without_routes = MagicMock()
+        without_routes.get_blueprint.return_value = None
+        mock_get_registry.return_value.get_all_company_instances.return_value = {
+            'acme': with_routes,
+            'plain': without_routes,
+        }
+
+        toolkit._register_company_blueprints()
+
+        self.assertIn('acme', toolkit.app.blueprints)
+        self.assertEqual(toolkit.app.url_map.bind('').match('/acme/home')[0], 'acme.home')
+        mock_flask_injector.assert_called_once_with(app=toolkit.app, injector=toolkit._injector)
+
+    @patch('iatoolkit.core.FlaskInjector')
+    @patch('iatoolkit.company_registry.get_company_registry')
+    def test_register_company_blueprints_without_blueprints_does_not_rewrap(self, mock_get_registry, mock_flask_injector):
+        toolkit = IAToolkit({})
+        toolkit.app = Flask(__name__)
+        company = MagicMock()
+        company.get_blueprint.return_value = None
+        mock_get_registry.return_value.get_all_company_instances.return_value = {'plain': company}
+
+        toolkit._register_company_blueprints()
+
+        self.assertEqual(toolkit.app.blueprints, {})
+        mock_flask_injector.assert_not_called()
+
+    @patch('iatoolkit.core.FlaskInjector')
+    @patch('iatoolkit.company_registry.get_company_registry')
+    def test_register_company_blueprints_rejects_a_blueprint_named_after_someone_else(self, mock_get_registry, mock_flask_injector):
+        toolkit = IAToolkit({})
+        toolkit.app = Flask(__name__)
+        company = MagicMock()
+        company.get_blueprint.return_value = Blueprint('other_tenant', __name__)
+        mock_get_registry.return_value.get_all_company_instances.return_value = {'acme': company}
+
+        with self.assertRaises(RuntimeError):
+            toolkit._register_company_blueprints()
+        self.assertEqual(toolkit.app.blueprints, {})
 
     def test_current_iatoolkit_helper(self):
         """Test current_iatoolkit helper function returns the singleton."""
