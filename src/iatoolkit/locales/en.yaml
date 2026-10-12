@@ -332,6 +332,9 @@ ui:
     init_context: "Initializing the context ..."
 
   account:
+    mcp_connection_copy_json_button: "Copy JSON"
+    mcp_connection_json_copy_success: "JSON config copied."
+    mcp_connection_copy_error: "Could not copy the MCP connection snippet."
     title: "My account"
     back_to_chat: "Back to chat"
     profile: "Profile"
@@ -2626,6 +2629,7 @@ errors:
     password_no_special_char: "Password must contain at least one special character."
 
   services:
+    docling_disabled: "Docling parsing is disabled in this deployment."
     no_text_file: "The file is not text or the encoding is not UTF-8"
     no_output_file: "Missing output file name"
     no_data_for_excel: "Missing data or it is not a list of dictionaries"

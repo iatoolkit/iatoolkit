@@ -266,3 +266,19 @@ class TestWarmupService:
 
         assert woken == ["up.endpoint"]
         assert self.mock_embedding_service.embed_text.call_count == 2
+
+    def test_startup_warmup_releases_the_db_transaction_before_waking_the_endpoint(self):
+        """The client (and its secret) is prepared first, then the connection goes back
+        to the pool, and only then the possibly minutes-long call to the endpoint."""
+        events = []
+        self.mock_embedding_service.client_factory = MagicMock()
+        self.mock_embedding_service.client_factory.get_client.side_effect = lambda *a, **k: events.append("client")
+        self.mock_embedding_service.embed_text.side_effect = lambda *a, **k: events.append("http")
+
+        with patch.object(self.service, "_startup_endpoints", return_value={
+            "https://hf.endpoint": ("acme", ("text", "embedding_provider", "text_embeddings")),
+        }), patch.object(WarmupService, "_release_idle_db_transaction", side_effect=lambda: events.append("release")):
+            woken = self.service.warmup_startup_configured_companies(trigger="test")
+
+        assert woken == ["hf.endpoint"]
+        assert events == ["client", "release", "http"]

@@ -162,6 +162,27 @@ class TestIAToolkit(unittest.TestCase):
 
         toolkit.db_manager.remove_session.assert_called_once_with()
 
+    def test_startup_warmup_survives_a_session_the_server_already_closed(self):
+        # A cold endpoint can outlast the server's patience with the thread's
+        # connection; closing the session then fails, and that must stay a log
+        # line, not an unhandled exception in the thread.
+        toolkit = IAToolkit({})
+        toolkit._injector = MagicMock()
+        toolkit._injector.get.return_value.warmup_startup_configured_companies.return_value = ["hf.endpoint"]
+        toolkit.db_manager = MagicMock()
+        toolkit.db_manager.remove_session.side_effect = RuntimeError("SSL SYSCALL error: EOF detected")
+        unhandled = []
+
+        def hook(args):
+            unhandled.append(args.exc_value)
+
+        with patch('threading.excepthook', hook), self.assertLogs(level='INFO') as logs:
+            thread = toolkit._run_configured_startup_warmup()
+            thread.join(timeout=5)
+
+        self.assertEqual(unhandled, [])
+        self.assertTrue(any("already closed by the server" in line for line in logs.output))
+
     @patch('iatoolkit.core.DatabaseManager')
     def test_setup_database_failure_missing_uri(self, mock_db_cls):
         """Test that missing DATABASE_URI raises IAToolkitException."""

@@ -346,6 +346,9 @@ ui:
     init_context: "Inicializando el contexto de la IA ..."
 
   account:
+    mcp_connection_copy_json_button: "Copiar JSON"
+    mcp_connection_json_copy_success: "Configuración JSON copiada."
+    mcp_connection_copy_error: "No se pudo copiar el snippet de conexión MCP."
     title: "Mi cuenta"
     back_to_chat: "Volver al chat"
     profile: "Perfil"
@@ -2645,6 +2648,7 @@ errors:
     password_no_special_char: "La contraseña debe tener al menos un carácter especial."
 
   services:
+    docling_disabled: "El parseo con Docling está deshabilitado en esta instalación."
     no_text_file: "El archivo no es texto o la codificación no es UTF-8"
     no_output_file: "falta el nombre del archivo de salida"
     no_data_for_excel: "faltan los datos  o no es una lista de diccionarios"

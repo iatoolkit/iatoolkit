@@ -184,7 +184,12 @@ class IAToolkit:
                 # connection "idle in transaction" until the thread's own session
                 # is removed - and nothing else ever removes it.
                 if self.db_manager is not None:
-                    self.db_manager.remove_session()
+                    try:
+                        self.db_manager.remove_session()
+                    except Exception as exc:
+                        # The server may have closed the connection while the
+                        # endpoint was waking; the pool discards it either way.
+                        logging.info("Startup warm-up: database session already closed by the server (%s).", exc.__class__.__name__)
 
         thread = threading.Thread(target=_run_warmup, name="iatoolkit-startup-warmup", daemon=True)
         thread.start()

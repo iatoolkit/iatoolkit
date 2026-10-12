@@ -86,6 +86,14 @@ class WarmupService:
             label = self._format_profile_labels([profile])[0]
             host = self._endpoint_host(endpoint_url)
             try:
+                # A cold endpoint can take minutes to answer. Whatever this
+                # thread read from the database (config, the endpoint's token)
+                # would hold its connection "idle in transaction" all that time,
+                # until the server cut it and the thread's session cleanup failed
+                # on a dead connection. Build the client first, so its secret is
+                # already read and cached, then hand the connection back.
+                self._prepare_client(company_short_name, model_type)
+                self._release_idle_db_transaction()
                 self.embedding_service.embed_text(
                     company_short_name,
                     "hello",
@@ -133,6 +141,31 @@ class WarmupService:
                     targets[endpoint_url] = (company_short_name, profile)
 
         return targets
+
+    def _prepare_client(self, company_short_name: str, model_type: str) -> None:
+        """Creates (and caches) the embedding client, which reads its secret."""
+        factory = getattr(self.embedding_service, "client_factory", None)
+        if factory is None:
+            return
+        try:
+            factory.get_client(company_short_name, model_type)
+        except Exception:
+            # embed_text raises the same error with full context; nothing to add.
+            pass
+
+    @staticmethod
+    def _release_idle_db_transaction() -> None:
+        """Hands the thread's database connection back to the pool before a network
+        wait. Resolved lazily, like LLMProxy: the service is also built outside a
+        running toolkit (tests, scripts), where there is nothing to release."""
+        try:
+            from iatoolkit import current_iatoolkit
+            from iatoolkit.repositories.database_manager import DatabaseManager
+
+            db_manager = current_iatoolkit().get_injector().get(DatabaseManager)
+        except Exception:
+            return
+        db_manager.release_idle_transaction()
 
     @staticmethod
     def _endpoint_host(endpoint_url: str) -> str:
