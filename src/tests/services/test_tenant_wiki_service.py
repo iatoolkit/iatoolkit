@@ -302,6 +302,109 @@ class TestTenantWikiService:
         assert deleted["status"] == "success"
         assert "companies/acme/knowledge_wikis/handbook/policies/remote-work.md" not in self.storage
 
+    def create_system_wiki(self):
+        return self.service.ensure_system_wiki(
+            "acme",
+            wiki_key="iatoolkit-memory",
+            system_owner="memory",
+            name="Memoria",
+            description="Company memory",
+        )
+
+    def test_ensure_system_wiki_creates_a_managed_wiki_marked_with_its_owner(self):
+        result = self.create_system_wiki()
+
+        assert result["status"] == "success"
+        assert result["wiki"]["authoring_mode"] == "managed"
+        assert result["wiki"]["system_owner"] == "memory"
+
+    def test_ensure_system_wiki_is_idempotent(self):
+        first = self.create_system_wiki()
+        second = self.create_system_wiki()
+
+        assert second["status"] == "success"
+        assert second["wiki"]["id"] == first["wiki"]["id"]
+
+    def test_ensure_system_wiki_never_takes_over_a_tenant_wiki(self):
+        self.service.configure_wiki(
+            "acme",
+            wiki_key="iatoolkit-memory",
+            name="Tenant wiki",
+            settings={"authoring_mode": "managed"},
+        )
+
+        result = self.create_system_wiki()
+
+        assert result["status"] == "error"
+        wiki = self.repo.get_wiki_by_key(self.company.id, "iatoolkit-memory")
+        assert self.service.wiki_system_owner(wiki) is None
+
+    def test_system_wiki_is_left_out_of_the_generic_wiki_surfaces(self):
+        self.create_system_wiki()
+        self.service.create_page("acme", wiki_key="iatoolkit-memory", path="despachos", title="Despachos",
+                                 markdown="# Despachos\n\nNunca se despacha los viernes.\n")
+        self.service.configure_wiki("acme", wiki_key="handbook", name="Handbook",
+                                    settings={"authoring_mode": "managed"})
+
+        listed = self.service.list_wikis("acme")
+        searched = self.service.search_pages("acme", query="despacha viernes")
+        named = self.service.search_pages("acme", wiki_key="iatoolkit-memory", query="despacha viernes")
+        read = self.service.get_page("acme", wiki_key="iatoolkit-memory", path="despachos.md")
+
+        assert [wiki["wiki_key"] for wiki in listed["wikis"]] == ["handbook"]
+        assert searched["count"] == 0
+        assert named["count"] == 0
+        assert read["status"] == "error"
+
+    def test_system_wiki_is_reachable_by_its_owner(self):
+        self.create_system_wiki()
+        self.service.create_page("acme", wiki_key="iatoolkit-memory", path="despachos", title="Despachos",
+                                 markdown="# Despachos\n\nNunca se despacha los viernes.\n")
+
+        listed = self.service.list_wikis("acme", include_system=True)
+        searched = self.service.search_pages("acme", wiki_key="iatoolkit-memory", query="despacha viernes",
+                                             include_system=True)
+        read = self.service.get_page("acme", wiki_key="iatoolkit-memory", path="despachos.md",
+                                     include_system=True)
+
+        assert [wiki["wiki_key"] for wiki in listed["wikis"]] == ["iatoolkit-memory"]
+        assert searched["count"] == 1
+        assert read["status"] == "success"
+
+    def test_save_page_with_a_stale_checksum_is_refused_and_keeps_the_newer_content(self):
+        self.service.configure_wiki("acme", wiki_key="handbook", name="Handbook",
+                                    settings={"authoring_mode": "managed"})
+        created = self.service.create_page("acme", wiki_key="handbook", path="pagos", title="Pagos",
+                                           markdown="# Pagos\n\n30 días.\n")
+        read_checksum = created["page"]["checksum"]
+        self.service.save_page("acme", wiki_key="handbook", path="pagos.md",
+                               markdown="# Pagos\n\n45 días en la práctica.\n", edited_by="carmen")
+
+        result = self.service.save_page("acme", wiki_key="handbook", path="pagos.md",
+                                        markdown="# Pagos\n\n30 días.\n", expected_checksum=read_checksum)
+
+        assert result["status"] == "error"
+        assert result["error_code"] == "page_changed"
+        assert "45 días" in self.read_storage("companies/acme/knowledge_wikis/handbook/pagos.md")
+
+    def test_save_page_with_the_current_checksum_records_summary_and_metadata(self):
+        self.service.configure_wiki("acme", wiki_key="handbook", name="Handbook",
+                                    settings={"authoring_mode": "managed"})
+        created = self.service.create_page("acme", wiki_key="handbook", path="pagos", title="Pagos",
+                                           markdown="# Pagos\n\n30 días.\n")
+
+        result = self.service.save_page(
+            "acme", wiki_key="handbook", path="pagos.md", markdown="# Pagos\n\n45 días.\n",
+            edited_by="carmen", expected_checksum=created["page"]["checksum"],
+            change_summary="Plazo real", revision_metadata={"capture_id": 7},
+        )
+
+        assert result["status"] == "success"
+        revisions = self.service.list_page_revisions("acme", wiki_key="handbook", path="pagos.md")["revisions"]
+        assert revisions[0]["change_summary"] == "Plazo real"
+        assert revisions[0]["metadata"] == {"capture_id": 7}
+        assert revisions[0]["edited_by"] == "carmen"
+
     def test_managed_create_page_normalizes_path_and_persists_record(self):
         self.service.configure_wiki(
             "acme",

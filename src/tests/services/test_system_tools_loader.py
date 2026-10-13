@@ -69,10 +69,10 @@ tools:
         system_tools._parse_system_tools_catalog(payload)
 
 
-def test_shipped_catalog_marks_only_send_email_with_side_effects():
+def test_shipped_catalog_marks_only_writing_tools_with_side_effects():
     catalog = system_tools._parse_system_tools_catalog(system_tools._read_system_tools_catalog_text())
     marked = [item["function_name"] for item in catalog if (item.get("execution_config") or {}).get("side_effects")]
-    assert marked == ["iat_send_email"]
+    assert marked == ["iat_send_email", "iat_memory_save"]
 
 
 def test_parse_system_tools_catalog_accepts_routing_force_include_capability():

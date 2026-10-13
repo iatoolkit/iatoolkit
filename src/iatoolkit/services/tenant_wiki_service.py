@@ -39,6 +39,16 @@ class TenantWikiService:
     AUTHORING_MODE_EXTERNAL_SYNC = "external_sync"
     ROOT_INDEX_GENERATED_FLAG = "iatoolkit_generated"
 
+    # A system wiki belongs to a platform feature (Memoria) rather than to the
+    # tenant's own knowledge: it is written through that feature and managed from
+    # its screen, so the generic wiki surfaces (module listing, wiki tools, MCP
+    # exposure) leave it out. The setting names the owning feature.
+    SYSTEM_OWNER_SETTING = "system_owner"
+
+    # What `save_page` answers when `expected_checksum` no longer matches: the
+    # page was saved by someone else since the caller read it.
+    ERROR_PAGE_CHANGED = "page_changed"
+
     # Upper bound for the page listings that back the index, the generated index,
     # search and lint. It is a guard against an unbounded query, not a product
     # limit: a corpus that reaches it is silently truncated, which reads as
@@ -95,6 +105,61 @@ class TenantWikiService:
         if normalized == cls.AUTHORING_MODE_EXTERNAL_SYNC:
             return cls.AUTHORING_MODE_EXTERNAL_SYNC
         return cls.AUTHORING_MODE_MANAGED
+
+    @classmethod
+    def wiki_system_owner(cls, wiki: KnowledgeWiki | None) -> str | None:
+        if wiki is None:
+            return None
+        settings = wiki.settings if isinstance(wiki.settings, dict) else {}
+        owner = str(settings.get(cls.SYSTEM_OWNER_SETTING) or "").strip()
+        return owner or None
+
+    @classmethod
+    def is_system_wiki(cls, wiki: KnowledgeWiki | None) -> bool:
+        return cls.wiki_system_owner(wiki) is not None
+
+    def ensure_system_wiki(
+        self,
+        company_short_name: str,
+        *,
+        wiki_key: str,
+        system_owner: str,
+        name: str,
+        description: str | None = None,
+    ) -> dict:
+        """
+        Returns the managed wiki a platform feature writes into, creating it on
+        first use. Idempotent. A tenant wiki that already uses `wiki_key` is
+        never taken over: the call fails instead, so the feature cannot silently
+        start writing into (and hiding) the tenant's own content.
+        """
+        owner = str(system_owner or "").strip()
+        if not owner:
+            return {"status": "error", "error_message": "system_owner is required"}
+        company = self._get_company(company_short_name)
+        if not company:
+            return {"status": "error", "error_message": "company not found"}
+        normalized_key = self.normalize_wiki_key(wiki_key)
+        if not normalized_key:
+            return {"status": "error", "error_message": "wiki_key is required"}
+        existing = self.knowledge_wiki_repo.get_wiki_by_key(company.id, normalized_key)
+        if existing is not None:
+            if self.wiki_system_owner(existing) != owner:
+                return {
+                    "status": "error",
+                    "error_message": f"wiki '{normalized_key}' already exists and is not owned by {owner}",
+                }
+            return {"status": "success", "wiki": self.serialize_wiki(existing)}
+        return self.configure_wiki(
+            company_short_name,
+            wiki_key=normalized_key,
+            name=name,
+            description=description,
+            settings={
+                "authoring_mode": self.AUTHORING_MODE_MANAGED,
+                self.SYSTEM_OWNER_SETTING: owner,
+            },
+        )
 
     def wiki_authoring_mode(self, wiki: KnowledgeWiki | None) -> str:
         if wiki is None:
@@ -247,11 +312,19 @@ class TenantWikiService:
             )
         return {"status": "success", "wiki": self.serialize_wiki(wiki)}
 
-    def list_wikis(self, company_short_name: str, *, include_archived: bool = False) -> dict:
+    def list_wikis(
+        self,
+        company_short_name: str,
+        *,
+        include_archived: bool = False,
+        include_system: bool = False,
+    ) -> dict:
         company = self._get_company(company_short_name)
         if not company:
             return {"status": "error", "wikis": [], "error_message": "company not found"}
         wikis = self.knowledge_wiki_repo.list_wikis(company.id, include_archived=include_archived)
+        if not include_system:
+            wikis = [wiki for wiki in wikis if not self.is_system_wiki(wiki)]
         return {"status": "success", "wikis": [self.serialize_wiki(wiki) for wiki in wikis]}
 
     def delete_wiki(self, company_short_name: str, *, wiki_key: str) -> dict:
@@ -263,6 +336,10 @@ class TenantWikiService:
             return {"status": "error", "error_message": "wiki_key is required"}
         wiki = self.knowledge_wiki_repo.get_wiki_by_key(company.id, normalized_key)
         if not wiki:
+            return {"status": "error", "error_message": "wiki not found"}
+        if self.is_system_wiki(wiki):
+            # Owned by a platform feature (Memoria): deleting it from the wiki
+            # module would erase the company's memory as a side effect.
             return {"status": "error", "error_message": "wiki not found"}
 
         generated_index_key = self.markdown_wiki_service.join_storage_path(
@@ -516,9 +593,13 @@ class TenantWikiService:
         visibility_filter: Callable[[str], bool] | None = None,
         user_identifier: str | None = None,
         bypass_access_control: bool = False,
+        include_system: bool = False,
     ) -> dict:
         """
         Reads one page, or the reader's home page when `path` is "/" or empty.
+
+        A system wiki answers "wiki not found" unless `include_system` is set:
+        only the feature that owns it reads it this way.
 
         This is a reader surface, so access labels apply by default and an
         absent identity denies. `bypass_access_control` exists for the admin
@@ -535,7 +616,7 @@ class TenantWikiService:
         if allowed_keys is not None and normalized_wiki_key not in allowed_keys:
             return {"status": "error", "error_message": "wiki not exposed to MCP"}
         wiki = self.knowledge_wiki_repo.get_wiki_by_key(company.id, normalized_wiki_key)
-        if not wiki:
+        if not wiki or (self.is_system_wiki(wiki) and not include_system):
             return {"status": "error", "error_message": "wiki not found"}
         if not bypass_access_control:
             visibility_filter = self._access_visibility_filter(
@@ -611,6 +692,31 @@ class TenantWikiService:
             },
         }
 
+    def get_page_by_id(
+        self,
+        company_short_name: str,
+        *,
+        wiki_key: str,
+        page_id: int,
+        include_system: bool = False,
+    ) -> dict:
+        """Reads a page by its numeric id; same contract as `get_page`."""
+        company = self._get_company(company_short_name)
+        if not company:
+            return {"status": "error", "error_message": "company not found"}
+        wiki = self.knowledge_wiki_repo.get_wiki_by_key(company.id, self.normalize_wiki_key(wiki_key))
+        if not wiki or (self.is_system_wiki(wiki) and not include_system):
+            return {"status": "error", "error_message": "wiki not found"}
+        page = self.knowledge_wiki_repo.get_page_by_id(wiki.id, page_id) if isinstance(page_id, int) else None
+        if page is None:
+            return {"status": "error", "error_message": "page not found"}
+        return self.get_page(
+            company_short_name,
+            wiki_key=wiki.wiki_key,
+            path=page.path,
+            include_system=include_system,
+        )
+
     def create_page(
         self,
         company_short_name: str,
@@ -620,6 +726,8 @@ class TenantWikiService:
         title: str | None = None,
         markdown: str | None = None,
         edited_by: str | None = None,
+        change_summary: str | None = None,
+        revision_metadata: dict | None = None,
     ) -> dict:
         company, wiki, error = self._resolve_managed_wiki(company_short_name, wiki_key)
         if error:
@@ -650,9 +758,11 @@ class TenantWikiService:
             action="create",
             markdown=page_markdown,
             edited_by=edited_by,
+            change_summary=change_summary,
+            metadata=revision_metadata,
         )
         self._refresh_root_index_if_generated(company_short_name, wiki)
-        return self.get_page(company_short_name, wiki_key=wiki.wiki_key, path=page.path)
+        return self.get_page(company_short_name, wiki_key=wiki.wiki_key, path=page.path, include_system=True)
 
     def save_page(
         self,
@@ -662,7 +772,16 @@ class TenantWikiService:
         path: str,
         markdown: str,
         edited_by: str | None = None,
+        expected_checksum: str | None = None,
+        change_summary: str | None = None,
+        revision_metadata: dict | None = None,
     ) -> dict:
+        """
+        Saves a managed page. With `expected_checksum` (the `checksum` of the
+        page as the caller read it) the save is refused with
+        `error_code=page_changed` when the page was saved by someone else in
+        between, instead of overwriting their change.
+        """
         company, wiki, error = self._resolve_managed_wiki(company_short_name, wiki_key)
         if error:
             return error
@@ -691,11 +810,17 @@ class TenantWikiService:
                 metadata={"root_index": True},
             )
             self._write_generated_index(company_short_name, wiki)
-            return self.get_page(company_short_name, wiki_key=wiki.wiki_key, path=self.INDEX_FILENAME)
+            return self.get_page(company_short_name, wiki_key=wiki.wiki_key, path=self.INDEX_FILENAME, include_system=True)
 
         page = self.knowledge_wiki_repo.get_page_by_path(wiki.id, normalized_path)
         if page is None:
             return {"status": "error", "error_message": "page not found"}
+        if expected_checksum is not None and self.page_checksum(page) != str(expected_checksum):
+            return {
+                "status": "error",
+                "error_code": self.ERROR_PAGE_CHANGED,
+                "error_message": "page changed since it was read",
+            }
         self._write_page_document(
             company_short_name,
             company_id=company.id,
@@ -711,9 +836,11 @@ class TenantWikiService:
             action="update",
             markdown=markdown_text,
             edited_by=edited_by,
+            change_summary=change_summary,
+            metadata=revision_metadata,
         )
         self._refresh_root_index_if_generated(company_short_name, wiki)
-        return self.get_page(company_short_name, wiki_key=wiki.wiki_key, path=normalized_path)
+        return self.get_page(company_short_name, wiki_key=wiki.wiki_key, path=normalized_path, include_system=True)
 
     def delete_page(
         self,
@@ -826,7 +953,7 @@ class TenantWikiService:
             },
         )
         self._refresh_root_index_if_generated(company_short_name, wiki)
-        return self.get_page(company_short_name, wiki_key=wiki.wiki_key, path=normalized_new_path)
+        return self.get_page(company_short_name, wiki_key=wiki.wiki_key, path=normalized_new_path, include_system=True)
 
     def list_page_revisions(
         self,
@@ -870,7 +997,12 @@ class TenantWikiService:
         allowed_wiki_keys: list[str] | set[str] | tuple[str, ...] | None = None,
         visibility_filter: Callable[[str], bool] | None = None,
         user_identifier: str | None = None,
+        include_system: bool = False,
     ) -> dict:
+        """
+        Without `wiki_key`, searches every tenant wiki except system wikis. A
+        system wiki is searched only when named and `include_system` is set.
+        """
         company = self._get_company(company_short_name)
         if not company:
             return {"status": "error", "results": [], "error_message": "company not found"}
@@ -898,9 +1030,12 @@ class TenantWikiService:
                     "error_message": "wiki not exposed to MCP",
                 }
             wiki = self.knowledge_wiki_repo.get_wiki_by_key(company.id, normalized_wiki_key)
-            wikis = [wiki] if wiki else []
+            wikis = [wiki] if wiki and (include_system or not self.is_system_wiki(wiki)) else []
         else:
-            wikis = self.knowledge_wiki_repo.list_wikis(company.id, include_archived=False)
+            wikis = [
+                wiki for wiki in self.knowledge_wiki_repo.list_wikis(company.id, include_archived=False)
+                if not self.is_system_wiki(wiki)
+            ]
             if allowed_keys is not None:
                 wikis = [
                     wiki for wiki in wikis
@@ -2065,6 +2200,37 @@ class TenantWikiService:
     def _get_company(self, company_short_name: str) -> Company | None:
         return self.profile_repo.get_company_by_short_name(company_short_name)
 
+    def list_wiki_revisions(self, company_short_name: str, *, wiki_key: str, limit: int = 50) -> dict:
+        """Latest revisions across every page of a wiki: its activity log."""
+        company = self._get_company(company_short_name)
+        if not company:
+            return {"status": "error", "error_message": "company not found", "revisions": []}
+        wiki = self.knowledge_wiki_repo.get_wiki_by_key(company.id, self.normalize_wiki_key(wiki_key))
+        if not wiki:
+            return {"status": "error", "error_message": "wiki not found", "revisions": []}
+        revisions = self.knowledge_wiki_repo.list_page_revisions(wiki.id, limit=limit)
+        return {
+            "status": "success",
+            "wiki": self.serialize_wiki(wiki),
+            "revisions": [self.serialize_page_revision(revision) for revision in revisions],
+        }
+
+    def get_page_revision(self, company_short_name: str, *, wiki_key: str, revision_id: int) -> dict:
+        """One revision with the markdown it recorded, to show or restore it."""
+        company = self._get_company(company_short_name)
+        if not company:
+            return {"status": "error", "error_message": "company not found"}
+        wiki = self.knowledge_wiki_repo.get_wiki_by_key(company.id, self.normalize_wiki_key(wiki_key))
+        if not wiki:
+            return {"status": "error", "error_message": "wiki not found"}
+        revision = self.knowledge_wiki_repo.get_page_revision(wiki.id, revision_id) if isinstance(revision_id, int) else None
+        if revision is None:
+            return {"status": "error", "error_message": "revision not found"}
+        return {
+            "status": "success",
+            "revision": {**self.serialize_page_revision(revision), "markdown": str(revision.markdown or "")},
+        }
+
     def serialize_wiki(self, wiki: KnowledgeWiki) -> dict:
         authoring_mode = self.wiki_authoring_mode(wiki)
         return {
@@ -2080,12 +2246,20 @@ class TenantWikiService:
                 default_authoring_mode=authoring_mode,
             ),
             "authoring_mode": authoring_mode,
+            "system_owner": self.wiki_system_owner(wiki),
             "editing_enabled": authoring_mode == self.AUTHORING_MODE_MANAGED,
             "storage_refresh_enabled": authoring_mode == self.AUTHORING_MODE_EXTERNAL_SYNC,
             "last_synced_at": wiki.last_synced_at.isoformat() if wiki.last_synced_at else None,
             "created_at": wiki.created_at.isoformat() if wiki.created_at else None,
             "updated_at": wiki.updated_at.isoformat() if wiki.updated_at else None,
         }
+
+    @staticmethod
+    def page_checksum(page: KnowledgeWikiPage | None) -> str | None:
+        """SHA-256 of the page's markdown as last written; what `save_page` compares."""
+        source_meta = page.source_meta if page is not None and isinstance(page.source_meta, dict) else {}
+        checksum = str(source_meta.get("checksum") or "").strip()
+        return checksum or None
 
     @staticmethod
     def serialize_page(page: KnowledgeWikiPage, *, include_body: bool = False) -> dict:
@@ -2100,6 +2274,7 @@ class TenantWikiService:
             "status": page.status.value if hasattr(page.status, "value") else str(page.status),
             "tags": page.tags or [],
             "owner": page.owner,
+            "checksum": TenantWikiService.page_checksum(page),
             "last_synced_at": page.last_synced_at.isoformat() if page.last_synced_at else None,
             "updated_at": page.updated_at.isoformat() if page.updated_at else None,
         }

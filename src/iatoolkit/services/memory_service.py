@@ -12,10 +12,12 @@ import os
 import re
 import unicodedata
 import uuid
+
+import markdown2
+import nh3
 from injector import inject
 
 from iatoolkit.common.interfaces.memory_compilation_trigger import MemoryCompilationTrigger
-from iatoolkit.common.interfaces.memory_lint_trigger import MemoryLintTrigger
 from iatoolkit.common.util import Utility
 from iatoolkit.repositories.memory_repo import MemoryRepo
 from iatoolkit.repositories.models import (
@@ -27,15 +29,25 @@ from iatoolkit.repositories.models import (
 )
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.memory_compiler_service import MemoryCompilerService
-from iatoolkit.services.memory_lint_service import MemoryLintService
 from iatoolkit.services.memory_wiki_service import MemoryWikiService
 from iatoolkit.services.storage_service import StorageService
 
 
 class MemoryService:
+    """
+    The company's Memoria: people save captures (notes, links, files, chat
+    messages) and the compiler turns them into pages of the company's Memoria
+    wiki, which everyone in the company reads.
+
+    A capture belongs to the company and records its author. Users edit and
+    delete only their own captures; deleting one unlinks it from its pages but
+    never touches the pages, which other people may have edited since.
+    """
+
     TOOL_NATIVE_ATTACHMENTS_KEY = "__native_attachments__"
     MAX_NATIVE_ATTACHMENTS_PER_PAGE = 10
     MAX_NATIVE_ATTACHMENT_BYTES = 20 * 1024 * 1024
+    MAX_SOURCE_LABELS = 8
 
     @inject
     def __init__(self,
@@ -43,18 +55,14 @@ class MemoryService:
                  memory_repo: MemoryRepo,
                  memory_wiki_service: MemoryWikiService,
                  memory_compiler_service: MemoryCompilerService,
-                 memory_lint_service: MemoryLintService,
                  memory_compilation_trigger: MemoryCompilationTrigger,
-                 memory_lint_trigger: MemoryLintTrigger,
                  storage_service: StorageService,
                  util: Utility):
         self.profile_repo = profile_repo
         self.memory_repo = memory_repo
         self.memory_wiki_service = memory_wiki_service
         self.memory_compiler_service = memory_compiler_service
-        self.memory_lint_service = memory_lint_service
         self.memory_compilation_trigger = memory_compilation_trigger
-        self.memory_lint_trigger = memory_lint_trigger
         self.storage_service = storage_service
         self.util = util
 
@@ -98,18 +106,20 @@ class MemoryService:
                      user_identifier: str,
                      capture_text: str | None = None,
                      new_items: list[dict] | None = None,
-                     title: str | None = None) -> dict:
+                     title: str | None = None,
+                     meta: dict | None = None) -> dict:
         company = self.profile_repo.get_company_by_short_name(company_short_name)
         if not company:
             return {"status": "error", "error_message": "company not found"}
-        self.memory_wiki_service.ensure_wiki_bootstrap(company_short_name, user_identifier)
+        if not str(user_identifier or "").strip():
+            return {"status": "error", "error_message": "an author is required to save in Memoria"}
 
         capture = MemoryCapture(
             company_id=company.id,
             user_identifier=user_identifier,
             title=(title or capture_text or "")[:200] or None,
             status=MemoryCaptureStatus.PENDING,
-            meta={},
+            meta=dict(meta or {}),
         )
         self.memory_repo.create_capture(capture)
 
@@ -155,9 +165,8 @@ class MemoryService:
         company = self.profile_repo.get_company_by_short_name(company_short_name)
         if not company:
             return {"status": "error", "error_message": "company not found"}
-        self.memory_wiki_service.ensure_wiki_bootstrap(company_short_name, user_identifier)
 
-        capture = self.memory_repo.get_capture(company.id, user_identifier, capture_id)
+        capture = self.memory_repo.get_capture(company.id, capture_id, user_identifier=user_identifier)
         if not capture:
             return {"status": "error", "error_message": "capture not found"}
 
@@ -170,12 +179,7 @@ class MemoryService:
         for item in current_items:
             if item.id in keep_set:
                 continue
-            self._delete_memory_item(
-                company_short_name=company_short_name,
-                company_id=company.id,
-                user_identifier=user_identifier,
-                item=item,
-            )
+            self._delete_memory_item(company_short_name, item)
 
         created_items = []
         for item_payload in new_items or []:
@@ -210,86 +214,46 @@ class MemoryService:
         }
 
     def get_memory_dashboard(self, company_short_name: str, user_identifier: str) -> dict:
-        self._compile_on_demand(company_short_name, user_identifier)
+        """What the chat's Memoria panel shows: the user's own captures and the company's pages."""
+        self._compile_on_demand(company_short_name)
         company = self.profile_repo.get_company_by_short_name(company_short_name)
         if not company:
             return {"status": "error", "error_message": "company not found"}
-        self.memory_wiki_service.ensure_wiki_bootstrap(company_short_name, user_identifier)
 
-        captures = self.memory_repo.list_recent_captures(company.id, user_identifier)
-        pages = self.memory_repo.list_pages(company.id, user_identifier)
-        last_lint = self.memory_lint_service.get_last_lint_result(company_short_name, user_identifier)
+        captures = self.memory_repo.list_recent_captures(company.id, user_identifier=user_identifier)
+        serialized_captures = [
+            self.serialize_capture(capture, company_short_name=company_short_name)
+            for capture in captures
+        ]
         return {
             "status": "success",
-            "captures": [self.serialize_capture(capture, company_short_name=company_short_name) for capture in captures],
-            "recent_items": [self.serialize_capture(capture, company_short_name=company_short_name) for capture in captures],
-            "pages": [self.serialize_page(page) for page in pages],
-            "last_lint": last_lint,
+            "captures": serialized_captures,
+            "recent_items": serialized_captures,
+            "pages": self.list_pages(company_short_name),
         }
 
-    def list_pages(self, company_short_name: str, user_identifier: str) -> list[dict]:
-        self._compile_on_demand(company_short_name, user_identifier)
-        company = self.profile_repo.get_company_by_short_name(company_short_name)
-        if not company:
-            return []
-        return [
-            self.serialize_page(page)
-            for page in self.memory_repo.list_pages(company.id, user_identifier)
-        ]
+    def list_pages(self, company_short_name: str) -> list[dict]:
+        return [self.serialize_page(entry) for entry in self.memory_wiki_service.list_pages(company_short_name)]
 
     def search_pages(self,
                      company_short_name: str,
-                     user_identifier: str,
+                     user_identifier: str | None,
                      query: str,
                      limit: int = 5,
                      include_native_attachments: bool = False) -> dict:
-        self._compile_on_demand(company_short_name, user_identifier)
+        self._compile_on_demand(company_short_name)
         company = self.profile_repo.get_company_by_short_name(company_short_name)
         if not company:
             return {"status": "error", "results": [], "error_message": "company not found"}
-        self.memory_wiki_service.ensure_wiki_bootstrap(company_short_name, user_identifier)
 
-        candidate_limit = max(limit * 10, 50)
-        pages = self.memory_repo.list_pages(company.id, user_identifier, limit=candidate_limit)
-        index_payload = self.memory_wiki_service.read_index(company_short_name, user_identifier)
-        if not isinstance(index_payload, dict):
-            index_payload = {}
-        index_entries = index_payload.get("entries") if isinstance(index_payload.get("entries"), list) else []
-        index_map = {
-            entry.get("page_id"): entry
-            for entry in index_entries
-            if isinstance(entry.get("page_id"), int)
-        }
-        normalized_query = self._normalize_text(query)
-        query_tokens = self._tokenize(query)
-        pages = sorted(
-            pages,
-            key=lambda page: (
-                self._score_index_entry(normalized_query, query_tokens, index_map.get(getattr(page, "id", None))),
-                getattr(page, "updated_at", None).isoformat() if getattr(page, "updated_at", None) else "",
-            ),
-            reverse=True,
-        )
-        serialized = []
+        results = []
         source_items_by_page_id = {}
-
-        for page in pages:
-            page_payload = self._safe_read_page(company_short_name, page.wiki_path)
-            source_items = self._load_page_source_items(
-                company_id=company.id,
-                user_identifier=user_identifier,
-                page_id=page.id,
-                page_payload=page_payload,
-            )
-            score = self._score_page_match(normalized_query, query_tokens, page, page_payload, source_items)
-            if normalized_query and score <= 0:
-                continue
-            source_items_by_page_id[page.id] = source_items
-
-            result = self.serialize_page(page)
-            if page_payload.get("summary"):
-                result["summary"] = page_payload.get("summary")
-            result["sources"] = self._build_search_result_sources(page_payload, source_items)
+        for entry in self.memory_wiki_service.search_pages(company_short_name, query, limit=limit):
+            page_id = entry.get("id")
+            source_items = self._load_page_source_items(company.id, page_id)
+            source_items_by_page_id[page_id] = source_items
+            result = self.serialize_page(entry)
+            result["sources"] = self._source_labels(source_items)
             result["source_urls"] = [
                 item.source_url for item in source_items
                 if getattr(item, "source_url", None)
@@ -303,55 +267,31 @@ class MemoryService:
                 for item in source_items
                 if self._is_native_attachment_candidate(item) and str(getattr(item, "filename", "") or "").strip()
             ][:5]
-            result["score"] = round(score if score > 0 else 1.0, 4)
-            serialized.append(result)
+            result["score"] = entry.get("score")
+            results.append(result)
 
-        serialized.sort(
-            key=lambda item: (
-                float(item.get("score") or 0),
-                item.get("last_updated_at") or "",
-                int(item.get("page_id") or 0),
-            ),
-            reverse=True,
-        )
-
+        normalized_query = self._normalize_text(query)
         raw_matches = self._search_raw_items(
             company_short_name=company_short_name,
             company_id=company.id,
-            user_identifier=user_identifier,
             normalized_query=normalized_query,
-            query_tokens=query_tokens,
+            query_tokens=self._tokenize(query),
             limit=limit,
         )
 
-        if str(query or "").strip():
-            self.memory_wiki_service.append_log_entry(
-                company_short_name,
-                user_identifier,
-                entry_type="query",
-                title=str(query).strip()[:200],
-                details=[
-                    f"Matched {len(serialized[:limit])} memory pages.",
-                    f"Matched {len(raw_matches)} raw items.",
-                ],
-                metadata={"limit": limit},
-            )
-
-        limited_results = serialized[:limit]
         response = {
             "status": "success",
-            "results": limited_results,
+            "results": results,
             "raw_items": raw_matches,
         }
         if include_native_attachments:
             raw_native_items = self._load_raw_native_items_for_matches(
                 company_id=company.id,
-                user_identifier=user_identifier,
                 raw_matches=raw_matches,
             )
             native_attachments = self._build_search_native_attachments(
                 company_short_name=company_short_name,
-                results=limited_results,
+                results=results,
                 source_items_by_page_id=source_items_by_page_id,
                 raw_source_items=raw_native_items,
             )
@@ -371,37 +311,33 @@ class MemoryService:
 
     def get_page(self,
                  company_short_name: str,
-                 user_identifier: str,
+                 user_identifier: str | None,
                  page_id: int,
                  include_native_attachments: bool = False) -> dict:
-        self._compile_on_demand(company_short_name, user_identifier)
+        self._compile_on_demand(company_short_name)
         company = self.profile_repo.get_company_by_short_name(company_short_name)
         if not company:
             return {"status": "error", "error_message": "company not found"}
 
-        page = self.memory_repo.get_page(company.id, user_identifier, page_id)
+        page = self.memory_wiki_service.get_page(company_short_name, page_id)
         if not page:
             return {"status": "error", "error_message": "page not found"}
 
-        payload = self.memory_wiki_service.read_page(company_short_name, page.wiki_path)
-        source_items = self._load_page_source_items(
-            company_id=company.id,
-            user_identifier=user_identifier,
-            page_id=page.id,
-            page_payload=payload,
-        )
+        source_items = self._load_page_source_items(company.id, page.get("id"))
+        payload = self.serialize_page(page)
+        body = self.memory_wiki_service.page_body(page)
         payload.update({
-            "page_id": page.id,
-            "title": payload.get("title") or page.title,
-            "slug": payload.get("slug") or page.slug,
-            "summary": payload.get("summary") or page.summary or "",
-            "last_updated_at": page.updated_at.isoformat() if page.updated_at else None,
+            "markdown": body,
+            # Rendered here and sanitized, like chat answers: page content comes
+            # from what people saved, so it must not reach the DOM as raw HTML.
+            # Without its leading "# Title": every screen shows the title itself.
+            "html": self.render_page_html(body),
             "source_items": [
                 self.serialize_item(item, company_short_name=company_short_name)
                 for item in source_items
             ],
+            "sources": self._source_labels(source_items),
         })
-        payload["sources"] = payload.get("sources") or []
         response = {"status": "success", "page": payload}
         if include_native_attachments:
             native_attachments = self._build_page_native_attachments(
@@ -422,72 +358,102 @@ class MemoryService:
             }
         return response
 
-    def lint_memory_wiki(self, company_short_name: str, user_identifier: str) -> dict:
-        trigger_result = self.memory_lint_trigger.trigger(
+    def request_page_correction(self,
+                                company_short_name: str,
+                                user_identifier: str,
+                                page_id: int,
+                                instruction: str) -> dict:
+        """Asks the compiler to change one page as `instruction` says, attributed to the requester."""
+        text = str(instruction or "").strip()
+        if not text:
+            return {"status": "error", "error_message": "write what to correct or add"}
+        if not self.memory_wiki_service.get_page(company_short_name, page_id):
+            return {"status": "error", "error_message": "page not found"}
+        response = self.save_capture(
             company_short_name=company_short_name,
             user_identifier=user_identifier,
-            reason="manual",
+            capture_text=text,
+            title=f"Corrección: {text}"[:200],
+            new_items=[{"item_type": "note", "content_text": text, "source_meta": {"origin": "page_correction"}}],
+            meta={
+                "origin": "page_correction",
+                "mode": MemoryCompilerService.CORRECTION_MODE,
+                "wiki_page_id": page_id,
+            },
         )
-        if trigger_result.triggered:
-            return {
-                "status": "success",
-                "mode": trigger_result.mode,
-                "lint": None,
-                "task": trigger_result.metadata,
-            }
-        return self.run_memory_lint(company_short_name, user_identifier)
+        if response.get("status") != "success":
+            return response
+        return {"status": "success", "correction_id": (response.get("capture") or {}).get("capture_id")}
 
-    def run_memory_lint(self, company_short_name: str, user_identifier: str) -> dict:
-        return self.memory_lint_service.run_memory_lint(company_short_name, user_identifier)
+    def get_page_correction(self, company_short_name: str, correction_id: int) -> dict:
+        """Where a correction stands and, once applied, the page before and after it."""
+        self._compile_on_demand(company_short_name)
+        company = self.profile_repo.get_company_by_short_name(company_short_name)
+        if not company:
+            return {"status": "error", "error_message": "company not found"}
+        capture = self.memory_repo.get_capture(company.id, correction_id)
+        meta = dict(capture.meta or {}) if capture is not None else {}
+        if capture is None or meta.get("mode") != MemoryCompilerService.CORRECTION_MODE:
+            return {"status": "error", "error_message": "correction not found"}
+
+        if capture.status == MemoryCaptureStatus.PENDING:
+            state = "pending"
+        elif capture.status == MemoryCaptureStatus.FAILED:
+            state = MemoryCompilerService.CORRECTION_FAILED
+        else:
+            state = str(meta.get("result") or MemoryCompilerService.CORRECTION_FAILED)
+        payload = {
+            "status": "success",
+            "correction": {
+                "id": capture.id,
+                "page_id": meta.get("wiki_page_id"),
+                "state": state,
+                "reason": meta.get("reason") or capture.compile_error,
+                "revision_before_id": meta.get("revision_before_id"),
+                "revision_after_id": meta.get("revision_after_id"),
+            },
+        }
+        if state == MemoryCompilerService.CORRECTION_APPLIED:
+            payload["correction"]["before"] = self._revision_body(company_short_name, meta.get("revision_before_id"))
+            payload["correction"]["after"] = self._revision_body(company_short_name, meta.get("revision_after_id"))
+        return payload
+
+    def _revision_body(self, company_short_name: str, revision_id) -> str:
+        if not isinstance(revision_id, int):
+            return ""
+        revision = self.memory_wiki_service.get_revision(company_short_name, revision_id)
+        return self.memory_wiki_service.page_body(revision) if revision else ""
 
     def delete_item(self, company_short_name: str, user_identifier: str, item_id: int) -> dict:
         company = self.profile_repo.get_company_by_short_name(company_short_name)
         if not company:
             return {"status": "error", "error_message": "company not found"}
 
-        item = self.memory_repo.get_item(company.id, user_identifier, item_id)
+        item = self.memory_repo.get_item(company.id, item_id, user_identifier=user_identifier)
         if not item:
             return {"status": "error", "error_message": "item not found"}
 
         capture_id = getattr(item, "capture_id", None)
-        self._delete_memory_item(
-            company_short_name=company_short_name,
-            company_id=company.id,
-            user_identifier=user_identifier,
-            item=item,
-        )
+        self._delete_memory_item(company_short_name, item)
         if capture_id:
-            capture = self.memory_repo.get_capture(company.id, user_identifier, capture_id)
+            capture = self.memory_repo.get_capture(company.id, capture_id, user_identifier=user_identifier)
             if capture and not self.memory_repo.list_capture_items(capture.id):
                 self.memory_repo.delete_capture(capture)
         return {"status": "success", "deleted_item_id": item_id}
 
     def delete_capture(self, company_short_name: str, user_identifier: str, capture_id: int) -> dict:
+        """Deletes the author's capture. Its pages stay as they are, with their history."""
         company = self.profile_repo.get_company_by_short_name(company_short_name)
         if not company:
             return {"status": "error", "error_message": "company not found"}
 
-        capture = self.memory_repo.get_capture(company.id, user_identifier, capture_id)
+        capture = self.memory_repo.get_capture(company.id, capture_id, user_identifier=user_identifier)
         if not capture:
             return {"status": "error", "error_message": "capture not found"}
 
         for item in list(self.memory_repo.list_capture_items(capture.id)):
-            self._delete_memory_item(
-                company_short_name=company_short_name,
-                company_id=company.id,
-                user_identifier=user_identifier,
-                item=item,
-            )
+            self._delete_memory_item(company_short_name, item)
         self.memory_repo.delete_capture(capture)
-        self._rebuild_index(company_short_name, company.id, user_identifier)
-        self.memory_wiki_service.append_log_entry(
-            company_short_name,
-            user_identifier,
-            entry_type="ingest",
-            title=f"Capture {capture_id} deleted",
-            details=["A saved capture was removed from Memory."],
-            metadata={"capture_id": capture_id},
-        )
         return {"status": "success", "deleted_capture_id": capture_id}
 
     def serialize_item(self, item: MemoryItem, company_short_name: str | None = None) -> dict:
@@ -514,6 +480,7 @@ class MemoryService:
             "created_at": item.created_at.isoformat() if item.created_at else None,
             "capture_group_id": source_meta.get("capture_group_id"),
             "capture_id": getattr(item, "capture_id", None),
+            "author": getattr(item, "user_identifier", None),
         }
 
     def serialize_capture(self,
@@ -526,110 +493,58 @@ class MemoryService:
             for item in capture_items
         ]
         preview = self._capture_preview(serialized_items)
+        meta = capture.meta if isinstance(capture.meta, dict) else {}
         return {
             "capture_id": capture.id,
             "title": capture.title or preview or f"Capture {capture.id}",
             "preview": preview,
             "status": capture.status.value if hasattr(capture.status, "value") else str(capture.status),
+            "author": capture.user_identifier,
+            "wiki_page_id": meta.get("wiki_page_id"),
             "created_at": capture.created_at.isoformat() if capture.created_at else None,
             "updated_at": capture.updated_at.isoformat() if capture.updated_at else None,
             "items": serialized_items,
         }
 
-    def serialize_page(self, page) -> dict:
+    @staticmethod
+    def serialize_page(page: dict) -> dict:
+        """A Memoria wiki page as the chat panel and the memory tools return it."""
         return {
-            "page_id": page.id,
-            "title": page.title,
-            "summary": page.summary or "",
-            "slug": page.slug,
-            "wiki_path": page.wiki_path,
-            "last_updated_at": page.updated_at.isoformat() if page.updated_at else None,
+            "page_id": page.get("id"),
+            "title": page.get("title"),
+            "summary": page.get("summary") or "",
+            "slug": page.get("slug"),
+            "path": page.get("path"),
+            "last_updated_at": page.get("updated_at"),
         }
 
-    def _safe_read_page(self, company_short_name: str, wiki_path: str | None) -> dict:
-        if not wiki_path:
-            return {}
-        try:
-            return self.memory_wiki_service.read_page(company_short_name, wiki_path) or {}
-        except Exception:
-            return {}
+    @staticmethod
+    def render_page_html(body: str) -> str:
+        """A page body as sanitized HTML, without its leading "# Title"."""
+        lines = str(body or "").strip().splitlines()
+        if lines and re.match(r"^#\s+\S", lines[0]):
+            lines = lines[1:]
+        content = "\n".join(lines).strip()
+        if not content:
+            return ""
+        return nh3.clean(markdown2.markdown(content, extras=["tables", "fenced-code-blocks"]))
 
-    def _lint_page_payload(self, payload: dict) -> tuple[dict, bool]:
-        linted = dict(payload or {})
-        changed = False
-
-        def _dedupe_entries(values):
-            deduped = []
-            seen = set()
-            for value in values or []:
-                text = str(value or "").strip()
-                if not text:
-                    continue
-                key = self._normalize_text(text)
-                if not key or key in seen:
-                    continue
-                seen.add(key)
-                deduped.append(text)
-            return deduped
-
-        for key in ("key_points", "decisions", "open_questions", "next_steps", "related_pages", "sources"):
-            original = linted.get(key) or []
-            deduped = _dedupe_entries(original)
-            if list(original) != deduped:
-                linted[key] = deduped
-                changed = True
-
-        summary = str(linted.get("summary") or "").strip()
-        title = str(linted.get("title") or "").strip()
-        if summary and title and self._normalize_text(summary) == self._normalize_text(title):
-            linted["summary"] = title
-
-        source_item_ids = []
-        seen_item_ids = set()
-        for item_id in linted.get("source_item_ids") or []:
-            if isinstance(item_id, int) and item_id not in seen_item_ids:
-                seen_item_ids.add(item_id)
-                source_item_ids.append(item_id)
-        if list(linted.get("source_item_ids") or []) != source_item_ids:
-            linted["source_item_ids"] = source_item_ids
-            changed = True
-
-        return linted, changed
-
-    def _get_last_lint_result(self, company_short_name: str, user_identifier: str) -> dict:
-        entries = self.memory_wiki_service.read_log(company_short_name, user_identifier)
-        if not isinstance(entries, list):
-            return {}
-        for entry in reversed(entries or []):
-            if str(entry.get("entry_type") or "").strip().lower() != "lint":
-                continue
-            metadata = entry.get("metadata") or {}
-            return {
-                "title": entry.get("title") or "Memory wiki health check",
-                "timestamp": entry.get("timestamp"),
-                "checked_pages": int(metadata.get("checked_pages") or 0),
-                "actions_applied": int(metadata.get("actions_applied") or 0),
-                "duplicate_candidates": int(metadata.get("duplicate_candidates") or 0),
-                "orphan_pages": int(metadata.get("orphan_pages") or 0),
-                "details": entry.get("details") or [],
-            }
-        return {}
-
-    def _load_page_source_items(self, company_id: int, user_identifier: str, page_id: int, page_payload: dict) -> list[MemoryItem]:
-        source_item_ids = [
-            item_id for item_id in (page_payload.get("source_item_ids") or [])
-            if isinstance(item_id, int)
-        ]
-        if not source_item_ids and page_id:
-            links = self.memory_repo.list_page_sources(page_id)
-            source_item_ids = [
-                link.memory_item_id for link in links
-                if isinstance(link.memory_item_id, int)
-            ]
-
-        if not source_item_ids:
+    def _load_page_source_items(self, company_id: int, page_id: int | None) -> list[MemoryItem]:
+        if not isinstance(page_id, int):
             return []
-        return self.memory_repo.list_items_by_ids(company_id, user_identifier, source_item_ids)
+        item_ids = self.memory_repo.list_page_source_item_ids(page_id)
+        if not item_ids:
+            return []
+        items_by_id = {item.id: item for item in self.memory_repo.list_items_by_ids(company_id, item_ids)}
+        return [items_by_id[item_id] for item_id in item_ids if item_id in items_by_id]
+
+    def _source_labels(self, source_items: list[MemoryItem]) -> list[str]:
+        labels = []
+        for item in source_items or []:
+            label = self._memory_item_source_label(item)
+            if label and label not in labels:
+                labels.append(label)
+        return labels[:self.MAX_SOURCE_LABELS]
 
     def _build_page_native_attachments(self,
                                        company_short_name: str,
@@ -719,7 +634,6 @@ class MemoryService:
 
     def _load_raw_native_items_for_matches(self,
                                            company_id: int,
-                                           user_identifier: str,
                                            raw_matches: list[dict]) -> list[MemoryItem]:
         raw_item_ids = []
         for item in raw_matches or []:
@@ -732,7 +646,7 @@ class MemoryService:
 
         if not raw_item_ids:
             return []
-        return self.memory_repo.list_items_by_ids(company_id, user_identifier, raw_item_ids)
+        return self.memory_repo.list_items_by_ids(company_id, raw_item_ids)
 
     @staticmethod
     def _is_native_attachment_candidate(item: MemoryItem) -> bool:
@@ -741,116 +655,20 @@ class MemoryService:
             and bool(str(getattr(item, "storage_key", "") or "").strip())
         )
 
-    def _score_page_match(self,
-                          normalized_query: str,
-                          query_tokens: list[str],
-                          page,
-                          page_payload: dict,
-                          source_items: list[MemoryItem]) -> float:
-        if not normalized_query and not query_tokens:
-            return 1.0
-
-        title_text = self._normalize_text(getattr(page, "title", "") or page_payload.get("title") or "")
-        summary_text = self._normalize_text(page_payload.get("summary") or getattr(page, "summary", "") or "")
-        detail_parts = []
-        for key in ("key_points", "decisions", "open_questions", "next_steps", "sources", "related_pages"):
-            values = page_payload.get(key) or []
-            if isinstance(values, list):
-                detail_parts.extend(str(value or "") for value in values)
-        details_text = self._normalize_text(" ".join(detail_parts))
-        source_parts = []
-        for item in source_items or []:
-            source_parts.extend([
-                str(getattr(item, "title", "") or ""),
-                str(getattr(item, "content_text", "") or ""),
-                str(getattr(item, "source_url", "") or ""),
-                str(getattr(item, "filename", "") or ""),
-            ])
-        source_text = self._normalize_text(" ".join(source_parts))
-        full_text = " ".join(part for part in (title_text, summary_text, details_text, source_text) if part).strip()
-
-        if not full_text:
-            return 0.0
-
-        score = 0.0
-        if normalized_query and normalized_query in full_text:
-            score += 6.0
-        if normalized_query and normalized_query in title_text:
-            score += 4.0
-        if normalized_query and normalized_query in summary_text:
-            score += 3.0
-
-        for token in query_tokens:
-            variants = self._token_variants(token)
-            if any(variant in title_text for variant in variants):
-                score += 2.5
-            if any(variant in summary_text for variant in variants):
-                score += 1.7
-            if any(variant in details_text for variant in variants):
-                score += 1.0
-            if any(variant in source_text for variant in variants):
-                score += 2.2
-
-        unique_hits = len({
-            token for token in query_tokens
-            if any(variant in full_text for variant in self._token_variants(token))
-        })
-        score += unique_hits * 0.3
-        return score
-
-    def _score_index_entry(self, normalized_query: str, query_tokens: list[str], entry: dict | None) -> float:
-        if not entry:
-            return 0.0
-        title_text = self._normalize_text(entry.get("title") or "")
-        summary_text = self._normalize_text(entry.get("summary") or "")
-        full_text = " ".join(part for part in (title_text, summary_text) if part).strip()
-        if not full_text:
-            return 0.0
-
-        score = 0.0
-        if normalized_query and normalized_query in full_text:
-            score += 4.0
-        if normalized_query and normalized_query in title_text:
-            score += 2.5
-        if normalized_query and normalized_query in summary_text:
-            score += 1.8
-
-        for token in query_tokens:
-            variants = self._token_variants(token)
-            if any(variant in title_text for variant in variants):
-                score += 1.8
-            if any(variant in summary_text for variant in variants):
-                score += 1.1
-
-        return score
-
-    def _build_search_result_sources(self, page_payload: dict, source_items: list[MemoryItem]) -> list[str]:
-        entries = []
-        for item in page_payload.get("sources") or []:
-            text = str(item or "").strip()
-            if text and text not in entries:
-                entries.append(text)
-
-        for item in source_items or []:
-            for candidate in (
-                getattr(item, "source_url", None),
-                getattr(item, "filename", None),
-                getattr(item, "title", None),
-            ):
-                text = str(candidate or "").strip()
-                if text and text not in entries:
-                    entries.append(text)
-
-        return entries[:8]
+    @staticmethod
+    def _is_native_attachment_candidate(item: MemoryItem) -> bool:
+        return (
+            getattr(item, "item_type", None) == MemoryItemType.FILE
+            and bool(str(getattr(item, "storage_key", "") or "").strip())
+        )
 
     def _search_raw_items(self,
                           company_short_name: str,
                           company_id: int,
-                          user_identifier: str,
                           normalized_query: str,
                           query_tokens: list[str],
                           limit: int) -> list[dict]:
-        items = self.memory_repo.list_recent_items(company_id, user_identifier, limit=max(limit * 12, 60))
+        items = self.memory_repo.list_recent_items(company_id, limit=max(limit * 12, 60))
         ranked = []
         for item in items:
             score = self._score_memory_item_match(normalized_query, query_tokens, item)
@@ -928,10 +746,9 @@ class MemoryService:
 
         if file_base64:
             file_bytes = self.util.normalize_base64_payload(file_base64)
-            safe_user = self.memory_wiki_service.sanitize_user_identifier(user_identifier)
             safe_filename = os.path.basename(filename or f"memory-{uuid.uuid4().hex}")
             storage_key = (
-                f"companies/{company_short_name}/users/{safe_user}/memory/raw/"
+                f"companies/{company_short_name}/memory/raw/"
                 f"{uuid.uuid4().hex}/{safe_filename}"
             )
             mime_type = mime_type or mimetypes.guess_type(safe_filename)[0] or "application/octet-stream"
@@ -963,28 +780,15 @@ class MemoryService:
             source_meta=source_meta,
         )
 
-    def _delete_memory_item(self,
-                            company_short_name: str,
-                            company_id: int,
-                            user_identifier: str,
-                            item: MemoryItem) -> None:
-        affected_pages = self.memory_repo.list_pages_for_item(item.id)
+    def _delete_memory_item(self, company_short_name: str, item: MemoryItem) -> None:
+        """Deletes the item and its stored file and unlinks it from its pages, which stay untouched."""
         storage_key = item.storage_key
         self.memory_repo.delete_item(item)
-
         if storage_key:
             try:
                 self.storage_service.delete_file(company_short_name, storage_key)
             except Exception:
                 pass
-
-        for page in affected_pages:
-            self._repair_page_after_item_delete(
-                company_short_name=company_short_name,
-                company_id=company_id,
-                user_identifier=user_identifier,
-                page_id=page.id,
-            )
 
     def _capture_title_from_items(self, items: list[MemoryItem]) -> str:
         for item in items or []:
@@ -1051,55 +855,10 @@ class MemoryService:
                 deduped.append(variant)
         return deduped
 
-    def _compile_on_demand(self, company_short_name: str, user_identifier: str) -> None:
+    def _compile_on_demand(self, company_short_name: str) -> None:
         if self.memory_compilation_trigger.is_async_enabled():
             return
-        self.memory_compiler_service.compile_pending_for_user(company_short_name, user_identifier)
-
-    def _repair_page_after_item_delete(self,
-                                       company_short_name: str,
-                                       company_id: int,
-                                       user_identifier: str,
-                                       page_id: int) -> None:
-        page = self.memory_repo.get_page(company_id, user_identifier, page_id)
-        if not page:
-            return
-
-        source_links = self.memory_repo.list_page_sources(page.id)
-        remaining_ids = []
-        for link in source_links:
-            if isinstance(link.memory_item_id, int) and link.memory_item_id not in remaining_ids:
-                remaining_ids.append(link.memory_item_id)
-
-        if not remaining_ids:
-            try:
-                self.memory_wiki_service.delete_page(company_short_name, page.wiki_path)
-            except Exception:
-                pass
-            self.memory_repo.delete_page(page)
-            self._rebuild_index(company_short_name, company_id, user_identifier)
-            return
-
-        items = self.memory_repo.list_items_by_ids(company_id, user_identifier, remaining_ids)
-        source_map = {item.id: self._memory_item_source_label(item) for item in items}
-
-        try:
-            page_payload = self.memory_wiki_service.read_page(company_short_name, page.wiki_path)
-        except Exception:
-            page_payload = {}
-
-        page_payload.update({
-            "page_id": page.id,
-            "user_identifier": user_identifier,
-            "title": page_payload.get("title") or page.title,
-            "slug": page_payload.get("slug") or page.slug,
-            "summary": page_payload.get("summary") or page.summary or "",
-            "source_item_ids": remaining_ids,
-            "sources": [source_map[item_id] for item_id in remaining_ids if source_map.get(item_id)],
-            "wiki_path": page.wiki_path,
-        })
-        self.memory_wiki_service.write_page(company_short_name, page_payload)
-        self._rebuild_index(company_short_name, company_id, user_identifier)
+        self.memory_compiler_service.compile_pending_for_company(company_short_name)
 
     @staticmethod
     def _memory_item_source_label(item: MemoryItem) -> str:
@@ -1138,12 +897,3 @@ class MemoryService:
             "application/xml",
             "application/javascript",
         }
-
-    def _rebuild_index(self, company_short_name: str, company_id: int, user_identifier: str) -> None:
-        pages = self.memory_repo.list_pages(company_id, user_identifier, limit=500)
-        self.memory_wiki_service.rebuild_index(
-            company_short_name,
-            user_identifier,
-            pages,
-            page_reader=lambda page: self._safe_read_page(company_short_name, page.wiki_path),
-        )

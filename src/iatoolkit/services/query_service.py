@@ -40,7 +40,7 @@ class QueryService:
     _tool_selector_hook: Callable | None = None
     SQL_TOOL_NAME = "iat_sql_query"
     DOCUMENT_SEARCH_TOOL_NAME = "iat_document_search"
-    MEMORY_TOOL_NAMES = {"iat_memory_search", "iat_memory_get_page"}
+    MEMORY_TOOL_NAMES = {"iat_memory_search", "iat_memory_get_page", "iat_memory_save"}
     _PREVIOUS_RESPONSE_NOT_FOUND_MARKERS = (
         "previous_response_not_found",
         "previous response with id",
@@ -745,7 +745,7 @@ class QueryService:
             return prompt
         return (
             f"{prompt}\n\n"
-            "If helpful for continuity or saved user context, call `iat_memory_search` before answering."
+            "If the answer may depend on how things are done in this company, call `iat_memory_search` before answering."
         ).strip()
 
     def _resolve_company_max_tool_rounds(self, company_short_name: str) -> int | None:

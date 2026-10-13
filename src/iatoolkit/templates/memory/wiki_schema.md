@@ -1,56 +1,44 @@
-# Memory Wiki Schema
+# Company Memory Wiki Schema
 
-This wiki is maintained by the LLM on behalf of the user. The user curates sources and asks questions; the LLM updates the wiki.
+This wiki is the company's memory: how things are actually done here. People
+explain something once (a note, a chat message, a correction, a file) and the
+LLM keeps the wiki up to date. Everyone in the company reads it, and anyone can
+edit a page by hand, so pages must stay readable markdown that a person can
+correct.
 
 ## Core Model
 
-- `raw sources` are immutable inputs such as notes, links, files, photos, and saved chat messages
-- `memory pages` are compiled markdown pages maintained by the LLM
-- `index.md` is the catalog of all memory pages
-- `log.md` is the chronological record of ingest and query activity
+- `captures` are immutable inputs saved by a person: notes, links, files,
+  photos, chat messages, corrections. Each one has an author and a date.
+- `pages` are markdown pages maintained by the LLM and corrected by people.
+  Every change is kept in the page history and can be undone.
 
 ## Page Rules
 
-- prefer updating an existing relevant page over creating a duplicate
+- one page per topic or procedure ("Notas de crédito", "Despachos a regiones");
+  prefer updating an existing page over creating a near-duplicate
 - create a new page only when the capture introduces a clearly distinct topic
-- page titles should be short, human-readable, and stable over time
-- page summaries should be concise and practical
-- key points should capture durable facts or ideas, not raw copies of the source
-- decisions, open questions, and next steps should be used only when supported by the sources
-- related pages should be added when there is a meaningful conceptual connection
-- every page must keep traceability to the raw source items that support it
+- titles are short, human-readable and stable over time
+- start the page with `# Title`, then a one or two sentence overview
+- write practical knowledge: steps, rules, exceptions, who decides, contacts
+- **attribute every fact you add** to its author and date, at the end of the
+  line or paragraph: `(Carmen Rojas, 2026-10-06)`
+- keep existing content and attributions; only change what the capture changes
+- when the capture contradicts the page, keep both statements with their
+  attributions and mark the newer one as the current practice; never silently
+  replace someone's statement
+- when the capture contradicts a company document it names, say so explicitly
+  ("el manual dice 30 días; en la práctica son 45")
+- never invent facts that are not in the capture or already on the page
+- never copy personal or sensitive data that does not serve the procedure
+- write in the language of the capture
 
 ## Ingest Workflow
 
-When a new capture is ingested:
+When a new capture arrives:
 
-1. read the raw source items
-2. check `index.md` to find likely existing pages
-3. read the most relevant pages
-4. decide whether to update, create, or skip
-5. update the target page in markdown
-6. refresh `index.md`
-7. append an event to `log.md`
-
-## Query Workflow
-
-When answering from memory:
-
-1. read `index.md` first
-2. identify the most relevant pages
-3. read those pages
-4. synthesize the answer from compiled knowledge first
-5. use raw source items only when needed for verification or direct retrieval
-
-## Logging Rules
-
-- `log.md` is append-only
-- each entry should use a clear operation type such as `ingest` or `query`
-- include enough detail to understand what changed or what was asked
-
-## Maintenance Rules
-
-- avoid duplicate pages that represent the same concept
-- prefer canonical links and filenames in sources
-- do not repeat the same information across summary, key points, and sources unless necessary
-- keep the wiki useful for future sessions, not just the current chat
+1. read the capture and its author
+2. check the page index for likely existing pages
+3. read the candidate pages in full
+4. decide whether to update one page, create a new one, or skip
+5. return the complete markdown of the resulting page

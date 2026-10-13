@@ -121,6 +121,42 @@ class TestToolService:
             include_native_attachments=False,
         )
 
+    def test_handle_memory_save_tool_saves_a_note_attributed_to_the_user(self):
+        self.service._memory_service = MagicMock()
+        self.service._memory_service.save_capture.return_value = {"status": "success", "capture": {"capture_id": 31}}
+
+        result = self.service._handle_memory_save_tool(
+            company_short_name="my_company",
+            user_identifier="carmen@acme.cl",
+            content="Al cliente X no se le despacha los viernes.",
+            title="Despachos",
+            _iat_runtime_source="mcp",
+        )
+
+        kwargs = self.service._memory_service.save_capture.call_args.kwargs
+        assert kwargs["user_identifier"] == "carmen@acme.cl"
+        assert kwargs["new_items"] == [{
+            "item_type": "note",
+            "content_text": "Al cliente X no se le despacha los viernes.",
+            "title": "Despachos",
+            "source_meta": {"origin": "mcp_tool"},
+        }]
+        assert kwargs["meta"] == {"origin": "mcp_tool"}
+        assert result["status"] == "success"
+        assert result["capture_id"] == 31
+        assert "visible para todos" in result["message"]
+
+    def test_handle_memory_save_tool_requires_an_identified_user_and_content(self):
+        self.service._memory_service = MagicMock()
+
+        anonymous = self.service._handle_memory_save_tool(company_short_name="my_company", content="algo")
+        empty = self.service._handle_memory_save_tool(company_short_name="my_company", content="  ",
+                                                      user_identifier="carmen@acme.cl")
+
+        assert anonymous["status"] == "error"
+        assert empty["status"] == "error"
+        self.service._memory_service.save_capture.assert_not_called()
+
     def test_handle_wiki_search_tool_delegates_to_service(self):
         self.service._knowledge_wiki_service = MagicMock()
         self.service._knowledge_wiki_service.search_pages.return_value = {"status": "success", "results": []}

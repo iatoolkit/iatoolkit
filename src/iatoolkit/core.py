@@ -399,9 +399,7 @@ class IAToolkit:
         from iatoolkit.repositories.filesystem_asset_repository import FileSystemAssetRepository
         from iatoolkit.repositories.env_secret_provider import EnvSecretProvider
         from iatoolkit.common.interfaces.memory_compilation_trigger import MemoryCompilationTrigger
-        from iatoolkit.common.interfaces.memory_lint_trigger import MemoryLintTrigger
         from iatoolkit.services.noop_memory_compilation_trigger import NoopMemoryCompilationTrigger
-        from iatoolkit.services.noop_memory_lint_trigger import NoopMemoryLintTrigger
         from iatoolkit.services.memory_lookup_policy_service import MemoryLookupPolicyService
 
         binder.bind(ApiKeyRepo, to=ApiKeyRepo)
@@ -423,8 +421,6 @@ class IAToolkit:
             binder.bind(SecretProvider, to=EnvSecretProvider)
         if not is_bound(self._injector, MemoryCompilationTrigger):
             binder.bind(MemoryCompilationTrigger, to=NoopMemoryCompilationTrigger)
-        if not is_bound(self._injector, MemoryLintTrigger):
-            binder.bind(MemoryLintTrigger, to=NoopMemoryLintTrigger)
         binder.bind(MemoryLookupPolicyService, to=MemoryLookupPolicyService)
 
     def _bind_services(self, binder: Binder):

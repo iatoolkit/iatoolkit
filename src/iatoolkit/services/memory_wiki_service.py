@@ -5,325 +5,219 @@
 
 from __future__ import annotations
 
-import re
-from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
+
 from injector import inject
-import yaml
 
 from iatoolkit.services.markdown_wiki_service import MarkdownWikiService
-from iatoolkit.services.storage_service import StorageService
+from iatoolkit.services.tenant_wiki_service import TenantWikiService
 
 
-class MemoryWikiService(MarkdownWikiService):
-    SCHEMA_FILENAME = "wiki_schema.md"
-    INDEX_FILENAME = "index.md"
-    LOG_FILENAME = "log.md"
+class MemoryWikiService:
+    """
+    Where the company's Memoria keeps its pages: a managed system wiki per
+    tenant, written through `TenantWikiService` so every change gets a revision
+    (author, date, undo) and the pages can be corrected in the wiki editor.
+
+    The wiki is owned by Memoria (`system_owner`), so the generic wiki surfaces
+    leave it out and only this service reads it.
+    """
+
+    WIKI_KEY = "iatoolkit-memory"
+    SYSTEM_OWNER = "memory"
+    WIKI_NAME = "Memoria"
+    WIKI_DESCRIPTION = "Lo que la empresa sabe hacer: conocimiento capturado de su gente."
     SCHEMA_TEMPLATE_PATH = Path(__file__).resolve().parents[1] / "templates" / "memory" / "wiki_schema.md"
+    MAX_INDEX_ENTRIES = 5000
 
     @inject
-    def __init__(self, storage_service: StorageService):
-        super().__init__(storage_service=storage_service)
+    def __init__(self,
+                 tenant_wiki_service: TenantWikiService,
+                 markdown_wiki_service: MarkdownWikiService):
+        self.tenant_wiki_service = tenant_wiki_service
+        self.markdown_wiki_service = markdown_wiki_service
 
-    @staticmethod
-    def slugify(value: str) -> str:
-        candidate = re.sub(r"[^a-zA-Z0-9]+", "-", str(value or "").strip().lower()).strip("-")
-        return candidate[:80] or "memory-page"
-
-    @staticmethod
-    def sanitize_user_identifier(user_identifier: str) -> str:
-        candidate = re.sub(r"[^a-zA-Z0-9._-]+", "_", str(user_identifier or "").strip())
-        return candidate[:120] or "user"
-
-    def build_page_storage_key(self, company_short_name: str, user_identifier: str, slug: str) -> str:
-        safe_user = self.sanitize_user_identifier(user_identifier)
-        safe_slug = self.slugify(slug)
-        return f"companies/{company_short_name}/users/{safe_user}/memory/wiki/{safe_slug}.md"
-
-    def build_special_storage_key(self, company_short_name: str, user_identifier: str, filename: str) -> str:
-        safe_user = self.sanitize_user_identifier(user_identifier)
-        safe_name = str(filename or "").strip() or "memory.md"
-        return f"companies/{company_short_name}/users/{safe_user}/memory/wiki/{safe_name}"
-
-    def ensure_wiki_bootstrap(self, company_short_name: str, user_identifier: str) -> None:
-        self.ensure_schema(company_short_name, user_identifier)
-        index_key = self.build_special_storage_key(company_short_name, user_identifier, self.INDEX_FILENAME)
-        if self.read_optional_markdown(company_short_name, index_key) is None:
-            self.write_index(company_short_name, user_identifier, [])
-        log_key = self.build_special_storage_key(company_short_name, user_identifier, self.LOG_FILENAME)
-        if self.read_optional_markdown(company_short_name, log_key) is None:
-            self.write_markdown(company_short_name, log_key, self.render_log([]))
-
-    def ensure_schema(self, company_short_name: str, user_identifier: str) -> str:
-        storage_key = self.build_special_storage_key(company_short_name, user_identifier, self.SCHEMA_FILENAME)
-        existing = self.read_optional_markdown(company_short_name, storage_key)
-        if existing is not None:
-            return existing
-        template = self.SCHEMA_TEMPLATE_PATH.read_text(encoding="utf-8")
-        self.write_markdown(company_short_name, storage_key, template)
-        return template
-
-    def read_schema(self, company_short_name: str, user_identifier: str) -> str:
-        self.ensure_schema(company_short_name, user_identifier)
-        storage_key = self.build_special_storage_key(company_short_name, user_identifier, self.SCHEMA_FILENAME)
-        return self.read_optional_markdown(company_short_name, storage_key) or ""
-
-    def write_index(self, company_short_name: str, user_identifier: str, entries: list[dict]) -> str:
-        storage_key = self.build_special_storage_key(company_short_name, user_identifier, self.INDEX_FILENAME)
-        markdown = self.render_index(entries)
-        self.write_markdown(company_short_name, storage_key, markdown)
-        return storage_key
-
-    def read_index(self, company_short_name: str, user_identifier: str) -> dict:
-        storage_key = self.build_special_storage_key(company_short_name, user_identifier, self.INDEX_FILENAME)
-        markdown = self.read_optional_markdown(company_short_name, storage_key)
-        if markdown is None:
-            return {"entries": [], "generated_at": None, "wiki_path": storage_key}
-        parsed = self.parse_index(markdown)
-        parsed["wiki_path"] = storage_key
-        return parsed
-
-    def append_log_entry(self,
-                         company_short_name: str,
-                         user_identifier: str,
-                         entry_type: str,
-                         title: str,
-                         details: list[str] | None = None,
-                         metadata: dict | None = None) -> str:
-        storage_key = self.build_special_storage_key(company_short_name, user_identifier, self.LOG_FILENAME)
-        markdown = self.read_optional_markdown(company_short_name, storage_key)
-        parsed = self.parse_log(markdown or "")
-        entry = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "entry_type": str(entry_type or "event").strip().lower() or "event",
-            "title": str(title or "").strip()[:200] or "Memory event",
-            "details": [str(detail).strip() for detail in (details or []) if str(detail or "").strip()],
-            "metadata": {str(key): str(value) for key, value in (metadata or {}).items() if str(value or "").strip()},
-        }
-        parsed.append(entry)
-        self.write_markdown(company_short_name, storage_key, self.render_log(parsed))
-        return storage_key
-
-    def read_log(self, company_short_name: str, user_identifier: str) -> list[dict]:
-        storage_key = self.build_special_storage_key(company_short_name, user_identifier, self.LOG_FILENAME)
-        markdown = self.read_optional_markdown(company_short_name, storage_key)
-        return self.parse_log(markdown or "")
-
-    def rebuild_index(self, company_short_name: str, user_identifier: str, pages: list, page_reader=None) -> str:
-        entries = []
-        for page in pages or []:
-            payload = {}
-            if page_reader:
-                payload = page_reader(page) or {}
-            entry = {
-                "page_id": getattr(page, "id", None),
-                "title": payload.get("title") or getattr(page, "title", "") or "Untitled memory",
-                "summary": payload.get("summary") or getattr(page, "summary", "") or "",
-                "slug": payload.get("slug") or getattr(page, "slug", "") or "",
-                "wiki_path": getattr(page, "wiki_path", "") or payload.get("wiki_path") or "",
-                "source_count": len(payload.get("source_item_ids") or []),
-                "last_updated_at": getattr(page, "updated_at", None).isoformat() if getattr(page, "updated_at", None) else None,
-            }
-            entries.append(entry)
-        return self.write_index(company_short_name, user_identifier, entries)
-
-    def write_page(self, company_short_name: str, payload: dict) -> str:
-        storage_key = payload.get("wiki_path") or self.build_page_storage_key(
+    def ensure_wiki(self, company_short_name: str) -> dict:
+        return self.tenant_wiki_service.ensure_system_wiki(
             company_short_name,
-            payload.get("user_identifier"),
-            payload.get("slug") or payload.get("title"),
+            wiki_key=self.WIKI_KEY,
+            system_owner=self.SYSTEM_OWNER,
+            name=self.WIKI_NAME,
+            description=self.WIKI_DESCRIPTION,
         )
-        markdown = self.render_page(payload)
-        return self.write_markdown(company_short_name, storage_key, markdown)
 
-    def read_page(self, company_short_name: str, storage_key: str) -> dict:
-        markdown = self.read_markdown(company_short_name, storage_key)
-        parsed = self.parse_page(markdown)
-        parsed["wiki_path"] = storage_key
-        return parsed
+    @classmethod
+    def read_schema(cls) -> str:
+        return _read_schema_template(str(cls.SCHEMA_TEMPLATE_PATH))
 
-    def delete_page(self, company_short_name: str, storage_key: str | None) -> None:
-        self.delete_markdown(company_short_name, storage_key)
+    def list_pages(self, company_short_name: str) -> list[dict]:
+        """Every page of the company's Memoria, without bodies."""
+        response = self.tenant_wiki_service.get_index(company_short_name, wiki_key=self.WIKI_KEY)
+        if response.get("status") != "success":
+            return []
+        return list(response.get("entries") or [])[:self.MAX_INDEX_ENTRIES]
 
-    def render_page(self, payload: dict) -> str:
-        frontmatter = {
-            "page_id": payload.get("page_id"),
-            "title": payload.get("title"),
-            "slug": payload.get("slug"),
-            "summary": payload.get("summary") or "",
-            "source_item_ids": payload.get("source_item_ids") or [],
-            "related_pages": payload.get("related_pages") or [],
-        }
+    def search_pages(self, company_short_name: str, query: str, limit: int = 5) -> list[dict]:
+        response = self.tenant_wiki_service.search_pages(
+            company_short_name,
+            query=query,
+            wiki_key=self.WIKI_KEY,
+            limit=limit,
+            include_system=True,
+        )
+        if response.get("status") != "success":
+            return []
+        return list(response.get("results") or [])
 
-        sections = [
-            ("Summary", payload.get("summary") or ""),
-            ("Key Points", self._render_list(payload.get("key_points"))),
-            ("Decisions", self._render_list(payload.get("decisions"))),
-            ("Open Questions", self._render_list(payload.get("open_questions"))),
-            ("Next Steps", self._render_list(payload.get("next_steps"))),
-            ("Sources", self._render_sources(payload.get("sources"))),
-            ("Related", self._render_list(payload.get("related_pages"))),
-        ]
+    def get_page(self, company_short_name: str, page_id: int) -> dict | None:
+        """The page with its markdown and `checksum`, or None."""
+        response = self.tenant_wiki_service.get_page_by_id(
+            company_short_name,
+            wiki_key=self.WIKI_KEY,
+            page_id=page_id,
+            include_system=True,
+        )
+        if response.get("status") != "success":
+            return None
+        return response.get("page")
 
-        body_lines = ["---", yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True).strip(), "---", ""]
-        for title, content in sections:
-            body_lines.append(f"## {title}")
-            body_lines.append(content.strip() if isinstance(content, str) else "")
-            body_lines.append("")
-        return "\n".join(body_lines).strip() + "\n"
+    def create_page(self,
+                    company_short_name: str,
+                    *,
+                    title: str,
+                    body: str,
+                    summary: str = "",
+                    edited_by: str | None = None,
+                    change_summary: str | None = None,
+                    revision_metadata: dict | None = None) -> dict:
+        path = self._available_path(company_short_name, title)
+        return self.tenant_wiki_service.create_page(
+            company_short_name,
+            wiki_key=self.WIKI_KEY,
+            path=path,
+            title=title,
+            markdown=self.render_page(title=title, summary=summary, body=body),
+            edited_by=edited_by,
+            change_summary=change_summary,
+            revision_metadata=revision_metadata,
+        )
 
-    def parse_page(self, markdown: str) -> dict:
-        parsed = self.parse_frontmatter_document(markdown)
-        frontmatter = parsed.get("frontmatter") if isinstance(parsed.get("frontmatter"), dict) else {}
-        body = parsed.get("body") or ""
+    def update_page(self,
+                    company_short_name: str,
+                    *,
+                    page: dict,
+                    title: str,
+                    body: str,
+                    summary: str = "",
+                    edited_by: str | None = None,
+                    change_summary: str | None = None,
+                    revision_metadata: dict | None = None) -> dict:
+        """
+        Saves new content over `page` as it was read. Refused with
+        `error_code=page_changed` when someone saved it in between.
+        """
+        return self.tenant_wiki_service.save_page(
+            company_short_name,
+            wiki_key=self.WIKI_KEY,
+            path=page.get("path"),
+            markdown=self.render_page(
+                title=title,
+                summary=summary,
+                body=body,
+                frontmatter=page.get("frontmatter") or {},
+            ),
+            edited_by=edited_by,
+            expected_checksum=page.get("checksum"),
+            change_summary=change_summary,
+            revision_metadata=revision_metadata,
+        )
 
-        sections = self._parse_sections(body)
-        derived_title = frontmatter.get("title")
-        if not derived_title:
-            summary_text = sections.get("Summary", "").strip()
-            derived_title = summary_text.splitlines()[0][:120] if summary_text else "Memory Page"
-        return {
-            "page_id": frontmatter.get("page_id"),
-            "title": derived_title,
-            "slug": frontmatter.get("slug"),
-            "summary": frontmatter.get("summary") or sections.get("Summary", "").strip(),
-            "key_points": self._parse_list(sections.get("Key Points")),
-            "decisions": self._parse_list(sections.get("Decisions")),
-            "open_questions": self._parse_list(sections.get("Open Questions")),
-            "next_steps": self._parse_list(sections.get("Next Steps")),
-            "sources": self._parse_list(sections.get("Sources")),
-            "related_pages": frontmatter.get("related_pages") or self._parse_list(sections.get("Related")),
-            "source_item_ids": frontmatter.get("source_item_ids") or [],
-        }
+    def list_revisions(self, company_short_name: str, *, path: str | None = None, limit: int = 50) -> list[dict]:
+        response = self.tenant_wiki_service.list_page_revisions(
+            company_short_name,
+            wiki_key=self.WIKI_KEY,
+            path=path,
+            limit=limit,
+        )
+        if response.get("status") != "success":
+            return []
+        return list(response.get("revisions") or [])
 
-    def render_index(self, entries: list[dict]) -> str:
-        normalized_entries = []
-        for entry in entries or []:
-            page_id = entry.get("page_id")
-            if not isinstance(page_id, int):
-                continue
-            normalized_entries.append({
-                "page_id": page_id,
-                "title": str(entry.get("title") or "Untitled memory").strip(),
-                "summary": str(entry.get("summary") or "").strip(),
-                "slug": str(entry.get("slug") or "").strip(),
-                "wiki_path": str(entry.get("wiki_path") or "").strip(),
-                "source_count": int(entry.get("source_count") or 0),
-                "last_updated_at": entry.get("last_updated_at"),
-            })
+    def list_activity(self, company_short_name: str, *, limit: int = 50) -> list[dict]:
+        """Latest changes across every page of the company's Memoria."""
+        response = self.tenant_wiki_service.list_wiki_revisions(company_short_name, wiki_key=self.WIKI_KEY, limit=limit)
+        if response.get("status") != "success":
+            return []
+        return list(response.get("revisions") or [])
 
-        frontmatter = {
-            "generated_at": datetime.now(timezone.utc).isoformat(),
-            "entry_count": len(normalized_entries),
-            "entries": normalized_entries,
-        }
-        lines = ["---", yaml.safe_dump(frontmatter, sort_keys=False, allow_unicode=True).strip(), "---", "", "# Memory Index", ""]
-        if not normalized_entries:
-            lines.append("No memory pages yet.")
-        else:
-            for entry in normalized_entries:
-                target = entry.get("wiki_path") or f"{entry.get('slug')}.md"
-                summary = entry.get("summary") or "No summary yet."
-                source_count = entry.get("source_count") or 0
-                lines.append(f"- [{entry['title']}]({target}) — {summary} ({source_count} sources)")
-        return "\n".join(lines).strip() + "\n"
+    def get_revision(self, company_short_name: str, revision_id: int) -> dict | None:
+        response = self.tenant_wiki_service.get_page_revision(
+            company_short_name,
+            wiki_key=self.WIKI_KEY,
+            revision_id=revision_id,
+        )
+        if response.get("status") != "success":
+            return None
+        return response.get("revision")
 
-    def parse_index(self, markdown: str) -> dict:
-        parsed = self.parse_frontmatter_document(markdown)
-        frontmatter = parsed.get("frontmatter") if isinstance(parsed.get("frontmatter"), dict) else {}
-        if not frontmatter:
-            return {"generated_at": None, "entries": []}
-        entries = frontmatter.get("entries") or []
-        normalized = []
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            page_id = entry.get("page_id")
-            if not isinstance(page_id, int):
-                continue
-            normalized.append({
-                "page_id": page_id,
-                "title": str(entry.get("title") or "").strip(),
-                "summary": str(entry.get("summary") or "").strip(),
-                "slug": str(entry.get("slug") or "").strip(),
-                "wiki_path": str(entry.get("wiki_path") or "").strip(),
-                "source_count": int(entry.get("source_count") or 0),
-                "last_updated_at": entry.get("last_updated_at"),
-            })
-        return {
-            "generated_at": frontmatter.get("generated_at"),
-            "entries": normalized,
-        }
+    def delete_page(self, company_short_name: str, *, page: dict, edited_by: str | None = None) -> dict:
+        return self.tenant_wiki_service.delete_page(
+            company_short_name,
+            wiki_key=self.WIKI_KEY,
+            path=page.get("path"),
+            edited_by=edited_by,
+        )
 
-    def render_log(self, entries: list[dict]) -> str:
-        lines = ["# Memory Log", ""]
-        if not entries:
-            lines.append("No activity yet.")
-            return "\n".join(lines).strip() + "\n"
+    def save_markdown(self,
+                      company_short_name: str,
+                      *,
+                      page: dict,
+                      markdown: str,
+                      edited_by: str | None = None,
+                      expected_checksum: str | None = None,
+                      change_summary: str | None = None,
+                      revision_metadata: dict | None = None) -> dict:
+        """Saves a whole markdown document (frontmatter included), as a person edits it."""
+        return self.tenant_wiki_service.save_page(
+            company_short_name,
+            wiki_key=self.WIKI_KEY,
+            path=page.get("path"),
+            markdown=markdown,
+            edited_by=edited_by,
+            expected_checksum=expected_checksum,
+            change_summary=change_summary,
+            revision_metadata=revision_metadata,
+        )
 
-        for entry in entries:
-            timestamp = str(entry.get("timestamp") or "").strip()
-            title = str(entry.get("title") or "Memory event").strip()
-            entry_type = str(entry.get("entry_type") or "event").strip().lower()
-            date_label = timestamp[:10] if len(timestamp) >= 10 else "unknown-date"
-            lines.append(f"## [{date_label}] {entry_type} | {title}")
-            if timestamp:
-                lines.append(f"- Timestamp: {timestamp}")
-            for detail in entry.get("details") or []:
-                lines.append(f"- {detail}")
-            metadata = entry.get("metadata") or {}
-            for key, value in metadata.items():
-                lines.append(f"- {key}: {value}")
-            lines.append("")
-        return "\n".join(lines).strip() + "\n"
+    def page_body(self, page: dict | None) -> str:
+        """The page markdown without its frontmatter: what the compiler edits."""
+        if not page:
+            return ""
+        parsed = self.markdown_wiki_service.parse_frontmatter_document(str(page.get("markdown") or ""))
+        return str(parsed.get("body") or "").strip()
 
-    def parse_log(self, markdown: str) -> list[dict]:
-        entries = []
-        current = None
-        for line in str(markdown or "").splitlines():
-            if line.startswith("## ["):
-                if current:
-                    entries.append(current)
-                header = line[3:].strip()
-                current = {
-                    "timestamp": "",
-                    "entry_type": "event",
-                    "title": header,
-                    "details": [],
-                    "metadata": {},
-                }
-                match = re.match(r"\[(?P<date>[^\]]+)\]\s+(?P<entry_type>[^|]+)\|\s*(?P<title>.+)$", header)
-                if match:
-                    current["entry_type"] = match.group("entry_type").strip().lower()
-                    current["title"] = match.group("title").strip()
-            elif current and line.startswith("- Timestamp: "):
-                current["timestamp"] = line.replace("- Timestamp: ", "", 1).strip()
-            elif current and line.startswith("- "):
-                payload = line[2:].strip()
-                if ": " in payload:
-                    key, value = payload.split(": ", 1)
-                    if key and value and key.lower() not in {"timestamp"}:
-                        current["metadata"][key] = value
-                    else:
-                        current["details"].append(payload)
-                elif payload:
-                    current["details"].append(payload)
-        if current:
-            entries.append(current)
-        return entries
+    def render_page(self, *, title: str, summary: str, body: str, frontmatter: dict | None = None) -> str:
+        merged = dict(frontmatter or {})
+        merged["title"] = str(title or "").strip()
+        merged["summary"] = str(summary or "").strip()
+        merged.setdefault("status", "published")
+        return self.markdown_wiki_service.render_frontmatter_document(merged, str(body or "").strip() + "\n")
 
-    @staticmethod
-    def _render_list(items) -> str:
-        return MarkdownWikiService.render_markdown_list(items, empty_label="No entries yet.")
+    def _available_path(self, company_short_name: str, title: str) -> str:
+        base = self.markdown_wiki_service.slugify(title) or "pagina"
+        taken = {str(entry.get("path") or "") for entry in self.list_pages(company_short_name)}
+        candidate = f"{base}.md"
+        suffix = 2
+        while candidate in taken:
+            candidate = f"{base}-{suffix}.md"
+            suffix += 1
+        return candidate
 
-    @staticmethod
-    def _render_sources(items) -> str:
-        return MarkdownWikiService.render_markdown_list(items, empty_label="No sources yet.")
 
-    @staticmethod
-    def _parse_sections(body: str) -> dict[str, str]:
-        return MarkdownWikiService.parse_sections(body)
-
-    @staticmethod
-    def _parse_list(content: str | None) -> list[str]:
-        return MarkdownWikiService.parse_markdown_list(content)
+@lru_cache(maxsize=4)
+def _read_schema_template(path: str) -> str:
+    try:
+        return Path(path).read_text(encoding="utf-8")
+    except OSError:
+        return ""

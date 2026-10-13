@@ -372,35 +372,29 @@ tools:
         - wiki_key
         - path
   - function_name: iat_memory_search
-    description: Busca páginas relevantes dentro de la Memoria personal del usuario y retorna contexto compilado. Incluye la señal `has_native_files` cuando una memoria tiene archivos fuente que pueden adjuntarse nativamente al modelo. Debe usarse antes de responder preguntas sobre cosas guardadas, notas previas, memoria del usuario, continuidad entre sesiones o "lo que hablamos/guardé antes".
+    description: Busca en la Memoria de la empresa, el conocimiento de cómo se hacen las cosas en esta empresa que su gente fue guardando (procedimientos, reglas, excepciones, quién decide, correcciones a documentos). Devuelve páginas con título, resumen y fuentes. Incluye la señal `has_native_files` cuando una página tiene archivos fuente que pueden adjuntarse nativamente al modelo. Úsala antes de responder cómo se hace algo en la empresa, o cuando la pregunta dependa de prácticas internas que podrían no estar en los documentos.
     routing:
       force_include_capability: has_user_memory
     routing_profile:
       tags:
         - memory
-        - personal_context
-        - notes
-        - saved_notes
+        - company_memory
+        - know_how
+        - procedures
+        - internal_practices
+        - corrections
         - saved_content
-        - plans
-        - ideas
-        - work_in_progress
-        - continuity
-        - weekly_focus
         - wiki
       intents:
-        - Search the user's personal memory pages for relevant context.
-        - Retrieve compiled personal notes, saved chat context, and remembered plans or ideas.
-        - Retrieve what the user was planning, working on, or wanted to implement.
-        - Search saved personal context about ideas, tasks, plans, priorities, and previous chat notes.
-        - Use this before answering questions about what the user saved, discussed, planned, or was working on earlier.
+        - Search the company memory for how things are done here.
+        - Retrieve internal procedures, rules, exceptions and who decides, as people in the company explained them.
+        - Check whether people corrected or completed what a company document says.
+        - Use this before answering how something is done in this company.
       examples:
-        - iat_memory_search(query="ideas sobre onboarding", limit=5)
-        - iat_memory_search(query="lo que guardé del cliente acme", limit=3)
-        - iat_memory_search(query="qué tengo pensado para implementar esta semana en iatoolkit", limit=5)
-        - iat_memory_search(query="en qué estoy trabajando ahora", limit=5)
-        - iat_memory_search(query="qué ideas guardé sobre agentes y memorias", limit=5)
-        - iat_memory_search(query="what was I planning to implement this week", limit=5)
+        - iat_memory_search(query="cómo se emite una nota de crédito", limit=5)
+        - iat_memory_search(query="despachos a regiones los viernes", limit=3)
+        - iat_memory_search(query="quién aprueba descuentos sobre 10%", limit=5)
+        - iat_memory_search(query="plazo real de pago de clientes grandes", limit=5)
       cost:
         penalty: 0.08
         latency_class: medium
@@ -410,7 +404,7 @@ tools:
       properties:
         query:
           type: string
-          description: Texto que describe lo que deseas recuperar desde Memoria.
+          description: Texto que describe lo que deseas recuperar desde la Memoria de la empresa.
         limit:
           type: integer
           description: Cantidad máxima de páginas a recuperar.
@@ -420,18 +414,18 @@ tools:
         - query
         - limit
   - function_name: iat_memory_get_page
-    description: Recupera una página completa de la Memoria personal del usuario, incluyendo resumen, decisiones, próximos pasos y fuentes. Si la página proviene de capturas con archivos adjuntos compatibles, esos archivos pueden quedar adjuntos nativamente al turno actual del modelo para inspección directa; en ese caso no hace falta pedir permiso para abrir un access_url temporal. Si `iat_memory_search` devuelve `has_native_files=true` y la respuesta depende del contenido del archivo, debes llamar esta tool antes de responder.
+    description: Recupera una página completa de la Memoria de la empresa, en markdown, con autor y fecha de cada dato y sus fuentes. Si la página proviene de capturas con archivos adjuntos compatibles, esos archivos pueden quedar adjuntos nativamente al turno actual del modelo para inspección directa; en ese caso no hace falta pedir permiso para abrir un access_url temporal. Si `iat_memory_search` devuelve `has_native_files=true` y la respuesta depende del contenido del archivo, debes llamar esta tool antes de responder.
     routing:
       force_include_capability: has_user_memory
     routing_profile:
       tags:
         - memory
+        - company_memory
         - page
-        - compiled_context
         - wiki
       intents:
-        - Open a compiled memory page by id.
-        - Read the full content of a personal memory page before answering.
+        - Open a company memory page by id.
+        - Read the full content of a company memory page before answering.
       examples:
         - iat_memory_get_page(page_id=12)
       cost:
@@ -443,9 +437,49 @@ tools:
       properties:
         page_id:
           type: integer
-          description: Identificador de la página de Memoria a recuperar.
+          description: Identificador de la página de la Memoria de la empresa, devuelto por `iat_memory_search`.
       required:
         - page_id
+  - function_name: iat_memory_save
+    description: Guarda en la Memoria de la empresa algo que el usuario explicó sobre cómo se hacen las cosas en la empresa (un procedimiento, una regla, una excepción, quién decide) o una corrección a lo que dice un documento o a una respuesta tuya. Lo verá TODA la empresa, con el nombre del usuario y la fecha, y se publica de inmediato. Úsala solo cuando el usuario pida guardarlo ("guarda esto", "que lo sepa la empresa") o acepte cuando le ofreces guardarlo tras corregirte. Antes de llamarla, dile al usuario que lo verá toda la empresa. Redacta `content` en tono neutro e impersonal, con solo el conocimiento útil, sin datos personales ni sensibles que no sirvan al procedimiento. No la uses para preferencias o recordatorios personales.
+    # Publishes to the whole company: simulated when an evaluation replays an
+    # agent, and marked as a write for MCP clients so they ask the user first.
+    execution_config:
+      side_effects: true
+      destructive: false
+    routing:
+      force_include_capability: has_user_memory
+    routing_profile:
+      tags:
+        - memory
+        - company_memory
+        - save
+        - capture
+        - know_how
+        - corrections
+      intents:
+        - Save what the user explained about how things are done in the company.
+        - Save a correction the user made to a document or to an answer.
+        - Use only when the user asks to save it or accepts the offer to save it.
+      examples:
+        - iat_memory_save(content="Al cliente Transportes Sur no se le despacha los viernes; la bodega cierra temprano ese día.", title="Despachos a Transportes Sur")
+        - iat_memory_save(content="Las notas de crédito las aprueba Andrea Rojas; si no está, la gerencia.", title="Aprobación de notas de crédito")
+      cost:
+        penalty: 0.1
+        latency_class: medium
+        expensive: false
+    parameters:
+      type: object
+      properties:
+        content:
+          type: string
+          description: El conocimiento a guardar, redactado en tono neutro, completo y autocontenido (debe entenderse sin la conversación).
+        title:
+          type: string
+          description: Título corto del tema, por ejemplo "Notas de crédito".
+      required:
+        - content
+        - title
   - function_name: iat_image_search
     description: Busca imágenes en la base de conocimiento visual de la empresa usando una descripción de texto. Útil cuando el usuario pide 'ver' algo, 'muéstrame una foto de...', o busca gráficos y diagramas.
     routing:

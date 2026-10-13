@@ -264,7 +264,7 @@ function processBotResponse(responseData) {
         .attr('type', 'button')
         .addClass('btn btn-sm memory-save-inline-button memory-save-answer-button')
         .html('<i class="bi bi-bookmark-plus"></i>')
-        .attr('title', 'Guardar respuesta en Memoria')
+        .attr('title', 'Guardar en la memoria de la empresa')
         .on('click', async function () {
             if (typeof window.saveItemToMemory !== 'function') {
                 toastr.error('Memoria no está disponible.');

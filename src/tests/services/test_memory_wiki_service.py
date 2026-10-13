@@ -1,82 +1,64 @@
-from unittest.mock import MagicMock
-
-from iatoolkit.services.memory_wiki_service import MemoryWikiService
-from iatoolkit.services.storage_service import StorageService
+from tests.services.memory_test_support import MemoryStack
 
 
 class TestMemoryWikiService:
     def setup_method(self):
-        self.storage_service = MagicMock(spec=StorageService)
-        self.service = MemoryWikiService(storage_service=self.storage_service)
+        self.stack = MemoryStack()
+        self.service = self.stack.memory_wiki_service
 
-    def test_render_and_parse_page_roundtrip(self):
-        payload = {
-            "page_id": 7,
-            "user_identifier": "user@example.com",
-            "title": "Inbox inteligente",
-            "slug": "inbox-inteligente",
-            "summary": "Resumen vivo",
-            "key_points": ["Uno", "Dos"],
-            "decisions": ["Usar Memoria"],
-            "open_questions": ["Cómo mostrarlo"],
-            "next_steps": ["Diseñar frontend"],
-            "sources": ["nota inicial", "chat"],
-            "related_pages": ["otra-pagina"],
-            "source_item_ids": [1, 2],
-        }
+    def test_the_company_memory_lives_in_a_system_wiki_hidden_from_the_wiki_module(self):
+        result = self.service.ensure_wiki("acme")
 
-        markdown = self.service.render_page(payload)
-        parsed = self.service.parse_page(markdown)
+        assert result["status"] == "success"
+        assert result["wiki"]["system_owner"] == "memory"
+        assert self.stack.tenant_wiki_service.list_wikis("acme")["wikis"] == []
 
-        assert parsed["page_id"] == 7
-        assert parsed["title"] == "Inbox inteligente"
-        assert parsed["summary"] == "Resumen vivo"
-        assert parsed["key_points"] == ["Uno", "Dos"]
-        assert parsed["decisions"] == ["Usar Memoria"]
-        assert parsed["open_questions"] == ["Cómo mostrarlo"]
-        assert parsed["next_steps"] == ["Diseñar frontend"]
-        assert parsed["sources"] == ["nota inicial", "chat"]
-        assert parsed["related_pages"] == ["otra-pagina"]
-        assert parsed["source_item_ids"] == [1, 2]
+    def test_create_page_never_overwrites_a_page_with_the_same_title(self):
+        self.service.ensure_wiki("acme")
 
-    def test_build_page_storage_key_sanitizes_user(self):
-        storage_key = self.service.build_page_storage_key("acme", "john+demo@example.com", "my-page")
-        assert storage_key == "companies/acme/users/john_demo_example.com/memory/wiki/my-page.md"
+        first = self.service.create_page("acme", title="Pagos", body="# Pagos\n\nUno.")
+        second = self.service.create_page("acme", title="Pagos", body="# Pagos\n\nDos.")
 
-    def test_render_and_parse_index_roundtrip(self):
-        markdown = self.service.render_index([
-            {
-                "page_id": 7,
-                "title": "Inbox inteligente",
-                "summary": "Resumen vivo",
-                "slug": "inbox-inteligente",
-                "wiki_path": "companies/acme/users/u/memory/wiki/inbox-inteligente.md",
-                "source_count": 2,
-                "last_updated_at": "2026-04-08T12:00:00+00:00",
-            }
-        ])
+        assert first["page"]["path"] == "pagos.md"
+        assert second["page"]["path"] == "pagos-2.md"
 
-        parsed = self.service.parse_index(markdown)
+    def test_update_page_keeps_frontmatter_and_refuses_a_stale_read(self):
+        self.service.ensure_wiki("acme")
+        created = self.service.create_page("acme", title="Pagos", body="# Pagos\n\nUno.", summary="Plazos")
+        page = self.service.get_page("acme", created["page"]["id"])
+        self.service.update_page("acme", page=page, title="Pagos", body="# Pagos\n\nDos.", summary="Plazos")
 
-        assert len(parsed["entries"]) == 1
-        assert parsed["entries"][0]["page_id"] == 7
-        assert parsed["entries"][0]["title"] == "Inbox inteligente"
-        assert parsed["entries"][0]["source_count"] == 2
+        stale = self.service.update_page("acme", page=page, title="Pagos", body="# Pagos\n\nTres.")
 
-    def test_render_and_parse_log_roundtrip(self):
-        markdown = self.service.render_log([
-            {
-                "timestamp": "2026-04-08T12:00:00+00:00",
-                "entry_type": "ingest",
-                "title": "Inbox inteligente",
-                "details": ["Capture 5 compiled into memory page 7."],
-                "metadata": {"page_id": "7", "capture_id": "5"},
-            }
-        ])
+        assert stale["error_code"] == "page_changed"
+        current = self.service.get_page("acme", created["page"]["id"])
+        assert self.service.page_body(current) == "# Pagos\n\nDos."
+        assert current["frontmatter"]["summary"] == "Plazos"
+        assert current["frontmatter"]["status"] == "published"
 
-        parsed = self.service.parse_log(markdown)
+    def test_the_compiler_schema_is_the_company_memory_schema(self):
+        schema = self.service.read_schema()
 
-        assert len(parsed) == 1
-        assert parsed[0]["entry_type"] == "ingest"
-        assert parsed[0]["title"] == "Inbox inteligente"
-        assert parsed[0]["metadata"]["page_id"] == "7"
+        assert "Company Memory Wiki Schema" in schema
+        assert "attribute every fact you add" in schema
+
+    def test_activity_lists_changes_across_pages_and_a_revision_can_be_read_back(self):
+        self.service.ensure_wiki("acme")
+        first = self.service.create_page("acme", title="Pagos", body="# Pagos\n\nUno.", edited_by="carmen@acme.cl")
+        self.service.create_page("acme", title="Bodega", body="# Bodega\n\nDos.", edited_by="juan@acme.cl")
+
+        activity = self.service.list_activity("acme")
+        revision = self.service.get_revision("acme", activity[-1]["id"])
+
+        assert [entry["edited_by"] for entry in activity] == ["juan@acme.cl", "carmen@acme.cl"]
+        assert revision["path"] == first["page"]["path"]
+        assert "Uno." in revision["markdown"]
+
+    def test_the_memory_wiki_cannot_be_deleted_from_the_wiki_module(self):
+        self.service.ensure_wiki("acme")
+
+        result = self.stack.tenant_wiki_service.delete_wiki("acme", wiki_key="iatoolkit-memory")
+
+        assert result["status"] == "error"
+        assert self.service.ensure_wiki("acme")["status"] == "success"
+

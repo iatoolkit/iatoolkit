@@ -563,6 +563,10 @@ class llmClient:
                 'reasoning_content': final_reasoning,
                 'content_parts': response.content_parts,
                 'structured_output': decoded_response.get('structured_output'),
+                # The JSON the model returned, even when it did not match a
+                # best-effort schema (structured_output is then None), so callers
+                # that can repair near misses are not left with nothing.
+                'parsed_output': decoded_response.get('parsed_json') if isinstance(decoded_response.get('parsed_json'), dict) else None,
                 'schema_valid': decoded_response.get('schema_valid'),
                 'schema_errors': decoded_response.get('schema_errors', []),
                 'schema_mode': decoded_response.get('schema_mode'),

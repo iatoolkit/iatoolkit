@@ -108,6 +108,15 @@ class KnowledgeWikiRepo:
             .first()
         )
 
+    def get_page_by_id(self, wiki_id: int, page_id: int) -> KnowledgeWikiPage | None:
+        if not wiki_id or not page_id:
+            return None
+        return (
+            self.session.query(KnowledgeWikiPage)
+            .filter_by(wiki_id=wiki_id, id=page_id)
+            .first()
+        )
+
     def get_page_by_slug(self, wiki_id: int, slug: str) -> KnowledgeWikiPage | None:
         if not wiki_id or not slug:
             return None
@@ -270,6 +279,15 @@ class KnowledgeWikiRepo:
             .order_by(KnowledgeWikiPageRevision.created_at.desc(), KnowledgeWikiPageRevision.id.desc())
             .limit(bounded_limit)
             .all()
+        )
+
+    def get_page_revision(self, wiki_id: int, revision_id: int) -> KnowledgeWikiPageRevision | None:
+        if not wiki_id or not revision_id:
+            return None
+        return (
+            self.session.query(KnowledgeWikiPageRevision)
+            .filter_by(wiki_id=wiki_id, id=revision_id)
+            .first()
         )
 
     def archive_pages_not_in_paths(self, wiki_id: int, paths: set[str]) -> int:

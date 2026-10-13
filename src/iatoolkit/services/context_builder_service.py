@@ -24,7 +24,7 @@ from iatoolkit.repositories.models import Company, PromptResourceType
 class ContextBuilderService:
     SQL_TOOL_NAME = "iat_sql_query"
     DOCUMENT_SEARCH_TOOL_NAME = "iat_document_search"
-    MEMORY_TOOL_NAMES = {"iat_memory_search", "iat_memory_get_page"}
+    MEMORY_TOOL_NAMES = {"iat_memory_search", "iat_memory_get_page", "iat_memory_save"}
     FILE_GENERATION_TOOL_NAMES = {"iat_generate_excel", "iat_generate_pdf"}
     EMAIL_TOOL_NAME = "iat_send_email"
     SYSTEM_PROMPT_SECTION_ORDER = (

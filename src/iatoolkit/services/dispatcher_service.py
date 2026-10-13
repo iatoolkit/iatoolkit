@@ -27,6 +27,7 @@ class Dispatcher:
     USER_SCOPED_SYSTEM_TOOLS = {
         "iat_memory_search",
         "iat_memory_get_page",
+        "iat_memory_save",
         "iat_wiki_search",
         "iat_wiki_get_page",
     }

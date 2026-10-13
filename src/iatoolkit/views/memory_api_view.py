@@ -54,10 +54,6 @@ class MemoryApiView(MethodView):
                 limit = int(payload.get("limit") or 5)
                 response = self.memory_service.search_pages(company_short_name, user_identifier, query=query, limit=limit)
                 return jsonify(response), 200
-            if action == "lint":
-                response = self.memory_service.lint_memory_wiki(company_short_name, user_identifier)
-                status = 200 if response.get("status") == "success" else 400
-                return jsonify(response), status
             if action == "save_capture":
                 response = self.memory_service.save_capture(
                     company_short_name=company_short_name,

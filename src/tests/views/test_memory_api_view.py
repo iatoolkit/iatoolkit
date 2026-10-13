@@ -69,33 +69,6 @@ class TestMemoryApiView:
         assert response.status_code == 200
         self.memory_service.search_pages.assert_called_once_with("acme", "user@example.com", query="onboarding", limit=3)
 
-    def test_post_lint(self):
-        self.memory_service.lint_memory_wiki.return_value = {
-            "status": "success",
-            "mode": "inline",
-            "lint": {"checked_pages": 2},
-        }
-
-        response = self.client.post("/acme/api/memory", json={
-            "action": "lint",
-        })
-
-        assert response.status_code == 200
-        self.memory_service.lint_memory_wiki.assert_called_once_with("acme", "user@example.com")
-
-    def test_post_lint_async(self):
-        self.memory_service.lint_memory_wiki.return_value = {
-            "status": "success",
-            "mode": "async_task",
-            "lint": None,
-            "task": {"task_id": 19, "task_status": "pending"},
-        }
-
-        response = self.client.post("/acme/api/memory", json={"action": "lint"})
-
-        assert response.status_code == 200
-        assert response.get_json()["mode"] == "async_task"
-
     def test_post_delete_item(self):
         self.memory_service.delete_item.return_value = {"status": "success", "deleted_item_id": 9}
 

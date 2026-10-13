@@ -114,6 +114,7 @@ class ToolService:
             "iat_document_search": self._handle_document_search_tool,
             "iat_memory_search": self._handle_memory_search_tool,
             "iat_memory_get_page": self._handle_memory_get_page_tool,
+            "iat_memory_save": self._handle_memory_save_tool,
             "iat_wiki_search": self._handle_wiki_search_tool,
             "iat_wiki_get_page": self._handle_wiki_get_page_tool,
             "iat_web_search": self._handle_web_search_tool,
@@ -349,6 +350,45 @@ class ToolService:
             )
 
         return response
+
+    def _handle_memory_save_tool(self,
+                                 company_short_name: str,
+                                 content: str,
+                                 title: str | None = None,
+                                 user_identifier: str | None = None,
+                                 **kwargs):
+        """Saves what the user explained into the company's Memoria, attributed to them."""
+        if not user_identifier:
+            return {"status": "error", "error_message": "memory not available without an identified user"}
+        text = str(content or "").strip()
+        if not text:
+            return {"status": "error", "error_message": "content is required"}
+        source = str(kwargs.get("_iat_runtime_source") or "chat").strip() or "chat"
+        response = self.memory_service.save_capture(
+            company_short_name=company_short_name,
+            user_identifier=user_identifier,
+            capture_text=text,
+            title=str(title or "").strip() or None,
+            new_items=[{
+                "item_type": "note",
+                "content_text": text,
+                "title": str(title or "").strip() or None,
+                "source_meta": {"origin": f"{source}_tool"},
+            }],
+            meta={"origin": f"{source}_tool"},
+        )
+        if response.get("status") != "success":
+            return response
+        capture = response.get("capture") or {}
+        return {
+            "status": "success",
+            "capture_id": capture.get("capture_id"),
+            "message": (
+                "Guardado en la Memoria de la empresa, visible para todos con el nombre del usuario y la fecha. "
+                "La página se actualiza en unos momentos. Para deshacerlo, el usuario puede borrar su aporte "
+                "desde Memoria de la empresa > Mis aportes."
+            ),
+        }
 
     def _handle_wiki_search_tool(
         self,

@@ -284,11 +284,6 @@ class Company(Base):
         back_populates="company",
         cascade="all, delete-orphan",
     )
-    memory_pages = relationship(
-        "MemoryPage",
-        back_populates="company",
-        cascade="all, delete-orphan",
-    )
     knowledge_wikis = relationship(
         "KnowledgeWiki",
         back_populates="company",
@@ -483,7 +478,7 @@ class DocumentImage(Base):
 
 
 class MemoryItem(Base):
-    """Represents a raw user capture stored in Memoria."""
+    """One raw source of a capture (note, link, file, chat message); `user_identifier` is its author."""
     __tablename__ = "iat_memory_items"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -507,7 +502,7 @@ class MemoryItem(Base):
     company = relationship("Company", back_populates="memory_items")
     capture = relationship("MemoryCapture", back_populates="items")
     page_links = relationship(
-        "MemoryPageSource",
+        "MemoryWikiPageSource",
         back_populates="memory_item",
         cascade="all, delete-orphan",
     )
@@ -516,38 +511,8 @@ class MemoryItem(Base):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
 
 
-class MemoryPage(Base):
-    """Represents a compiled wiki page for a user's Memoria."""
-    __tablename__ = "iat_memory_pages"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    company_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_companies.id", ondelete="CASCADE"), nullable=False)
-    user_identifier = Column(String, nullable=False, index=True)
-    title = Column(String, nullable=False)
-    slug = Column(String, nullable=False)
-    summary = Column(Text, nullable=True)
-    wiki_path = Column(String, nullable=False)
-    last_compiled_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.now, nullable=False)
-    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
-
-    __table_args__ = (
-        UniqueConstraint("company_id", "user_identifier", "slug", name="uix_memory_page_company_user_slug"),
-    )
-
-    company = relationship("Company", back_populates="memory_pages")
-    sources = relationship(
-        "MemoryPageSource",
-        back_populates="memory_page",
-        cascade="all, delete-orphan",
-    )
-
-    def to_dict(self):
-        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
-
-
 class MemoryCapture(Base):
-    """Represents one explicit user save action in Memoria."""
+    """One explicit save action in the company's Memoria; `user_identifier` is its author."""
     __tablename__ = "iat_memory_captures"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -573,20 +538,26 @@ class MemoryCapture(Base):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
 
 
-class MemoryPageSource(Base):
-    """Links raw memory items to compiled pages."""
-    __tablename__ = "iat_memory_page_sources"
+class MemoryWikiPageSource(Base):
+    """
+    Links a raw memory item to the page of the company's Memoria wiki it was
+    compiled into. The page itself lives in `iat_knowledge_wiki_pages`, inside
+    the tenant's system wiki owned by Memoria.
+    """
+    __tablename__ = "iat_memory_wiki_page_sources"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    memory_page_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_memory_pages.id", ondelete="CASCADE"), nullable=False)
-    memory_item_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_memory_items.id", ondelete="CASCADE"), nullable=False)
+    company_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_companies.id", ondelete="CASCADE"), nullable=False)
+    wiki_page_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_knowledge_wiki_pages.id", ondelete="CASCADE"),
+                          nullable=False, index=True)
+    memory_item_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_memory_items.id", ondelete="CASCADE"),
+                            nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.now, nullable=False)
 
     __table_args__ = (
-        UniqueConstraint("memory_page_id", "memory_item_id", name="uix_memory_page_source_unique"),
+        UniqueConstraint("wiki_page_id", "memory_item_id", name="uix_memory_wiki_page_source_unique"),
     )
 
-    memory_page = relationship("MemoryPage", back_populates="sources")
     memory_item = relationship("MemoryItem", back_populates="page_links")
 
     def to_dict(self):

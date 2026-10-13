@@ -23,28 +23,6 @@ $(document).ready(function () {
         await refreshMemoryDashboard({ showLoading: true });
     });
 
-    memoryModal.on('click', '#memory-run-lint-button', async function () {
-        const button = $(this);
-        button.prop('disabled', true);
-        button.addClass('is-loading');
-        await nextPaint();
-        const response = await callToolkit('/api/memory', { action: 'lint' }, 'POST');
-        button.prop('disabled', false);
-        button.removeClass('is-loading');
-
-        if (!response || response.status !== 'success') {
-            toastr.error((response && response.error_message) || t_js('memory_lint_error'));
-            return;
-        }
-
-        if (String(response.mode || '').trim() === 'inline') {
-            toastr.success(t_js('memory_lint_success'));
-        } else {
-            toastr.success(t_js('memory_lint_scheduled'));
-        }
-        await refreshMemoryDashboard({ showLoading: false });
-    });
-
     $('#memory-save-capture-button').on('click', async function () {
         const draft = await collectCaptureDraft();
         if (!draft) {
@@ -279,7 +257,6 @@ async function refreshMemoryDashboard(options = {}) {
 
     renderRecentMemoryItems(data.captures || data.recent_items || []);
     renderMemoryPages(data.pages || []);
-    renderMemoryLintSummary(data.last_lint || {});
 }
 
 function renderRecentMemoryItems(captures) {
@@ -375,63 +352,6 @@ function renderMemoryPages(pages) {
     });
 }
 
-function renderMemoryLintSummary(lint) {
-    const container = $('#memory-lint-summary');
-    const checkedPages = Number(lint.checked_pages || 0);
-    const actionsApplied = Number(lint.actions_applied || 0);
-    const duplicateCandidates = Number(lint.duplicate_candidates || 0);
-    const orphanPages = Number(lint.orphan_pages || 0);
-    const timestamp = String(lint.timestamp || '').trim();
-    const hasReview = Boolean(timestamp || checkedPages || actionsApplied || duplicateCandidates || orphanPages);
-
-    const chips = hasReview
-        ? [
-            {
-                icon: 'bi-journal-check',
-                text: t_js('memory_lint_checked').replace('{count}', String(checkedPages)),
-            },
-            {
-                icon: 'bi-magic',
-                text: t_js('memory_lint_actions').replace('{count}', String(actionsApplied)),
-            },
-            {
-                icon: 'bi-copy',
-                text: t_js('memory_lint_duplicates').replace('{count}', String(duplicateCandidates)),
-            },
-            {
-                icon: 'bi-sign-intersection-side',
-                text: t_js('memory_lint_orphans').replace('{count}', String(orphanPages)),
-            },
-        ].map(chip => `
-            <div class="memory-lint-chip">
-                <span class="memory-lint-chip-icon" aria-hidden="true"><i class="bi ${chip.icon}"></i></span>
-                <span class="memory-lint-chip-text">${escapeHtml(chip.text)}</span>
-            </div>
-        `).join('')
-        : `<div class="memory-lint-empty-state">${escapeHtml(t_js('memory_lint_never_reviewed'))}</div>`;
-
-    container.html(`
-        <div class="memory-lint-card">
-            <div class="memory-lint-title-row">
-                <div class="memory-lint-title-group">
-                    <div class="memory-lint-badge" aria-hidden="true">
-                        <i class="bi bi-shield-check"></i>
-                    </div>
-                    <div class="memory-lint-title-stack">
-                        <div class="memory-lint-title">${escapeHtml(t_js('memory_lint_last_title'))}</div>
-                        <div class="memory-lint-timestamp">${escapeHtml(timestamp ? formatMemoryDate(timestamp) : t_js('memory_lint_never_timestamp'))}</div>
-                    </div>
-                </div>
-                <button type="button" class="btn memory-lint-inline-action" id="memory-run-lint-button">
-                    <i class="bi bi-shield-check" aria-hidden="true"></i>
-                    <span>${escapeHtml(t_js('memory_lint_action'))}</span>
-                </button>
-            </div>
-            <div class="memory-lint-chips">${chips}</div>
-        </div>
-    `).show();
-}
-
 function buildInlineMemoryDetail(page) {
     const presentation = buildMemoryPresentation(page);
     const wrapper = $(`
@@ -461,12 +381,12 @@ function buildInlineMemoryDetail(page) {
         `);
     }
 
-    const sections = [
-        renderMemoryBlock(t_js('memory_section_key_points'), presentation.keyPoints),
-        renderMemoryBlock(t_js('memory_section_decisions'), presentation.decisions),
-        renderMemoryBlock(t_js('memory_section_open_questions'), presentation.openQuestions),
-        renderMemoryBlock(t_js('memory_section_next_steps'), presentation.nextSteps),
-    ].filter(Boolean);
+    // The page is markdown written by the compiler and corrected by people; the
+    // server renders it and sanitizes the HTML (nh3) before it gets here.
+    const sections = [];
+    if (String(page.html || '').trim()) {
+        sections.push(`<section class="memory-page-block memory-page-markdown">${page.html}</section>`);
+    }
 
     sections.forEach(section => body.append(section));
 
