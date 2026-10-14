@@ -104,6 +104,9 @@ class DriveChangesPage:
 
 class GoogleDriveConnector(FileConnector):
     PAGE_SIZE = 1000
+    # Reads retry Google's transient errors (5xx, 429) with exponential backoff,
+    # as googleapiclient does with num_retries; writes are not retried.
+    NUM_RETRIES = 3
 
     def __init__(
         self,
@@ -193,7 +196,7 @@ class GoogleDriveConnector(FileConnector):
                 fileId=file_id,
                 fields=FILE_FIELDS,
                 supportsAllDrives=True,
-            ).execute()
+            ).execute(num_retries=self.NUM_RETRIES)
         except HttpError as exc:
             if getattr(exc, "status_code", None) in (403, 404) or getattr(getattr(exc, "resp", None), "status", None) in (403, 404):
                 return None
@@ -211,7 +214,7 @@ class GoogleDriveConnector(FileConnector):
                 pageToken=page_token,
                 supportsAllDrives=True,
                 includeItemsFromAllDrives=True,
-            ).execute()
+            ).execute(num_retries=self.NUM_RETRIES)
             for payload in response.get("files", []):
                 yield DriveFile.from_api(payload)
             page_token = response.get("nextPageToken")
@@ -269,14 +272,14 @@ class GoogleDriveConnector(FileConnector):
         downloader = MediaIoBaseDownload(buffer, request)
         done = False
         while not done:
-            _, done = downloader.next_chunk()
+            _, done = downloader.next_chunk(num_retries=GoogleDriveConnector.NUM_RETRIES)
         return buffer.getvalue()
 
     # --- Changes ------------------------------------------------------------
 
     def get_start_page_token(self) -> str:
         """Where to start reading changes from: everything after now."""
-        response = self.drive_service.changes().getStartPageToken(supportsAllDrives=True).execute()
+        response = self.drive_service.changes().getStartPageToken(supportsAllDrives=True).execute(num_retries=self.NUM_RETRIES)
         return str(response.get("startPageToken") or "")
 
     def list_changes(self, page_token: str) -> DriveChangesPage:
@@ -292,7 +295,7 @@ class GoogleDriveConnector(FileConnector):
             supportsAllDrives=True,
             includeItemsFromAllDrives=True,
             spaces="drive",
-        ).execute()
+        ).execute(num_retries=self.NUM_RETRIES)
         changes = [
             DriveChange(
                 file_id=str(change.get("fileId") or ""),

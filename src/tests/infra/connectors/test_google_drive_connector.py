@@ -228,3 +228,20 @@ class TestGoogleDriveConnector(unittest.TestCase):
 
         # Assert
         self.mock_drive_service.files().delete.assert_called_with(fileId='file-id-to-delete')
+
+
+
+class TestGoogleDriveConnectorRetries(TestGoogleDriveConnector):
+    def test_reads_retry_transient_google_errors(self):
+        self.mock_drive_service.changes().list().execute.return_value = {"changes": [], "newStartPageToken": "2"}
+        self.mock_drive_service.changes().getStartPageToken().execute.return_value = {"startPageToken": "1"}
+        self.mock_drive_service.files().list().execute.return_value = {"files": []}
+
+        self.connector.list_changes("1")
+        self.connector.get_start_page_token()
+        list(self.connector.list_children("folder"))
+
+        for call in (self.mock_drive_service.changes().list().execute,
+                     self.mock_drive_service.changes().getStartPageToken().execute,
+                     self.mock_drive_service.files().list().execute):
+            self.assertEqual(call.call_args.kwargs, {"num_retries": GoogleDriveConnector.NUM_RETRIES})
