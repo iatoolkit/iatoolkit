@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from injector import inject
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 
 from iatoolkit.repositories.database_manager import DatabaseManager
 from iatoolkit.repositories.models import (
@@ -87,6 +87,15 @@ class MemoryQuestionRepo:
             .limit(limit)
             .all()
         )
+
+    def last_query_id_before(self, company_id: int, moment) -> int:
+        """The newest iat_queries.id of the company created before `moment` (0 when none)."""
+        value = (
+            self.session.query(func.max(LLMQuery.id))
+            .filter(LLMQuery.company_id == company_id, LLMQuery.created_at < moment)
+            .scalar()
+        )
+        return int(value or 0)
 
     def has_queries_after(self, company_id: int, last_query_id: int) -> bool:
         return (

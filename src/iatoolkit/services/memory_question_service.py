@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import logging
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from injector import inject
 from sqlalchemy import text
@@ -47,6 +47,12 @@ class MemoryQuestionService:
     MAX_QUESTION_CHARS = 1000
     MAX_ANSWER_CHARS = 1500
     MAX_CANDIDATE_CHARS = 500
+    # A company's first review (or one whose cursor never advanced) starts with
+    # the last days, not with the whole history.
+    FIRST_SCAN_DAYS = 7
+    REF_KEYS = ("ref", "id", "turn", "turn_ref", "turn_id")
+    TRUE_WORDS = {"true", "yes", "si", "sí", "1"}
+    FALSE_WORDS = {"false", "no", "0"}
     # First key of the two-key Postgres advisory lock; the second is the company id.
     ADVISORY_LOCK_NAMESPACE = 734002
 
@@ -62,8 +68,9 @@ class MemoryQuestionService:
                         "answered": {"type": "boolean"},
                         "question": {"type": "string"},
                         "topic": {"type": "string"},
-                        "same_as_question_id": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
-                        "same_as_ref": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+                        # Nullable as a type list: core's validator rejects null under anyOf.
+                        "same_as_question_id": {"type": ["integer", "null"]},
+                        "same_as_ref": {"type": ["string", "null"]},
                     },
                     "required": ["ref", "answered"],
                     "additionalProperties": False,
@@ -201,6 +208,10 @@ class MemoryQuestionService:
     def _scan(self, company: Company) -> dict:
         counts = {"turns": 0, "reviewed": 0, "answered": 0, "new_questions": 0, "repeated": 0, "batches": 0}
         cursor = self.question_repo.get_cursor(company.id)
+        if not cursor.last_query_id:
+            cursor.last_query_id = self.question_repo.last_query_id_before(
+                company.id, datetime.now() - timedelta(days=self.FIRST_SCAN_DAYS))
+            self.question_repo.commit()
         queries = self.question_repo.list_queries_after(company.id, cursor.last_query_id, self.MAX_QUERIES_PER_SCAN)
         candidates = self.question_repo.list_pending_candidates(company.id, self.MAX_QUERIES_PER_SCAN)
         counts["turns"] = len(queries)
@@ -338,13 +349,60 @@ class MemoryQuestionService:
         except Exception as exc:
             logging.warning("Memory question scan for %s could not reach the model: %s", company.short_name, exc)
             return None
-        structured = response.get("structured_output") or response.get("parsed_output")
-        if isinstance(structured, list):
-            structured = {"items": structured}
-        items = structured.get("items") if isinstance(structured, dict) else None
-        if not isinstance(items, list):
+        items = self._extract_items(response.get("structured_output"))
+        if items is None:
+            items = self._extract_items(response.get("parsed_output"))
+        if items is None:
+            # A top-level list never reaches parsed_output (it carries objects only).
+            items = self._extract_items(self._json_from_text(response.get("answer")))
+        if items is None:
+            logging.warning(
+                "Memory question scan for %s did not understand the model's answer: %s",
+                company.short_name, str(response.get("answer") or "")[:500],
+            )
             return None
-        return [item for item in items if isinstance(item, dict)]
+        return [normalized for normalized in (self._normalize_item(item) for item in items) if normalized]
+
+    @staticmethod
+    def _extract_items(value) -> list | None:
+        """The list of classified turns, whether it comes bare or under some key."""
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, dict)]
+        if not isinstance(value, dict):
+            return None
+        if isinstance(value.get("items"), list):
+            return [item for item in value["items"] if isinstance(item, dict)]
+        for nested in value.values():
+            if isinstance(nested, list) and all(isinstance(item, dict) for item in nested):
+                return list(nested)
+        for key in ("answer", "additional_data", "result", "data"):
+            if isinstance(value.get(key), (dict, list)):
+                return MemoryQuestionService._extract_items(value[key])
+        return None
+
+    @staticmethod
+    def _json_from_text(text) -> object | None:
+        raw = str(text or "").strip()
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            raw = raw[4:] if raw.lower().startswith("json") else raw
+        try:
+            return json.loads(raw.strip())
+        except (TypeError, ValueError):
+            return None
+
+    @classmethod
+    def _normalize_item(cls, item: dict) -> dict | None:
+        ref = next((item.get(key) for key in cls.REF_KEYS if item.get(key) not in (None, "")), None)
+        if ref is None:
+            return None
+        answered = item.get("answered")
+        if isinstance(answered, str):
+            word = answered.strip().lower()
+            answered = True if word in cls.TRUE_WORDS else False if word in cls.FALSE_WORDS else None
+        if not isinstance(answered, bool):
+            return None
+        return {**item, "ref": str(ref), "answered": answered}
 
     def _apply(self, company: Company, batch: list[dict], items: list[dict], open_questions: list[MemoryQuestion],
                counts: dict) -> None:

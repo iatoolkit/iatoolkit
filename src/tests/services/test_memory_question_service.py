@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -26,7 +26,7 @@ def stack():
 def turn(stack, question, answer, tools=("iat_memory_search",), user="carmen@acme.cl"):
     query = LLMQuery(company_id=stack.company.id, user_identifier=user, query=question, output=answer,
                      function_calls=[{tool: {"query": question}, "time": "0.2"} for tool in tools],
-                     created_at=datetime(2026, 10, 14, 9, 0))
+                     created_at=datetime.now() - timedelta(hours=2))
     stack.session.add(query)
     stack.session.commit()
     return query
@@ -160,3 +160,60 @@ def test_dismiss_and_empty_answer(stack):
     assert stack.questions.dismiss("acme", question.id, "carmen@acme.cl")["question"]["status"] == "dismissed"
     assert open_questions(stack) == []
     assert stack.questions.dismiss("acme", 999, "carmen@acme.cl")["error_message"] == "question not found"
+
+
+def test_the_first_scan_starts_with_the_last_days_not_the_whole_history(stack):
+    old = turn(stack, "¿Pregunta vieja?", "No sé.")
+    old.created_at = datetime.now() - timedelta(days=30)
+    stack.session.commit()
+    recent = turn(stack, "¿Plazo de pago?", "No lo encontré.")
+    recent.created_at = datetime.now() - timedelta(hours=1)
+    stack.session.commit()
+    model_says(stack, [{"ref": f"q{recent.id}", "answered": False, "question": "¿Plazo de pago?"}])
+
+    stack.questions.scan_company("acme")
+
+    prompt = stack.llm_client.invoke.call_args.kwargs["context"]
+    assert "¿Plazo de pago?" in prompt and "¿Pregunta vieja?" not in prompt
+    assert [q.question for q in open_questions(stack)] == ["¿Plazo de pago?"]
+
+
+def test_a_bare_list_in_the_answer_is_understood(stack):
+    first = turn(stack, "¿Horario?", "No sé.")
+    stack.llm_client.invoke.side_effect = [{
+        "structured_output": None, "parsed_output": None,
+        "answer": '```json\n[{"id": "q%d", "answered": "false", "question": "¿Horario de atención?"}]\n```' % first.id,
+    }]
+
+    result = stack.questions.scan_company("acme")
+
+    assert result["status"] == "success"
+    assert [q.question for q in open_questions(stack)] == ["¿Horario de atención?"]
+
+
+def test_items_under_another_key_are_understood(stack):
+    first = turn(stack, "¿Horario?", "No sé.")
+    stack.llm_client.invoke.side_effect = [{"structured_output": None, "parsed_output": {
+        "turns": [{"turn_ref": f"q{first.id}", "answered": False, "question": "¿Horario?"}]}}]
+
+    assert stack.questions.scan_company("acme")["counts"]["new_questions"] == 1
+
+
+def test_an_answer_that_cannot_be_read_is_logged_and_the_cursor_stays(stack, caplog):
+    first = turn(stack, "¿Horario?", "No sé.")
+    stack.llm_client.invoke.side_effect = [{"structured_output": None, "parsed_output": None, "answer": "Lo siento"}]
+
+    result = stack.questions.scan_company("acme")
+
+    assert result["status"] == "partial"
+    assert "did not understand the model's answer: Lo siento" in caplog.text
+    assert stack.question_repo.find_cursor(stack.company.id).last_query_id < first.id
+
+
+def test_classification_schema_accepts_nulls():
+    from iatoolkit.services.structured_output_service import StructuredOutputService
+
+    result = StructuredOutputService.evaluate_output(
+        raw_output={"items": [{"ref": "q1", "answered": False, "same_as_question_id": None, "same_as_ref": None}]},
+        schema=MemoryQuestionService.CLASSIFICATION_SCHEMA)
+    assert result["schema_valid"] is True

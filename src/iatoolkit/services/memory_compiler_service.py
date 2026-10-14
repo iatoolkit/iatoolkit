@@ -62,12 +62,8 @@ class MemoryCompilerService:
         "type": "object",
         "properties": {
             "action": {"type": "string", "enum": ["create", "update", "skip"]},
-            "target_page_id": {
-                "anyOf": [
-                    {"type": "integer"},
-                    {"type": "null"},
-                ]
-            },
+            # Nullable as a type list: the structured-output validator rejects null under anyOf.
+            "target_page_id": {"type": ["integer", "null"]},
             "title": {"type": "string"},
             "summary": {"type": "string"},
             "markdown": {"type": "string"},
