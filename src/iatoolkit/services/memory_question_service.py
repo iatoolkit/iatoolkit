@@ -48,8 +48,8 @@ class MemoryQuestionService:
     MAX_ANSWER_CHARS = 1500
     MAX_CANDIDATE_CHARS = 500
     # A company's first review (or one whose cursor never advanced) starts with
-    # the last days, not with the whole history.
-    FIRST_SCAN_DAYS = 7
+    # the last day, not with the whole history.
+    FIRST_SCAN_DAYS = 1
     REF_KEYS = ("ref", "id", "turn", "turn_ref", "turn_id")
     TRUE_WORDS = {"true", "yes", "si", "sí", "1"}
     FALSE_WORDS = {"false", "no", "0"}
