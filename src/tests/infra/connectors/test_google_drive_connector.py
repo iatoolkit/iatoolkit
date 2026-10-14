@@ -4,8 +4,11 @@
 # IAToolkit is open source software.
 
 import unittest
-from unittest.mock import patch, MagicMock
-from iatoolkit.infra.connectors.google_drive_connector import GoogleDriveConnector
+from unittest.mock import patch, MagicMock, call
+
+from googleapiclient.errors import HttpError
+
+from iatoolkit.infra.connectors.google_drive_connector import DriveFile, GoogleDriveConnector
 
 
 class TestGoogleDriveConnector(unittest.TestCase):
@@ -70,66 +73,133 @@ class TestGoogleDriveConnector(unittest.TestCase):
         )
         self.assertEqual(connector.drive_service, self.mock_build.return_value)
 
+    LIST_FIELDS = (
+        "nextPageToken, files(id, name, mimeType, parents, md5Checksum, modifiedTime, size, trashed, headRevisionId)"
+    )
+
+    def list_call(self, folder_id, page_token=None):
+        return call(
+            q=f"'{folder_id}' in parents and trashed=false",
+            fields=self.LIST_FIELDS,
+            pageSize=1000,
+            pageToken=page_token,
+            supportsAllDrives=True,
+            includeItemsFromAllDrives=True,
+        )
+
     def test_list_files_empty(self):
         self.mock_drive_service.files().list().execute.return_value = {'files': []}
 
         result = self.connector.list_files()
 
-        self.mock_drive_service.files().list.assert_called_with(
-            q=f"'{self.folder_id}' in parents and trashed=false",
-            fields="files(id, name)"
-        )
+        self.assertEqual(self.mock_drive_service.files().list.call_args, self.list_call(self.folder_id))
         self.assertEqual(result, [])
 
-    def test_list_files_success(self):
-        # Simulación de la respuesta de la API
-        fake_files = [
-            {'id': 'file1-id', 'name': 'file1.txt'},
-            {'id': 'file2-id', 'name': 'file2.txt'}
+    def test_list_files_follows_every_page(self):
+        self.mock_drive_service.files().list().execute.side_effect = [
+            {'files': [{'id': 'file1-id', 'name': 'file1.txt', 'mimeType': 'text/plain', 'md5Checksum': 'a'}],
+             'nextPageToken': 'page-2'},
+            {'files': [{'id': 'file2-id', 'name': 'file2.txt', 'mimeType': 'text/plain', 'size': '12'}]},
         ]
-        self.mock_drive_service.files().list().execute.return_value = {'files': fake_files}
 
         result = self.connector.list_files()
 
-        self.mock_drive_service.files().list.assert_called_with(
-            q=f"'{self.folder_id}' in parents and trashed=false",
-            fields="files(id, name)"
-        )
-        self.assertEqual(len(result), 2)
-        self.assertEqual(result[0]['path'], 'file1-id')
-        self.assertEqual(result[0]['name'], 'file1.txt')
-        self.assertEqual(result[1]['path'], 'file2-id')
-        self.assertEqual(result[1]['name'], 'file2.txt')
+        self.assertEqual([item['path'] for item in result], ['file1-id', 'file2-id'])
+        self.assertEqual(result[0]['metadata']['md5_checksum'], 'a')
+        self.assertEqual(result[1]['metadata']['size'], 12)
+        self.assertEqual(self.mock_drive_service.files().list.call_args, self.list_call(self.folder_id, 'page-2'))
 
+    def test_walk_enters_folders_with_their_path_and_skips_shortcuts(self):
+        listings = {
+            "root": [
+                {'id': 'f1', 'name': 'precios.pdf', 'mimeType': 'application/pdf'},
+                {'id': 'd1', 'name': 'Contratos', 'mimeType': 'application/vnd.google-apps.folder'},
+                {'id': 's1', 'name': 'atajo', 'mimeType': 'application/vnd.google-apps.shortcut'},
+            ],
+            "d1": [
+                {'id': 'd2', 'name': '2026', 'mimeType': 'application/vnd.google-apps.folder'},
+            ],
+            "d2": [
+                {'id': 'f2', 'name': 'acme.docx', 'mimeType': 'application/msword'},
+            ],
+        }
+        self.connector.list_children = lambda folder_id: iter(
+            [DriveFile.from_api(payload) for payload in listings.get(folder_id, [])]
+        )
+
+        files = list(self.connector.walk("root"))
+
+        self.assertEqual([(item.id, item.path) for item in files], [('f1', ''), ('f2', 'Contratos/2026')])
 
     def test_get_file_content_success(self):
-        # Mock del flujo de descarga de archivo
         mock_request = MagicMock()
         self.mock_drive_service.files().get_media.return_value = mock_request
 
         mock_downloader = MagicMock()
         with patch('iatoolkit.infra.connectors.google_drive_connector.MediaIoBaseDownload', return_value=mock_downloader):
-            # Configurar el buffer simulado
             mock_file_buffer = MagicMock()
-            mock_downloader.next_chunk.side_effect = [(None, False), (None, True)]  # Simula dos "chunks"
+            mock_downloader.next_chunk.side_effect = [(None, False), (None, True)]
             mock_file_buffer.getvalue.return_value = b"mock file content"
 
             with patch('io.BytesIO', return_value=mock_file_buffer):
-                # Llamada al método
-                result = self.connector.get_file_content('mock-file-id')
+                result = self.connector.download('mock-file-id', 'application/pdf')
 
-        self.mock_drive_service.files().get_media.assert_called_with(fileId='mock-file-id')
-        mock_downloader.next_chunk.assert_called()
-        self.assertEqual(result, b"mock file content")
+        self.mock_drive_service.files().get_media.assert_called_with(fileId='mock-file-id', supportsAllDrives=True)
+        self.assertEqual(result, (b"mock file content", None, 'application/pdf'))
+
+    def test_google_docs_are_exported_to_a_format_the_parsers_read(self):
+        with patch.object(self.connector, '_read', return_value=b"DOCX"):
+            content, extension, mime = self.connector.download(
+                'doc-id', 'application/vnd.google-apps.document')
+
+        self.mock_drive_service.files().export_media.assert_called_with(
+            fileId='doc-id',
+            mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        )
+        self.assertEqual((content, extension), (b"DOCX", ".docx"))
+
+    def test_google_formats_without_export_cannot_be_downloaded(self):
+        with self.assertRaises(ValueError):
+            self.connector.download('form-id', 'application/vnd.google-apps.form')
 
     def test_get_file_content_when_error(self):
         self.mock_drive_service.files().get_media.side_effect = Exception("Mock download error")
 
         with self.assertRaises(Exception) as context:
-            self.connector.get_file_content('invalid-file-id')
+            self.connector.download('invalid-file-id', 'application/pdf')
 
-        self.mock_drive_service.files().get_media.assert_called_once_with(fileId='invalid-file-id')
         self.assertIn("Mock download error", str(context.exception))
+
+    def test_get_file_is_none_when_not_shared_or_missing(self):
+        response = MagicMock(status=404)
+        self.mock_drive_service.files().get().execute.side_effect = HttpError(response, b"not found")
+
+        self.assertIsNone(self.connector.get_file('missing'))
+
+    def test_changes_pages_report_files_removals_and_the_next_token(self):
+        self.mock_drive_service.changes().list().execute.return_value = {
+            'changes': [
+                {'fileId': 'f1', 'removed': False, 'file': {'id': 'f1', 'name': 'a.pdf', 'mimeType': 'application/pdf',
+                                                              'parents': ['root'], 'md5Checksum': 'x'}},
+                {'fileId': 'f2', 'removed': True},
+            ],
+            'newStartPageToken': 'token-2',
+        }
+
+        page = self.connector.list_changes('token-1')
+
+        self.assertEqual([(change.file_id, change.removed) for change in page.changes], [('f1', False), ('f2', True)])
+        self.assertEqual(page.changes[0].file.parents, ('root',))
+        self.assertEqual(page.new_start_page_token, 'token-2')
+        self.assertIsNone(page.next_page_token)
+
+    def test_read_only_asks_only_for_the_read_only_scope(self):
+        GoogleDriveConnector(folder_id='x', service_account_info={"client_email": "svc@example.com"}, read_only=True)
+
+        self.mock_credentials_info.assert_called_with(
+            {"client_email": "svc@example.com"},
+            scopes=["https://www.googleapis.com/auth/drive.readonly"],
+        )
 
     def test_upload_file_success(self):
         # Arrange

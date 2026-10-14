@@ -1,0 +1,162 @@
+from datetime import datetime
+
+import pytest
+
+from iatoolkit.repositories.memory_question_repo import MemoryQuestionRepo
+from iatoolkit.repositories.models import LLMQuery, MemoryCapture, MemoryQuestion, MemoryQuestionCandidate
+from iatoolkit.services.memory_question_service import MemoryQuestionService
+from tests.services.memory_test_support import MemoryStack
+
+
+@pytest.fixture
+def stack():
+    stack = MemoryStack()
+    stack.question_repo = MemoryQuestionRepo(stack.db_manager)
+    stack.questions = MemoryQuestionService(
+        profile_repo=stack.profile_repo,
+        question_repo=stack.question_repo,
+        memory_service=stack.memory_service,
+        llm_client=stack.llm_client,
+        configuration_service=stack.configuration_service,
+        db_manager=stack.db_manager,
+    )
+    return stack
+
+
+def turn(stack, question, answer, tools=("iat_memory_search",), user="carmen@acme.cl"):
+    query = LLMQuery(company_id=stack.company.id, user_identifier=user, query=question, output=answer,
+                     function_calls=[{tool: {"query": question}, "time": "0.2"} for tool in tools],
+                     created_at=datetime(2026, 10, 14, 9, 0))
+    stack.session.add(query)
+    stack.session.commit()
+    return query
+
+
+def model_says(stack, *responses):
+    stack.llm_client.invoke.side_effect = [{"structured_output": {"items": items}} for items in responses]
+
+
+def open_questions(stack):
+    return stack.question_repo.list_questions(stack.company.id)
+
+
+def test_only_turns_that_searched_the_company_are_classified(stack):
+    first = turn(stack, "¿Cuál es el plazo de pago a proveedores?", "No encontré esa información.")
+    turn(stack, "Escribe un correo", "Listo", tools=())
+    turn(stack, "¿Cuántos clientes?", "No sé", user="service:pipeline")
+    model_says(stack, [{"ref": f"q{first.id}", "answered": False,
+                        "question": "¿Cuál es el plazo de pago a proveedores?", "topic": "pagos"}])
+
+    result = stack.questions.scan_company("acme")
+
+    assert result["counts"]["new_questions"] == 1
+    prompt = stack.llm_client.invoke.call_args.kwargs["context"]
+    assert "Escribe un correo" not in prompt and "¿Cuántos clientes?" not in prompt
+    assert stack.llm_client.invoke.call_args.kwargs["user_identifier"] == "service:memory-questions"
+    [question] = open_questions(stack)
+    assert question.topic == "pagos"
+    assert question.times_asked == 1
+    assert stack.question_repo.find_cursor(stack.company.id).last_query_id == first.id + 2
+
+
+def test_answered_turns_add_no_question(stack):
+    first = turn(stack, "¿Plazo de pago?", "45 días, según la política de pagos.")
+    model_says(stack, [{"ref": f"q{first.id}", "answered": True}])
+
+    assert stack.questions.scan_company("acme")["counts"]["answered"] == 1
+    assert open_questions(stack) == []
+
+
+def test_a_repeated_question_counts_once_more_and_who_asked_is_not_kept(stack):
+    first = turn(stack, "¿Plazo de pago?", "No lo encontré.")
+    model_says(stack, [{"ref": f"q{first.id}", "answered": False, "question": "¿Plazo de pago a proveedores?", "topic": "pagos"}])
+    stack.questions.scan_company("acme")
+    [question] = open_questions(stack)
+
+    second = turn(stack, "¿Cuántos días tenemos para pagar?", "No tengo ese dato.", user="juan@acme.cl")
+    third = turn(stack, "y a proveedores grandes?", "No sé.", user="juan@acme.cl")
+    model_says(stack, [
+        {"ref": f"q{second.id}", "answered": False, "same_as_question_id": question.id},
+        {"ref": f"q{third.id}", "answered": False, "question": "¿Plazo para grandes proveedores?", "same_as_ref": None},
+    ])
+    stack.questions.scan_company("acme")
+
+    questions = open_questions(stack)
+    assert [q.times_asked for q in questions] == [2, 1]
+    assert "OPEN QUESTIONS" in stack.llm_client.invoke.call_args.kwargs["context"]
+    assert f'"id": {question.id}' in stack.llm_client.invoke.call_args.kwargs["context"]
+    columns = {column.name for column in MemoryQuestion.__table__.columns}
+    assert not {"user_identifier", "asked_by"} & columns
+
+
+def test_same_question_twice_in_a_batch_is_one(stack):
+    first = turn(stack, "¿Horario de bodega?", "No sé.")
+    second = turn(stack, "¿A qué hora abre la bodega?", "No lo encontré.")
+    model_says(stack, [
+        {"ref": f"q{first.id}", "answered": False, "question": "¿Horario de la bodega?", "topic": "bodega"},
+        {"ref": f"q{second.id}", "answered": False, "same_as_ref": f"q{first.id}"},
+    ])
+
+    stack.questions.scan_company("acme")
+
+    [question] = open_questions(stack)
+    assert question.times_asked == 2
+
+
+def test_a_failed_batch_leaves_the_cursor_before_it(stack):
+    first = turn(stack, "¿Plazo?", "No sé.")
+    stack.llm_client.invoke.side_effect = RuntimeError("model down")
+
+    result = stack.questions.scan_company("acme")
+
+    assert result["status"] == "partial"
+    assert stack.question_repo.find_cursor(stack.company.id).last_query_id < first.id
+
+
+def test_mcp_search_misses_are_classified_with_the_turns(stack):
+    stack.questions.record_search_miss("acme", "política de viáticos")
+    candidate = stack.session.query(MemoryQuestionCandidate).one()
+    model_says(stack, [{"ref": f"m{candidate.id}", "answered": False, "question": "¿Cuál es la política de viáticos?",
+                        "topic": "viáticos"}])
+
+    stack.questions.scan_company("acme")
+
+    [question] = open_questions(stack)
+    assert question.channels == {"mcp": 1}
+    assert candidate.processed_at is not None
+    assert not stack.questions.has_pending_work("acme")
+
+
+def test_nothing_new_does_not_call_the_model(stack):
+    turn(stack, "Escribe un poema", "…", tools=())
+
+    stack.questions.scan_company("acme")
+
+    stack.llm_client.invoke.assert_not_called()
+    assert not stack.questions.has_pending_work("acme")
+
+
+def test_answer_saves_a_capture_by_whoever_answered(stack):
+    question = stack.question_repo.add(MemoryQuestion(company_id=stack.company.id, question="¿Plazo de pago?"))
+    stack.question_repo.commit()
+
+    result = stack.questions.answer("acme", question.id, "45 días desde la factura.", "carmen@acme.cl")
+
+    assert result["question"]["status"] == "answered"
+    capture = stack.session.query(MemoryCapture).one()
+    assert capture.user_identifier == "carmen@acme.cl"
+    assert capture.meta == {"origin": "memory_question", "question_id": question.id}
+    assert capture.items[0].content_text == "Pregunta: ¿Plazo de pago?\nRespuesta: 45 días desde la factura."
+    assert question.answer_capture_id == capture.id
+    stack.trigger.trigger.assert_called_once()
+    assert stack.questions.answer("acme", question.id, "otra", "juan@acme.cl")["error_code"] == "already_resolved"
+
+
+def test_dismiss_and_empty_answer(stack):
+    question = stack.question_repo.add(MemoryQuestion(company_id=stack.company.id, question="¿Algo?"))
+    stack.question_repo.commit()
+
+    assert stack.questions.answer("acme", question.id, "  ", "carmen@acme.cl")["status"] == "error"
+    assert stack.questions.dismiss("acme", question.id, "carmen@acme.cl")["question"]["status"] == "dismissed"
+    assert open_questions(stack) == []
+    assert stack.questions.dismiss("acme", 999, "carmen@acme.cl")["error_message"] == "question not found"

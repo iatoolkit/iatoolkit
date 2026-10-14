@@ -392,6 +392,7 @@ class IAToolkit:
         from iatoolkit.repositories.profile_repo import ProfileRepo
         from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
         from iatoolkit.repositories.memory_repo import MemoryRepo
+        from iatoolkit.repositories.memory_question_repo import MemoryQuestionRepo
         from iatoolkit.repositories.mcp_token_repo import McpTokenRepo
         from iatoolkit.repositories.sql_dataset_repo import SqlDatasetRepo
         from iatoolkit.repositories.sql_source_repo import SqlSourceRepo
@@ -407,6 +408,7 @@ class IAToolkit:
         binder.bind(ProfileRepo, to=ProfileRepo)
         binder.bind(LLMQueryRepo, to=LLMQueryRepo)
         binder.bind(MemoryRepo, to=MemoryRepo)
+        binder.bind(MemoryQuestionRepo, to=MemoryQuestionRepo)
         binder.bind(McpTokenRepo, to=McpTokenRepo)
         binder.bind(SqlDatasetRepo, to=SqlDatasetRepo)
         binder.bind(SqlSourceRepo, to=SqlSourceRepo)
@@ -436,6 +438,7 @@ class IAToolkit:
         from iatoolkit.services.pdf_service import PdfService
         from iatoolkit.services.mail_service import MailService
         from iatoolkit.services.memory_compiler_service import MemoryCompilerService
+        from iatoolkit.services.memory_question_service import MemoryQuestionService
         from iatoolkit.services.memory_service import MemoryService
         from iatoolkit.services.mcp_token_service import McpTokenService
         from iatoolkit.services.memory_wiki_service import MemoryWikiService
@@ -481,6 +484,7 @@ class IAToolkit:
         binder.bind(MailService, to=MailService)
         binder.bind(MemoryWikiService, to=MemoryWikiService)
         binder.bind(MemoryCompilerService, to=MemoryCompilerService)
+        binder.bind(MemoryQuestionService, to=MemoryQuestionService)
         binder.bind(MemoryService, to=MemoryService)
         binder.bind(McpTokenService, to=McpTokenService)
         binder.bind(ProfileService, to=ProfileService)

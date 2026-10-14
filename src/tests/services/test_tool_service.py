@@ -1736,3 +1736,35 @@ class TestToolServiceMcpTools:
             self.service.update_tool("acme", 1, {"tool_type": "MCP"})
 
         assert exc.value.error_type == IAToolkitException.ErrorType.INVALID_OPERATION
+
+
+class TestDocumentListAndReadTools:
+    def setup_method(self):
+        self.knowledge_base_service = MagicMock()
+        self.service = ToolService.__new__(ToolService)
+        self.service.knowledge_base_service = self.knowledge_base_service
+        self.service.system_handlers = {
+            "iat_document_list": self.service._handle_document_list_tool,
+            "iat_document_read": self.service._handle_document_read_tool,
+        }
+
+    def test_list_passes_the_filters(self):
+        self.knowledge_base_service.list_documents_with_cards.return_value = {"status": "success", "documents": []}
+
+        self.service.get_system_handler("iat_document_list")(
+            "acme", collection=" comercial ", document_type="contrato", valid_on="2026-10-14", limit=5)
+
+        self.knowledge_base_service.list_documents_with_cards.assert_called_once_with(
+            "acme", collection="comercial", document_type="contrato", text=None, valid_on="2026-10-14",
+            include_inactive=False, limit=5, offset=0)
+
+    def test_read_returns_the_part_or_a_readable_error(self):
+        self.knowledge_base_service.read_document_text.return_value = {"document_id": 4, "text": "hola", "has_more": False}
+        result = self.service.get_system_handler("iat_document_read")("acme", document_id="4", offset=10)
+        assert result["status"] == "success" and result["text"] == "hola"
+        self.knowledge_base_service.read_document_text.assert_called_once_with("acme", 4, offset=10, limit=None)
+
+        self.knowledge_base_service.read_document_text.side_effect = IAToolkitException(
+            IAToolkitException.ErrorType.DOCUMENT_NOT_FOUND, "Document '9' not found.")
+        assert self.service.get_system_handler("iat_document_read")("acme", document_id=9) == {
+            "status": "error", "error_message": "Document '9' not found."}

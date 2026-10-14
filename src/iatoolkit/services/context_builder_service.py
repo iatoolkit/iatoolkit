@@ -481,8 +481,10 @@ class ContextBuilderService:
         lines = [
             "## Colecciones documentales disponibles",
             "Usa `iat_document_search` cuando documentos internos de la empresa puedan ayudar a responder al usuario.",
+            "Usa `iat_document_list` para saber qué documentos hay en una colección y `iat_document_read` para leer uno completo.",
             "### Colecciones",
         ]
+        header_lines = len(lines)
 
         for name, description in selected_entries[:20]:
             if description:
@@ -490,7 +492,7 @@ class ContextBuilderService:
             else:
                 lines.append(f"- {name}")
 
-        if len(lines) <= 3:
+        if len(lines) <= header_lines:
             return ""
 
         lines.append(

@@ -112,6 +112,8 @@ class ToolService:
             "iat_image_search": self._handle_image_search_tool,
             "iat_visual_search": self._handle_visual_search_tool,
             "iat_document_search": self._handle_document_search_tool,
+            "iat_document_list": self._handle_document_list_tool,
+            "iat_document_read": self._handle_document_read_tool,
             "iat_memory_search": self._handle_memory_search_tool,
             "iat_memory_get_page": self._handle_memory_get_page_tool,
             "iat_memory_save": self._handle_memory_save_tool,
@@ -201,6 +203,44 @@ class ToolService:
             "chunks": typed_chunks,
             "serialized_context": self._serialize_document_chunks(typed_chunks),
         }
+
+    def _handle_document_list_tool(self,
+                                   company_short_name: str,
+                                   collection: str | None = None,
+                                   document_type: str | None = None,
+                                   text: str | None = None,
+                                   valid_on: str | None = None,
+                                   include_inactive: bool = False,
+                                   limit: int | None = None,
+                                   offset: int = 0,
+                                   **kwargs):
+        return self.knowledge_base_service.list_documents_with_cards(
+            company_short_name,
+            collection=str(collection or "").strip() or None,
+            document_type=document_type,
+            text=text,
+            valid_on=valid_on,
+            include_inactive=bool(include_inactive),
+            limit=limit,
+            offset=offset or 0,
+        )
+
+    def _handle_document_read_tool(self,
+                                   company_short_name: str,
+                                   document_id: int,
+                                   offset: int = 0,
+                                   limit: int | None = None,
+                                   **kwargs):
+        try:
+            result = self.knowledge_base_service.read_document_text(
+                company_short_name,
+                int(document_id),
+                offset=offset or 0,
+                limit=limit,
+            )
+        except IAToolkitException as exc:
+            return {"status": "error", "error_message": str(exc.message or exc)}
+        return {"status": "success", **result}
 
     def _handle_image_search_tool(self,
                                   company_short_name: str,

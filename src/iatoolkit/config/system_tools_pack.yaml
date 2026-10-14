@@ -282,6 +282,93 @@ tools:
           description: "Opcional en la práctica. Usa null cuando no necesites filtrar por metadata. No inventes filtros ni envíes [] por defecto. Ejemplo: [{'key':'doc.type','value':'invoice'},{'key':'chunk.source_type','value':'table'}]."
       required:
         - query
+  - function_name: iat_document_list
+    description: Lista los documentos de una colección de la empresa con su ficha (título, resumen, tipo, vigencia), del más reciente al más antiguo. Úsala para preguntas de catálogo ("¿qué contratos tenemos?", "¿cuál es la lista de precios vigente?", "¿qué hay en la carpeta Comercial?"), no para buscar un dato dentro de los documentos (para eso, `iat_document_search`). Los documentos reemplazados u obsoletos no aparecen salvo que lo pidas.
+    routing:
+      force_include_capability: has_kb_collections
+    routing_profile:
+      tags:
+        - document
+        - catalog
+        - list
+        - knowledge
+      intents:
+        - List the documents of a company collection with their cards.
+        - Find which documents exist of a given type, or which one is valid today.
+      examples:
+        - iat_document_list(collection="comercial", document_type="contrato")
+        - iat_document_list(collection="legal", valid_on="2026-10-14")
+      cost:
+        penalty: 0.05
+        latency_class: low
+        expensive: false
+    parameters:
+      type: object
+      properties:
+        collection:
+          anyOf:
+            - type: string
+            - type: "null"
+          description: Colección a listar (su nombre exacto). null lista todas.
+        document_type:
+          anyOf:
+            - type: string
+            - type: "null"
+          description: Opcional. Tipo de documento según su ficha (ej. contrato, política, lista de precios, procedimiento).
+        text:
+          anyOf:
+            - type: string
+            - type: "null"
+          description: Opcional. Texto a buscar en el nombre, título, resumen o palabras clave de la ficha.
+        valid_on:
+          anyOf:
+            - type: string
+            - type: "null"
+          description: Opcional. Fecha YYYY-MM-DD; deja los documentos vigentes ese día o sin vigencia indicada.
+        include_inactive:
+          type: boolean
+          description: Incluir documentos reemplazados u obsoletos. Por defecto false.
+        limit:
+          type: integer
+          description: Cuántos documentos devolver (máximo 100). Por defecto 30.
+        offset:
+          type: integer
+          description: Desde qué posición seguir (usa next_offset de la respuesta anterior).
+      required:
+        - collection
+  - function_name: iat_document_read
+    description: Lee el texto de un documento de la empresa, completo o por partes, con su ficha. Úsala cuando la respuesta necesite el documento entero (resumirlo, compararlo, revisar todas sus cláusulas) y no solo los fragmentos que trae `iat_document_search`. El document_id viene de `iat_document_search` o `iat_document_list`. Si la respuesta trae has_more=true, sigue con offset=next_offset.
+    routing:
+      force_include_capability: has_kb_collections
+    routing_profile:
+      tags:
+        - document
+        - read
+        - knowledge
+      intents:
+        - Read a whole company document, or a part of it, by id.
+        - Summarize or compare full documents.
+      examples:
+        - iat_document_read(document_id=42)
+        - iat_document_read(document_id=42, offset=20000)
+      cost:
+        penalty: 0.1
+        latency_class: medium
+        expensive: false
+    parameters:
+      type: object
+      properties:
+        document_id:
+          type: integer
+          description: Identificador del documento, devuelto por `iat_document_search` o `iat_document_list`.
+        offset:
+          type: integer
+          description: Desde qué carácter leer. Por defecto 0.
+        limit:
+          type: integer
+          description: Cuántos caracteres leer (máximo 60000). Por defecto 20000.
+      required:
+        - document_id
   - function_name: iat_wiki_search
     description: Busca páginas publicadas dentro de las wikis de conocimiento compartidas por la empresa. Úsala como acelerador cuando necesites encontrar rápidamente una página relevante, pero no como punto de entrada por defecto. Si no conoces un `path` válido, primero llama `iat_wiki_get_page` con `path="/"` para leer el índice raíz de la wiki y seguir sus links exactos. `wiki_key` es el identificador estable de una wiki publicada, por ejemplo `sales`, `ops` o `hr`; úsalo cuando ya sepas en qué wiki buscar y omítelo cuando quieras buscar en todas las wikis publicadas disponibles en esta conexión MCP. Esta tool devuelve candidatos; luego usa `iat_wiki_get_page` para leer la página completa antes de responder.
     routing:

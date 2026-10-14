@@ -564,6 +564,68 @@ class MemoryWikiPageSource(Base):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
 
 
+class MemoryQuestion(Base):
+    """
+    A question about the company that the AI could not answer (BL-005, Fase 1).
+
+    Written neutrally and grouped: the same question asked again only adds one
+    to `times_asked`. Who asked is never kept; the count is enough to rank them.
+    Answering it saves a normal Memoria capture, attributed to whoever answered.
+    """
+    __tablename__ = "iat_memory_questions"
+
+    STATUS_OPEN = "open"
+    STATUS_ANSWERED = "answered"
+    STATUS_DISMISSED = "dismissed"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    question = Column(Text, nullable=False)
+    topic = Column(String(200), nullable=True)
+    times_asked = Column(Integer, nullable=False, default=1)
+    # How many times each channel brought it: {"chat": 3, "mcp": 1}.
+    channels = Column(JSON_NATIVE, nullable=True)
+    first_asked_at = Column(DateTime, default=datetime.now, nullable=False)
+    last_asked_at = Column(DateTime, default=datetime.now, nullable=False)
+    status = Column(String(16), nullable=False, default=STATUS_OPEN, index=True)
+    answer_text = Column(Text, nullable=True)
+    answer_capture_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_memory_captures.id", ondelete="SET NULL"), nullable=True)
+    resolved_by = Column(String, nullable=True)
+    resolved_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+    def to_dict(self):
+        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
+
+
+class MemoryQuestionCandidate(Base):
+    """
+    A Memoria search that found nothing outside the chat (MCP: Claude, ChatGPT),
+    whose questions never reach `iat_queries`. The next scan classifies it with
+    the chat's turns. Only the text is kept, not who searched.
+    """
+    __tablename__ = "iat_memory_question_candidates"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_companies.id", ondelete="CASCADE"), nullable=False, index=True)
+    query_text = Column(Text, nullable=False)
+    source = Column(String(16), nullable=False, default="mcp")
+    processed_at = Column(DateTime, nullable=True, index=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+
+class MemoryQuestionScanCursor(Base):
+    """Up to which `iat_queries.id` a company's turns were already reviewed for unanswered questions."""
+    __tablename__ = "iat_memory_question_scan_cursors"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_companies.id", ondelete="CASCADE"), nullable=False, unique=True)
+    last_query_id = Column(Integer, nullable=False, default=0)
+    last_scan_at = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+
 #: request_source of the iat_queries row that records a context initialization:
 #: the company context sent once to start a server-side conversation. Its tokens
 #: are billed, but it is not a question, so conversation readers skip it.

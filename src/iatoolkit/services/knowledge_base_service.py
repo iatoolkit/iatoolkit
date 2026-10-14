@@ -734,6 +734,164 @@ class KnowledgeBaseService:
             "created_at": document.created_at.isoformat() if document.created_at else None,
         }
 
+    # --- Reading and listing documents (iat_document_read / iat_document_list) ---
+
+    #: Where a document's card (title, summary, type, validity) lives in Document.meta.
+    #: Written by whoever catalogs the documents (enterprise's Memoria); the core only reads it.
+    CARD_META_KEY = "card"
+    #: "replaced" or "obsolete" in Document.meta: the document is kept for the record
+    #: but its fragments are gone, so it is neither searched nor listed by default.
+    LIFECYCLE_META_KEY = "lifecycle"
+    INACTIVE_LIFECYCLES = ("replaced", "obsolete")
+    READ_DEFAULT_TEXT_CHARS = 20000
+    READ_MAX_TEXT_CHARS = 60000
+    READ_MAX_BYTES = 50 * 1024 * 1024
+    READ_MAX_DOCUMENT_CHARS = 2_000_000
+    LIST_DEFAULT_LIMIT = 30
+    LIST_MAX_LIMIT = 100
+    LIST_SCAN_LIMIT = 2000
+
+    def read_document_text(self,
+                           company_short_name: str,
+                           document_id: int,
+                           *,
+                           collection_name: str | None = None,
+                           offset: int = 0,
+                           limit: int | None = None,
+                           max_bytes: int | None = None,
+                           max_document_chars: int | None = None) -> dict:
+        """
+        A document's text, whole or a part of it (`offset`/`limit` over its
+        characters), with its card when it has one. Validates that the document
+        belongs to the company (and to `collection_name` when given).
+        """
+        descriptor = self.get_document_descriptor(
+            company_short_name=company_short_name,
+            document_id=document_id,
+            collection_name=collection_name,
+        )
+        if not descriptor.get("content_available"):
+            raise IAToolkitException(IAToolkitException.ErrorType.INVALID_STATE,
+                                     f"Document {document_id} does not have source content available.")
+        content, stored_filename = self.get_document_content(document_id)
+        content = content or b""
+        if not content:
+            raise IAToolkitException(IAToolkitException.ErrorType.INVALID_STATE,
+                                     f"Document {document_id} returned empty source content.")
+        max_bytes = int(max_bytes or self.READ_MAX_BYTES)
+        if len(content) > max_bytes:
+            raise IAToolkitException(IAToolkitException.ErrorType.INVALID_STATE,
+                                     f"Document {document_id} exceeds the {max_bytes // (1024 * 1024)} MB reading limit.")
+
+        filename = str(descriptor.get("filename") or stored_filename or f"document-{document_id}").strip()
+        text = self.parsing_service.extract_text_for_context(
+            filename=filename,
+            content=content,
+            company_short_name=company_short_name,
+        ).strip()
+        if not text:
+            raise IAToolkitException(IAToolkitException.ErrorType.FILE_FORMAT_ERROR,
+                                     f"Document {document_id} did not produce extractable text. The source may require OCR.")
+        max_document_chars = int(max_document_chars or self.READ_MAX_DOCUMENT_CHARS)
+        if len(text) > max_document_chars:
+            raise IAToolkitException(IAToolkitException.ErrorType.INVALID_STATE,
+                                     f"Document {document_id} exceeds the {max_document_chars:,} character reading limit.")
+
+        size = len(text)
+        start = min(max(int(offset or 0), 0), size)
+        length = min(max(int(limit or self.READ_DEFAULT_TEXT_CHARS), 1), self.READ_MAX_TEXT_CHARS)
+        end = min(start + length, size)
+        metadata = descriptor.get("metadata") or {}
+        return {
+            "document_id": descriptor.get("document_id"),
+            "filename": filename,
+            "collection": descriptor.get("collection_name"),
+            "mime_type": descriptor.get("mime_type"),
+            "download_url": descriptor.get("download_url"),
+            "card": self._card_of(metadata),
+            "lifecycle": metadata.get(self.LIFECYCLE_META_KEY) or "current",
+            "status": descriptor.get("status"),
+            "source_size_bytes": len(content),
+            "text": text[start:end],
+            "offset": start,
+            "end_offset": end,
+            "text_size_chars": size,
+            "has_more": end < size,
+            "next_offset": end if end < size else None,
+        }
+
+    def list_documents_with_cards(self,
+                                  company_short_name: str,
+                                  collection: str | None = None,
+                                  *,
+                                  document_type: str | None = None,
+                                  text: str | None = None,
+                                  valid_on: str | None = None,
+                                  include_inactive: bool = False,
+                                  limit: int | None = None,
+                                  offset: int = 0) -> dict:
+        """
+        The documents of a collection (or of every collection) with their cards,
+        newest first. `valid_on` (YYYY-MM-DD) keeps the documents whose card says
+        they are valid that day, or says nothing about it.
+        """
+        documents = self.list_documents(
+            company_short_name=company_short_name,
+            status=DocumentStatus.ACTIVE,
+            collection=collection or None,
+            limit=self.LIST_SCAN_LIMIT,
+        )
+        wanted_type = str(document_type or "").strip().lower()
+        wanted_text = str(text or "").strip().lower()
+        wanted_day = str(valid_on or "").strip()[:10]
+        entries = []
+        for document in documents:
+            metadata = document.meta or {}
+            lifecycle = metadata.get(self.LIFECYCLE_META_KEY) or "current"
+            if lifecycle in self.INACTIVE_LIFECYCLES and not include_inactive:
+                continue
+            card = self._card_of(metadata)
+            if wanted_type and str(card.get("type") or "").strip().lower() != wanted_type:
+                continue
+            if wanted_text:
+                haystack = " ".join(str(value or "") for value in (
+                    document.filename, card.get("title"), card.get("summary"),
+                    " ".join(card.get("keywords") or []),
+                )).lower()
+                if wanted_text not in haystack:
+                    continue
+            if wanted_day:
+                valid_from = str(card.get("valid_from") or "")[:10]
+                valid_until = str(card.get("valid_until") or "")[:10]
+                if (valid_from and valid_from > wanted_day) or (valid_until and valid_until < wanted_day):
+                    continue
+            entries.append({
+                "document_id": document.id,
+                "filename": document.filename,
+                "collection": getattr(getattr(document, "collection_type", None), "name", None),
+                "path": metadata.get("drive_path") or metadata.get("path") or None,
+                "lifecycle": lifecycle,
+                "created_at": document.created_at.isoformat() if document.created_at else None,
+                "card": card,
+            })
+        start = max(int(offset or 0), 0)
+        size = min(max(int(limit or self.LIST_DEFAULT_LIMIT), 1), self.LIST_MAX_LIMIT)
+        page = entries[start:start + size]
+        return {
+            "status": "success",
+            "collection": collection or None,
+            "total": len(entries),
+            "count": len(page),
+            "offset": start,
+            "next_offset": start + size if start + size < len(entries) else None,
+            "documents": page,
+        }
+
+    @classmethod
+    def _card_of(cls, metadata: dict) -> dict:
+        card = metadata.get(cls.CARD_META_KEY) if isinstance(metadata, dict) else None
+        return dict(card) if isinstance(card, dict) else {}
+
     def get_document_content(self, document_id: int) -> tuple[bytes, str]:
         """
         Retrieves the raw content of a document and its filename.
