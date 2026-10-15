@@ -17,6 +17,7 @@ from iatoolkit.services.tool_service import ToolService
 from iatoolkit.common.model_registry import ModelRegistry
 from iatoolkit.services.attachment_policy_service import AttachmentPolicyService
 from iatoolkit.services.telemetry_service import TelemetryService
+from iatoolkit.common.exceptions import IAToolkitException
 
 # --- Constantes para los Tests ---
 MOCK_COMPANY_SHORT_NAME = "test_company"
@@ -271,6 +272,23 @@ class TestQueryService:
 
         # Verificar actualización de historia
         self.mock_history_manager.update_history.assert_called_once()
+
+    def test_llm_query_rejects_a_model_the_company_has_not_enabled(self):
+        self.mock_configuration_service.get_llm_configuration.side_effect = None
+        self.mock_configuration_service.get_llm_configuration.return_value = (
+            "gpt-5-mini", [{"id": "gpt-5-mini"}],
+        )
+
+        result = self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            question="Hi",
+            model="gpt-4o",
+        )
+
+        assert result["error"] is True
+        assert "gpt-4o" in result["error_message"]
+        self.mock_llm_client.invoke.assert_not_called()
 
     def test_llm_query_passes_delivery_channel_for_whatsapp_runtime(self):
         user_prompt = "User prompt with context"
@@ -2246,7 +2264,6 @@ class TestTheCompanyDefaultModel:
         self.configuration_service.get_llm_configuration.return_value = ("gpt-5-mini", [])
 
         assert self.service._resolve_model("acme", "claude-5", None) == "claude-5"
-        self.configuration_service.get_llm_configuration.assert_not_called()
 
     def test_the_prompt_model_wins_over_the_default(self):
         self.configuration_service.get_llm_configuration.return_value = ("gpt-5-mini", [])
@@ -2265,3 +2282,58 @@ class TestTheCompanyDefaultModel:
         assert self._default([]) is None
         assert self._default(None) is None
         assert self._default("   ") is None
+
+
+class TestModelsTheCompanyHasEnabled:
+    """A model the company has not enabled is never sent to the provider.
+
+    Without the check, an explicit model ran on the platform's key whatever the
+    company's entitlements said. An empty list of models means no restriction.
+    """
+
+    ENABLED = [{"id": "gpt-5-mini"}, {"id": "claude-5"}]
+
+    def setup_method(self):
+        self.configuration_service = MagicMock(spec=ConfigurationService)
+        self.configuration_service.get_llm_configuration.return_value = ("gpt-5-mini", self.ENABLED)
+        self.service = QueryService.__new__(QueryService)
+        self.service.configuration_service = self.configuration_service
+
+    def test_an_explicit_enabled_model_is_used(self):
+        assert self.service._resolve_model("acme", "claude-5", None) == "claude-5"
+
+    def test_an_explicit_model_not_enabled_is_rejected(self):
+        with pytest.raises(IAToolkitException) as exc_info:
+            self.service._resolve_model("acme", "gpt-4o", None)
+
+        assert exc_info.value.error_type == IAToolkitException.ErrorType.INVALID_PARAMETER
+        assert "gpt-4o" in exc_info.value.message
+        assert "acme" in exc_info.value.message
+
+    def test_without_a_list_of_models_any_explicit_model_is_used(self):
+        self.configuration_service.get_llm_configuration.return_value = (None, [])
+
+        assert self.service._resolve_model("acme", "gpt-4o", None) == "gpt-4o"
+
+    def test_the_implicit_list_of_the_default_alone_restricts_too(self):
+        self.configuration_service.get_llm_configuration.return_value = ("gpt-5-mini", ["gpt-5-mini"])
+
+        with pytest.raises(IAToolkitException):
+            self.service._resolve_model("acme", "gpt-4o", None)
+
+    def test_an_agent_model_no_longer_enabled_falls_back_to_the_default(self, caplog):
+        resolved = self.service._resolve_model("acme", None, {"llm_model": "gpt-4o"})
+
+        assert resolved == "gpt-5-mini"
+        assert "no longer enabled" in caplog.text
+
+    def test_an_enabled_agent_model_is_used(self):
+        assert self.service._resolve_model("acme", None, {"llm_model": "claude-5"}) == "claude-5"
+
+    def test_ensure_model_enabled_rejects_and_accepts(self):
+        with pytest.raises(IAToolkitException):
+            self.service.ensure_model_enabled("acme", "gpt-4o")
+
+        self.service.ensure_model_enabled("acme", "claude-5")
+        self.service.ensure_model_enabled("acme", "")
+        self.service.ensure_model_enabled("acme", None)

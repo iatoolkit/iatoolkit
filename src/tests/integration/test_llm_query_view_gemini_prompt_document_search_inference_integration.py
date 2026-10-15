@@ -336,7 +336,8 @@ def test_prompt_execution_with_gemini_document_search_and_inference_embeddings()
         profile_repo=profile_repo,
         i18n_service=i18n_service,
         session_context=MagicMock(),
-        configuration_service=MagicMock(),
+        # No list of models: the explicit model the test sends is not restricted.
+        configuration_service=MagicMock(**{"get_llm_configuration.return_value": (None, [])}),
         history_manager=FakeHistoryManager(),
         model_registry=FakeModelRegistry(),
         context_builder=context_builder,

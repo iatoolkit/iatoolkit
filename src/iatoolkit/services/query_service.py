@@ -17,6 +17,7 @@ from iatoolkit.services.memory_lookup_policy_service import MemoryLookupPolicySe
 from iatoolkit.services.telemetry_service import NoopTelemetryService
 from iatoolkit.services.prompt_service import PromptService
 from iatoolkit.common.model_registry import ModelRegistry
+from iatoolkit.common.exceptions import IAToolkitException
 from injector import inject
 import logging
 from typing import Optional, Callable
@@ -203,19 +204,66 @@ class QueryService:
                        model: Optional[str],
                        prompt_output_contract: dict | None = None) -> str:
         # Priority: 1. Explicit model override -> 2. Prompt model -> 3. Company config
-        effective_model = str(model or "").strip() or None
-        if not effective_model and isinstance(prompt_output_contract, dict):
+        # The default is asked of the same resolution the model picker uses, not of
+        # the raw `llm.model` key: on a company backed by the model catalogue the
+        # default travels with its entitlements, so a YAML default the company can
+        # no longer use does not keep being sent.
+        default_model, available = self.configuration_service.get_llm_configuration(company_short_name)
+        enabled = self._enabled_model_ids(available)
+
+        explicit_model = str(model or "").strip() or None
+        if explicit_model:
+            self._raise_if_not_enabled(company_short_name, explicit_model, enabled)
+            return explicit_model
+
+        if isinstance(prompt_output_contract, dict):
             prompt_model = str(prompt_output_contract.get("llm_model") or "").strip()
             if prompt_model:
-                effective_model = prompt_model
-        if not effective_model:
-            # Asked of the same resolution the model picker uses, not of the raw
-            # `llm.model` key: on a company backed by the model catalogue the
-            # default travels with its entitlements, so a YAML default the
-            # company can no longer use does not keep being sent.
-            default_model, _ = self.configuration_service.get_llm_configuration(company_short_name)
-            effective_model = self._coerce_model_name(default_model, company_short_name)
-        return effective_model
+                if not enabled or prompt_model in enabled:
+                    return prompt_model
+                # An agent configured with a model the company has since lost
+                # keeps running on the company default rather than going down.
+                logging.warning(
+                    "Company '%s': agent model '%s' is no longer enabled; using the company default.",
+                    company_short_name,
+                    prompt_model,
+                )
+
+        return self._coerce_model_name(default_model, company_short_name)
+
+    def ensure_model_enabled(self, company_short_name: str, model: Optional[str]) -> None:
+        """
+        Rejects a model the caller names that the company cannot use.
+
+        A company with a list of models (declared, from the model catalogue, or
+        the single default) may only run those: otherwise a request could run
+        any model on the platform's key. An empty list means no restriction.
+        """
+        explicit_model = str(model or "").strip()
+        if not explicit_model:
+            return
+        _, available = self.configuration_service.get_llm_configuration(company_short_name)
+        self._raise_if_not_enabled(company_short_name, explicit_model, self._enabled_model_ids(available))
+
+    @staticmethod
+    def _raise_if_not_enabled(company_short_name: str, model: str, enabled: set[str]) -> None:
+        if enabled and model not in enabled:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                f"Model '{model}' is not enabled for company '{company_short_name}'.",
+            )
+
+    @staticmethod
+    def _enabled_model_ids(available) -> set[str]:
+        ids = set()
+        for entry in available or []:
+            if isinstance(entry, dict):
+                model_id = str(entry.get("id") or "").strip()
+            else:
+                model_id = str(entry or "").strip()
+            if model_id:
+                ids.add(model_id)
+        return ids
 
     @staticmethod
     def _coerce_model_name(raw_model, company_short_name: str) -> Optional[str]:

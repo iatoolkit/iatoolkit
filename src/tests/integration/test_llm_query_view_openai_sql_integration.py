@@ -232,7 +232,8 @@ def test_llm_query_view_openai_sql_function_call_success():
         profile_repo=FakeProfileRepo(company),
         i18n_service=i18n_service,
         session_context=MagicMock(),
-        configuration_service=MagicMock(),
+        # No list of models: the explicit model the test sends is not restricted.
+        configuration_service=MagicMock(**{"get_llm_configuration.return_value": (None, [])}),
         history_manager=FakeHistoryManager(previous_response_id="ctx_openai_prev_1"),
         model_registry=FakeModelRegistry(),
         context_builder=FakeContextBuilder(),
