@@ -567,6 +567,9 @@ class llmClient:
                 # best-effort schema (structured_output is then None), so callers
                 # that can repair near misses are not left with nothing.
                 'parsed_output': decoded_response.get('parsed_json') if isinstance(decoded_response.get('parsed_json'), dict) else None,
+                # The model's text as it came, before `answer` renders it to HTML:
+                # a bare JSON list (never parsed into parsed_output) is still readable.
+                'output_text': decoded_response.get('output_text'),
                 'schema_valid': decoded_response.get('schema_valid'),
                 'schema_errors': decoded_response.get('schema_errors', []),
                 'schema_mode': decoded_response.get('schema_mode'),

@@ -353,12 +353,15 @@ class MemoryQuestionService:
         if items is None:
             items = self._extract_items(response.get("parsed_output"))
         if items is None:
-            # A top-level list never reaches parsed_output (it carries objects only).
+            # A top-level list never reaches parsed_output (it carries objects only):
+            # it is read from the model's raw text. `answer` is HTML by then.
+            items = self._extract_items(self._json_from_text(response.get("output_text")))
+        if items is None:
             items = self._extract_items(self._json_from_text(response.get("answer")))
         if items is None:
             logging.warning(
                 "Memory question scan for %s did not understand the model's answer: %s",
-                company.short_name, str(response.get("answer") or "")[:500],
+                company.short_name, str(response.get("output_text") or response.get("answer") or "")[:500],
             )
             return None
         return [normalized for normalized in (self._normalize_item(item) for item in items) if normalized]

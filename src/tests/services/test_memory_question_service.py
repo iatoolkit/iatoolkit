@@ -217,3 +217,22 @@ def test_classification_schema_accepts_nulls():
         raw_output={"items": [{"ref": "q1", "answered": False, "same_as_question_id": None, "same_as_ref": None}]},
         schema=MemoryQuestionService.CLASSIFICATION_SCHEMA)
     assert result["schema_valid"] is True
+
+
+def test_a_bare_list_in_the_raw_output_is_understood_even_when_answer_is_html(stack):
+    """As DeepSeek answered in Render (2026-10-15): a bare list, answer rendered to HTML."""
+    first = turn(stack, "como se planifican los presupuestos de venta", "No encontré un procedimiento.")
+    raw = ('[\n  {"ref": "q%d", "answered": false, "question": "¿Cómo se planifican los presupuestos de venta '
+           'en la empresa?", "topic": "presupuestos de venta", "same_as_question_id": null, "same_as_ref": null}\n]'
+           % first.id)
+    stack.llm_client.invoke.side_effect = [{
+        "structured_output": None, "parsed_output": None, "output_text": raw,
+        "answer": "<p>[ {&quot;ref&quot;: &quot;q%d&quot; ...} ]</p>" % first.id,
+    }]
+
+    result = stack.questions.scan_company("acme")
+
+    assert result["status"] == "success"
+    [question] = open_questions(stack)
+    assert question.question == "¿Cómo se planifican los presupuestos de venta en la empresa?"
+    assert question.topic == "presupuestos de venta"
