@@ -132,8 +132,16 @@ class SystemAgentRunner:
     # Model
     # =====================================================================
 
-    def resolve_model(self, company_short_name: str, agent: SystemAgent) -> ResolvedModel:
-        default_model, available = self.configuration_service.get_llm_configuration(company_short_name)
+    def resolve_model(self,
+                      company_short_name: str,
+                      agent: SystemAgent,
+                      llm_configuration: tuple | None = None) -> ResolvedModel:
+        """
+        `llm_configuration` is get_llm_configuration's (default, available) when
+        the caller already read it: resolving many agents then costs one read,
+        which in enterprise is a query to the model catalogue.
+        """
+        default_model, available = llm_configuration or self.configuration_service.get_llm_configuration(company_short_name)
         enabled = self._model_ids(available)
 
         def usable(model: str | None) -> bool:
@@ -230,11 +238,12 @@ class SystemAgentRunner:
     # Describing (for the admin screens)
     # =====================================================================
 
-    def describe(self, company_short_name: str) -> list[dict]:
+    def describe(self, company_short_name: str, llm_configuration: tuple | None = None) -> list[dict]:
         """Every system agent with the model it runs with for this company."""
+        llm_configuration = llm_configuration or self.configuration_service.get_llm_configuration(company_short_name)
         result = []
         for agent in SystemAgentCatalog.list():
-            resolved = self.resolve_model(company_short_name, agent)
+            resolved = self.resolve_model(company_short_name, agent, llm_configuration)
             result.append({
                 "key": agent.key,
                 "name": agent.name,
