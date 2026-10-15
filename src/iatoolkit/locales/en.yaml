@@ -378,7 +378,6 @@ ui:
     never_used: "No recorded use"
 
   wiki_page:
-    back_to_chat: "Back to chat"
     trail_label: "Location in the wiki"
     empty: "This page has no content."
     not_found: "This page does not exist in the wiki or is no longer published."

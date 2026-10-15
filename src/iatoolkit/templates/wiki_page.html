@@ -9,9 +9,6 @@
 <div class="wiki-page">
     <header class="wiki-page-header">
         <a class="wiki-page-brand" href="{{ url_for('chat', company_short_name=company_short_name) }}">{{ branding.name }}</a>
-        <a class="wiki-page-back" href="{{ url_for('chat', company_short_name=company_short_name) }}">
-            <i class="bi bi-chat-dots" aria-hidden="true"></i><span>{{ t('ui.wiki_page.back_to_chat') }}</span>
-        </a>
     </header>
     <nav class="wiki-page-trail" aria-label="{{ t('ui.wiki_page.trail_label') }}">
         <a href="{{ root_url }}"><i class="bi bi-journal-text" aria-hidden="true"></i>{{ wiki_name }}</a>

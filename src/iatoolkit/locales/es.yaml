@@ -392,7 +392,6 @@ ui:
     never_used: "Sin uso registrado"
 
   wiki_page:
-    back_to_chat: "Volver al chat"
     trail_label: "Ubicación en la wiki"
     empty: "Esta página no tiene contenido."
     not_found: "Esta página no existe en la wiki o ya no está publicada."
