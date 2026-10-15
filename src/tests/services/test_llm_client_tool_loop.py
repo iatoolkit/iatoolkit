@@ -205,6 +205,71 @@ class TestToolLoop(_LLMClientFixture):
         assert 'tool_loop_stop_reason' not in result['stats']
         assert result['stats']['tool_error_count'] == 4
 
+    def _recorded_calls(self):
+        return self.llmquery_repo.add_query.call_args.args[0].function_calls
+
+    def test_each_call_records_its_outcome_next_to_its_arguments(self):
+        self.dispatcher.dispatch.return_value = {"status": "success", "content": {"databases": ["KB_TASK"]}}
+        self.proxy.create_response.side_effect = [
+            _tool_response('r1', ('call1', 'list_dbs', '{}')),
+            _final_response(),
+        ]
+
+        self._invoke()
+
+        [call] = self._recorded_calls()
+        # The tool name stays the first key: every reader takes it from there.
+        assert next(iter(call)) == "list_dbs"
+        assert call["list_dbs"] == {}
+        assert call["result"] == {
+            "status": "ok",
+            "excerpt": '{"status": "success", "content": {"databases": ["KB_TASK"]}}',
+        }
+
+    def test_an_error_returned_as_a_payload_is_recorded_as_an_error(self):
+        # An MCP server with no connection does not raise: it answers with its error.
+        self.dispatcher.dispatch.return_value = {
+            "status": "error", "error_code": "MCP_NO_USER_FOR_PER_USER_SERVER",
+            "error": "'Maxxa' acts with each user's own account",
+        }
+        self.proxy.create_response.side_effect = [
+            _tool_response('r1', ('call1', 'list_dbs', '{}')),
+            _final_response(),
+        ]
+
+        self._invoke()
+
+        [call] = self._recorded_calls()
+        assert call["result"]["status"] == "error"
+        assert "MCP_NO_USER_FOR_PER_USER_SERVER" in call["result"]["excerpt"]
+
+    def test_a_tool_that_raises_is_recorded_as_an_error(self):
+        self.dispatcher.dispatch.side_effect = RuntimeError("connection refused")
+        self.proxy.create_response.side_effect = [
+            _tool_response('r1', ('call1', 'get_sales', '{"year": 2026}')),
+            _final_response(),
+        ]
+
+        self._invoke()
+
+        [call] = self._recorded_calls()
+        assert call["get_sales"] == {"year": 2026}
+        assert call["result"]["status"] == "error"
+        assert "connection refused" in call["result"]["excerpt"]
+
+    def test_the_excerpt_is_short(self):
+        self.dispatcher.dispatch.return_value = "fila " * 1000
+        self.proxy.create_response.side_effect = [
+            _tool_response('r1', ('call1', 'query', '{}')),
+            _final_response(),
+        ]
+
+        self._invoke()
+
+        excerpt = self._recorded_calls()[0]["result"]["excerpt"]
+        assert len(excerpt) == llmClient.TOOL_CALL_EXCERPT_MAX_LENGTH
+        assert excerpt.endswith("…")
+
     def test_token_stats_accumulate_across_every_round(self):
         self.dispatcher.dispatch.return_value = {"ok": True}
         self.proxy.create_response.side_effect = [

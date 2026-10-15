@@ -59,6 +59,14 @@ class llmClient:
         "deshabilitadas para esta respuesta: responde ahora con la información que ya "
         "tienes e indica qué no se pudo obtener."
     )
+    # How each tool call ended, stored next to its arguments in `function_calls`
+    # under the `result` key, so monitoring tells "called and failed" from
+    # "called and answered". A tool can also fail without raising: it returns a
+    # payload whose status says so (an external MCP server with no connection,
+    # a wiki page withheld).
+    TOOL_CALL_RESULT_KEY = "result"
+    TOOL_CALL_EXCERPT_MAX_LENGTH = 300
+    TOOL_RESULT_FAILED_STATUSES = frozenset({"error", "auth_required", "forbidden", "unavailable"})
 
     @inject
     def __init__(self,
@@ -431,7 +439,11 @@ class llmClient:
 
                         # log the function call parameters and execution time in secs
                         elapsed = tool_elapsed_seconds
-                        f_call_identity = {function_name: args, 'time': f'{elapsed:.1f}' }
+                        f_call_identity = {
+                            function_name: args,
+                            'time': f'{elapsed:.1f}',
+                            self.TOOL_CALL_RESULT_KEY: self._tool_call_result(tool_status, result),
+                        }
                         f_calls.append(f_call_identity)
                         f_call_time += elapsed
 
@@ -725,6 +737,18 @@ class llmClient:
                 "e indica qué quedó pendiente."
             ),
         }
+
+    @classmethod
+    def _tool_call_result(cls, tool_status: str | None, result) -> dict:
+        """`ok` or `error`, and the start of what the tool returned."""
+        failed = tool_status in {"error", "retry_generated"}
+        if isinstance(result, dict):
+            status = str(result.get("status") or "").strip().lower()
+            failed = failed or status in cls.TOOL_RESULT_FAILED_STATUSES
+        excerpt = " ".join(cls._serialize_tool_output(result).split())
+        if len(excerpt) > cls.TOOL_CALL_EXCERPT_MAX_LENGTH:
+            excerpt = excerpt[:cls.TOOL_CALL_EXCERPT_MAX_LENGTH - 1].rstrip() + "…"
+        return {"status": "error" if failed else "ok", "excerpt": excerpt}
 
     @staticmethod
     def _serialize_tool_output(result) -> str:
