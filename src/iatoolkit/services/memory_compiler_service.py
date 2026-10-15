@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import base64
-import json
 import logging
 import mimetypes
 import re
@@ -22,10 +21,9 @@ from iatoolkit.repositories.database_manager import DatabaseManager
 from iatoolkit.repositories.memory_repo import MemoryRepo
 from iatoolkit.repositories.models import Company, MemoryCapture, MemoryCaptureStatus, MemoryItem, MemoryItemStatus, MemoryItemType
 from iatoolkit.repositories.profile_repo import ProfileRepo
-from iatoolkit.services.configuration_service import ConfigurationService
-from iatoolkit.services.llm_client_service import llmClient
 from iatoolkit.services.memory_wiki_service import MemoryWikiService
 from iatoolkit.services.storage_service import StorageService
+from iatoolkit.services.system_agent_runner import SystemAgentRunner
 from iatoolkit.services.tenant_wiki_service import TenantWikiService
 
 
@@ -58,42 +56,22 @@ class MemoryCompilerService:
     # First key of the two-key Postgres advisory lock; the second is the company id.
     ADVISORY_LOCK_NAMESPACE = 734001
 
-    PAGE_SCHEMA = {
-        "type": "object",
-        "properties": {
-            "action": {"type": "string", "enum": ["create", "update", "skip"]},
-            # Nullable as a type list: the structured-output validator rejects null under anyOf.
-            "target_page_id": {"type": ["integer", "null"]},
-            "title": {"type": "string"},
-            "summary": {"type": "string"},
-            "markdown": {"type": "string"},
-            "change_summary": {"type": "string"},
-        },
-        # Only what a page cannot do without: models often drop the optional
-        # fields, and a near miss is repaired by _normalize_compiled_output.
-        "required": [
-            "action",
-            "target_page_id",
-            "title",
-            "markdown",
-        ],
-        "additionalProperties": False,
-    }
+    # System agents (config/system_agents_pack.yaml) that write the pages.
+    COMPILER_AGENT = "memory_compiler"
+    CORRECTION_AGENT = "memory_correction"
 
     @inject
     def __init__(self,
                  profile_repo: ProfileRepo,
                  memory_repo: MemoryRepo,
                  memory_wiki_service: MemoryWikiService,
-                 llm_client: llmClient,
-                 configuration_service: ConfigurationService,
+                 system_agent_runner: SystemAgentRunner,
                  storage_service: StorageService,
                  db_manager: DatabaseManager):
         self.profile_repo = profile_repo
         self.memory_repo = memory_repo
         self.memory_wiki_service = memory_wiki_service
-        self.llm_client = llm_client
-        self.configuration_service = configuration_service
+        self.system_agent_runner = system_agent_runner
         self.storage_service = storage_service
         self.db_manager = db_manager
 
@@ -320,41 +298,23 @@ class MemoryCompilerService:
                                      page: dict,
                                      author: str,
                                      captured_on: str) -> dict | None:
-        model, _ = self.configuration_service.get_llm_configuration(company.short_name)
-        if not model:
-            return None
         request = "\n".join(str(item.content_text or "").strip() for item in items if str(item.content_text or "").strip())
-        prompt = (
-            "You maintain the company's memory wiki. A person asked for ONE change to one page.\n"
-            "Apply only that change. Keep every other line of the page exactly as it is, word for word, "
-            "including other people's attributions, headings and order. Do not rephrase, reorganize or summarize.\n"
-            f"Attribute the line you change or add as ({author}, {captured_on}), replacing the attribution "
-            "the old statement had on that line.\n"
-            "If the request does not apply to this page or you cannot tell what to change, return action "
-            "\"skip\" and explain why in change_summary, in the language of the request.\n"
-            "Otherwise return action \"update\" with the COMPLETE new page body in `markdown` (without "
-            "frontmatter, starting with `# Title`) and a one-sentence `change_summary` in the language of the page.\n\n"
-            f"REQUEST (from {author}, {captured_on}):\n{request}\n\n"
-            f"PAGE (id {page.get('id')}, title {json.dumps(page.get('title') or '', ensure_ascii=False)}):\n"
-            f"{self.memory_wiki_service.page_body(page)}"
-        )
         try:
-            response = self.llm_client.invoke(
-                company=company,
-                user_identifier=capture.user_identifier,
-                previous_response_id=None,
-                question=f"Apply memory correction {capture.id}",
-                context=prompt,
-                tools=[],
-                text={},
-                model=model,
-                images=[],
-                attachments=[],
-                response_contract={
-                    "schema": self.PAGE_SCHEMA,
-                    "schema_mode": "best_effort",
-                    "response_mode": "structured_only",
+            response = self.system_agent_runner.run(
+                company,
+                self.CORRECTION_AGENT,
+                {
+                    "author": author,
+                    "captured_on": captured_on,
+                    "request": request,
+                    "page": {
+                        "id": page.get("id"),
+                        "title": page.get("title") or "",
+                        "markdown": self.memory_wiki_service.page_body(page),
+                    },
                 },
+                user_identifier=capture.user_identifier,
+                question=f"Apply memory correction {capture.id}",
             )
         except Exception as exc:
             logging.warning("Memory correction %s could not reach the model: %s", capture.id, exc)
@@ -427,11 +387,7 @@ class MemoryCompilerService:
                           candidates: list[dict],
                           author: str,
                           captured_on: str) -> dict | None:
-        model, _ = self.configuration_service.get_llm_configuration(company.short_name)
-        if not model:
-            return None
-
-        prompt = self._build_compiler_prompt(
+        inputs = self._compiler_inputs(
             capture,
             items,
             candidates,
@@ -442,22 +398,13 @@ class MemoryCompilerService:
         )
         native_pdf_attachments = self._build_capture_native_pdf_attachments(company.short_name, items)
         try:
-            response = self.llm_client.invoke(
-                company=company,
+            response = self.system_agent_runner.run(
+                company,
+                self.COMPILER_AGENT,
+                inputs,
                 user_identifier=capture.user_identifier,
-                previous_response_id=None,
                 question=f"Compile memory capture {capture.id}",
-                context=prompt,
-                tools=[],
-                text={},
-                model=model,
-                images=[],
                 attachments=native_pdf_attachments,
-                response_contract={
-                    "schema": self.PAGE_SCHEMA,
-                    "schema_mode": "best_effort",
-                    "response_mode": "structured_only",
-                },
             )
         except Exception as exc:
             logging.warning("Memory compiler LLM fallback activated for capture %s: %s", capture.id, exc)
@@ -525,61 +472,51 @@ class MemoryCompilerService:
             "change_summary": "Creada sin modelo de lenguaje.",
         }
 
-    def _build_compiler_prompt(self,
-                               capture: MemoryCapture,
-                               items: list[MemoryItem],
-                               candidates: list[dict],
-                               *,
-                               author: str,
-                               captured_on: str,
-                               wiki_schema: str = "",
-                               index_entries: list[dict] | None = None) -> str:
-        capture_payload = {
-            "capture_id": capture.id,
+    def _compiler_inputs(self,
+                         capture: MemoryCapture,
+                         items: list[MemoryItem],
+                         candidates: list[dict],
+                         *,
+                         author: str,
+                         captured_on: str,
+                         wiki_schema: str = "",
+                         index_entries: list[dict] | None = None) -> dict:
+        """What the memory_compiler agent receives (see its prompt)."""
+        return {
             "author": author,
-            "date": captured_on,
-            "title": capture.title,
-            "items": [
+            "captured_on": captured_on,
+            "wiki_schema": str(wiki_schema or "")[:7000],
+            "page_index": [
+                {"page_id": entry.get("id"), "title": entry.get("title"), "summary": entry.get("summary")}
+                for entry in (index_entries or [])[:self.MAX_INDEX_ENTRIES_IN_PROMPT]
+            ],
+            "capture": {
+                "capture_id": capture.id,
+                "author": author,
+                "date": captured_on,
+                "title": capture.title,
+                "items": [
+                    {
+                        "id": item.id,
+                        "item_type": item.item_type.value if hasattr(item.item_type, "value") else str(item.item_type),
+                        "title": item.title,
+                        "content_text": item.content_text,
+                        "source_url": item.source_url,
+                        "filename": item.filename,
+                        "mime_type": item.mime_type,
+                    }
+                    for item in items
+                ],
+            },
+            "candidate_pages": [
                 {
-                    "id": item.id,
-                    "item_type": item.item_type.value if hasattr(item.item_type, "value") else str(item.item_type),
-                    "title": item.title,
-                    "content_text": item.content_text,
-                    "source_url": item.source_url,
-                    "filename": item.filename,
-                    "mime_type": item.mime_type,
+                    "page_id": page.get("id"),
+                    "title": page.get("title"),
+                    "markdown": self.memory_wiki_service.page_body(page),
                 }
-                for item in items
+                for page in candidates or []
             ],
         }
-        index_payload = [
-            {"page_id": entry.get("id"), "title": entry.get("title"), "summary": entry.get("summary")}
-            for entry in (index_entries or [])[:self.MAX_INDEX_ENTRIES_IN_PROMPT]
-        ]
-        candidate_payload = [
-            {
-                "page_id": page.get("id"),
-                "title": page.get("title"),
-                "markdown": self.memory_wiki_service.page_body(page),
-            }
-            for page in candidates or []
-        ]
-        return (
-            "You maintain the company's memory wiki: how things are actually done in this company.\n"
-            "Follow the wiki schema. Decide whether the new capture updates one candidate page, "
-            "creates a new page, or should be skipped (nothing durable to keep).\n"
-            "When you update a page, return its COMPLETE new markdown: keep everything already on it, "
-            "including other people's attributions, and change only what the capture changes.\n"
-            f"Attribute every fact you add as ({author}, {captured_on}).\n"
-            "Return JSON only, following the provided schema. `markdown` is the page body without "
-            "frontmatter, starting with `# Title`. `change_summary` is one short sentence for the page history.\n\n"
-            f"WIKI_SCHEMA:\n{wiki_schema[:7000]}\n\n"
-            f"PAGE_INDEX:\n{json.dumps(index_payload, ensure_ascii=False)}\n\n"
-            f"NEW_CAPTURE:\n{json.dumps(capture_payload, ensure_ascii=False)}\n\n"
-            f"CANDIDATE_PAGES:\n{json.dumps(candidate_payload, ensure_ascii=False)}\n\n"
-            "If you update a page, set target_page_id to its page_id. "
-            "If you create a page, set target_page_id to null."
-        )
 
     def _author_label(self, user_identifier: str | None) -> str:
         identifier = str(user_identifier or "").strip()

@@ -439,6 +439,7 @@ class IAToolkit:
         from iatoolkit.services.mail_service import MailService
         from iatoolkit.services.memory_compiler_service import MemoryCompilerService
         from iatoolkit.services.memory_question_service import MemoryQuestionService
+        from iatoolkit.services.system_agent_runner import SystemAgentRunner
         from iatoolkit.services.memory_service import MemoryService
         from iatoolkit.services.mcp_token_service import McpTokenService
         from iatoolkit.services.memory_wiki_service import MemoryWikiService
@@ -483,6 +484,7 @@ class IAToolkit:
         binder.bind(PdfService, to=PdfService)
         binder.bind(MailService, to=MailService)
         binder.bind(MemoryWikiService, to=MemoryWikiService)
+        binder.bind(SystemAgentRunner, to=SystemAgentRunner)
         binder.bind(MemoryCompilerService, to=MemoryCompilerService)
         binder.bind(MemoryQuestionService, to=MemoryQuestionService)
         binder.bind(MemoryService, to=MemoryService)

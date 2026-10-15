@@ -313,6 +313,37 @@ class ConfigurationService:
 
         return config, []
 
+    def remove_configuration_key(self, company_short_name: str, key: str) -> tuple[dict, list[str]]:
+        """
+        Removes a key (dot notation) from company.yaml, so a setting that went back
+        to its default leaves no empty section behind. A missing key is not an error.
+        """
+        main_config_filename = "company.yaml"
+        if not self.asset_repo.exists(company_short_name, AssetType.CONFIG, main_config_filename):
+            raise FileNotFoundError(f"Configuration file not found for {company_short_name}")
+
+        yaml_content = self.asset_repo.read_text(company_short_name, AssetType.CONFIG, main_config_filename)
+        config = self.utility.load_yaml_from_string(yaml_content) or {}
+
+        *parents, last = key.split('.')
+        current = config
+        for part in parents:
+            current = current.get(part) if isinstance(current, dict) else None
+        if not isinstance(current, dict) or last not in current:
+            return config, []
+        current.pop(last)
+
+        errors = self._validate_configuration(company_short_name, config)
+        if errors:
+            logging.warning(f"Configuration update failed validation: {errors}")
+            return config, errors
+
+        self.asset_repo.write_text(company_short_name, AssetType.CONFIG, main_config_filename,
+                                   self.utility.dump_yaml_to_string(config))
+        if company_short_name in self._loaded_configs:
+            del self._loaded_configs[company_short_name]
+        return config, []
+
     def add_configuration_key(self, company_short_name: str, parent_key: str, key: str, value) -> tuple[dict, list[str]]:
         """
         Adds a new key-value pair under a specific parent key in the configuration.
@@ -499,6 +530,18 @@ class ConfigurationService:
                 add_error("mcp", "Must be a dictionary.")
             else:
                 self._validate_mcp_url_config(mcp_config, add_error)
+
+        # The model the tenant picked for each system agent (see SystemAgentRunner).
+        system_agents = config.get("system_agents")
+        if system_agents is not None:
+            if not isinstance(system_agents, dict):
+                add_error("system_agents", "Must be a dictionary of agent keys.")
+            else:
+                for agent_key, agent_config in system_agents.items():
+                    if not isinstance(agent_config, dict):
+                        add_error(f"system_agents.{agent_key}", "Must be a dictionary.")
+                    elif agent_config.get("model") is not None and not isinstance(agent_config.get("model"), str):
+                        add_error(f"system_agents.{agent_key}.model", "Must be a single model name.")
 
         # 2. LLM section
         if not isinstance(config.get("llm"), dict):

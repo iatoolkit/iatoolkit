@@ -1,0 +1,102 @@
+# System agents: model calls the platform makes on its own (see
+# services/system_agent_catalog.py). The tenant may pick each one's model
+# (system_agents.<key>.model in company.yaml); the prompt, inputs and output
+# schema belong to the code that reads the answer and are not editable.
+#
+# `prompt` is a Jinja template in system_agents/, rendered with `inputs`.
+# `default_model: null` means the company's default model.
+version: 1
+
+schemas:
+  # A Memoria page created, updated or left alone.
+  memory_page:
+    type: object
+    properties:
+      action:
+        type: string
+        enum: [create, update, skip]
+      # Nullable as a type list: the structured-output validator rejects null under anyOf.
+      target_page_id:
+        type: [integer, "null"]
+      title:
+        type: string
+      summary:
+        type: string
+      markdown:
+        type: string
+      change_summary:
+        type: string
+    # Only what a page cannot do without: models often drop the optional
+    # fields, and a near miss is repaired by the compiler's normalizer.
+    required: [action, target_page_id, title, markdown]
+    additionalProperties: false
+
+agents:
+  - key: memory_compiler
+    name: Compilador de Memoria
+    name_en: Memory compiler
+    description: >-
+      (Memoria de la empresa) Integra lo que la gente guarda en Memoria en la página que corresponde,
+      o crea una nueva, atribuyendo cada dato a su autor.
+    description_en: >-
+      (Company memory) Files what people save in Memory into the right page, or creates a new
+      one, attributing every fact to its author.
+    module: memory
+    prompt: memory_compiler.prompt
+    output_schema: memory_page
+    inputs: [author, captured_on, wiki_schema, page_index, capture, candidate_pages]
+    default_model: null
+
+  - key: memory_correction
+    name: Corrector de Memoria
+    name_en: Memory corrector
+    description: >-
+      (Memoria de la empresa) Aplica a una página de Memoria el cambio que alguien pidió, sin tocar el
+      resto de la página.
+    description_en: >-
+      (Company memory) Applies to a Memory page the change someone asked for, leaving the rest
+      of the page as it is.
+    module: memory
+    prompt: memory_correction.prompt
+    output_schema: memory_page
+    inputs: [author, captured_on, request, page]
+    default_model: null
+
+  - key: memory_question_review
+    name: Revisión de preguntas sin respuesta
+    name_en: Unanswered questions review
+    description: >-
+      (Memoria de la empresa) Revisa las conversaciones que buscaron en Memoria o en los documentos y
+      detecta las preguntas que la IA no pudo responder.
+    description_en: >-
+      (Company memory) Reviews the conversations that searched Memory or the documents and finds
+      the questions the AI could not answer.
+    module: memory
+    prompt: memory_question_review.prompt
+    output_schema:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              ref:
+                type: string
+              answered:
+                type: boolean
+              question:
+                type: string
+              topic:
+                type: string
+              # Nullable as a type list: core's validator rejects null under anyOf.
+              same_as_question_id:
+                type: [integer, "null"]
+              same_as_ref:
+                type: [string, "null"]
+            required: [ref, answered]
+            additionalProperties: false
+      required: [items]
+      additionalProperties: false
+    inputs: [open_questions, turns]
+    default_model: null

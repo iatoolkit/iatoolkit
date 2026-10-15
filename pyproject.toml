@@ -160,7 +160,7 @@ exclude = ["tests*", "*/tests*"]
 version = { attr = "iatoolkit.__version__" }
 
 [tool.setuptools.package-data]
-iatoolkit = ["templates/**/*", "static/**/*", "locales/*.yaml", "config/*.yaml", "config/system_prompts/*.prompt"]
+iatoolkit = ["templates/**/*", "static/**/*", "locales/*.yaml", "config/*.yaml", "config/system_prompts/*.prompt", "config/system_agents/*.prompt"]
 
 # Declared so the suite behaves identically however it is launched. Before this,
 # the layout worked only by accident: `src/tests/__init__.py` made pytest insert

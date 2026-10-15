@@ -510,6 +510,43 @@ class TestConfigurationService:
         errors = self.service.validate_configuration(self.COMPANY_NAME)
         assert any("llm.model" in e and "single model name" in e for e in errors)
 
+    def test_remove_configuration_key_drops_the_key_and_saves(self):
+        config = copy.deepcopy(MOCK_VALID_CONFIG)
+        config["system_agents"] = {"memory_compiler": {"model": "gpt-5.5"}}
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = config
+        self.mock_utility.dump_yaml_to_string.return_value = "saved"
+
+        saved, errors = self.service.remove_configuration_key(self.COMPANY_NAME, "system_agents")
+
+        assert errors == [] and "system_agents" not in saved
+        self.mock_asset_repo.write_text.assert_called_once()
+
+    def test_remove_configuration_key_of_a_missing_key_writes_nothing(self):
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = copy.deepcopy(MOCK_VALID_CONFIG)
+
+        _, errors = self.service.remove_configuration_key(self.COMPANY_NAME, "system_agents.memory_compiler")
+
+        assert errors == []
+        self.mock_asset_repo.write_text.assert_not_called()
+
+    def test_validate_configuration_checks_the_system_agents_section(self):
+        """system_agents.<key>.model is the model the tenant picked for a system agent."""
+        config = copy.deepcopy(MOCK_VALID_CONFIG)
+        config["system_agents"] = {"memory_compiler": {"model": "gpt-5.5"}, "memory_correction": {"model": None}}
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = config
+        assert self.service.validate_configuration(self.COMPANY_NAME) == []
+
+        config["system_agents"] = {"memory_compiler": {"model": ["gpt-5.5"]}, "memory_correction": "gpt-5.5"}
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert any("system_agents.memory_compiler.model" in e for e in errors)
+        assert any("system_agents.memory_correction" in e and "dictionary" in e for e in errors)
+
     def test_validate_configuration_accepts_mcp_server_url(self):
         valid_config = copy.deepcopy(MOCK_VALID_CONFIG)
         valid_config["mcp"] = {"server_url": "https://mcp.acme.example/acme/mcp"}

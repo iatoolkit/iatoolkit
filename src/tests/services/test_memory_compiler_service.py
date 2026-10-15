@@ -71,10 +71,14 @@ class TestMemoryCompilerService:
 
         self.compile()
 
-        prompt = self.stack.llm_client.invoke.call_args.kwargs["context"]
-        assert '"author": "Juan Pérez"' in prompt
-        assert "Sobre $2 millones, segunda firma." in prompt
-        assert "COMPLETE new markdown" in prompt
+        inputs = self.stack.agent_calls("memory_compiler")[-1]
+        assert inputs["author"] == "Juan Pérez"
+        assert inputs["capture"]["items"][0]["content_text"] == "Si Andrea no está, aprueba la gerencia."
+        [candidate] = inputs["candidate_pages"]
+        assert "Sobre $2 millones, segunda firma." in candidate["markdown"]
+        invoke = self.stack.llm_client.invoke.call_args.kwargs
+        assert invoke["execution_trace"] == {"prompt_name": "system_agent:memory_compiler"}
+        assert invoke["response_contract"]["schema"]["required"] == ["action", "target_page_id", "title", "markdown"]
 
     def test_an_update_replaces_the_page_and_keeps_its_history(self):
         self.stack.save_note("carmen@acme.cl", "Plazo de pago: 30 días.", title="Pagos")
@@ -103,11 +107,11 @@ class TestMemoryCompilerService:
         self.compile()
         page = self.stack.page(self.stack.pages()[0]["id"])
         self.stack.save_note("juan@acme.cl", "En diciembre abre a las 9.", title="Bodega")
-        prompts = []
+        calls = []
 
         def model(**kwargs):
-            prompts.append(kwargs["context"])
-            if len(prompts) == 1:
+            calls.append(kwargs)
+            if len(calls) == 1:
                 # A person corrects the page by hand while the model is working.
                 self.stack.tenant_wiki_service.save_page(
                     "acme", wiki_key="iatoolkit-memory", path=page["path"],
@@ -122,8 +126,9 @@ class TestMemoryCompilerService:
         result = self.compile()
 
         assert result["compiled_count"] == 1
-        assert len(prompts) == 2
-        assert "Abre a las 8:30. (Andrea, a mano)" in prompts[1]
+        assert len(calls) == 2
+        second = self.stack.agent_calls("memory_compiler")[-1]
+        assert "Abre a las 8:30. (Andrea, a mano)" in second["candidate_pages"][0]["markdown"]
         saved = self.stack.page(page["id"])
         assert "En diciembre, a las 9." in saved["markdown"]
         editors = [revision["edited_by"] for revision in self.stack.memory_wiki_service.list_revisions("acme", path=page["path"])]
@@ -292,9 +297,11 @@ class TestPageCorrection:
         assert "30 días" in correction["before"]
         assert "45 días" in correction["after"]
         assert "Facturas el día 25. (Carmen Rojas, 2026-10-01)" in correction["after"]
-        prompt = self.stack.llm_client.invoke.call_args.kwargs["context"]
-        assert "Apply only that change" in prompt
-        assert "El plazo real es 45 días." in prompt
+        inputs = self.stack.agent_calls("memory_correction")[-1]
+        assert inputs["request"] == "El plazo real es 45 días."
+        assert inputs["author"] == "Juan Pérez"
+        assert inputs["page"]["id"] == self.page_id
+        assert "30 días" in inputs["page"]["markdown"]
         revision = self.stack.memory_wiki_service.get_revision("acme", correction["revision_after_id"])
         assert revision["edited_by"] == "juan@acme.cl"
         assert revision["metadata"]["mode"] == "correction"

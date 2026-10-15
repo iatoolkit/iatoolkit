@@ -5,6 +5,7 @@ import pytest
 from iatoolkit.repositories.memory_question_repo import MemoryQuestionRepo
 from iatoolkit.repositories.models import LLMQuery, MemoryCapture, MemoryQuestion, MemoryQuestionCandidate
 from iatoolkit.services.memory_question_service import MemoryQuestionService
+from iatoolkit.services.system_agent_catalog import SystemAgentCatalog
 from tests.services.memory_test_support import MemoryStack
 
 
@@ -16,8 +17,7 @@ def stack():
         profile_repo=stack.profile_repo,
         question_repo=stack.question_repo,
         memory_service=stack.memory_service,
-        llm_client=stack.llm_client,
-        configuration_service=stack.configuration_service,
+        system_agent_runner=stack.system_agent_runner,
         db_manager=stack.db_manager,
     )
     return stack
@@ -50,8 +50,8 @@ def test_only_turns_that_searched_the_company_are_classified(stack):
     result = stack.questions.scan_company("acme")
 
     assert result["counts"]["new_questions"] == 1
-    prompt = stack.llm_client.invoke.call_args.kwargs["context"]
-    assert "Escribe un correo" not in prompt and "¿Cuántos clientes?" not in prompt
+    [inputs] = stack.agent_calls("memory_question_review")
+    assert [turn["question"] for turn in inputs["turns"]] == ["¿Cuál es el plazo de pago a proveedores?"]
     assert stack.llm_client.invoke.call_args.kwargs["user_identifier"] == "service:memory-questions"
     [question] = open_questions(stack)
     assert question.topic == "pagos"
@@ -83,8 +83,8 @@ def test_a_repeated_question_counts_once_more_and_who_asked_is_not_kept(stack):
 
     questions = open_questions(stack)
     assert [q.times_asked for q in questions] == [2, 1]
-    assert "OPEN QUESTIONS" in stack.llm_client.invoke.call_args.kwargs["context"]
-    assert f'"id": {question.id}' in stack.llm_client.invoke.call_args.kwargs["context"]
+    open_in_review = stack.agent_calls("memory_question_review")[-1]["open_questions"]
+    assert question.id in [entry["id"] for entry in open_in_review]
     columns = {column.name for column in MemoryQuestion.__table__.columns}
     assert not {"user_identifier", "asked_by"} & columns
 
@@ -173,8 +173,8 @@ def test_the_first_scan_starts_with_the_last_days_not_the_whole_history(stack):
 
     stack.questions.scan_company("acme")
 
-    prompt = stack.llm_client.invoke.call_args.kwargs["context"]
-    assert "¿Plazo de pago?" in prompt and "¿Pregunta vieja?" not in prompt
+    [inputs] = stack.agent_calls("memory_question_review")
+    assert [turn["question"] for turn in inputs["turns"]] == ["¿Plazo de pago?"]
     assert [q.question for q in open_questions(stack)] == ["¿Plazo de pago?"]
 
 
@@ -215,7 +215,7 @@ def test_classification_schema_accepts_nulls():
 
     result = StructuredOutputService.evaluate_output(
         raw_output={"items": [{"ref": "q1", "answered": False, "same_as_question_id": None, "same_as_ref": None}]},
-        schema=MemoryQuestionService.CLASSIFICATION_SCHEMA)
+        schema=SystemAgentCatalog.get(MemoryQuestionService.REVIEW_AGENT).output_schema)
     assert result["schema_valid"] is True
 
 

@@ -1,0 +1,23 @@
+You review conversations between people and the company's AI assistant. In each turn below the assistant searched the company's memory or documents to answer a question about the company (a turn with no answer is a search that found nothing).
+
+Your job is to find the questions about the company that went unanswered, so someone who knows can answer them.
+
+For each turn decide `answered`:
+
+- true when the answer gave a concrete answer based on the company's own information;
+- false when the assistant said it did not find it or did not know, gave only generic advice, or sent the person to ask someone else.
+
+For each turn with answered=false also return:
+
+- `question`: the question rewritten as one neutral sentence, in the language of the turn, without names of people, personal details or the conversation's wording, so anyone in the company could answer it;
+- `topic`: two or three words for its subject;
+- `same_as_question_id`: the id of the OPEN QUESTION that asks the same thing, or null;
+- `same_as_ref`: when it asks the same as an earlier unanswered turn of this batch that is not an open question yet, that turn's ref; otherwise null.
+
+Return exactly one item per turn, with its `ref`, under `items`.
+
+OPEN QUESTIONS:
+{{ open_questions | json }}
+
+TURNS:
+{{ turns | json }}

@@ -17,9 +17,9 @@ from iatoolkit.repositories.database_manager import DatabaseManager
 from iatoolkit.repositories.memory_question_repo import MemoryQuestionRepo
 from iatoolkit.repositories.models import Company, MemoryQuestion, MemoryQuestionCandidate
 from iatoolkit.repositories.profile_repo import ProfileRepo
-from iatoolkit.services.configuration_service import ConfigurationService
-from iatoolkit.services.llm_client_service import llmClient
 from iatoolkit.services.memory_service import MemoryService
+from iatoolkit.services.system_agent_catalog import SystemAgentCatalog
+from iatoolkit.services.system_agent_runner import SystemAgentRunner
 
 
 class MemoryQuestionService:
@@ -56,44 +56,20 @@ class MemoryQuestionService:
     # First key of the two-key Postgres advisory lock; the second is the company id.
     ADVISORY_LOCK_NAMESPACE = 734002
 
-    CLASSIFICATION_SCHEMA = {
-        "type": "object",
-        "properties": {
-            "items": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "ref": {"type": "string"},
-                        "answered": {"type": "boolean"},
-                        "question": {"type": "string"},
-                        "topic": {"type": "string"},
-                        # Nullable as a type list: core's validator rejects null under anyOf.
-                        "same_as_question_id": {"type": ["integer", "null"]},
-                        "same_as_ref": {"type": ["string", "null"]},
-                    },
-                    "required": ["ref", "answered"],
-                    "additionalProperties": False,
-                },
-            },
-        },
-        "required": ["items"],
-        "additionalProperties": False,
-    }
+    # The system agent (config/system_agents_pack.yaml) that classifies the turns.
+    REVIEW_AGENT = "memory_question_review"
 
     @inject
     def __init__(self,
                  profile_repo: ProfileRepo,
                  question_repo: MemoryQuestionRepo,
                  memory_service: MemoryService,
-                 llm_client: llmClient,
-                 configuration_service: ConfigurationService,
+                 system_agent_runner: SystemAgentRunner,
                  db_manager: DatabaseManager):
         self.profile_repo = profile_repo
         self.question_repo = question_repo
         self.memory_service = memory_service
-        self.llm_client = llm_client
-        self.configuration_service = configuration_service
+        self.system_agent_runner = system_agent_runner
         self.db_manager = db_manager
 
     # =====================================================================
@@ -222,8 +198,8 @@ class MemoryQuestionService:
             self._advance(cursor, queries[-1].id if queries else None)
             return {"status": "success", "counts": counts}
 
-        model, _ = self.configuration_service.get_llm_configuration(company.short_name)
-        if not model:
+        if not self.system_agent_runner.resolve_model(
+                company.short_name, SystemAgentCatalog.get(self.REVIEW_AGENT)).model:
             return {"status": "error", "error_message": "the company has no model configured", "counts": counts}
 
         open_questions = self.question_repo.list_questions(company.id, limit=self.MAX_OPEN_IN_PROMPT)
@@ -231,7 +207,7 @@ class MemoryQuestionService:
         failed = False
         for start in range(0, len(entries), self.BATCH_SIZE):
             batch = entries[start:start + self.BATCH_SIZE]
-            items = self._classify(company, model, batch, open_questions)
+            items = self._classify(company, batch, open_questions)
             if items is None:
                 failed = True
                 break
@@ -296,7 +272,7 @@ class MemoryQuestionService:
                 return True
         return False
 
-    def _classify(self, company: Company, model: str, batch: list[dict], open_questions: list[MemoryQuestion]) -> list[dict] | None:
+    def _classify(self, company: Company, batch: list[dict], open_questions: list[MemoryQuestion]) -> list[dict] | None:
         turns = [
             {
                 "ref": entry["ref"],
@@ -310,41 +286,13 @@ class MemoryQuestionService:
             {"id": question.id, "question": question.question, "topic": question.topic}
             for question in open_questions
         ]
-        prompt = (
-            "You review conversations of people with the company's AI assistant. In each turn below the "
-            "assistant searched the company's memory or documents to answer a question about the company.\n"
-            "For each turn decide `answered`: true when the answer gave a concrete answer based on the "
-            "company's own information; false when the assistant said it did not find it, did not know, "
-            "gave only generic advice, or asked the person to check with someone.\n"
-            "For each turn with answered=false also return:\n"
-            "- `question`: the question rewritten in one neutral sentence, in the language of the turn, "
-            "without names of people, personal details or the conversation's wording, so anyone in the "
-            "company could answer it;\n"
-            "- `topic`: two or three words for the subject;\n"
-            "- `same_as_question_id`: the id of the OPEN QUESTION that asks the same thing, or null;\n"
-            "- `same_as_ref`: when it is the same as an earlier unanswered turn of this batch that is not an "
-            "open question yet, that turn's ref; otherwise null.\n"
-            "Return one item per turn, with its ref.\n\n"
-            f"OPEN QUESTIONS:\n{json.dumps(existing, ensure_ascii=False)}\n\n"
-            f"TURNS:\n{json.dumps(turns, ensure_ascii=False)}"
-        )
         try:
-            response = self.llm_client.invoke(
-                company=company,
+            response = self.system_agent_runner.run(
+                company,
+                self.REVIEW_AGENT,
+                {"open_questions": existing, "turns": turns},
                 user_identifier=self.SCAN_IDENTITY,
-                previous_response_id=None,
                 question="Scan memory questions",
-                context=prompt,
-                tools=[],
-                text={},
-                model=model,
-                images=[],
-                attachments=[],
-                response_contract={
-                    "schema": self.CLASSIFICATION_SCHEMA,
-                    "schema_mode": "best_effort",
-                    "response_mode": "structured_only",
-                },
             )
         except Exception as exc:
             logging.warning("Memory question scan for %s could not reach the model: %s", company.short_name, exc)

@@ -13,6 +13,7 @@ from iatoolkit.services.memory_compiler_service import MemoryCompilerService
 from iatoolkit.services.memory_service import MemoryService
 from iatoolkit.services.memory_wiki_service import MemoryWikiService
 from iatoolkit.services.storage_service import StorageService
+from iatoolkit.services.system_agent_runner import SystemAgentRunner
 from iatoolkit.services.tenant_wiki_service import TenantWikiService
 
 
@@ -60,12 +61,17 @@ class MemoryStack:
         self.llm_client = MagicMock()
         self.configuration_service = MagicMock()
         self.configuration_service.get_llm_configuration.return_value = ("gpt-test", {})
+        self.configuration_service.get_configuration.return_value = None
+        # The real runner over the mocked model, wrapped to read what each agent received.
+        self.system_agent_runner = MagicMock(wraps=SystemAgentRunner(
+            llm_client=self.llm_client,
+            configuration_service=self.configuration_service,
+        ))
         self.compiler = MemoryCompilerService(
             profile_repo=self.profile_repo,
             memory_repo=self.memory_repo,
             memory_wiki_service=self.memory_wiki_service,
-            llm_client=self.llm_client,
-            configuration_service=self.configuration_service,
+            system_agent_runner=self.system_agent_runner,
             storage_service=self.storage_service,
             db_manager=self.db_manager,
         )
@@ -101,6 +107,13 @@ class MemoryStack:
     def llm_returns(self, *outputs):
         """Each call to the model returns the next structured output."""
         self.llm_client.invoke.side_effect = [{"structured_output": output} for output in outputs]
+
+    def agent_calls(self, agent_key: str) -> list[dict]:
+        """The inputs each run of a system agent received, in order."""
+        return [
+            call.args[2] for call in self.system_agent_runner.run.call_args_list
+            if call.args[1] == agent_key
+        ]
 
     def save_note(self, author: str, text: str, title: str | None = None) -> dict:
         response = self.memory_service.save_capture(
