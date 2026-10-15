@@ -198,6 +198,9 @@ class MemoryQuestionService:
             self._advance(cursor, queries[-1].id if queries else None)
             return {"status": "success", "counts": counts}
 
+        if not SystemAgentRunner.is_enabled(self.REVIEW_AGENT):
+            # Turned off by the platform: the cursor stays, so the turns are reviewed once it is on again.
+            return {"status": "skipped", "reason": "the review agent is turned off", "counts": counts}
         if not self.system_agent_runner.resolve_model(
                 company.short_name, SystemAgentCatalog.get(self.REVIEW_AGENT)).model:
             return {"status": "error", "error_message": "the company has no model configured", "counts": counts}

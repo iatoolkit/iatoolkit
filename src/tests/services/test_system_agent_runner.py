@@ -4,7 +4,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from iatoolkit.services.system_agent_catalog import SystemAgentCatalog
-from iatoolkit.services.system_agent_runner import SystemAgentRunner, SystemAgentUnavailable
+from iatoolkit.services.system_agent_runner import (
+    PlatformAgentSettings,
+    SystemAgentDisabled,
+    SystemAgentRunner,
+    SystemAgentUnavailable,
+)
 
 COMPANY = SimpleNamespace(short_name="acme", id=1)
 ENABLED = [{"id": "gpt-default"}, {"id": "claude-fast"}, {"id": "claude-smart"}]
@@ -45,6 +50,15 @@ def runner(llm, config):
 
 def review_inputs():
     return {"open_questions": [], "turns": [{"ref": "q1", "question": "¿Horario?", "answer": "No sé"}]}
+
+
+@pytest.fixture
+def platform():
+    """The platform's settings per agent key, as a deployment's provider would return them."""
+    settings = {}
+    SystemAgentRunner.register_platform_settings_provider(lambda key: settings.get(key))
+    yield settings
+    SystemAgentRunner.register_platform_settings_provider(None)
 
 
 class TestCatalog:
@@ -159,3 +173,53 @@ class TestTenantChoice:
         assert described["memory_compiler"]["model_source"] == "tenant"
         assert described["memory_correction"]["effective_model"] == "gpt-default"
         assert described["memory_correction"]["prompt"]
+
+
+class TestPlatformSettings:
+    def test_the_platform_model_comes_after_the_tenant_and_before_the_catalog(self, runner, config, platform):
+        platform["memory_compiler"] = PlatformAgentSettings(default_model="claude-fast")
+        agent = SystemAgentCatalog.get("memory_compiler")
+        assert (runner.resolve_model("acme", agent).model, runner.resolve_model("acme", agent).source) == (
+            "claude-fast", "platform")
+
+        config.sections["system_agents"] = {"memory_compiler": {"model": "claude-smart"}}
+        assert runner.resolve_model("acme", agent).source == "tenant"
+
+    def test_a_platform_model_the_company_does_not_have_is_skipped(self, runner, platform):
+        platform["memory_compiler"] = PlatformAgentSettings(default_model="not-enabled-here")
+
+        resolved = runner.resolve_model("acme", SystemAgentCatalog.get("memory_compiler"))
+
+        assert (resolved.model, resolved.source) == ("gpt-default", "company")
+        assert resolved.ignored_platform_model == "not-enabled-here"
+
+    def test_a_disabled_agent_does_not_call_the_model(self, runner, llm, platform):
+        platform["memory_question_review"] = PlatformAgentSettings(enabled=False)
+
+        with pytest.raises(SystemAgentDisabled):
+            runner.run(COMPANY, "memory_question_review", review_inputs(), user_identifier="service:x")
+        llm.invoke.assert_not_called()
+        assert issubclass(SystemAgentDisabled, SystemAgentUnavailable)
+        assert SystemAgentRunner.is_enabled("memory_question_review") is False
+        assert SystemAgentRunner.is_enabled("memory_compiler") is True
+
+    def test_a_provider_that_fails_leaves_the_agents_running(self, runner, llm):
+        def broken(key):
+            raise RuntimeError("db down")
+
+        SystemAgentRunner.register_platform_settings_provider(broken)
+        try:
+            runner.run(COMPANY, "memory_question_review", review_inputs(), user_identifier="service:x")
+        finally:
+            SystemAgentRunner.register_platform_settings_provider(None)
+        assert llm.invoke.call_args.kwargs["model"] == "gpt-default"
+
+    def test_describe_tells_the_platform_settings(self, runner, platform):
+        platform["memory_correction"] = PlatformAgentSettings(default_model="claude-fast", enabled=False)
+
+        described = {entry["key"]: entry for entry in runner.describe("acme")}
+
+        assert described["memory_correction"]["platform_model"] == "claude-fast"
+        assert described["memory_correction"]["enabled"] is False
+        assert described["memory_compiler"]["enabled"] is True
+

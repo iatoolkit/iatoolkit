@@ -345,3 +345,34 @@ class TestPageCorrection:
         response = self.stack.memory_service.request_page_correction("acme", "juan@acme.cl", 999, "algo")
 
         assert response["status"] == "error"
+
+
+class TestMemoryCompilerWithTheAgentOff:
+    def setup_method(self):
+        from iatoolkit.services.system_agent_runner import PlatformAgentSettings, SystemAgentRunner
+
+        self.stack = MemoryStack()
+        self.off = {"memory_compiler": PlatformAgentSettings(enabled=False)}
+        SystemAgentRunner.register_platform_settings_provider(lambda key: self.off.get(key))
+
+    def teardown_method(self):
+        from iatoolkit.services.system_agent_runner import SystemAgentRunner
+
+        SystemAgentRunner.register_platform_settings_provider(None)
+
+    def test_captures_stay_pending_and_compile_once_it_is_on_again(self):
+        capture = self.stack.save_note("carmen@acme.cl", "Bodega abre a las 8.", title="Bodega")
+
+        result = self.stack.compiler.compile_pending_for_company("acme")
+
+        assert (result["compiled_count"], result["waiting_count"]) == (0, 1)
+        self.stack.llm_client.invoke.assert_not_called()
+        stored = self.stack.memory_repo.get_capture(self.stack.company.id, capture["capture_id"])
+        assert stored.status == MemoryCaptureStatus.PENDING
+        assert self.stack.pages() == []
+
+        self.off.clear()
+        self.stack.llm_returns(create_output("Bodega", "# Bodega\n\nAbre a las 8. (Carmen Rojas, 2026-10-15)"))
+        assert self.stack.compiler.compile_pending_for_company("acme")["compiled_count"] == 1
+        assert [page["title"] for page in self.stack.pages()] == ["Bodega"]
+

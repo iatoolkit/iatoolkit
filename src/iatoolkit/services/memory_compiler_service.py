@@ -23,7 +23,7 @@ from iatoolkit.repositories.models import Company, MemoryCapture, MemoryCaptureS
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.memory_wiki_service import MemoryWikiService
 from iatoolkit.services.storage_service import StorageService
-from iatoolkit.services.system_agent_runner import SystemAgentRunner
+from iatoolkit.services.system_agent_runner import SystemAgentDisabled, SystemAgentRunner
 from iatoolkit.services.tenant_wiki_service import TenantWikiService
 
 
@@ -85,6 +85,7 @@ class MemoryCompilerService:
 
         compiled_count = 0
         processed_count = 0
+        waiting_count = 0
         with self._company_lock(company.id):
             # Keep draining: a capture saved while this run held the lock waited
             # for it instead of compiling concurrently, and must not be left behind.
@@ -92,15 +93,29 @@ class MemoryCompilerService:
                 pending_captures = self.memory_repo.get_pending_captures(company.id, limit=limit)
                 if not pending_captures:
                     break
+                batch_waiting = 0
                 for capture in pending_captures:
+                    if not SystemAgentRunner.is_enabled(self._agent_for(capture)):
+                        # Its agent is turned off by the platform: the capture stays
+                        # pending and is compiled when the agent is turned on again.
+                        batch_waiting += 1
+                        continue
                     processed_count += 1
-                    if self._compile_capture_safely(company, capture):
+                    compiled = self._compile_capture_safely(company, capture)
+                    if compiled is None:
+                        batch_waiting += 1
+                    elif compiled:
                         compiled_count += 1
+                waiting_count += batch_waiting
+                if batch_waiting == len(pending_captures):
+                    # Nothing in this batch could move; reading it again would only repeat that.
+                    break
 
         return {
             "status": "success",
             "compiled_count": compiled_count,
             "processed_count": processed_count,
+            "waiting_count": waiting_count,
             "pending_count": len(self.memory_repo.get_pending_captures(company.id, limit=limit)),
         }
 
@@ -136,7 +151,12 @@ class MemoryCompilerService:
         finally:
             connection.close()
 
-    def _compile_capture_safely(self, company: Company, capture: MemoryCapture) -> bool:
+    def _agent_for(self, capture: MemoryCapture) -> str:
+        is_correction = dict(capture.meta or {}).get("mode") == self.CORRECTION_MODE
+        return self.CORRECTION_AGENT if is_correction else self.COMPILER_AGENT
+
+    def _compile_capture_safely(self, company: Company, capture: MemoryCapture) -> bool | None:
+        """Whether the capture became a page; None when it stays pending (its agent was turned off)."""
         items = self.memory_repo.list_capture_items(capture.id)
         if not items:
             self._mark_capture_compiled(capture, items)
@@ -145,6 +165,10 @@ class MemoryCompilerService:
             for item in items:
                 self._enrich_item(company.short_name, item)
             return self._compile_single_capture(company, capture, items)
+        except SystemAgentDisabled:
+            # Turned off while this run was going: leave it pending, untouched.
+            self.memory_repo.rollback()
+            return None
         except Exception as exc:
             logging.exception("Memory compilation failed for capture %s: %s", capture.id, exc)
             self.memory_repo.rollback()
@@ -316,6 +340,8 @@ class MemoryCompilerService:
                 user_identifier=capture.user_identifier,
                 question=f"Apply memory correction {capture.id}",
             )
+        except SystemAgentDisabled:
+            raise
         except Exception as exc:
             logging.warning("Memory correction %s could not reach the model: %s", capture.id, exc)
             return None
@@ -406,6 +432,8 @@ class MemoryCompilerService:
                 question=f"Compile memory capture {capture.id}",
                 attachments=native_pdf_attachments,
             )
+        except SystemAgentDisabled:
+            raise
         except Exception as exc:
             logging.warning("Memory compiler LLM fallback activated for capture %s: %s", capture.id, exc)
             return None

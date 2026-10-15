@@ -236,3 +236,24 @@ def test_a_bare_list_in_the_raw_output_is_understood_even_when_answer_is_html(st
     [question] = open_questions(stack)
     assert question.question == "¿Cómo se planifican los presupuestos de venta en la empresa?"
     assert question.topic == "presupuestos de venta"
+
+
+def test_with_the_review_agent_off_nothing_is_reviewed_and_the_cursor_stays(stack):
+    from iatoolkit.services.system_agent_runner import PlatformAgentSettings, SystemAgentRunner
+
+    turn(stack, "¿Plazo de pago?", "No lo encontré.")
+    SystemAgentRunner.register_platform_settings_provider(
+        lambda key: PlatformAgentSettings(enabled=False) if key == "memory_question_review" else None)
+    try:
+        result = stack.questions.scan_company("acme")
+    finally:
+        SystemAgentRunner.register_platform_settings_provider(None)
+
+    assert result["status"] == "skipped"
+    stack.llm_client.invoke.assert_not_called()
+    cursor = stack.question_repo.find_cursor(stack.company.id)
+    before = cursor.last_query_id if cursor else 0
+    model_says(stack, [])
+    stack.questions.scan_company("acme")
+    assert stack.llm_client.invoke.called
+    assert stack.question_repo.find_cursor(stack.company.id).last_query_id > before

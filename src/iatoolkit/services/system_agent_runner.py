@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass
+from typing import Callable
 
 from injector import inject
 from jinja2 import StrictUndefined
@@ -23,14 +24,28 @@ class SystemAgentUnavailable(Exception):
     """The company has no model to run the agent with."""
 
 
+class SystemAgentDisabled(SystemAgentUnavailable):
+    """The platform turned the agent off: its work waits until it is turned on again."""
+
+
+@dataclass(frozen=True)
+class PlatformAgentSettings:
+    """What the platform operator set for an agent, for every tenant (BL-012, Fase 2)."""
+    default_model: str | None = None
+    enabled: bool = True
+
+
 @dataclass(frozen=True)
 class ResolvedModel:
     model: str | None
-    # Where it came from: "tenant" (company.yaml), "catalog" (the agent's default)
-    # or "company" (the company's default model).
+    # Where it came from: "tenant" (company.yaml), "platform" (the operator's
+    # default for the agent), "catalog" (the agent's default in its pack) or
+    # "company" (the company's default model).
     source: str | None
     # The tenant's choice when it could not be used (no longer enabled).
     ignored_choice: str | None = None
+    # The platform's model when this company does not have it enabled.
+    ignored_platform_model: str | None = None
 
 
 class SystemAgentRunner:
@@ -40,11 +55,16 @@ class SystemAgentRunner:
     output contract. Interpreting and repairing the answer stays with the caller.
 
     The model is resolved from the most specific to the most general: the one the
-    tenant picked (`system_agents.<key>.model` in company.yaml), the agent's
-    default in the catalog, the company's default model. A pick that is no
-    longer among the company's models falls through to the next level, and a
-    call that fails with a picked model is retried once with the company's
-    default, so a bad choice never stops the agent.
+    tenant picked (`system_agents.<key>.model` in company.yaml), the one the
+    platform set for the agent, the agent's default in the catalog, the
+    company's default model. A model the company does not have enabled is
+    skipped (the platform's too: a tenant is never charged for a model it does
+    not have), and a call that fails with a picked model is retried once with
+    the company's default, so a bad choice never stops the agent.
+
+    The platform's settings (default model, on/off) come from a provider the
+    deployment registers (`register_platform_settings_provider`); without one,
+    every agent is on and has no platform model.
 
     Deliberately light: it does not go through tasks or the agent runtime, so
     the services that use it gain no dependency beyond the model client.
@@ -52,8 +72,11 @@ class SystemAgentRunner:
 
     CONFIG_SECTION = "system_agents"
     SOURCE_TENANT = "tenant"
+    SOURCE_PLATFORM = "platform"
     SOURCE_CATALOG = "catalog"
     SOURCE_COMPANY = "company"
+
+    _platform_settings_provider: Callable[[str], PlatformAgentSettings | None] | None = None
 
     _template_env = ImmutableSandboxedEnvironment(
         undefined=StrictUndefined,
@@ -70,6 +93,33 @@ class SystemAgentRunner:
         self.configuration_service = configuration_service
 
     # =====================================================================
+    # Platform settings
+    # =====================================================================
+
+    @classmethod
+    def register_platform_settings_provider(cls,
+                                            provider: Callable[[str], PlatformAgentSettings | None] | None) -> None:
+        """`provider(agent_key)` returns the platform's settings for an agent, or None for the defaults."""
+        cls._platform_settings_provider = provider
+
+    @classmethod
+    def platform_settings(cls, agent_key: str) -> PlatformAgentSettings:
+        provider = cls._platform_settings_provider
+        if provider is None:
+            return PlatformAgentSettings()
+        try:
+            settings = provider(agent_key)
+        except Exception as exc:
+            # The platform's store unreachable must not stop the tenants' agents.
+            logging.warning("Platform settings of system agent '%s' could not be read: %s", agent_key, exc)
+            return PlatformAgentSettings()
+        return settings if isinstance(settings, PlatformAgentSettings) else PlatformAgentSettings()
+
+    @classmethod
+    def is_enabled(cls, agent_key: str) -> bool:
+        return cls.platform_settings(agent_key).enabled
+
+    # =====================================================================
     # Running
     # =====================================================================
 
@@ -83,11 +133,15 @@ class SystemAgentRunner:
             attachments: list | None = None) -> dict:
         """
         The model's response (as llmClient.invoke returns it). Raises
+        SystemAgentDisabled when the platform turned the agent off,
         SystemAgentUnavailable without a model, and whatever the model client
         raises when even the company's default model fails.
         """
         agent = SystemAgentCatalog.get(agent_key)
-        resolved = self.resolve_model(company.short_name, agent)
+        platform = self.platform_settings(agent.key)
+        if not platform.enabled:
+            raise SystemAgentDisabled(f"system agent '{agent.key}' is turned off by the platform")
+        resolved = self.resolve_model(company.short_name, agent, platform=platform)
         if not resolved.model:
             raise SystemAgentUnavailable(f"{company.short_name} has no model for system agent '{agent.key}'")
         prompt = self.render_prompt(agent, inputs)
@@ -135,11 +189,12 @@ class SystemAgentRunner:
     def resolve_model(self,
                       company_short_name: str,
                       agent: SystemAgent,
-                      llm_configuration: tuple | None = None) -> ResolvedModel:
+                      llm_configuration: tuple | None = None,
+                      platform: PlatformAgentSettings | None = None) -> ResolvedModel:
         """
-        `llm_configuration` is get_llm_configuration's (default, available) when
-        the caller already read it: resolving many agents then costs one read,
-        which in enterprise is a query to the model catalogue.
+        `llm_configuration` is get_llm_configuration's (default, available) and
+        `platform` the agent's platform settings, when the caller already read
+        them: resolving many agents then costs one read of each.
         """
         default_model, available = llm_configuration or self.configuration_service.get_llm_configuration(company_short_name)
         enabled = self._model_ids(available)
@@ -158,9 +213,16 @@ class SystemAgentRunner:
                 "System agent '%s' of %s: model '%s' is no longer enabled; using the next level.",
                 agent.key, company_short_name, chosen,
             )
+        platform = platform or self.platform_settings(agent.key)
+        ignored_platform = None
+        if platform.default_model:
+            if usable(platform.default_model):
+                return ResolvedModel(platform.default_model, self.SOURCE_PLATFORM, ignored)
+            ignored_platform = platform.default_model
         if usable(agent.default_model):
-            return ResolvedModel(agent.default_model, self.SOURCE_CATALOG, ignored)
-        return ResolvedModel(default_model or None, self.SOURCE_COMPANY if default_model else None, ignored)
+            return ResolvedModel(agent.default_model, self.SOURCE_CATALOG, ignored, ignored_platform)
+        return ResolvedModel(default_model or None, self.SOURCE_COMPANY if default_model else None,
+                             ignored, ignored_platform)
 
     def tenant_choice(self, company_short_name: str, agent_key: str) -> str | None:
         section = self._tenant_section(company_short_name)
@@ -243,7 +305,8 @@ class SystemAgentRunner:
         llm_configuration = llm_configuration or self.configuration_service.get_llm_configuration(company_short_name)
         result = []
         for agent in SystemAgentCatalog.list():
-            resolved = self.resolve_model(company_short_name, agent, llm_configuration)
+            platform = self.platform_settings(agent.key)
+            resolved = self.resolve_model(company_short_name, agent, llm_configuration, platform)
             result.append({
                 "key": agent.key,
                 "name": agent.name,
@@ -260,5 +323,8 @@ class SystemAgentRunner:
                 "effective_model": resolved.model,
                 "model_source": resolved.source,
                 "ignored_model": resolved.ignored_choice,
+                "platform_model": platform.default_model,
+                "ignored_platform_model": resolved.ignored_platform_model,
+                "enabled": platform.enabled,
             })
         return result
