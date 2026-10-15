@@ -8,7 +8,7 @@ import enum
 from sqlalchemy import Column, Integer, BigInteger, String, DateTime, Enum, Text, JSON, Boolean, ForeignKey, Table, MetaData
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm import relationship, class_mapper
-from sqlalchemy.sql import func
+from sqlalchemy.sql import func, literal_column
 from sqlalchemy import UniqueConstraint, Index
 from sqlalchemy.dialects.postgresql import JSONB
 from datetime import datetime
@@ -689,6 +689,20 @@ class VSDoc(Base):
     # (e.g. OpenAI=1536, HuggingFace=384, etc.)
     embedding = Column(Vector, nullable=False)
     company = relationship("Company", back_populates="vsdocs")
+
+    # Full-text index for the hybrid search's word branch (BL-005, Fase 4): an
+    # expression index, no extra column, so the table is not rewritten. The
+    # 'simple' configuration does not stem, so codes such as AX-2241 or names
+    # such as Pérez are indexed as written. Postgres only; existing databases get
+    # it from iatoolkit-enterprise/migrations/2026-10-15-vsdocs-text-index.sql,
+    # since create_all() never adds an index to a table that already exists.
+    __table_args__ = (
+        Index(
+            "ix_iat_vsdocs_text_simple_tsv",
+            func.to_tsvector(literal_column("'simple'::regconfig"), text),
+            postgresql_using="gin",
+        ).ddl_if(dialect="postgresql"),
+    )
 
     def to_dict(self):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}

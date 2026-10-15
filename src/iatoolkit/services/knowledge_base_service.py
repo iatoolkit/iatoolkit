@@ -491,9 +491,15 @@ class KnowledgeBaseService:
                collection: str | list[str] | None = None,
                metadata_filter: dict = None,
                include_urls: bool = True,
+               keywords: str | list | None = None,
+               search_mode: str | None = None,
                ):
         """
-        Performs a semantic search and returns the list of Document objects (chunks).
+        Searches the company's chunks and returns them (as dicts).
+
+        By meaning and by words, fused, unless the company sets
+        `knowledge_base.search_mode: vector` (BL-005, Fase 4). `keywords` are
+        exact terms for the word part; `search_mode` overrides the company's.
         Useful for UI displays where structured data is needed instead of a raw string context.
 
         Args:
@@ -536,9 +542,32 @@ class KnowledgeBaseService:
             metadata_filter=metadata_filter,
             collection_ids=collection_ids,
             include_urls=include_urls,
+            search_mode=self.resolve_search_mode(company_short_name, search_mode),
+            keywords=keywords,
         )
 
         return chunk_list
+
+    DEFAULT_SEARCH_MODE = "hybrid"
+    SEARCH_MODES = ("vector", "hybrid")
+
+    def resolve_search_mode(self, company_short_name: str, requested: str | None = None) -> str:
+        """The requested mode, else company.yaml's knowledge_base.search_mode, else hybrid."""
+        candidate = str(requested or "").strip().lower()
+        if candidate in self.SEARCH_MODES:
+            return candidate
+        try:
+            from iatoolkit import current_iatoolkit
+            from iatoolkit.services.configuration_service import ConfigurationService
+
+            # Resolved here, not injected: ConfigurationService builds this service
+            # to sync the collections when a company's config loads.
+            kb_config = current_iatoolkit().get_injector().get(ConfigurationService).get_configuration(
+                company_short_name, "knowledge_base") or {}
+        except Exception:
+            kb_config = {}
+        configured = str((kb_config or {}).get("search_mode") or "").strip().lower() if isinstance(kb_config, dict) else ""
+        return configured if configured in self.SEARCH_MODES else self.DEFAULT_SEARCH_MODE
 
     @staticmethod
     def _normalize_search_collection(collection: str | list[str] | None) -> str | list[str] | None:

@@ -310,23 +310,33 @@ class RagApiView(MethodView):
             n_results = int(data.get('k', 5))
             collection = data.get('collection')
             metadata_filter = data.get('metadata_filter')
+            # The Search Lab can compare modes; empty means the company's own.
+            search_mode = str(data.get('search_mode') or '').strip().lower() or None
+            keywords = data.get('keywords') or None
 
             if not query:
                 msg = self.i18n_service.t('rag.search.query_required')
                 return jsonify({'result': 'error', 'message': msg}), 400
 
             # 3. Call Service
+            extra = {}
+            if search_mode:
+                extra['search_mode'] = search_mode
+            if keywords:
+                extra['keywords'] = keywords
             chunks = self.knowledge_base_service.search(
                 company_short_name=company_short_name,
                 query=query,
                 n_results=n_results,
                 collection=collection,
                 metadata_filter=metadata_filter,
+                **extra,
             )
 
             return jsonify({
                 "result": "success",
-                "chunks": chunks
+                "chunks": chunks,
+                "search_mode": chunks[0].get("search_mode") if chunks else None,
             }), 200
 
         except IAToolkitException as e:

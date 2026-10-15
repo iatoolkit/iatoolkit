@@ -14,6 +14,7 @@ from sqlalchemy import text
 from injector import inject
 
 from iatoolkit.common.exceptions import IAToolkitException
+from iatoolkit.common.search_terms import search_terms
 from iatoolkit.repositories.database_manager import DatabaseManager
 from iatoolkit.repositories.models import Company, VSDoc, VSImage
 from iatoolkit.services.embedding_service import EmbeddingService
@@ -96,6 +97,14 @@ class VSRepo:
             query = query.limit(max(int(limit), 0))
         return list(query.all())
 
+    SEARCH_MODE_VECTOR = "vector"
+    SEARCH_MODE_HYBRID = "hybrid"
+    SEARCH_MODES = (SEARCH_MODE_VECTOR, SEARCH_MODE_HYBRID)
+    # Each branch of the hybrid search brings this many candidates to the fusion.
+    HYBRID_CANDIDATES = 40
+    # Reciprocal Rank Fusion constant: a chunk adds 1 / (RRF_K + rank) per list.
+    RRF_K = 60
+
     def query(self,
               company_short_name: str,
               query_text: str,
@@ -103,6 +112,8 @@ class VSRepo:
               metadata_filter=None,
               collection_ids: List[int] | None = None,
               include_urls: bool = True,
+              search_mode: str = SEARCH_MODE_VECTOR,
+              keywords: str | list | None = None,
               ) -> list[Dict]:
         """
         search documents similar to the query for a company
@@ -113,6 +124,10 @@ class VSRepo:
             n_results: max number of results to return
             metadata_filter:  (e.g., {"document_type": "certificate"})
             include_urls: Generate storage URLs for returned chunks when true.
+            search_mode: "vector" (by meaning) or "hybrid" (by meaning and by
+                words, fused by rank; BL-005, Fase 4).
+            keywords: exact terms for the hybrid search's word branch, instead
+                of the query's own words.
 
         Returns:
             list of documents matching the query and filters
@@ -214,11 +229,18 @@ class VSRepo:
             sql_query_parts.extend(metadata_sql)
             params.update(metadata_params)
 
-            # join all the query parts
-            sql_query = "".join(sql_query_parts)
+            text_terms = search_terms(query_text, keywords) if search_mode == self.SEARCH_MODE_HYBRID else ""
+            hybrid = bool(text_terms)
+            if hybrid:
+                params["text_terms"] = text_terms
+                params["candidates"] = max(int(n_results or 5), self.HYBRID_CANDIDATES)
+                sql_query = self._hybrid_sql(sql_query_parts, distance_expression)
+            else:
+                # join all the query parts
+                sql_query = "".join(sql_query_parts)
 
-            # add sorting and limit of results
-            sql_query += " ORDER BY distance ASC LIMIT :n_results"
+                # add sorting and limit of results
+                sql_query += " ORDER BY distance ASC LIMIT :n_results"
 
             logging.debug(f"Executing SQL query: {sql_query}")
             logging.debug(f"With parameters: {params}")
@@ -231,6 +253,7 @@ class VSRepo:
             rows = result.fetchall()
             vector_sql_duration_ms = round((perf_counter() - vector_sql_started_at) * 1000)
             vs_documents = []
+            matches = {"both": 0, "vector": 0, "text": 0}
 
             for row in rows:
                 # create the document object with the data
@@ -238,6 +261,12 @@ class VSRepo:
                 chunk_meta = row[6] if len(row) > 6 and row[6] is not None else {}
 
                 distance = float(row[7]) if len(row) > 7 and row[7] is not None else None
+                hybrid_fields = {}
+                if hybrid:
+                    in_vector, in_text = bool(row[9]), bool(row[10])
+                    match = "both" if in_vector and in_text else "vector" if in_vector else "text"
+                    matches[match] += 1
+                    hybrid_fields = {"match": match, "rrf_score": float(row[8]) if row[8] is not None else None}
 
                 # get the url of the document
                 storage_key = row[3] if len(row) > 3 and row[3] is not None else None
@@ -257,17 +286,21 @@ class VSRepo:
                         'distance': distance,
                         'distance_metric': distance_metric,
                         'score': self._score_from_l2_distance(distance),
+                        'search_mode': self.SEARCH_MODE_HYBRID if hybrid else self.SEARCH_MODE_VECTOR,
+                        **hybrid_fields,
                     }
                 )
 
             logging.info(
-                "RAG vector query completed: company=%s collection_ids=%s dimensions=%s n_results=%s rows=%s "
-                "embedding_ms=%s company_lookup_ms=%s vector_sql_ms=%s total_ms=%s",
+                "RAG %s query completed: company=%s collection_ids=%s dimensions=%s n_results=%s rows=%s "
+                "matches=%s embedding_ms=%s company_lookup_ms=%s vector_sql_ms=%s total_ms=%s",
+                self.SEARCH_MODE_HYBRID if hybrid else self.SEARCH_MODE_VECTOR,
                 company_short_name,
                 normalized_collection_ids,
                 embedding_dimensions,
                 n_results,
                 len(rows),
+                matches if hybrid else None,
                 embedding_duration_ms,
                 company_lookup_duration_ms,
                 vector_sql_duration_ms,
@@ -287,6 +320,79 @@ class VSRepo:
                                f"Error en la consulta: {str(e)}")
         finally:
             self.session.close()
+
+    def _hybrid_sql(self, sql_query_parts: list[str], distance_expression: str) -> str:
+        """
+        Hybrid search in one statement: the nearest chunks by meaning and the
+        best chunks by words (Postgres full text, 'simple' configuration, the
+        terms OR'ed), each ranked, fused by Reciprocal Rank Fusion.
+
+        `sql_query_parts` is the vector query with every filter (company,
+        dimension, collections, metadata); both branches reuse its WHERE, so they
+        see exactly the same chunks. The word branch has its own expression, the
+        one the GIN index ix_iat_vsdocs_text_simple_tsv is built on.
+        """
+        base = "".join(sql_query_parts)
+        _, where = base.split("WHERE", 1)
+        # The dimension condition is for the vector index; the word branch does
+        # not need it (a chunk is a chunk whatever its embedding size).
+        text_where = re.sub(r"\s+AND vector_dims\(iat_vsdocs\.embedding\) = \d+", "", where)
+        tsvector = "to_tsvector('simple'::regconfig, iat_vsdocs.text)"
+        # plainto_tsquery parses the terms exactly as the index parsed the text
+        # (and cannot be broken by any character); its ANDs become ORs.
+        tsquery = "replace(plainto_tsquery('simple'::regconfig, :text_terms)::text, ' & ', ' | ')::tsquery"
+        return f"""
+            WITH vector_hits AS (
+                SELECT id, distance, ROW_NUMBER() OVER (ORDER BY distance ASC) AS rank
+                FROM (
+                    SELECT iat_vsdocs.id, ({distance_expression}) AS distance
+                    FROM iat_vsdocs, iat_documents
+                    WHERE {where}
+                    ORDER BY distance ASC
+                    LIMIT :candidates
+                ) nearest
+            ),
+            text_hits AS (
+                SELECT id, ROW_NUMBER() OVER (ORDER BY text_rank DESC, id ASC) AS rank
+                FROM (
+                    SELECT iat_vsdocs.id, ts_rank_cd({tsvector}, terms.q) AS text_rank
+                    FROM iat_vsdocs, iat_documents, (SELECT {tsquery} AS q) terms
+                    WHERE {text_where}
+                      AND {tsvector} @@ terms.q
+                    ORDER BY text_rank DESC
+                    LIMIT :candidates
+                ) best
+            ),
+            fused AS (
+                SELECT id,
+                       SUM(1.0 / ({self.RRF_K} + rank)) AS rrf_score,
+                       MIN(distance) AS distance,
+                       BOOL_OR(source = 'vector') AS in_vector,
+                       BOOL_OR(source = 'text') AS in_text
+                FROM (
+                    SELECT id, rank, distance, 'vector' AS source FROM vector_hits
+                    UNION ALL
+                    SELECT id, rank, NULL::float AS distance, 'text' AS source FROM text_hits
+                ) both_lists
+                GROUP BY id
+            )
+            SELECT iat_vsdocs.id,
+                   iat_documents.filename,
+                   iat_vsdocs.text,
+                   iat_documents.storage_key,
+                   iat_documents.meta,
+                   iat_documents.id,
+                   iat_vsdocs.meta,
+                   fused.distance,
+                   fused.rrf_score,
+                   fused.in_vector,
+                   fused.in_text
+            FROM fused
+            JOIN iat_vsdocs ON iat_vsdocs.id = fused.id
+            JOIN iat_documents ON iat_documents.id = iat_vsdocs.document_id
+            ORDER BY fused.rrf_score DESC, fused.distance ASC NULLS LAST
+            LIMIT :n_results
+        """
 
     def query_images(self,
                      company_short_name: str,

@@ -280,6 +280,14 @@ tools:
                   - value
                 additionalProperties: false
           description: "Opcional en la práctica. Usa null cuando no necesites filtrar por metadata. No inventes filtros ni envíes [] por defecto. Ejemplo: [{'key':'doc.type','value':'invoice'},{'key':'chunk.source_type','value':'table'}]."
+        keywords:
+          anyOf:
+            - type: "null"
+            - type: string
+            - type: array
+              items:
+                type: string
+          description: "Opcional. Términos exactos que deben aparecer en el texto: códigos, números de contrato, RUT, nombres propios o siglas (ej. [\"AX-2241\", \"Pérez\"]). La búsqueda combina el significado de `query` con estos términos. Usa null si la pregunta no tiene términos exactos."
       required:
         - query
   - function_name: iat_document_list

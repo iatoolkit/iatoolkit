@@ -415,6 +415,8 @@ class TestKnowledgeBaseService:
             metadata_filter={"source_type": "table", "doc.category": "finance"},
             collection_ids=[7],
             include_urls=True,
+            search_mode='hybrid',
+            keywords=None,
         )
 
     def test_search_resolves_multiple_collection_ids(self):
@@ -439,6 +441,8 @@ class TestKnowledgeBaseService:
             metadata_filter=None,
             collection_ids=[7, 8],
             include_urls=True,
+            search_mode='hybrid',
+            keywords=None,
         )
 
     def test_build_documents_query_filters_collection_case_insensitively(self):
@@ -479,6 +483,8 @@ class TestKnowledgeBaseService:
             metadata_filter=None,
             collection_ids=None,
             include_urls=True,
+            search_mode='hybrid',
+            keywords=None,
         )
 
     def test_search_can_skip_presigned_urls_for_internal_resolution(self):

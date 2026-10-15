@@ -83,3 +83,19 @@ def test_list_pages():
 
     assert [d["document_id"] for d in page["documents"]] == [2, 3]
     assert (page["total"], page["next_offset"]) == (5, 4)
+
+
+def test_search_mode_is_hybrid_unless_the_company_says_otherwise(monkeypatch):
+    from types import SimpleNamespace
+    import iatoolkit
+
+    service = make_service()
+    configs = {"acme": {"search_mode": "vector"}, "beta": {}, "gamma": {"search_mode": "raro"}}
+    config_service = SimpleNamespace(get_configuration=lambda company, key: configs.get(company))
+    injector = SimpleNamespace(get=lambda cls: config_service)
+    monkeypatch.setattr(iatoolkit, "current_iatoolkit", lambda: SimpleNamespace(get_injector=lambda: injector))
+
+    assert service.resolve_search_mode("acme") == "vector"
+    assert service.resolve_search_mode("beta") == "hybrid"
+    assert service.resolve_search_mode("gamma") == "hybrid"
+    assert service.resolve_search_mode("acme", "hybrid") == "hybrid"

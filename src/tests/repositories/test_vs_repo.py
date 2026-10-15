@@ -487,3 +487,65 @@ class TestVSRepo:
         with pytest.raises(IAToolkitException) as exc:
             self.vs_repo.query_images_by_image("co", b"img")
         assert exc.value.error_type == IAToolkitException.ErrorType.VECTOR_STORE_ERROR
+
+
+class TestHybridSearch:
+    """BL-005, Fase 4: by meaning and by words, fused by Reciprocal Rank Fusion."""
+
+    def setup_method(self):
+        self.db_manager = MagicMock(spec=DatabaseManager)
+        self.session = self.db_manager.get_session.return_value
+        self.embedding_service = MagicMock(spec=EmbeddingService)
+        self.embedding_service.embed_text.return_value = [0.1, 0.2, 0.3]
+        self.repo = VSRepo(db_manager=self.db_manager, embedding_service=self.embedding_service,
+                           storage_service=MagicMock(spec=StorageService))
+        self.session.query.return_value.filter.return_value.one_or_none.return_value = Company(id=5, short_name="acme")
+
+    def last_sql_and_params(self):
+        call = self.session.execute.call_args_list[-1]
+        return str(call.args[0]), call.args[1]
+
+    def test_hybrid_fuses_both_lists_with_the_same_filters(self):
+        self.session.execute.return_value.fetchall.return_value = [
+            (1, "a.pdf", "AX-2241 contrato", "k1", {}, 7, {}, 0.3, 0.0328, True, True),
+            (2, "b.pdf", "otro texto", "k2", {}, 8, {}, None, 0.0161, False, True),
+        ]
+
+        results = self.repo.query("acme", "¿Cuál es el contrato AX-2241?", n_results=5, collection_ids=[9],
+                                  include_urls=False, search_mode="hybrid")
+
+        sql, params = self.last_sql_and_params()
+        assert "WITH vector_hits" in sql and "text_hits" in sql and "1.0 / (60 + rank)" in sql
+        assert "to_tsvector('simple'::regconfig, iat_vsdocs.text) @@ terms.q" in sql
+        assert sql.count("iat_documents.collection_type_id = :collection_id") == 2
+        assert "vector_dims(iat_vsdocs.embedding) = 3" in sql.split("text_hits")[0]
+        assert params["text_terms"] == "contrato AX-2241"
+        assert params["candidates"] == 40
+        assert [(r["match"], r["distance"]) for r in results] == [("both", 0.3), ("text", None)]
+        assert results[0]["search_mode"] == "hybrid" and results[0]["rrf_score"] == 0.0328
+
+    def test_keywords_replace_the_question_words(self):
+        self.session.execute.return_value.fetchall.return_value = []
+
+        self.repo.query("acme", "cómo se paga", search_mode="hybrid", keywords=["76.123.456-7", "Pérez"],
+                        include_urls=False)
+
+        assert self.last_sql_and_params()[1]["text_terms"] == "76.123.456-7 Pérez"
+
+    def test_a_question_of_only_stopwords_searches_by_meaning(self):
+        self.session.execute.return_value.fetchall.return_value = []
+
+        self.repo.query("acme", "¿qué es eso?", search_mode="hybrid", include_urls=False)
+
+        sql, params = self.last_sql_and_params()
+        assert "text_hits" not in sql and "text_terms" not in params
+
+    def test_vector_mode_is_unchanged(self):
+        self.session.execute.return_value.fetchall.return_value = [
+            (1, "a.pdf", "x", "k1", {}, 7, {}, 0.3)]
+
+        results = self.repo.query("acme", "contrato AX-2241", include_urls=False)
+
+        sql, params = self.last_sql_and_params()
+        assert "text_hits" not in sql and sql.strip().endswith("ORDER BY distance ASC LIMIT :n_results")
+        assert results[0]["search_mode"] == "vector" and "match" not in results[0]

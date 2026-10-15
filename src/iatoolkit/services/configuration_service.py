@@ -1059,6 +1059,10 @@ class ConfigurationService:
         if kb_config and not isinstance(kb_config, dict):
             add_error("knowledge_base", "Section must be a dictionary.")
         elif kb_config:
+            search_mode = kb_config.get("search_mode")
+            if search_mode is not None and str(search_mode).strip().lower() not in {"vector", "hybrid"}:
+                add_error("knowledge_base.search_mode", "Must be 'vector' or 'hybrid'.")
+
             parsing_provider = kb_config.get("parsing_provider")
             allowed_parsing_providers = {"auto", "docling", "basic"}
             if parsing_provider is not None:

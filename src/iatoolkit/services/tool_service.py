@@ -185,13 +185,16 @@ class ToolService:
                                      collection: str | list[str] | None = None,
                                      metadata_filter=None,
                                      n_results: int = 5,
+                                     keywords=None,
                                      **kwargs):
+        search_kwargs = {"keywords": keywords} if keywords else {}
         chunks = self.knowledge_base_service.search(
             company_short_name=company_short_name,
             query=query,
             n_results=n_results,
             collection=collection,
             metadata_filter=metadata_filter,
+            **search_kwargs,
         )
         typed_chunks = self._normalize_chunks_for_tool(chunks)
 
