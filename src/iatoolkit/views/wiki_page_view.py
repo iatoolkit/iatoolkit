@@ -23,8 +23,9 @@ class WikiPageView(MethodView):
     The link the wiki tools hand out (`TenantWikiService.page_url`) lands here.
     The page is read as the signed-in person, so its visibility labels apply
     exactly as they do in chat; without a session the person signs in and comes
-    back. The URL mirrors the page's path in the wiki, so the relative links
-    between pages resolve by themselves.
+    back. The URL mirrors the page's path in the wiki, so a relative link between
+    pages resolves by itself; one that starts with "/" means the wiki's root, as
+    the wiki's lint reads it, and is rewritten under this viewer.
     """
 
     # `code-friendly`: in a technical wiki an underscore joins a name
@@ -78,7 +79,7 @@ class WikiPageView(MethodView):
                 "wiki_page.html",
                 **context,
                 page_title=page.get("title") or page_path or context["wiki_name"],
-                body_html=self.render_markdown(body),
+                body_html=self.render_markdown(body, wiki_root=context["root_url"]),
                 message=None if body else self.i18n_service.t('ui.wiki_page.empty'),
             )
 
@@ -92,10 +93,25 @@ class WikiPageView(MethodView):
         ), status_code
 
     @classmethod
-    def render_markdown(cls, markdown: str | None) -> str:
+    def render_markdown(cls, markdown: str | None, wiki_root: str | None = None) -> str:
+        """
+        Sanitized HTML for a page body. With `wiki_root` (the viewer URL of the
+        wiki's root page), a link that starts with "/" is taken as a path in the
+        wiki and moved under it: written by hand or by a generator,
+        `/tech/x.md` means the wiki's `tech/x.md`, never the host's.
+        """
         if not str(markdown or "").strip():
             return ""
-        return nh3.clean(markdown2.markdown(markdown, extras=cls.MARKDOWN_EXTRAS))
+        prefix = str(wiki_root or "").rstrip("/")
+
+        def under_wiki_root(tag: str, attribute: str, value: str) -> str:
+            if prefix and tag == "a" and attribute == "href" and value.startswith("/") \
+                    and not value.startswith("//"):
+                return prefix + value
+            return value
+
+        return nh3.clean(markdown2.markdown(markdown, extras=cls.MARKDOWN_EXTRAS),
+                         attribute_filter=under_wiki_root)
 
     def _denial(self, result: dict) -> tuple[int, str]:
         """A withheld page says why, as the wiki tools do; anything else is a 404."""

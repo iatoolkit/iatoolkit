@@ -92,6 +92,25 @@ def test_the_wiki_folder_opens_its_root_page(wiki_app):
     assert wiki_service.get_page.call_args.kwargs["path"] == "/"
 
 
+def test_a_link_from_the_wiki_root_stays_inside_the_wiki(wiki_app):
+    # kb-integrated writes `/tech/x.md` for the wiki's own tech/x.md; the browser
+    # would take it from the host's root and drop /acme/wiki/kb.
+    app, _, wiki_service = wiki_app
+    wiki_service.get_page.return_value = served(
+        "# Notas\n\n"
+        "[datos](/tech/sg/05-data.md) [mismo dir](alertas.md) [arriba](../INDEX.md) "
+        "[fuera](https://example.com/x) [otro host](//example.com/x) [aqui](#tablas)\n"
+    )
+
+    html = app.test_client().get("/acme/wiki/kb/tech/sg/notas.md").get_data(as_text=True)
+
+    assert 'href="/acme/wiki/kb/tech/sg/05-data.md"' in html
+    assert 'href="alertas.md"' in html and 'href="../INDEX.md"' in html
+    assert 'href="https://example.com/x"' in html
+    assert 'href="//example.com/x"' in html
+    assert 'href="#tablas"' in html
+
+
 def test_underscores_in_names_are_not_italics(wiki_app):
     app, _, wiki_service = wiki_app
     wiki_service.get_page.return_value = served("# SYS_alertas_push\n\nLa tabla DTE_doc_noti.\n")
