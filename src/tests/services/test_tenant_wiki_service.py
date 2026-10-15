@@ -3,6 +3,8 @@ import json
 import os
 from unittest.mock import MagicMock
 
+from flask import Flask
+
 from iatoolkit.repositories.database_manager import DatabaseManager
 from iatoolkit.repositories.knowledge_wiki_repo import KnowledgeWikiRepo
 from iatoolkit.repositories.models import Company
@@ -695,6 +697,60 @@ class TestTenantWikiService:
 
         assert result["status"] == "error"
         assert result["error_message"] == "wiki not exposed to MCP"
+
+    def test_page_url_points_to_the_viewer_at_the_page_path(self, monkeypatch):
+        monkeypatch.setenv("APP_BASE_URL", "https://iat.example.com/")
+
+        assert (TenantWikiService.page_url("acme", "kb-integrated", "tech/systems/sg/notas.md")
+                == "https://iat.example.com/acme/wiki/kb-integrated/tech/systems/sg/notas.md")
+        # The root is the wiki's own folder, so its relative links resolve.
+        assert TenantWikiService.page_url("acme", "kb-integrated", "/") == "https://iat.example.com/acme/wiki/kb-integrated/"
+        assert (TenantWikiService.page_url("acme", "kb-integrated", "/tech/mi página.md")
+                == "https://iat.example.com/acme/wiki/kb-integrated/tech/mi%20p%C3%A1gina.md")
+
+    def test_page_url_falls_back_to_the_request_host(self, monkeypatch):
+        monkeypatch.delenv("APP_BASE_URL", raising=False)
+
+        with Flask(__name__).test_request_context(base_url="https://chat.acme.cl"):
+            url = TenantWikiService.page_url("acme", "ops", "runbook.md")
+
+        assert url == "https://chat.acme.cl/acme/wiki/ops/runbook.md"
+
+    def test_page_url_is_none_without_a_host(self, monkeypatch):
+        # A scheduled job without APP_BASE_URL: no link beats a wrong one.
+        monkeypatch.delenv("APP_BASE_URL", raising=False)
+
+        assert TenantWikiService.page_url("acme", "ops", "runbook.md") is None
+
+    def test_search_and_read_carry_the_page_url(self, monkeypatch):
+        monkeypatch.setenv("APP_BASE_URL", "https://iat.example.com")
+        root = "companies/acme/knowledge_wikis/ops"
+        self.write_storage(f"{root}/runbooks/incidents.md", "# Incidents\n\nEscalate sev1 incidents.\n")
+        self.service.sync_wiki("acme", wiki_key="ops", root_storage_key=root, name="Ops Wiki")
+
+        searched = self.service.search_pages("acme", wiki_key="ops", query="sev1 incidents", limit=3)
+        read = self.service.get_page("acme", wiki_key="ops", path="runbooks/incidents.md")
+        home = self.service.get_page("acme", wiki_key="ops", path="/")
+
+        expected = "https://iat.example.com/acme/wiki/ops/runbooks/incidents.md"
+        assert searched["results"][0]["url"] == expected
+        assert read["page"]["url"] == expected
+        assert home["page"]["url"] == "https://iat.example.com/acme/wiki/ops/"
+
+    def test_system_wiki_pages_get_no_url(self, monkeypatch):
+        # The viewer does not open a system wiki, so a link would only 404.
+        monkeypatch.setenv("APP_BASE_URL", "https://iat.example.com")
+        self.create_system_wiki()
+        self.service.create_page("acme", wiki_key="iatoolkit-memory", path="despachos", title="Despachos",
+                                 markdown="# Despachos\n\nNunca se despacha los viernes.\n")
+
+        searched = self.service.search_pages("acme", wiki_key="iatoolkit-memory", query="despacha viernes",
+                                             include_system=True)
+        read = self.service.get_page("acme", wiki_key="iatoolkit-memory", path="despachos.md",
+                                     include_system=True)
+
+        assert searched["results"][0]["url"] is None
+        assert read["page"]["url"] is None
 
     def test_lint_reports_missing_metadata_and_broken_internal_links(self):
         root = "companies/acme/knowledge_wikis/ops"

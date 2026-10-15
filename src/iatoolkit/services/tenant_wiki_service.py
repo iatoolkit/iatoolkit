@@ -14,7 +14,9 @@ import unicodedata
 from datetime import datetime
 from pathlib import PurePosixPath
 from typing import Any, Callable
+from urllib.parse import quote
 
+from flask import has_request_context, request
 from injector import inject
 
 from iatoolkit.repositories.knowledge_wiki_repo import KnowledgeWikiRepo
@@ -583,6 +585,37 @@ class TenantWikiService:
             "unlabelled": len(pages) - labelled,
         }
 
+    @classmethod
+    def page_url(cls, company_short_name: str, wiki_key: str, path: str | None) -> str | None:
+        """
+        Where a person opens a page in the browser: the page viewer, at the
+        page's own path, so the relative links between pages resolve without
+        rewriting them. The root page is the wiki's own folder.
+
+        `APP_BASE_URL` names the public host, because a scheduled job has no
+        request to take it from; without it the request's host is used, and
+        with neither there is no URL to give.
+        """
+        base = str(os.getenv("APP_BASE_URL") or "").strip().rstrip("/")
+        if not base and has_request_context():
+            base = request.url_root.rstrip("/")
+        if not base:
+            return None
+        return "/".join((
+            base,
+            quote(str(company_short_name or "").strip(), safe=""),
+            "wiki",
+            quote(cls.normalize_wiki_key(wiki_key), safe=""),
+            quote(cls._normalize_page_path(path), safe="/"),
+        ))
+
+    def _reader_url(self, company_short_name: str, wiki: KnowledgeWiki, path: str | None) -> str | None:
+        # A system wiki is read through the feature that owns it; the viewer
+        # answers "wiki not found" for it, so it gets no link.
+        if self.is_system_wiki(wiki):
+            return None
+        return self.page_url(company_short_name, wiki.wiki_key, path)
+
     def get_page(
         self,
         company_short_name: str,
@@ -638,12 +671,15 @@ class TenantWikiService:
             return {
                 "status": "success",
                 "wiki": self.serialize_wiki(wiki),
-                "page": self._build_virtual_index_page(
-                    wiki,
-                    markdown=markdown,
-                    source_storage_key=source_storage_key,
-                    path="/",
-                ),
+                "page": {
+                    **self._build_virtual_index_page(
+                        wiki,
+                        markdown=markdown,
+                        source_storage_key=source_storage_key,
+                        path="/",
+                    ),
+                    "url": self._reader_url(company_short_name, wiki, "/"),
+                },
             }
         if normalized_path == self.INDEX_FILENAME:
             entries = self._filter_page_entries(self._page_entries(wiki), visibility_filter=visibility_filter)
@@ -656,12 +692,15 @@ class TenantWikiService:
             return {
                 "status": "success",
                 "wiki": self.serialize_wiki(wiki),
-                "page": self._build_virtual_index_page(
-                    wiki,
-                    markdown=authored_index_markdown,
-                    source_storage_key=authored_index_storage_key,
-                    path=self.INDEX_FILENAME,
-                ),
+                "page": {
+                    **self._build_virtual_index_page(
+                        wiki,
+                        markdown=authored_index_markdown,
+                        source_storage_key=authored_index_storage_key,
+                        path=self.INDEX_FILENAME,
+                    ),
+                    "url": self._reader_url(company_short_name, wiki, self.INDEX_FILENAME),
+                },
             }
         page = self.knowledge_wiki_repo.get_page_by_path(wiki.id, normalized_path)
         if page is None:
@@ -689,6 +728,7 @@ class TenantWikiService:
                 **self.serialize_page(page, include_body=True),
                 "frontmatter": parsed.get("frontmatter") or {},
                 "markdown": markdown,
+                "url": self._reader_url(company_short_name, wiki, page.path),
             },
         }
 
@@ -1068,6 +1108,7 @@ class TenantWikiService:
                     **self.serialize_page(page, include_body=False),
                     "wiki_key": wiki.wiki_key,
                     "wiki_name": wiki.name,
+                    "url": self._reader_url(company_short_name, wiki, page.path),
                     "score": round(score if score > 0 else 1.0, 4),
                 })
 

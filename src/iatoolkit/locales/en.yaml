@@ -377,6 +377,14 @@ ui:
     last_used: "Last used"
     never_used: "No recorded use"
 
+  wiki_page:
+    back_to_chat: "Back to chat"
+    trail_label: "Location in the wiki"
+    empty: "This page has no content."
+    not_found: "This page does not exist in the wiki or is no longer published."
+    forbidden: "You do not have access to this page."
+    forbidden_labels: "You do not have access to this page. You need one of these labels: {labels}."
+    unavailable: "We could not verify your access right now. Try again in a few minutes."
   memory:
     title: "Company memory"
     capture_title: "Teach the company something"

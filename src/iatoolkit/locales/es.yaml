@@ -391,6 +391,14 @@ ui:
     last_used: "Último uso"
     never_used: "Sin uso registrado"
 
+  wiki_page:
+    back_to_chat: "Volver al chat"
+    trail_label: "Ubicación en la wiki"
+    empty: "Esta página no tiene contenido."
+    not_found: "Esta página no existe en la wiki o ya no está publicada."
+    forbidden: "No tienes acceso a esta página."
+    forbidden_labels: "No tienes acceso a esta página. Necesitas alguna de estas etiquetas: {labels}."
+    unavailable: "No pudimos verificar tu acceso en este momento. Intenta de nuevo en unos minutos."
   memory:
     title: "Memoria de la empresa"
     capture_title: "Enseñar algo a la empresa"

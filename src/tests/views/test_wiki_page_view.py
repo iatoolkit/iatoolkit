@@ -1,0 +1,169 @@
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+from urllib.parse import parse_qs, urlparse
+
+import pytest
+import yaml
+from flask import Flask, url_for
+from flask_injector import FlaskInjector
+
+from iatoolkit.services.branding_service import BrandingService
+from iatoolkit.services.i18n_service import I18nService
+from iatoolkit.services.profile_service import ProfileService
+from iatoolkit.services.tenant_wiki_service import TenantWikiService
+from iatoolkit.views.wiki_page_view import WikiPageView
+
+SESSION = {"company_short_name": "acme", "user_identifier": "ana@acme.com"}
+WIKI = {"wiki_key": "kb", "name": "Base de conocimiento"}
+
+
+@pytest.fixture
+def wiki_app():
+    root = Path(__file__).parents[2] / "iatoolkit"
+    app = Flask(__name__, template_folder=str(root / "templates"), static_folder=str(root / "static"))
+    app.secret_key = "test-secret"
+    app.testing = True
+    profile = MagicMock(spec=ProfileService)
+    profile.get_company_by_short_name.return_value = SimpleNamespace(name="ACME")
+    profile.get_current_session_info.return_value = dict(SESSION)
+    branding = MagicMock(spec=BrandingService)
+    branding.get_company_branding.return_value = {"name": "ACME", "css_variables": ""}
+    wiki_service = MagicMock(spec=TenantWikiService)
+    i18n = MagicMock(spec=I18nService)
+    translations = yaml.safe_load((root / "locales/es.yaml").read_text())
+
+    def translate(key, lang=None, **kwargs):
+        value = translations
+        for part in key.split("."):
+            value = value[part]
+        return value.format(**kwargs) if kwargs else value
+
+    i18n.t.side_effect = translate
+    app.jinja_env.globals.update(t=translate)
+    app.add_url_rule("/<company_short_name>/home", "home", lambda **kw: "HOME")
+    app.add_url_rule("/<company_short_name>/chat", "chat", lambda **kw: "CHAT")
+    view = WikiPageView.as_view("wiki_page", profile_service=profile, branding_service=branding,
+                                i18n_service=i18n, tenant_wiki_service=wiki_service)
+    app.add_url_rule("/<company_short_name>/wiki/<wiki_key>/", defaults={"page_path": ""}, view_func=view)
+    app.add_url_rule("/<company_short_name>/wiki/<wiki_key>/<path:page_path>", view_func=view)
+
+    @app.context_processor
+    def inject_globals():
+        return {"flashed_messages": [], "url_for": url_for}
+
+    FlaskInjector(app=app)
+    return app, profile, wiki_service
+
+
+def served(markdown: str, *, title: str = "Notas de SG", path: str = "tech/sg/notas.md") -> dict:
+    return {"status": "success", "wiki": WIKI,
+            "page": {"path": path, "title": title, "markdown": markdown}}
+
+
+def test_renders_the_page_as_the_signed_in_person(wiki_app):
+    app, _, wiki_service = wiki_app
+    wiki_service.get_page.return_value = served(
+        "---\ntitle: Notas de SG\naccess: [tech]\n---\n# Notas de SG\n\nVer [alertas](../sg/alertas.md).\n"
+    )
+
+    response = app.test_client().get("/acme/wiki/kb/tech/sg/notas.md")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "<h1>Notas de SG</h1>" in html
+    # Relative links stay relative: the URL mirrors the page's path.
+    assert 'href="../sg/alertas.md"' in html
+    assert "access:" not in html
+    assert "Base de conocimiento" in html
+    wiki_service.get_page.assert_called_once_with(
+        "acme", wiki_key="kb", path="tech/sg/notas.md", user_identifier="ana@acme.com",
+    )
+
+
+def test_the_wiki_folder_opens_its_root_page(wiki_app):
+    app, _, wiki_service = wiki_app
+    wiki_service.get_page.return_value = served("# Inicio\n\n- [Notas](tech/sg/notas.md)\n", title="Inicio", path="/")
+
+    response = app.test_client().get("/acme/wiki/kb/")
+
+    assert response.status_code == 200
+    assert 'href="tech/sg/notas.md"' in response.get_data(as_text=True)
+    assert wiki_service.get_page.call_args.kwargs["path"] == "/"
+
+
+def test_underscores_in_names_are_not_italics(wiki_app):
+    app, _, wiki_service = wiki_app
+    wiki_service.get_page.return_value = served("# SYS_alertas_push\n\nLa tabla DTE_doc_noti.\n")
+
+    html = app.test_client().get("/acme/wiki/kb/tech/sg/notas.md").get_data(as_text=True)
+
+    assert "<h1>SYS_alertas_push</h1>" in html
+    assert "DTE_doc_noti" in html
+
+
+def test_page_markup_is_sanitized(wiki_app):
+    app, _, wiki_service = wiki_app
+    wiki_service.get_page.return_value = served("# Notas\n\n<script>alert(1)</script>\n\n[x](javascript:alert(1))\n")
+
+    html = app.test_client().get("/acme/wiki/kb/tech/sg/notas.md").get_data(as_text=True)
+
+    assert "alert(1)</script>" not in html
+    assert "javascript:" not in html
+
+
+@pytest.mark.parametrize("session_info", [{}, {"company_short_name": "other", "user_identifier": "ana@acme.com"}])
+def test_without_a_session_for_the_company_it_signs_in_and_comes_back(wiki_app, session_info):
+    app, profile, wiki_service = wiki_app
+    profile.get_current_session_info.return_value = session_info
+
+    response = app.test_client().get("/acme/wiki/kb/tech/sg/notas.md")
+
+    assert response.status_code == 302
+    location = urlparse(response.headers["Location"])
+    assert location.path == "/acme/home"
+    assert parse_qs(location.query)["next"] == ["/acme/wiki/kb/tech/sg/notas.md"]
+    wiki_service.get_page.assert_not_called()
+
+
+def test_a_withheld_page_names_the_labels_it_needs(wiki_app):
+    app, _, wiki_service = wiki_app
+    wiki_service.get_page.return_value = {
+        "status": "forbidden", "wiki": WIKI, "wiki_key": "kb", "path": "board/comp.md",
+        "required_labels": ["board", "finance"], "held_labels": ["tech"],
+    }
+
+    response = app.test_client().get("/acme/wiki/kb/board/comp.md")
+
+    assert response.status_code == 403
+    assert "board, finance" in response.get_data(as_text=True)
+
+
+def test_unverifiable_access_is_not_a_denial(wiki_app):
+    app, _, wiki_service = wiki_app
+    wiki_service.get_page.return_value = {"status": "unavailable", "wiki": WIKI, "required_labels": []}
+
+    response = app.test_client().get("/acme/wiki/kb/board/comp.md")
+
+    assert response.status_code == 503
+    assert "No pudimos verificar tu acceso" in response.get_data(as_text=True)
+
+
+def test_a_missing_page_is_a_404(wiki_app):
+    app, _, wiki_service = wiki_app
+    wiki_service.get_page.return_value = {"status": "error", "error_message": "page not found"}
+
+    response = app.test_client().get("/acme/wiki/kb/tech/nada.md")
+
+    assert response.status_code == 404
+    assert "no existe en la wiki" in response.get_data(as_text=True)
+
+
+def test_an_unknown_company_is_a_404(wiki_app):
+    app, profile, wiki_service = wiki_app
+    profile.get_company_by_short_name.return_value = None
+
+    response = app.test_client().get("/nadie/wiki/kb/tech/sg/notas.md")
+
+    assert response.status_code == 404
+    wiki_service.get_page.assert_not_called()

@@ -52,6 +52,7 @@ def register_views(app):
     from iatoolkit.views.tool_api_view import ToolApiView
     from iatoolkit.views.api_key_api_view import ApiKeyApiView
     from iatoolkit.views.memory_api_view import MemoryApiView
+    from iatoolkit.views.wiki_page_view import WikiPageView
 
     # Dependency-free liveness endpoint for load balancer/orchestrator health
     # checks (ALB, ECS, Docker HEALTHCHECK, etc). Deliberately returns a plain
@@ -102,6 +103,14 @@ def register_views(app):
     app.add_url_rule('/<company_short_name>/account',
                      view_func=AccountView.as_view('account'),
                      methods=['GET', 'POST'])
+
+    # a knowledge wiki page in the browser: where the wiki tools' `url` points
+    wiki_page_view = WikiPageView.as_view('wiki_page')
+    app.add_url_rule('/<company_short_name>/wiki/<wiki_key>/',
+                     defaults={'page_path': ''},
+                     view_func=wiki_page_view)
+    app.add_url_rule('/<company_short_name>/wiki/<wiki_key>/<path:page_path>',
+                     view_func=wiki_page_view)
 
     # this endpoint is called when onboarding_shell finish the context load
     app.add_url_rule(

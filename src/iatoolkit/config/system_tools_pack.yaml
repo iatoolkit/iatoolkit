@@ -378,7 +378,7 @@ tools:
       required:
         - document_id
   - function_name: iat_wiki_search
-    description: Busca páginas publicadas dentro de las wikis de conocimiento compartidas por la empresa. Úsala como acelerador cuando necesites encontrar rápidamente una página relevante, pero no como punto de entrada por defecto. Si no conoces un `path` válido, primero llama `iat_wiki_get_page` con `path="/"` para leer el índice raíz de la wiki y seguir sus links exactos. `wiki_key` es el identificador estable de una wiki publicada, por ejemplo `sales`, `ops` o `hr`; úsalo cuando ya sepas en qué wiki buscar y omítelo cuando quieras buscar en todas las wikis publicadas disponibles en esta conexión MCP. Esta tool devuelve candidatos; luego usa `iat_wiki_get_page` para leer la página completa antes de responder.
+    description: Busca páginas publicadas dentro de las wikis de conocimiento compartidas por la empresa. Úsala como acelerador cuando necesites encontrar rápidamente una página relevante, pero no como punto de entrada por defecto. Si no conoces un `path` válido, primero llama `iat_wiki_get_page` con `path="/"` para leer el índice raíz de la wiki y seguir sus links exactos. `wiki_key` es el identificador estable de una wiki publicada, por ejemplo `sales`, `ops` o `hr`; úsalo cuando ya sepas en qué wiki buscar y omítelo cuando quieras buscar en todas las wikis publicadas disponibles en esta conexión MCP. Esta tool devuelve candidatos; luego usa `iat_wiki_get_page` para leer la página completa antes de responder. Cada candidato trae `url`, el link para abrir la página en el navegador.
     routing:
       force_include_capability: has_knowledge_wikis
     routing_profile:
@@ -427,7 +427,7 @@ tools:
     description: |-
       Wiki entrypoint: llama `iat_wiki_get_page` con `path="/"` para cargar el índice raíz de una wiki de conocimiento publicada del tenant.
       Lee **una** página de wiki y devuelve su contenido en Markdown. La wiki documenta contexto de negocio, áreas, sistemas internos, arquitectura, procesos, políticas, runbooks, onboarding, operaciones y glosarios. Es una wiki navegable por links: la página raíz `path="/"` es el punto de entrada y lista las páginas disponibles con sus paths exactos; después abre solo las páginas relevantes siguiendo esos links o los paths devueltos por iat_wiki_search (solo si esta habilitada).
-      `wiki_key` identifica la wiki publicada. Los `path` son sensibles a mayúsculas y deben coincidir EXACTAMENTE con el link o path publicado; no los inventes ni los reconstruyas de memoria. Si no conoces un path válido, vuelve a llamar con `path="/"`. Esta tool es de solo lectura y es segura de usar siempre que la documentación interna de la empresa ayude a responder. Prefiere abrir pocas páginas puntuales antes de recorrer el corpus completo. Cuando respondas usando material de la wiki, cita la página usada.
+      `wiki_key` identifica la wiki publicada. Los `path` son sensibles a mayúsculas y deben coincidir EXACTAMENTE con el link o path publicado; no los inventes ni los reconstruyas de memoria. Si no conoces un path válido, vuelve a llamar con `path="/"`. Esta tool es de solo lectura y es segura de usar siempre que la documentación interna de la empresa ayude a responder. Prefiere abrir pocas páginas puntuales antes de recorrer el corpus completo. Cuando respondas usando material de la wiki, cita la página usada; si trae `url`, cítala como link con esa URL exacta.
     routing:
       force_include_capability: has_knowledge_wikis
     routing_profile:
