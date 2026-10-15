@@ -3,6 +3,8 @@
 #
 # IAToolkit is open source software.
 
+import re
+
 import markdown2
 import nh3
 from flask import redirect, render_template, request, url_for
@@ -78,7 +80,7 @@ class WikiPageView(MethodView):
             return render_template(
                 "wiki_page.html",
                 **context,
-                page_title=page.get("title") or page_path or context["wiki_name"],
+                page_title=self.plain_title(page.get("title")) or page_path or context["wiki_name"],
                 body_html=self.render_markdown(body, wiki_root=context["root_url"]),
                 message=None if body else self.i18n_service.t('ui.wiki_page.empty'),
             )
@@ -91,6 +93,13 @@ class WikiPageView(MethodView):
             body_html="",
             message=message,
         ), status_code
+
+    @staticmethod
+    def plain_title(title: str | None) -> str:
+        """A page title is markdown (`Sistema `portal-backend``); the browser
+        tab shows it as text, so the code and emphasis marks go. Underscores
+        stay: they belong to names like SYS_alertas_push."""
+        return " ".join(re.sub(r"[`*]", "", str(title or "")).split())
 
     @classmethod
     def render_markdown(cls, markdown: str | None, wiki_root: str | None = None) -> str:

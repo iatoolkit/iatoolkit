@@ -111,6 +111,15 @@ def test_a_link_from_the_wiki_root_stays_inside_the_wiki(wiki_app):
     assert 'href="#tablas"' in html
 
 
+def test_the_browser_title_is_plain_text(wiki_app):
+    app, _, wiki_service = wiki_app
+    wiki_service.get_page.return_value = served("# x\n", title="`credits-app` — **Datos** de SYS_alertas_push")
+
+    html = app.test_client().get("/acme/wiki/kb/tech/sg/notas.md").get_data(as_text=True)
+
+    assert "<title>credits-app — Datos de SYS_alertas_push · Base de conocimiento</title>" in html
+
+
 def test_underscores_in_names_are_not_italics(wiki_app):
     app, _, wiki_service = wiki_app
     wiki_service.get_page.return_value = served("# SYS_alertas_push\n\nLa tabla DTE_doc_noti.\n")
