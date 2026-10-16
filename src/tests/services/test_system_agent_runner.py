@@ -73,12 +73,17 @@ class TestCatalog:
     def test_a_shared_schema_is_resolved_by_name(self):
         compiler = SystemAgentCatalog.get("memory_compiler")
         correction = SystemAgentCatalog.get("memory_correction")
-        assert compiler.output_schema == correction.output_schema
-        assert compiler.output_schema["properties"]["target_page_id"]["type"] == ["integer", "null"]
+        assert correction.output_schema["properties"]["target_page_id"]["type"] == ["integer", "null"]
+        # The compiler's page also reports the contradictions it found (BL-014); a correction does not.
+        assert "conflicts" in compiler.output_schema["properties"]
+        assert "conflicts" not in correction.output_schema["properties"]
+        assert {k: v for k, v in compiler.output_schema["properties"].items() if k != "conflicts"} == \
+            correction.output_schema["properties"]
 
     def test_every_prompt_renders_with_its_declared_inputs(self):
         for agent in SystemAgentCatalog.list():
-            inputs = {name: {"id": 1, "title": "t", "markdown": "m"} for name in agent.inputs}
+            sample = {"id": 1, "title": "t", "markdown": "m", "label": "l", "index": 1, "total": 2, "text": "x"}
+            inputs = {name: dict(sample) for name in agent.inputs}
             assert SystemAgentRunner.render_prompt(agent, inputs)
 
     def test_an_unknown_agent_is_an_error(self):
@@ -223,3 +228,48 @@ class TestPlatformSettings:
         assert described["memory_correction"]["enabled"] is False
         assert described["memory_compiler"]["enabled"] is True
 
+
+
+class TestVision:
+    """BL-014: an agent that reads images runs only on models whose provider takes them."""
+
+    def vision(self, runner, monkeypatch, models_with_vision):
+        monkeypatch.setattr(runner, "supports_images", lambda company, model: model in models_with_vision)
+
+    def test_an_agent_that_reads_images_skips_models_without_vision(self, runner, config, monkeypatch):
+        self.vision(runner, monkeypatch, {"claude-smart"})
+        agent = SystemAgentCatalog.get("memory_image_ingest")
+        assert agent.requires_vision
+
+        resolved = runner.resolve_model("acme", agent)
+
+        # The company's default (gpt-default) does not read images: the first enabled one that does.
+        assert (resolved.model, resolved.source) == ("claude-smart", "company")
+
+    def test_without_any_vision_model_the_image_agent_has_none(self, runner, monkeypatch):
+        self.vision(runner, monkeypatch, set())
+        with pytest.raises(SystemAgentUnavailable):
+            runner.run(COMPANY, "memory_image_ingest", {"source": {}, "captured_on": "", "wiki_schema": "",
+                                                       "page_index": [], "candidate_pages": []},
+                       user_identifier="x", images=[{"name": "a.png", "mime_type": "image/png", "base64": "AA=="}])
+
+    def test_images_reach_the_model_and_are_dropped_when_it_cannot_read_them(self, runner, llm, monkeypatch):
+        image = {"name": "a.png", "mime_type": "image/png", "base64": "AA=="}
+        self.vision(runner, monkeypatch, {"gpt-default"})
+        runner.run(COMPANY, "memory_question_review", review_inputs(), user_identifier="x", images=[image])
+        assert llm.invoke.call_args.kwargs["images"] == [image]
+
+        self.vision(runner, monkeypatch, set())
+        runner.run(COMPANY, "memory_question_review", review_inputs(), user_identifier="x", images=[image])
+        assert llm.invoke.call_args.kwargs["images"] == []
+
+    def test_a_tenant_cannot_pick_a_model_without_vision_for_an_image_agent(self, runner, config, monkeypatch):
+        self.vision(runner, monkeypatch, {"claude-smart"})
+        assert runner.set_tenant_choice("acme", "memory_image_ingest", "gpt-default")["error_code"] == "model_without_vision"
+        assert runner.set_tenant_choice("acme", "memory_image_ingest", "claude-smart")["status"] == "success"
+
+    def test_vision_comes_from_the_provider_capabilities(self, runner, config):
+        config.get_llm_model_config.return_value = {"provider": "openai"}
+        assert runner.supports_images("acme", "gpt-default") is True
+        config.get_llm_model_config.return_value = {"provider": "deepseek"}
+        assert runner.supports_images("acme", "deepseek-chat") is False

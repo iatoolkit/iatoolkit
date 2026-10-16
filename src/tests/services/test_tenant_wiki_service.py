@@ -257,6 +257,20 @@ class TestTenantWikiService:
         assert result["wiki"]["editing_enabled"] is True
         assert self.read_storage("companies/acme/knowledge_wikis/handbook/index.md").startswith("---")
 
+    def test_a_generated_home_that_fell_behind_lists_the_pages_there_are_now(self):
+        self.service.configure_wiki("acme", wiki_key="handbook", name="Handbook", description="Company handbook",
+                                    settings={"authoring_mode": "managed"})
+        self.service.create_page("acme", wiki_key="handbook", path="policies/remote-work", title="Remote Work")
+        index_key = "companies/acme/knowledge_wikis/handbook/index.md"
+        # A stored generated index that still lists a page that is gone.
+        self.write_storage(index_key, "---\ntitle: Handbook\niatoolkit_generated: true\n---\n# Handbook\n\n"
+                                      "## Available pages\n\n- [Gone](gone.md)\n")
+
+        home = self.service.get_page("acme", wiki_key="handbook", path="/")
+
+        assert "[Remote Work](policies/remote-work.md)" in home["page"]["markdown"]
+        assert "gone.md" not in home["page"]["markdown"]
+
     def test_managed_page_crud_updates_storage_and_home_index(self):
         self.service.configure_wiki(
             "acme",

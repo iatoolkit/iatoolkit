@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from iatoolkit.repositories.database_manager import DatabaseManager
+from iatoolkit.repositories.document_repo import DocumentRepo
 from iatoolkit.repositories.knowledge_wiki_repo import KnowledgeWikiRepo
 from iatoolkit.repositories.memory_repo import MemoryRepo
 from iatoolkit.repositories.models import Company
@@ -74,6 +75,7 @@ class MemoryStack:
             system_agent_runner=self.system_agent_runner,
             storage_service=self.storage_service,
             db_manager=self.db_manager,
+            document_repo=DocumentRepo(self.db_manager),
         )
 
         self.trigger = MagicMock()

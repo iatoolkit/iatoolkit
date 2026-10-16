@@ -120,6 +120,30 @@ class TenantWikiService:
     def is_system_wiki(cls, wiki: KnowledgeWiki | None) -> bool:
         return cls.wiki_system_owner(wiki) is not None
 
+    # Roles that may read a system wiki in the browser viewer, by owning feature
+    # (BL-014: Memoria's wiki for admin and owner). Only the viewer asks: the
+    # wiki tools, MCP resources and reader links keep leaving system wikis out.
+    _system_wiki_reader_roles: dict[str, frozenset[str]] = {}
+
+    @classmethod
+    def register_system_wiki_readers(cls, system_owner: str, roles) -> None:
+        owner = str(system_owner or "").strip()
+        if owner:
+            cls._system_wiki_reader_roles[owner] = frozenset(
+                str(role or "").strip().lower() for role in (roles or ()) if str(role or "").strip())
+
+    def viewer_may_read_system_wiki(self, company_short_name: str, wiki_key: str, user_role: str | None) -> bool:
+        """Whether this role may open this system wiki in the viewer; False for a wiki that is not a system wiki."""
+        role = str(user_role or "").strip().lower()
+        if not role:
+            return False
+        company = self._get_company(company_short_name)
+        if not company:
+            return False
+        wiki = self.knowledge_wiki_repo.get_wiki_by_key(company.id, self.normalize_wiki_key(wiki_key))
+        owner = self.wiki_system_owner(wiki)
+        return bool(owner) and role in self._system_wiki_reader_roles.get(owner, frozenset())
+
     def ensure_system_wiki(
         self,
         company_short_name: str,
@@ -1659,8 +1683,13 @@ class TenantWikiService:
             return self._render_root_index_markdown(wiki, visible_entries), generated_storage_key
         storage_key = self._root_index_storage_key(wiki)
         markdown = self.markdown_wiki_service.read_optional_markdown(company_short_name, storage_key)
-        if markdown:
+        if markdown and not self._root_index_is_generated(markdown):
+            # Written by hand: shown as it is.
             return markdown, storage_key
+        if markdown:
+            # Generated from the pages: rendered from the pages there are now, so a
+            # stored copy that fell behind never lists pages that are gone.
+            return self._render_root_index_markdown(wiki, visible_entries), storage_key
         generated_storage_key = self.markdown_wiki_service.join_storage_path(
             wiki.root_storage_key,
             self.GENERATED_FOLDER,

@@ -543,6 +543,17 @@ class ConfigurationService:
                     elif agent_config.get("model") is not None and not isinstance(agent_config.get("model"), str):
                         add_error(f"system_agents.{agent_key}.model", "Must be a single model name.")
 
+        # Memoria's settings: which document types do not feed its wiki (BL-014).
+        memory_config = config.get("memory")
+        if memory_config is not None:
+            if not isinstance(memory_config, dict):
+                add_error("memory", "Must be a dictionary.")
+            else:
+                excluded = memory_config.get("excluded_document_types")
+                if excluded is not None and (
+                        not isinstance(excluded, list) or not all(isinstance(value, str) for value in excluded)):
+                    add_error("memory.excluded_document_types", "Must be a list of document types.")
+
         # 2. LLM section
         if not isinstance(config.get("llm"), dict):
             add_error("llm", "Missing or invalid 'llm' section.")

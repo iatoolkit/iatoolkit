@@ -564,6 +564,71 @@ class MemoryWikiPageSource(Base):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
 
 
+class MemoryPageDocument(Base):
+    """
+    A page of the company's Memoria wiki that took facts from a document of the
+    RAG (BL-014): which page cites which document, under what label.
+
+    `document_id` has no foreign key on purpose: when the document is deleted the
+    link stays, so the pages that cited it can be found and their facts marked
+    as obsolete.
+    """
+    __tablename__ = "iat_memory_page_documents"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_companies.id", ondelete="CASCADE"), nullable=False)
+    wiki_page_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_knowledge_wiki_pages.id", ondelete="CASCADE"),
+                          nullable=False, index=True)
+    document_id = Column(Integer, nullable=False, index=True)
+    label = Column(String, nullable=True)
+    # The document was deleted: its facts on the page are marked as obsolete and
+    # the page waits for someone to review it ("Necesita atención").
+    removed_at = Column(DateTime, nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+    reviewed_by = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("wiki_page_id", "document_id", name="uix_memory_page_document_unique"),
+    )
+
+    def to_dict(self):
+        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
+
+
+class MemoryConflict(Base):
+    """
+    Two sources that disagree on a page of the company's Memoria wiki (BL-014):
+    what the page already said and what a new capture or document says. The
+    page keeps both, attributed; the conflict waits in "Necesita atención" until
+    someone keeps one of them, or both.
+    """
+    __tablename__ = "iat_memory_conflicts"
+
+    STATUS_OPEN = "open"
+    STATUS_RESOLVED = "resolved"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_companies.id", ondelete="CASCADE"), nullable=False,
+                        index=True)
+    wiki_page_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_knowledge_wiki_pages.id", ondelete="CASCADE"),
+                          nullable=False, index=True)
+    capture_id = Column(Integer, nullable=True)
+    existing_statement = Column(Text, nullable=False)
+    existing_source = Column(String, nullable=True)
+    new_statement = Column(Text, nullable=False)
+    new_source = Column(String, nullable=True)
+    status = Column(String(16), nullable=False, default=STATUS_OPEN, index=True)
+    resolution = Column(String(32), nullable=True)
+    resolved_by = Column(String, nullable=True)
+    resolved_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    def to_dict(self):
+        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
+
+
 class MemoryQuestion(Base):
     """
     A question about the company that the AI could not answer (BL-005, Fase 1).

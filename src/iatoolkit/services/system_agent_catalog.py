@@ -54,6 +54,8 @@ class SystemAgent:
     package: str = CORE_PACKAGE
     name_en: str | None = None
     description_en: str | None = None
+    # It reads images: only models whose provider takes native images (BL-014).
+    requires_vision: bool = False
 
     @property
     def prompt_name(self) -> str:
@@ -188,5 +190,6 @@ def load_pack(package: str) -> list[SystemAgent]:
             schema_mode=schema_mode,
             response_mode=response_mode,
             package=package,
+            requires_vision=bool(entry.get("requires_vision")),
         ))
     return agents

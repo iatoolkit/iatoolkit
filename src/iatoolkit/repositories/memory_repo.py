@@ -9,7 +9,9 @@ from iatoolkit.repositories.database_manager import DatabaseManager
 from iatoolkit.repositories.models import (
     MemoryCapture,
     MemoryCaptureStatus,
+    MemoryConflict,
     MemoryItem,
+    MemoryPageDocument,
     MemoryWikiPageSource,
 )
 
@@ -166,6 +168,93 @@ class MemoryRepo:
             .all()
         )
         return [page_id for (page_id,) in rows]
+
+    def add_page_document(self, company_id: int, wiki_page_id: int, document_id: int, label: str | None) -> None:
+        """Records that a page took facts from a RAG document (BL-014); keeps one link per pair."""
+        if not company_id or not wiki_page_id or not document_id:
+            return
+        link = (
+            self.session.query(MemoryPageDocument)
+            .filter_by(wiki_page_id=wiki_page_id, document_id=document_id)
+            .first()
+        )
+        if link is None:
+            self.session.add(MemoryPageDocument(
+                company_id=company_id,
+                wiki_page_id=wiki_page_id,
+                document_id=document_id,
+                label=(label or "")[:300] or None,
+            ))
+        elif label and link.label != label:
+            link.label = label[:300]
+        self.session.commit()
+
+    def list_page_ids_for_document(self, company_id: int, document_id: int) -> list[int]:
+        if not company_id or not document_id:
+            return []
+        rows = (
+            self.session.query(MemoryPageDocument.wiki_page_id)
+            .filter_by(company_id=company_id, document_id=document_id)
+            .order_by(MemoryPageDocument.id.asc())
+            .all()
+        )
+        return [page_id for (page_id,) in rows]
+
+    def list_page_documents(self, wiki_page_id: int) -> list[MemoryPageDocument]:
+        if not wiki_page_id:
+            return []
+        return (
+            self.session.query(MemoryPageDocument)
+            .filter_by(wiki_page_id=wiki_page_id)
+            .order_by(MemoryPageDocument.id.asc())
+            .all()
+        )
+
+    def list_document_links(self, company_id: int, document_id: int) -> list[MemoryPageDocument]:
+        if not company_id or not document_id:
+            return []
+        return (
+            self.session.query(MemoryPageDocument)
+            .filter_by(company_id=company_id, document_id=document_id)
+            .order_by(MemoryPageDocument.id.asc())
+            .all()
+        )
+
+    def list_obsolete_page_documents(self, company_id: int, limit: int = 50) -> list[MemoryPageDocument]:
+        """Pages that cite a deleted document and nobody reviewed yet."""
+        if not company_id:
+            return []
+        return (
+            self.session.query(MemoryPageDocument)
+            .filter(MemoryPageDocument.company_id == company_id,
+                    MemoryPageDocument.removed_at.isnot(None),
+                    MemoryPageDocument.reviewed_at.is_(None))
+            .order_by(MemoryPageDocument.removed_at.desc())
+            .limit(limit)
+            .all()
+        )
+
+    def get_page_document(self, company_id: int, link_id: int) -> MemoryPageDocument | None:
+        return self.session.query(MemoryPageDocument).filter_by(company_id=company_id, id=link_id).first()
+
+    def add_conflict(self, conflict: MemoryConflict) -> MemoryConflict:
+        self.session.add(conflict)
+        self.session.commit()
+        return conflict
+
+    def list_open_conflicts(self, company_id: int, limit: int = 50) -> list[MemoryConflict]:
+        if not company_id:
+            return []
+        return (
+            self.session.query(MemoryConflict)
+            .filter_by(company_id=company_id, status=MemoryConflict.STATUS_OPEN)
+            .order_by(MemoryConflict.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+
+    def get_conflict(self, company_id: int, conflict_id: int) -> MemoryConflict | None:
+        return self.session.query(MemoryConflict).filter_by(company_id=company_id, id=conflict_id).first()
 
     def delete_page_sources_for_item(self, item_id: int) -> None:
         """Unlinks an item from every page. The pages themselves are never touched."""

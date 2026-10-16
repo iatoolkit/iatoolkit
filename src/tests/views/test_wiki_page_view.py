@@ -30,6 +30,7 @@ def wiki_app():
     branding = MagicMock(spec=BrandingService)
     branding.get_company_branding.return_value = {"name": "ACME", "css_variables": ""}
     wiki_service = MagicMock(spec=TenantWikiService)
+    wiki_service.viewer_may_read_system_wiki.return_value = False
     i18n = MagicMock(spec=I18nService)
     translations = yaml.safe_load((root / "locales/es.yaml").read_text())
 
@@ -195,3 +196,37 @@ def test_an_unknown_company_is_a_404(wiki_app):
 
     assert response.status_code == 404
     wiki_service.get_page.assert_not_called()
+
+
+def test_memorias_wiki_opens_for_admin_and_owner_only(wiki_app):
+    app, profile, wiki_service = wiki_app
+    wiki_service.viewer_may_read_system_wiki.return_value = True
+    # As ProfileService.get_current_session_info returns it: the role inside the profile.
+    profile.get_current_session_info.return_value = {**SESSION, "profile": {"user_role": "admin"}}
+    wiki_service.get_page.return_value = served("# Créditos\n\nPlazo 30. (Política de crédito v3, 2026-10-16)\n",
+                                                title="Créditos", path="creditos.md")
+
+    response = app.test_client().get("/acme/wiki/iatoolkit-memory/creditos.md")
+
+    assert response.status_code == 200
+    wiki_service.viewer_may_read_system_wiki.assert_called_once_with("acme", "iatoolkit-memory", "admin")
+    assert wiki_service.get_page.call_args.kwargs["include_system"] is True
+
+
+def test_system_wiki_readers_are_registered_per_feature():
+    from iatoolkit.services.memory_wiki_service import MemoryWikiService
+
+    service = TenantWikiService.__new__(TenantWikiService)
+    company = SimpleNamespace(id=1)
+    service._get_company = lambda short_name: company
+    wikis = {"iatoolkit-memory": SimpleNamespace(settings={TenantWikiService.SYSTEM_OWNER_SETTING: MemoryWikiService.SYSTEM_OWNER}),
+             "kb": SimpleNamespace(settings={})}
+    service.knowledge_wiki_repo = SimpleNamespace(get_wiki_by_key=lambda company_id, key: wikis.get(key))
+
+    assert service.viewer_may_read_system_wiki("acme", "iatoolkit-memory", "owner") is True
+    assert service.viewer_may_read_system_wiki("acme", "iatoolkit-memory", "Admin") is True
+    assert service.viewer_may_read_system_wiki("acme", "iatoolkit-memory", "editor") is False
+    assert service.viewer_may_read_system_wiki("acme", "iatoolkit-memory", None) is False
+    # Not a system wiki: the normal rules apply, nothing to open.
+    assert service.viewer_may_read_system_wiki("acme", "kb", "admin") is False
+

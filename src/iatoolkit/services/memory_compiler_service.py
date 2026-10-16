@@ -18,8 +18,11 @@ from injector import inject
 from sqlalchemy import text
 
 from iatoolkit.repositories.database_manager import DatabaseManager
+from iatoolkit.repositories.document_repo import DocumentRepo
 from iatoolkit.repositories.memory_repo import MemoryRepo
-from iatoolkit.repositories.models import Company, MemoryCapture, MemoryCaptureStatus, MemoryItem, MemoryItemStatus, MemoryItemType
+from iatoolkit.repositories.models import (
+    Company, MemoryCapture, MemoryCaptureStatus, MemoryConflict, MemoryItem, MemoryItemStatus, MemoryItemType, VSDoc,
+)
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.memory_wiki_service import MemoryWikiService
 from iatoolkit.services.storage_service import StorageService
@@ -58,6 +61,18 @@ class MemoryCompilerService:
 
     # System agents (config/system_agents_pack.yaml) that write the pages.
     COMPILER_AGENT = "memory_compiler"
+    # A document of the RAG that feeds the wiki (BL-014): read whole, part by part.
+    DOCUMENT_MODE = "document"
+    DOCUMENT_AGENT = "memory_document_ingest"
+    DOCUMENT_PART_CHARS = 12000
+    MAX_PAGES_PER_PART = 5
+    # An image of the RAG (no text) is looked at by its own agent, with vision.
+    IMAGE_AGENT = "memory_image_ingest"
+    MAX_IMAGES_PER_SOURCE = 5
+    MAX_IMAGE_BYTES = 10 * 1024 * 1024
+    # A document that fed the wiki was deleted: its facts are marked, never erased.
+    DOCUMENT_REMOVED_MODE = "document_removed"
+    OBSOLETE_MARK = "obsoleto: se eliminó el documento"
     CORRECTION_AGENT = "memory_correction"
 
     @inject
@@ -67,13 +82,15 @@ class MemoryCompilerService:
                  memory_wiki_service: MemoryWikiService,
                  system_agent_runner: SystemAgentRunner,
                  storage_service: StorageService,
-                 db_manager: DatabaseManager):
+                 db_manager: DatabaseManager,
+                 document_repo: DocumentRepo):
         self.profile_repo = profile_repo
         self.memory_repo = memory_repo
         self.memory_wiki_service = memory_wiki_service
         self.system_agent_runner = system_agent_runner
         self.storage_service = storage_service
         self.db_manager = db_manager
+        self.document_repo = document_repo
 
     def compile_pending_for_company(self, company_short_name: str, limit: int = 12) -> dict:
         company = self.profile_repo.get_company_by_short_name(company_short_name)
@@ -95,7 +112,8 @@ class MemoryCompilerService:
                     break
                 batch_waiting = 0
                 for capture in pending_captures:
-                    if not SystemAgentRunner.is_enabled(self._agent_for(capture)):
+                    agent_key = self._agent_for(capture)
+                    if agent_key and not SystemAgentRunner.is_enabled(agent_key):
                         # Its agent is turned off by the platform: the capture stays
                         # pending and is compiled when the agent is turned on again.
                         batch_waiting += 1
@@ -152,8 +170,14 @@ class MemoryCompilerService:
             connection.close()
 
     def _agent_for(self, capture: MemoryCapture) -> str:
-        is_correction = dict(capture.meta or {}).get("mode") == self.CORRECTION_MODE
-        return self.CORRECTION_AGENT if is_correction else self.COMPILER_AGENT
+        mode = dict(capture.meta or {}).get("mode")
+        if mode == self.CORRECTION_MODE:
+            return self.CORRECTION_AGENT
+        if mode == self.DOCUMENT_MODE:
+            return self.DOCUMENT_AGENT
+        if mode == self.DOCUMENT_REMOVED_MODE:
+            return None  # marked without the model
+        return self.COMPILER_AGENT
 
     def _compile_capture_safely(self, company: Company, capture: MemoryCapture) -> bool | None:
         """Whether the capture became a page; None when it stays pending (its agent was turned off)."""
@@ -184,6 +208,10 @@ class MemoryCompilerService:
     def _compile_single_capture(self, company: Company, capture: MemoryCapture, items: list[MemoryItem]) -> bool:
         if dict(capture.meta or {}).get("mode") == self.CORRECTION_MODE:
             return self._apply_correction(company, capture, items)
+        if dict(capture.meta or {}).get("mode") == self.DOCUMENT_MODE:
+            return self._ingest_document(company, capture, items)
+        if dict(capture.meta or {}).get("mode") == self.DOCUMENT_REMOVED_MODE:
+            return self._mark_document_obsolete(company, capture, items)
         author = self._author_label(capture.user_identifier)
         captured_on = (capture.created_at or datetime.now()).date().isoformat()
 
@@ -197,43 +225,24 @@ class MemoryCompilerService:
                 self._mark_capture_compiled(capture, items)
                 return False
 
-            target = self._resolve_target(compiled, candidates)
-            title = str(compiled.get("title") or (target or {}).get("title") or self._default_page_title(capture, items)).strip()
-            summary = str(compiled.get("summary") or "").strip()
-            body = str(compiled.get("markdown") or "").strip() or f"# {title}\n"
-            change_summary = str(compiled.get("change_summary") or "").strip() or None
-            revision_metadata = {
-                "source": self.COMPILER_SOURCE,
-                "capture_id": capture.id,
-                "author": capture.user_identifier,
-            }
-
-            if target is None:
-                response = self.memory_wiki_service.create_page(
-                    company.short_name,
-                    title=title,
-                    summary=summary,
-                    body=body,
-                    edited_by=capture.user_identifier,
-                    change_summary=change_summary,
-                    revision_metadata=revision_metadata,
-                )
-            else:
-                response = self.memory_wiki_service.update_page(
-                    company.short_name,
-                    page=target,
-                    title=title,
-                    summary=summary,
-                    body=body,
-                    edited_by=capture.user_identifier,
-                    change_summary=change_summary,
-                    revision_metadata=revision_metadata,
-                )
+            response = self._write_page(
+                company,
+                compiled,
+                candidates,
+                edited_by=capture.user_identifier,
+                default_title=self._default_page_title(capture, items),
+                revision_metadata={
+                    "source": self.COMPILER_SOURCE,
+                    "capture_id": capture.id,
+                    "author": capture.user_identifier,
+                },
+            )
 
             if response.get("status") == "success":
                 page = response.get("page") or {}
                 page_id = page.get("id")
                 self.memory_repo.add_page_sources(company.id, page_id, [item.id for item in items])
+                self._record_conflicts(company, page_id, capture, compiled.get("conflicts"))
                 capture.meta = {**dict(capture.meta or {}), "wiki_page_id": page_id}
                 self._mark_capture_compiled(capture, items)
                 return True
@@ -251,6 +260,377 @@ class MemoryCompilerService:
             raise RuntimeError(response.get("error_message") or "could not save memory page")
 
         raise RuntimeError("memory page kept changing while compiling; retry later")
+
+    def _write_page(self,
+                    company: Company,
+                    compiled: dict,
+                    candidates: list[dict],
+                    *,
+                    edited_by: str,
+                    default_title: str,
+                    revision_metadata: dict) -> dict:
+        """Creates or updates the page the model returned; the wiki's response (it may say the page changed)."""
+        target = self._resolve_target(compiled, candidates)
+        title = str(compiled.get("title") or (target or {}).get("title") or default_title).strip()
+        summary = str(compiled.get("summary") or "").strip()
+        body = str(compiled.get("markdown") or "").strip() or f"# {title}\n"
+        change_summary = str(compiled.get("change_summary") or "").strip() or None
+        if target is None:
+            return self.memory_wiki_service.create_page(
+                company.short_name,
+                title=title,
+                summary=summary,
+                body=body,
+                edited_by=edited_by,
+                change_summary=change_summary,
+                revision_metadata=revision_metadata,
+            )
+        return self.memory_wiki_service.update_page(
+            company.short_name,
+            page=target,
+            title=title,
+            summary=summary,
+            body=body,
+            edited_by=edited_by,
+            change_summary=change_summary,
+            revision_metadata=revision_metadata,
+        )
+
+    # =====================================================================
+    # Documents (BL-014): a RAG document read whole, part by part
+    # =====================================================================
+
+    def _ingest_document(self, company: Company, capture: MemoryCapture, items: list[MemoryItem]) -> bool:
+        """
+        Brings what a document teaches into the wiki. The document is read whole,
+        one part at a time; each part sees the pages the previous parts wrote.
+        Every fact is attributed to the document, and each page it touches
+        records that it cites it (iat_memory_page_documents).
+        """
+        meta = dict(capture.meta or {})
+        document_id = self._as_int(meta.get("document_id"))
+        label = str(meta.get("label") or capture.title or f"Documento {document_id}").strip()
+        parts = self._document_parts(document_id) if document_id else []
+        images = [] if parts or not document_id else self._document_images(company, document_id)
+        if not parts and not images:
+            capture.meta = {**meta, "result": "empty"}
+            self._mark_capture_compiled(capture, items)
+            return False
+
+        captured_on = (capture.created_at or datetime.now()).date().isoformat()
+        source = {"label": label, "card": meta.get("card") or {}, "path": meta.get("path") or ""}
+        # What reads each step: a part of the text, or the document's images (it had no text).
+        if parts:
+            readers = [
+                (part_text, lambda candidates, index=index, part_text=part_text: self._ingest_part_with_llm(
+                    company, capture, source, {"index": index, "total": len(parts), "text": part_text},
+                    candidates, captured_on))
+                for index, part_text in enumerate(parts, start=1)
+            ]
+        else:
+            readers = [("", lambda candidates: self._ingest_image_with_llm(
+                company, capture, source, images, candidates, captured_on))]
+        revision_metadata = {
+            "source": self.COMPILER_SOURCE,
+            "capture_id": capture.id,
+            "author": capture.user_identifier,
+            "mode": self.DOCUMENT_MODE,
+            "document_id": document_id,
+        }
+        touched: list[int] = []
+        for index, (part_text, read) in enumerate(readers, start=1):
+            for attempt in range(1, self.MAX_SAVE_ATTEMPTS + 1):
+                candidates = self._document_candidates(company, source, part_text, touched)
+                answer = read(candidates)
+                if answer is None:
+                    raise RuntimeError(f"the model could not read part {index} of {len(readers)}")
+                pages, conflicts = answer
+                written: dict[str, int] = {}
+                page_changed = False
+                for compiled in pages[:self.MAX_PAGES_PER_PART]:
+                    response = self._write_page(
+                        company, compiled, candidates,
+                        edited_by=capture.user_identifier,
+                        default_title=label,
+                        revision_metadata=revision_metadata,
+                    )
+                    if response.get("status") == "success":
+                        page_id = (response.get("page") or {}).get("id")
+                        self.memory_repo.add_page_sources(company.id, page_id, [item.id for item in items])
+                        self.memory_repo.add_page_document(company.id, page_id, document_id, label)
+                        written[str(compiled.get("title") or "").strip().lower()] = page_id
+                        if page_id not in touched:
+                            touched.append(page_id)
+                        continue
+                    if response.get("error_code") == TenantWikiService.ERROR_PAGE_CHANGED:
+                        logging.info("Memory page changed while reading part %s of document %s (attempt %s); rereading.",
+                                     index, document_id, attempt)
+                        page_changed = True
+                        break
+                    raise RuntimeError(response.get("error_message") or "could not save memory page")
+                if not page_changed:
+                    for conflict in conflicts:
+                        # Placed on the page of this part it names; a part that wrote one page gets them all.
+                        title = str(conflict.get("page_title") or "").strip().lower()
+                        page_id = written.get(title) or (next(iter(written.values())) if len(written) == 1 else None)
+                        if page_id:
+                            self._record_conflicts(company, page_id, capture, [conflict])
+                    break
+            else:
+                raise RuntimeError("memory page kept changing while reading the document; retry later")
+
+        capture.meta = {**meta, "wiki_page_ids": touched, "parts": len(readers), "images": len(images),
+                        "wiki_page_id": touched[0] if touched else None}
+        self._mark_capture_compiled(capture, items)
+        return bool(touched)
+
+    def _mark_document_obsolete(self, company: Company, capture: MemoryCapture, items: list[MemoryItem]) -> bool:
+        """
+        A document that fed the wiki was deleted (BL-014). On every page that cites
+        it, each line attributed to it — "(<label>, YYYY-MM-DD)", as the reader
+        writes them — gets an obsolete mark; nothing is erased, and the page waits
+        for someone to review it. Done without the model: the attribution says
+        exactly which lines came from the document.
+        """
+        meta = dict(capture.meta or {})
+        document_id = self._as_int(meta.get("document_id"))
+        today = (capture.created_at or datetime.now()).date().isoformat()
+        marked_pages = []
+        for link in self.memory_repo.list_document_links(company.id, document_id):
+            labels = {label for label in (link.label, meta.get("label")) if label}
+            for _ in range(self.MAX_SAVE_ATTEMPTS):
+                page = self.memory_wiki_service.get_page(company.short_name, link.wiki_page_id)
+                if not page:
+                    break
+                body = self.memory_wiki_service.page_body(page)
+                marked = self._mark_obsolete_lines(body, labels, today)
+                if marked == body:
+                    break
+                response = self.memory_wiki_service.update_page(
+                    company.short_name,
+                    page=page,
+                    title=str(page.get("title") or "").strip(),
+                    summary=str(page.get("summary") or "").strip(),
+                    body=marked,
+                    edited_by=capture.user_identifier,
+                    change_summary=f"Datos de «{sorted(labels)[0] if labels else document_id}» marcados como obsoletos: se eliminó el documento.",
+                    revision_metadata={
+                        "source": self.COMPILER_SOURCE,
+                        "capture_id": capture.id,
+                        "author": capture.user_identifier,
+                        "mode": self.DOCUMENT_REMOVED_MODE,
+                        "document_id": document_id,
+                    },
+                )
+                if response.get("status") == "success":
+                    marked_pages.append(link.wiki_page_id)
+                    break
+                if response.get("error_code") != TenantWikiService.ERROR_PAGE_CHANGED:
+                    raise RuntimeError(response.get("error_message") or "could not save memory page")
+            link.removed_at = datetime.now()
+            self.memory_repo.commit()
+        capture.meta = {**meta, "result": "obsolete_marked", "wiki_page_ids": marked_pages}
+        self._mark_capture_compiled(capture, items)
+        return bool(marked_pages)
+
+    @classmethod
+    def _mark_obsolete_lines(cls, body: str, labels: set[str], day: str) -> str:
+        patterns = [re.compile(r"\(\s*" + re.escape(label) + r"\s*,\s*\d{4}-\d{2}-\d{2}\s*\)") for label in labels]
+        lines = []
+        for line in str(body or "").split("\n"):
+            if cls.OBSOLETE_MARK not in line and any(pattern.search(line) for pattern in patterns):
+                line = f"{line.rstrip()} **[{cls.OBSOLETE_MARK}, {day}]**"
+            lines.append(line)
+        return "\n".join(lines)
+
+    def _document_images(self, company: Company, document_id: int) -> list[dict]:
+        """The images of a document that has no text (an image loaded as a document), to look at."""
+        images = []
+        for image in self.document_repo.get_document_images(document_id, limit=self.MAX_IMAGES_PER_SOURCE) or []:
+            image_dict = self._image_payload(company.short_name, getattr(image, "storage_key", None))
+            if image_dict:
+                images.append(image_dict)
+        return images
+
+    def _image_payload(self, company_short_name: str, storage_key: str | None, filename: str | None = None,
+                       mime_type: str | None = None) -> dict | None:
+        storage_key = str(storage_key or "").strip()
+        if not storage_key:
+            return None
+        try:
+            content = self.storage_service.get_document_content(company_short_name, storage_key)
+        except Exception as exc:
+            logging.warning("Memory image '%s' could not be read: %s", storage_key, exc)
+            return None
+        if not isinstance(content, (bytes, bytearray)) or not content or len(content) > self.MAX_IMAGE_BYTES:
+            return None
+        name = str(filename or storage_key.rsplit("/", 1)[-1] or "image").strip()
+        return {
+            "name": name,
+            "mime_type": str(mime_type or mimetypes.guess_type(name)[0] or "image/png").lower(),
+            "base64": base64.b64encode(content).decode("ascii"),
+        }
+
+    def _build_capture_images(self, company_short_name: str, items: list[MemoryItem]) -> list[dict]:
+        """Images people attached to a capture, for the compiler to look at when its model can."""
+        images = []
+        for item in items or []:
+            if len(images) >= self.MAX_IMAGES_PER_SOURCE:
+                break
+            mime_type = str(getattr(item, "mime_type", None) or "").lower()
+            if item.item_type != MemoryItemType.IMAGE and not mime_type.startswith("image/"):
+                continue
+            payload = self._image_payload(company_short_name, item.storage_key, item.filename, mime_type or None)
+            if payload:
+                images.append(payload)
+        return images
+
+    def _document_parts(self, document_id: int) -> list[str]:
+        """The document's text, from its RAG fragments in order, in parts of at most DOCUMENT_PART_CHARS."""
+        rows = (
+            self.document_repo.session.query(VSDoc.text)
+            .filter(VSDoc.document_id == document_id)
+            .order_by(VSDoc.id.asc())
+            .all()
+        )
+        parts, current, size = [], [], 0
+        for (chunk,) in rows:
+            chunk = str(chunk or "").strip()
+            while chunk:
+                room = self.DOCUMENT_PART_CHARS - size
+                piece, chunk = chunk[:room], chunk[room:]
+                current.append(piece)
+                size += len(piece)
+                if size >= self.DOCUMENT_PART_CHARS:
+                    parts.append("\n\n".join(current))
+                    current, size = [], 0
+        if current:
+            parts.append("\n\n".join(current))
+        return parts
+
+    def _document_candidates(self, company: Company, source: dict, part_text: str, touched: list[int]) -> list[dict]:
+        """The pages this document already wrote first, then the ones its part is most likely about."""
+        ordered: list[int] = list(touched)
+        card = source.get("card") or {}
+        query = " ".join(part for part in (
+            str(source.get("label") or ""), str(card.get("summary") or ""), part_text[:300],
+        ) if part).strip()
+        if query:
+            for result in self.memory_wiki_service.search_pages(company.short_name, query, limit=self.MAX_CANDIDATE_PAGES):
+                if result.get("id") not in ordered:
+                    ordered.append(result.get("id"))
+        candidates = []
+        for page_id in ordered[:self.MAX_CANDIDATE_PAGES + len(touched)]:
+            page = self.memory_wiki_service.get_page(company.short_name, page_id)
+            if page:
+                candidates.append(page)
+        return candidates
+
+    def _wiki_context(self, company: Company, candidates: list[dict]) -> dict:
+        return {
+            "wiki_schema": str(self.memory_wiki_service.read_schema() or "")[:7000],
+            "page_index": [
+                {"page_id": entry.get("id"), "title": entry.get("title"), "summary": entry.get("summary")}
+                for entry in (self.memory_wiki_service.list_pages(company.short_name) or [])[:self.MAX_INDEX_ENTRIES_IN_PROMPT]
+            ],
+            "candidate_pages": [
+                {"page_id": page.get("id"), "title": page.get("title"),
+                 "markdown": self.memory_wiki_service.page_body(page)}
+                for page in candidates
+            ],
+        }
+
+    def _ingest_part_with_llm(self,
+                              company: Company,
+                              capture: MemoryCapture,
+                              source: dict,
+                              part: dict,
+                              candidates: list[dict],
+                              captured_on: str):
+        return self._ingest_with_llm(
+            company, capture, self.DOCUMENT_AGENT,
+            {"source": source, "part": part, "captured_on": captured_on, **self._wiki_context(company, candidates)},
+            question=f"Read memory document {source.get('label')} (part {part['index']} of {part['total']})",
+        )
+
+    def _ingest_image_with_llm(self,
+                               company: Company,
+                               capture: MemoryCapture,
+                               source: dict,
+                               images: list[dict],
+                               candidates: list[dict],
+                               captured_on: str):
+        return self._ingest_with_llm(
+            company, capture, self.IMAGE_AGENT,
+            {"source": source, "captured_on": captured_on, **self._wiki_context(company, candidates)},
+            question=f"Look at memory image {source.get('label')}",
+            images=images,
+        )
+
+    def _ingest_with_llm(self, company: Company, capture: MemoryCapture, agent_key: str, inputs: dict, *,
+                         question: str, images: list | None = None):
+        """The pages and the contradictions a reader agent returned, or None when it could not be reached."""
+        try:
+            response = self.system_agent_runner.run(
+                company, agent_key, inputs,
+                user_identifier=capture.user_identifier,
+                question=question,
+                images=images,
+            )
+        except SystemAgentDisabled:
+            raise
+        except Exception as exc:
+            logging.warning("Memory capture %s (%s): the model could not be reached: %s", capture.id, agent_key, exc)
+            return None
+        structured = response.get("structured_output") or response.get("parsed_output")
+        if not isinstance(structured, dict):
+            return None
+        conflicts = [c for c in (structured.get("conflicts") or []) if isinstance(c, dict)]
+        raw_pages = structured.get("pages")
+        if not isinstance(raw_pages, list):
+            # A single page answered without the list around it.
+            raw_pages = [structured] if structured.get("markdown") or structured.get("action") else []
+        pages = []
+        for raw in raw_pages:
+            page = self._normalize_compiled_output(raw)
+            if not isinstance(page, dict):
+                continue
+            if page.get("action") not in {"create", "update"} or not str(page.get("markdown") or "").strip():
+                continue
+            pages.append(page)
+        return pages, conflicts
+
+    def _record_conflicts(self, company: Company, page_id: int | None, capture: MemoryCapture, conflicts) -> int:
+        """Contradictions the model found while writing a page, for "Necesita atención" (BL-014)."""
+        if not page_id or not isinstance(conflicts, list):
+            return 0
+        recorded = 0
+        for conflict in conflicts:
+            if not isinstance(conflict, dict):
+                continue
+            existing = str(conflict.get("existing_statement") or "").strip()
+            new = str(conflict.get("new_statement") or "").strip()
+            if not existing or not new:
+                continue
+            self.memory_repo.add_conflict(MemoryConflict(
+                company_id=company.id,
+                wiki_page_id=page_id,
+                capture_id=capture.id,
+                existing_statement=existing[:2000],
+                existing_source=str(conflict.get("existing_source") or "").strip()[:300] or None,
+                new_statement=new[:2000],
+                new_source=str(conflict.get("new_source") or "").strip()[:300] or None,
+                status=MemoryConflict.STATUS_OPEN,
+            ))
+            recorded += 1
+        return recorded
+
+    @staticmethod
+    def _as_int(value) -> int | None:
+        try:
+            return int(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
 
     def _apply_correction(self, company: Company, capture: MemoryCapture, items: list[MemoryItem]) -> bool:
         """
@@ -431,6 +811,7 @@ class MemoryCompilerService:
                 user_identifier=capture.user_identifier,
                 question=f"Compile memory capture {capture.id}",
                 attachments=native_pdf_attachments,
+                images=self._build_capture_images(company.short_name, items),
             )
         except SystemAgentDisabled:
             raise

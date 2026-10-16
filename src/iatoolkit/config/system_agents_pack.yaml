@@ -31,6 +31,41 @@ schemas:
     required: [action, target_page_id, title, markdown]
     additionalProperties: false
 
+  # A memory_page plus the contradictions found while writing it (BL-014).
+  memory_page_with_conflicts:
+    type: object
+    properties:
+      action:
+        type: string
+        enum: [create, update, skip]
+      target_page_id:
+        type: [integer, "null"]
+      title:
+        type: string
+      summary:
+        type: string
+      markdown:
+        type: string
+      change_summary:
+        type: string
+      conflicts:
+        type: array
+        items:
+          type: object
+          properties:
+            existing_statement:
+              type: string
+            existing_source:
+              type: string
+            new_statement:
+              type: string
+            new_source:
+              type: string
+          required: [existing_statement, new_statement]
+          additionalProperties: false
+    required: [action, target_page_id, title, markdown]
+    additionalProperties: false
+
 agents:
   - key: memory_compiler
     name: Compilador de Memoria
@@ -43,7 +78,7 @@ agents:
       one, attributing every fact to its author.
     module: memory
     prompt: memory_compiler.prompt
-    output_schema: memory_page
+    output_schema: memory_page_with_conflicts
     inputs: [author, captured_on, wiki_schema, page_index, capture, candidate_pages]
     default_model: null
 
@@ -99,4 +134,122 @@ agents:
       required: [items]
       additionalProperties: false
     inputs: [open_questions, turns]
+    default_model: null
+
+  - key: memory_document_ingest
+    name: Lector de documentos de Memoria
+    name_en: Memory document reader
+    description: >-
+      (Memoria de la empresa) Lee los documentos que se cargan en Memoria, tramo
+      por tramo, y lleva a las páginas de la wiki lo que enseñan sobre cómo se hacen
+      las cosas, citando el documento.
+    description_en: >-
+      (Company memory) Reads the documents loaded into Memory, part by part, and
+      files into the wiki pages what they teach about how things are done, citing
+      the document.
+    module: memory
+    prompt: memory_document_ingest.prompt
+    output_schema:
+      type: object
+      properties:
+        pages:
+          type: array
+          items:
+            type: object
+            properties:
+              action:
+                type: string
+                enum: [create, update]
+              # Nullable as a type list: the structured-output validator rejects null under anyOf.
+              target_page_id:
+                type: [integer, "null"]
+              title:
+                type: string
+              summary:
+                type: string
+              markdown:
+                type: string
+              change_summary:
+                type: string
+            required: [action, target_page_id, title, markdown]
+            additionalProperties: false
+        conflicts:
+          type: array
+          items:
+            type: object
+            properties:
+              page_title:
+                type: string
+              existing_statement:
+                type: string
+              existing_source:
+                type: string
+              new_statement:
+                type: string
+              new_source:
+                type: string
+            required: [page_title, existing_statement, new_statement]
+            additionalProperties: false
+      required: [pages]
+      additionalProperties: false
+    inputs: [source, part, captured_on, wiki_schema, page_index, candidate_pages]
+    default_model: null
+
+  - key: memory_image_ingest
+    name: Lector de imágenes de Memoria
+    name_en: Memory image reader
+    description: >-
+      (Memoria de la empresa) Mira las imágenes que se cargan en Memoria
+      (diagramas, fotos de pizarras, capturas de pantalla, formularios) y lleva a la
+      wiki lo que enseñan sobre cómo se hacen las cosas, citando la imagen.
+    description_en: >-
+      (Company memory) Looks at the images loaded into Memory (diagrams, whiteboard
+      photos, screenshots, forms) and files into the wiki what they teach about how
+      things are done, citing the image.
+    module: memory
+    prompt: memory_image_ingest.prompt
+    requires_vision: true
+    output_schema:
+      type: object
+      properties:
+        pages:
+          type: array
+          items:
+            type: object
+            properties:
+              action:
+                type: string
+                enum: [create, update]
+              target_page_id:
+                type: [integer, "null"]
+              title:
+                type: string
+              summary:
+                type: string
+              markdown:
+                type: string
+              change_summary:
+                type: string
+            required: [action, target_page_id, title, markdown]
+            additionalProperties: false
+        conflicts:
+          type: array
+          items:
+            type: object
+            properties:
+              page_title:
+                type: string
+              existing_statement:
+                type: string
+              existing_source:
+                type: string
+              new_statement:
+                type: string
+              new_source:
+                type: string
+            required: [page_title, existing_statement, new_statement]
+            additionalProperties: false
+      required: [pages]
+      additionalProperties: false
+    inputs: [source, captured_on, wiki_schema, page_index, candidate_pages]
     default_model: null

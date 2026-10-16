@@ -48,6 +48,8 @@ class MemoryService:
     MAX_NATIVE_ATTACHMENTS_PER_PAGE = 10
     MAX_NATIVE_ATTACHMENT_BYTES = 20 * 1024 * 1024
     MAX_SOURCE_LABELS = 8
+    # Who a document capture is attributed to when nobody uploaded it (a Drive sync).
+    DOCUMENT_SOURCE_IDENTITY = "service:memory-documents"
 
     @inject
     def __init__(self,
@@ -153,6 +155,74 @@ class MemoryService:
             "status": "success",
             "capture": self.serialize_capture(capture, created_items, company_short_name=company_short_name),
         }
+
+    def save_document_capture(self,
+                              company_short_name: str,
+                              *,
+                              document_id: int,
+                              label: str,
+                              card: dict | None = None,
+                              path: str = "",
+                              author: str | None = None,
+                              source_meta: dict | None = None) -> dict:
+        """
+        A RAG document that feeds the wiki (BL-014), queued as a capture so the
+        compiler reads it whole, part by part (`memory_document_ingest`).
+
+        The capture does not copy the document: its one item points at it
+        (`source_meta.rag_document_id`) and carries no bytes, and the compiler
+        reads the document's fragments from the RAG when it gets to it.
+        """
+        label = str(label or "").strip() or f"Documento {document_id}"
+        return self.save_capture(
+            company_short_name=company_short_name,
+            user_identifier=author or self.DOCUMENT_SOURCE_IDENTITY,
+            title=label,
+            new_items=[{
+                "item_type": "file",
+                "title": label,
+                "filename": label,
+                "source_meta": {**dict(source_meta or {}), "origin": "memory_document", "rag_document_id": document_id},
+            }],
+            meta={
+                "mode": MemoryCompilerService.DOCUMENT_MODE,
+                "document_id": document_id,
+                "label": label,
+                "card": dict(card or {}),
+                "path": path or "",
+                **({"source": dict(source_meta)} if source_meta else {}),
+            },
+        )
+
+    def save_document_removal_capture(self,
+                                      company_short_name: str,
+                                      *,
+                                      document_id: int,
+                                      label: str,
+                                      removed_by: str | None = None) -> dict:
+        """
+        A document that fed the wiki was deleted (BL-014): queued so the compiler
+        marks its facts as obsolete on the pages that cite it. Nothing is erased.
+        Does nothing when no page cites the document.
+        """
+        company = self.profile_repo.get_company_by_short_name(company_short_name)
+        if not company:
+            return {"status": "error", "error_message": "company not found"}
+        if not self.memory_repo.list_page_ids_for_document(company.id, document_id):
+            return {"status": "skipped", "reason": "no page cites this document"}
+        label = str(label or "").strip() or f"Documento {document_id}"
+        return self.save_capture(
+            company_short_name=company_short_name,
+            user_identifier=removed_by or self.DOCUMENT_SOURCE_IDENTITY,
+            title=label,
+            new_items=[{
+                "item_type": "note",
+                "title": label,
+                "content_text": f"Se eliminó el documento «{label}».",
+                "source_meta": {"origin": "memory_document_removed", "rag_document_id": document_id},
+            }],
+            meta={"mode": MemoryCompilerService.DOCUMENT_REMOVED_MODE, "document_id": document_id, "label": label},
+        )
 
     def update_capture(self,
                        company_short_name: str,

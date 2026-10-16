@@ -14,7 +14,10 @@ from injector import inject
 from jinja2 import StrictUndefined
 from jinja2.sandbox import ImmutableSandboxedEnvironment
 
+from iatoolkit.common.model_registry import ModelRegistry
+from iatoolkit.common.util import Utility
 from iatoolkit.repositories.models import Company
+from iatoolkit.services.attachment_policy_service import AttachmentPolicyService
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.llm_client_service import llmClient
 from iatoolkit.services.system_agent_catalog import SystemAgent, SystemAgentCatalog
@@ -91,6 +94,8 @@ class SystemAgentRunner:
     def __init__(self, llm_client: llmClient, configuration_service: ConfigurationService):
         self.llm_client = llm_client
         self.configuration_service = configuration_service
+        self._attachment_policy = None
+        self._model_registry = None
 
     # =====================================================================
     # Platform settings
@@ -130,12 +135,17 @@ class SystemAgentRunner:
             *,
             user_identifier: str,
             question: str | None = None,
-            attachments: list | None = None) -> dict:
+            attachments: list | None = None,
+            images: list | None = None) -> dict:
         """
         The model's response (as llmClient.invoke returns it). Raises
         SystemAgentDisabled when the platform turned the agent off,
         SystemAgentUnavailable without a model, and whatever the model client
         raises when even the company's default model fails.
+
+        `images` ({"name", "mime_type", "base64"}) go to the model as images. An
+        agent that `requires_vision` only runs on models that take them; for any
+        other agent they are dropped, with a log, when the model does not.
         """
         agent = SystemAgentCatalog.get(agent_key)
         platform = self.platform_settings(agent.key)
@@ -145,8 +155,13 @@ class SystemAgentRunner:
         if not resolved.model:
             raise SystemAgentUnavailable(f"{company.short_name} has no model for system agent '{agent.key}'")
         prompt = self.render_prompt(agent, inputs)
+        images = list(images or [])
 
         def invoke(model: str) -> dict:
+            sent_images = images
+            if images and not agent.requires_vision and not self.supports_images(company.short_name, model):
+                logging.info("System agent '%s': model '%s' takes no images; %s dropped.", agent.key, model, len(images))
+                sent_images = []
             return self.llm_client.invoke(
                 company=company,
                 user_identifier=user_identifier,
@@ -156,7 +171,7 @@ class SystemAgentRunner:
                 tools=[],
                 text={},
                 model=model,
-                images=[],
+                images=sent_images,
                 attachments=list(attachments or []),
                 response_contract=agent.response_contract(),
                 execution_trace={"prompt_name": agent.prompt_name},
@@ -167,6 +182,8 @@ class SystemAgentRunner:
         except Exception as exc:
             fallback = self._company_default(company.short_name)
             if resolved.source == self.SOURCE_COMPANY or not fallback or fallback == resolved.model:
+                raise
+            if agent.requires_vision and not self.supports_images(company.short_name, fallback):
                 raise
             logging.warning(
                 "System agent '%s' failed with model '%s' (%s) for %s; retrying with the company default '%s': %s",
@@ -198,10 +215,13 @@ class SystemAgentRunner:
         """
         default_model, available = llm_configuration or self.configuration_service.get_llm_configuration(company_short_name)
         enabled = self._model_ids(available)
+        needs_vision = bool(getattr(agent, "requires_vision", False))
 
         def usable(model: str | None) -> bool:
             # Without a list of models, the company's own configuration is the only judge.
-            return bool(model) and (not enabled or model in enabled)
+            if not model or (enabled and model not in enabled):
+                return False
+            return not needs_vision or self.supports_images(company_short_name, model)
 
         chosen = self.tenant_choice(company_short_name, agent.key)
         ignored = None
@@ -221,8 +241,36 @@ class SystemAgentRunner:
             ignored_platform = platform.default_model
         if usable(agent.default_model):
             return ResolvedModel(agent.default_model, self.SOURCE_CATALOG, ignored, ignored_platform)
+        if needs_vision:
+            # The company's default has to read images too; else the first enabled model that does.
+            for model in [default_model, *sorted(enabled)]:
+                if usable(model):
+                    return ResolvedModel(model, self.SOURCE_COMPANY, ignored, ignored_platform)
+            return ResolvedModel(None, None, ignored, ignored_platform)
         return ResolvedModel(default_model or None, self.SOURCE_COMPANY if default_model else None,
                              ignored, ignored_platform)
+
+    def supports_images(self, company_short_name: str, model: str | None) -> bool:
+        """Whether the model's provider takes native images (llm_capabilities.yaml and the company's overrides)."""
+        if not model:
+            return False
+        try:
+            model_config = self.configuration_service.get_llm_model_config(company_short_name, model) or {}
+        except Exception:
+            model_config = {}
+        provider = str(model_config.get("provider") or "").strip().lower()
+        if not provider:
+            if self._model_registry is None:
+                self._model_registry = ModelRegistry()
+            provider = self._model_registry.get_provider(model)
+        if self._attachment_policy is None:
+            self._attachment_policy = AttachmentPolicyService(self.configuration_service, Utility())
+        try:
+            capabilities = self._attachment_policy.get_effective_provider_capabilities(company_short_name, provider)
+        except Exception as exc:
+            logging.warning("Capabilities of provider '%s' could not be read: %s", provider, exc)
+            return False
+        return bool(capabilities.get("supports_native_images"))
 
     def tenant_choice(self, company_short_name: str, agent_key: str) -> str | None:
         section = self._tenant_section(company_short_name)
@@ -245,6 +293,9 @@ class SystemAgentRunner:
             if model not in self._model_ids(available):
                 return {"status": "error", "error_code": "model_not_enabled",
                         "error_message": f"model '{model}' is not enabled for this company"}
+            if agent.requires_vision and not self.supports_images(company_short_name, model):
+                return {"status": "error", "error_code": "model_without_vision",
+                        "error_message": f"model '{model}' does not read images, and this agent does"}
 
         section = {
             key: dict(value)
@@ -326,5 +377,6 @@ class SystemAgentRunner:
                 "platform_model": platform.default_model,
                 "ignored_platform_model": resolved.ignored_platform_model,
                 "enabled": platform.enabled,
+                "requires_vision": agent.requires_vision,
             })
         return result

@@ -221,3 +221,9 @@ def _read_schema_template(path: str) -> str:
         return Path(path).read_text(encoding="utf-8")
     except OSError:
         return ""
+
+
+# Memoria's wiki opens in the wiki viewer for admin and owner only ("Ver como wiki",
+# BL-014); for every other role, and for the wiki tools and MCP, it stays hidden.
+TenantWikiService.register_system_wiki_readers(MemoryWikiService.SYSTEM_OWNER, {"admin", "owner"})
+

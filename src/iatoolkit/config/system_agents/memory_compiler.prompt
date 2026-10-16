@@ -10,7 +10,7 @@ How to write the page:
 
 - Follow the WIKI_SCHEMA.
 - When you update, return the COMPLETE new page: keep everything already on it, word for word, including other people's attributions, headings and order. Change only what the capture changes, and put new facts in the section where they belong.
-- When the capture contradicts the page, keep both statements with their attributions and make the conflict explicit; never delete what someone else said.
+- When the capture contradicts the page, keep both statements with their attributions and make the conflict explicit; never delete what someone else said. Also list each contradiction in `conflicts`.
 - Attribute every fact you add as ({{ author }}, {{ captured_on }}).
 - Write in the language of the page, or of the capture for a new page. Neutral tone, no personal opinions.
 - If attachments come with the capture, use what they say as part of the capture.
@@ -23,6 +23,7 @@ Answer with JSON following the schema:
 - `summary`: one sentence saying what the page covers.
 - `markdown`: the page body without frontmatter, starting with `# Title`.
 - `change_summary`: one short sentence for the page history (when you skip, why).
+- `conflicts`: each place where the capture contradicts what the page already said, with `existing_statement` (what the page said, as written), `existing_source` (its attribution), `new_statement` and `new_source` ({{ author }}, {{ captured_on }}). An empty list when nothing contradicts.
 
 WIKI_SCHEMA:
 {{ wiki_schema }}
