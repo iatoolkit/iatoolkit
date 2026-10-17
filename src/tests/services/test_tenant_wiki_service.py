@@ -7,7 +7,7 @@ from flask import Flask
 
 from iatoolkit.repositories.database_manager import DatabaseManager
 from iatoolkit.repositories.knowledge_wiki_repo import KnowledgeWikiRepo
-from iatoolkit.repositories.models import Company
+from iatoolkit.repositories.models import Company, KnowledgeWikiPage
 from iatoolkit.services.markdown_wiki_service import MarkdownWikiService
 from iatoolkit.services.storage_service import StorageService
 from iatoolkit.services.tenant_wiki_service import TenantWikiService
@@ -1421,3 +1421,85 @@ class TestTenantWikiService:
 
         assert served["status"] == "success"
         assert "Pricing of people" in served["page"]["markdown"]
+
+
+class TestWikiPageIndex:
+    """Fase 1: the page search index (iat_knowledge_wiki_page_index)."""
+
+    setup_method = TestTenantWikiService.setup_method
+    write_storage = TestTenantWikiService.write_storage
+
+    def sync_two_pages(self):
+        root = "companies/acme/knowledge_wikis/sales"
+        self.write_storage(f"{root}/pricing.md", "# Discount Policy\n\nEnterprise discount approvals.\n")
+        self.write_storage(f"{root}/handoff.md", "# Sales Handoff\n\nSend context to customer success.\n")
+        self.service.sync_wiki("acme", wiki_key="sales", root_storage_key=root, name="Sales Wiki")
+        return {page.path: page for page in self.session.query(KnowledgeWikiPage).all()}
+
+    def test_every_written_page_gets_its_search_text_and_a_change_clears_the_embedding(self):
+        from iatoolkit.repositories.models import KnowledgeWikiPageIndex
+
+        pages = self.sync_two_pages()
+        row = self.session.query(KnowledgeWikiPageIndex).filter_by(page_id=pages["pricing.md"].id).one()
+        assert "Enterprise discount approvals." in row.search_text and row.embedding is None
+
+        row.embedding, row.embedded_hash = [0.1, 0.2], row.content_hash
+        self.session.commit()
+        same = self.service.knowledge_wiki_repo.index_page(pages["pricing.md"])
+        assert same.embedded_hash == row.content_hash
+
+        pages["pricing.md"].body_text = "Approvals over 20% go to finance."
+        changed = self.service.knowledge_wiki_repo.save_page(pages["pricing.md"])
+        row = self.session.query(KnowledgeWikiPageIndex).filter_by(page_id=changed.id).one()
+        assert row.embedding is None and row.embedded_hash is None
+
+    def test_the_refresh_embeds_what_changed_and_backfills_old_pages(self):
+        from iatoolkit.repositories.models import KnowledgeWikiPageIndex
+        from iatoolkit.services.wiki_page_index_service import WikiPageIndexService
+
+        self.sync_two_pages()
+        self.session.query(KnowledgeWikiPageIndex).delete()  # pages from before the index
+        self.session.commit()
+        embeddings = MagicMock()
+        embeddings.embed_text.return_value = [0.5, 0.5]
+        profile = MagicMock()
+        profile.get_company_by_id.return_value = self.company
+
+        result = WikiPageIndexService(self.service.knowledge_wiki_repo, embeddings, profile).refresh()
+
+        assert result["backfilled"] == 2 and result["embedded"] == 2 and result["failed"] == []
+        assert self.service.knowledge_wiki_repo.list_pages_to_embed() == []
+
+    def test_on_postgres_the_index_ranks_and_the_visibility_still_filters(self, monkeypatch):
+        pages = self.sync_two_pages()
+        repo = self.service.knowledge_wiki_repo
+        monkeypatch.setattr(repo, "is_postgres", lambda: True)
+        monkeypatch.setattr(repo, "hybrid_search_pages", lambda wiki_ids, query, embedding, candidates=40: [
+            (pages["handoff.md"].id, 0.03), (pages["pricing.md"].id, 0.02)])
+        index = MagicMock()
+        index.query_embedding.return_value = [0.1]
+        monkeypatch.setattr(type(self.service), "page_index_service", property(lambda self: index))
+
+        ranked = self.service.search_pages("acme", wiki_key="sales", query="anything", limit=5)
+        hidden = self.service.search_pages("acme", wiki_key="sales", query="anything", limit=5,
+                                           visibility_filter=lambda path: path != "handoff.md")
+
+        assert [r["path"] for r in ranked["results"]] == ["handoff.md", "pricing.md"]
+        assert [r["path"] for r in hidden["results"]] == ["pricing.md"]
+
+    def test_a_failing_index_falls_back_to_the_scan(self, monkeypatch):
+        self.sync_two_pages()
+        repo = self.service.knowledge_wiki_repo
+        monkeypatch.setattr(repo, "is_postgres", lambda: True)
+
+        def broken(*args, **kwargs):
+            raise RuntimeError("no index")
+
+        monkeypatch.setattr(repo, "hybrid_search_pages", broken)
+        index = MagicMock()
+        index.query_embedding.return_value = None
+        monkeypatch.setattr(type(self.service), "page_index_service", property(lambda self: index))
+
+        result = self.service.search_pages("acme", wiki_key="sales", query="enterprise discount", limit=5)
+
+        assert [r["path"] for r in result["results"]] == ["pricing.md"]

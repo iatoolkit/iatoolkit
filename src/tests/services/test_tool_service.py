@@ -1796,3 +1796,26 @@ class TestMemoryQuestionTools:
 
         self.questions.answer.assert_called_once_with("acme", 12, "45 días", "carmen@acme.cl")
         assert anonymous["status"] == "error" and no_id["status"] == "error"
+
+
+class TestForceIncludeCapabilities:
+    def test_every_capability_the_catalog_asks_for_is_computed(self):
+        from iatoolkit.services.system_tools import get_system_tool_force_include_capabilities
+
+        asked = set(get_system_tool_force_include_capabilities().values())
+        service = ToolService.__new__(ToolService)
+        service.sql_service = MagicMock()
+        service.knowledge_base_service = MagicMock()
+        service._knowledge_wiki_service = MagicMock()
+        service._knowledge_wiki_service.list_wikis.return_value = {"status": "success", "wikis": []}
+
+        computed = service._resolve_runtime_tool_capabilities("acme")
+
+        assert asked <= set(ToolService.RUNTIME_TOOL_CAPABILITIES) == set(computed)
+
+    def test_memory_tools_are_always_forced(self):
+        service = ToolService.__new__(ToolService)
+        service.system_tool_force_include_capabilities = {"iat_memory_search": "has_user_memory"}
+        service._resolve_runtime_tool_capabilities = lambda company: {"has_user_memory": True}
+
+        assert service.get_always_include_tool_names("acme", [{"name": "iat_memory_search"}]) == ["iat_memory_search"]

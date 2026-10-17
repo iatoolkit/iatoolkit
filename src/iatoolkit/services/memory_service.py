@@ -12,6 +12,7 @@ import os
 import re
 import unicodedata
 import uuid
+from datetime import datetime, timedelta
 
 import markdown2
 import nh3
@@ -226,6 +227,48 @@ class MemoryService:
             }],
             meta={"mode": MemoryCompilerService.DOCUMENT_REMOVED_MODE, "document_id": document_id, "label": label},
         )
+
+    # Fase 0 (R4): a capture whose compilation failed (the model was down, a
+    # page could not be saved) is tried again, a few times, after a while.
+    RETRY_MAX_ATTEMPTS = 3
+    RETRY_AFTER_MINUTES = 30
+    RETRY_BATCH = 50
+    RETRY_IDENTITY = "service:memory-retry"
+
+    def retry_failed_captures(self, company_short_name: str) -> dict:
+        """Puts the failed captures back in the queue (not the page corrections: those wait for the person)."""
+        company = self.profile_repo.get_company_by_short_name(company_short_name)
+        if not company:
+            return {"status": "error", "error_message": "company not found"}
+        failed_before = datetime.now() - timedelta(minutes=self.RETRY_AFTER_MINUTES)
+        retried, given_up = [], 0
+        for capture in self.memory_repo.list_failed_captures(company.id, failed_before, limit=self.RETRY_BATCH):
+            meta = dict(capture.meta or {})
+            if meta.get("mode") == MemoryCompilerService.CORRECTION_MODE:
+                continue
+            attempts = int(meta.get("retries") or 0)
+            if attempts >= self.RETRY_MAX_ATTEMPTS:
+                given_up += 1
+                continue
+            capture.meta = {**meta, "retries": attempts + 1, "last_error": capture.compile_error}
+            capture.status = MemoryCaptureStatus.PENDING
+            capture.compile_error = None
+            self.memory_repo.save_capture(capture)
+            for item in self.memory_repo.list_capture_items(capture.id):
+                if item.status == MemoryItemStatus.FAILED:
+                    item.status = MemoryItemStatus.PENDING
+                    item.compile_error = None
+                    self.memory_repo.save_item(item)
+            retried.append(capture.id)
+        if retried:
+            first_items = self.memory_repo.list_capture_items(retried[0])
+            self.memory_compilation_trigger.trigger(
+                company_short_name=company_short_name,
+                user_identifier=self.RETRY_IDENTITY,
+                trigger_item_id=first_items[0].id if first_items else None,
+                reason="retry",
+            )
+        return {"status": "success", "retried": retried, "given_up": given_up}
 
     def update_capture(self,
                        company_short_name: str,
@@ -720,13 +763,6 @@ class MemoryService:
         if not raw_item_ids:
             return []
         return self.memory_repo.list_items_by_ids(company_id, raw_item_ids)
-
-    @staticmethod
-    def _is_native_attachment_candidate(item: MemoryItem) -> bool:
-        return (
-            getattr(item, "item_type", None) == MemoryItemType.FILE
-            and bool(str(getattr(item, "storage_key", "") or "").strip())
-        )
 
     @staticmethod
     def _is_native_attachment_candidate(item: MemoryItem) -> bool:

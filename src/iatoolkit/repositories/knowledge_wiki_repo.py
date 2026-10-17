@@ -5,15 +5,17 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime
 
 from injector import inject
-from sqlalchemy import or_
+from sqlalchemy import or_, text
 
 from iatoolkit.repositories.database_manager import DatabaseManager
 from iatoolkit.repositories.models import (
     KnowledgeWiki,
     KnowledgeWikiPage,
+    KnowledgeWikiPageIndex,
     KnowledgeWikiPageRevision,
     KnowledgeWikiPageStatus,
     KnowledgeWikiStatus,
@@ -117,6 +119,16 @@ class KnowledgeWikiRepo:
             .first()
         )
 
+    def get_pages_by_ids(self, wiki_ids: list[int], page_ids: list[int]) -> dict[int, KnowledgeWikiPage]:
+        if not wiki_ids or not page_ids:
+            return {}
+        pages = (
+            self.session.query(KnowledgeWikiPage)
+            .filter(KnowledgeWikiPage.wiki_id.in_(list(wiki_ids)), KnowledgeWikiPage.id.in_(list(page_ids)))
+            .all()
+        )
+        return {page.id: page for page in pages}
+
     def get_page_by_slug(self, wiki_id: int, slug: str) -> KnowledgeWikiPage | None:
         if not wiki_id or not slug:
             return None
@@ -203,20 +215,142 @@ class KnowledgeWikiRepo:
             )
             self.session.add(page)
         self.session.commit()
+        self.index_page(page)
         return page
 
     def save_page(self, page: KnowledgeWikiPage) -> KnowledgeWikiPage:
         self.session.add(page)
         self.session.commit()
+        self.index_page(page)
         return page
 
     def delete_page(self, wiki_id: int, path: str) -> KnowledgeWikiPage | None:
         page = self.get_page_by_path(wiki_id, path)
         if page is None:
             return None
+        self.session.query(KnowledgeWikiPageIndex).filter(KnowledgeWikiPageIndex.page_id == page.id).delete()
         self.session.delete(page)
         self.session.commit()
         return page
+
+    # =====================================================================
+    # Search index (iat_knowledge_wiki_page_index)
+    # =====================================================================
+
+    # What the word branch searches; the meaning branch embeds the same text, cut.
+    INDEX_TEXT_CHARS = 60000
+
+    @classmethod
+    def page_search_text(cls, page: KnowledgeWikiPage) -> str:
+        parts = [page.title or "", page.summary or "", " ".join(str(t) for t in (page.tags or [])), page.body_text or ""]
+        return "\n".join(part.strip() for part in parts if str(part or "").strip())[:cls.INDEX_TEXT_CHARS]
+
+    def index_page(self, page: KnowledgeWikiPage) -> KnowledgeWikiPageIndex:
+        """Writes the page's search text; a changed text clears the embedding so it is computed again."""
+        search_text = self.page_search_text(page)
+        content_hash = hashlib.sha256(search_text.encode("utf-8")).hexdigest()
+        row = self.session.query(KnowledgeWikiPageIndex).filter(KnowledgeWikiPageIndex.page_id == page.id).first()
+        if row is None:
+            row = KnowledgeWikiPageIndex(page_id=page.id, wiki_id=page.wiki_id, company_id=page.company_id)
+            self.session.add(row)
+        elif row.content_hash == content_hash and row.wiki_id == page.wiki_id:
+            return row
+        row.wiki_id = page.wiki_id
+        row.search_text = search_text
+        row.content_hash = content_hash
+        if row.embedded_hash != content_hash:
+            row.embedding = None
+            row.embedded_hash = None
+        self.session.commit()
+        return row
+
+    def list_pages_to_embed(self, limit: int = 100, company_id: int | None = None) -> list[KnowledgeWikiPageIndex]:
+        query = (
+            self.session.query(KnowledgeWikiPageIndex)
+            .join(KnowledgeWikiPage, KnowledgeWikiPage.id == KnowledgeWikiPageIndex.page_id)
+            .filter(KnowledgeWikiPage.status != KnowledgeWikiPageStatus.ARCHIVED)
+            .filter(or_(KnowledgeWikiPageIndex.embedded_hash.is_(None),
+                        KnowledgeWikiPageIndex.embedded_hash != KnowledgeWikiPageIndex.content_hash))
+        )
+        if company_id:
+            query = query.filter(KnowledgeWikiPageIndex.company_id == company_id)
+        return query.order_by(KnowledgeWikiPageIndex.updated_at.asc()).limit(limit).all()
+
+    def list_unindexed_pages(self, limit: int = 500) -> list[KnowledgeWikiPage]:
+        """Pages written before the index existed (the backfill)."""
+        return (
+            self.session.query(KnowledgeWikiPage)
+            .outerjoin(KnowledgeWikiPageIndex, KnowledgeWikiPageIndex.page_id == KnowledgeWikiPage.id)
+            .filter(KnowledgeWikiPageIndex.id.is_(None))
+            .filter(KnowledgeWikiPage.status != KnowledgeWikiPageStatus.ARCHIVED)
+            .limit(limit)
+            .all()
+        )
+
+    def set_page_embedding(self, row: KnowledgeWikiPageIndex, embedding: list[float], embedded_hash: str) -> None:
+        row.embedding = embedding
+        row.embedded_hash = embedded_hash
+        self.session.commit()
+
+    def is_postgres(self) -> bool:
+        bind = self.session.get_bind()
+        return getattr(getattr(bind, "dialect", None), "name", "") == "postgresql"
+
+    RRF_K = 60
+
+    def hybrid_search_pages(self, wiki_ids: list[int], query_text: str, query_embedding: list[float] | None,
+                            candidates: int = 40) -> list[tuple[int, float]]:
+        """
+        (page_id, rrf_score) of the best pages of these wikis, best first: by
+        words (Postgres full text, 'simple', terms OR'ed, the GIN index) and, when
+        there is a query embedding, by meaning (pages whose embedding has its
+        size), fused by Reciprocal Rank Fusion. Archived pages are left out.
+        Postgres only.
+        """
+        if not wiki_ids:
+            return []
+        tsvector = "to_tsvector('simple'::regconfig, i.search_text)"
+        tsquery = "replace(plainto_tsquery('simple'::regconfig, :text_terms)::text, ' & ', ' | ')::tsquery"
+        params = {"wiki_ids": list(wiki_ids), "text_terms": query_text or "", "candidates": int(candidates),
+                  "archived": KnowledgeWikiPageStatus.ARCHIVED.name}
+        branches = [f"""
+                SELECT page_id, ROW_NUMBER() OVER (ORDER BY text_rank DESC, page_id ASC) AS rank
+                FROM (
+                    SELECT i.page_id, ts_rank_cd({tsvector}, terms.q) AS text_rank
+                    FROM iat_knowledge_wiki_page_index i
+                    JOIN iat_knowledge_wiki_pages p ON p.id = i.page_id,
+                         (SELECT {tsquery} AS q) terms
+                    WHERE i.wiki_id = ANY(:wiki_ids) AND p.status::text <> :archived
+                      AND {tsvector} @@ terms.q
+                    ORDER BY text_rank DESC
+                    LIMIT :candidates
+                ) words"""]
+        if query_embedding:
+            dims = len(query_embedding)
+            if 0 < dims <= 2000:
+                params["query_embedding"] = str(list(query_embedding))
+                branches.append(f"""
+                SELECT page_id, ROW_NUMBER() OVER (ORDER BY distance ASC, page_id ASC) AS rank
+                FROM (
+                    SELECT i.page_id,
+                           i.embedding::vector({dims}) <=> CAST(:query_embedding AS vector({dims})) AS distance
+                    FROM iat_knowledge_wiki_page_index i
+                    JOIN iat_knowledge_wiki_pages p ON p.id = i.page_id
+                    WHERE i.wiki_id = ANY(:wiki_ids) AND p.status::text <> :archived
+                      AND i.embedding IS NOT NULL AND vector_dims(i.embedding) = {dims}
+                    ORDER BY distance ASC
+                    LIMIT :candidates
+                ) meaning""")
+        union = " UNION ALL ".join(f"({branch})" for branch in branches)
+        sql = f"""
+            SELECT page_id, SUM(1.0 / ({self.RRF_K} + rank)) AS rrf_score
+            FROM ({union}) hits
+            GROUP BY page_id
+            ORDER BY rrf_score DESC, page_id ASC
+            LIMIT :candidates
+        """
+        rows = self.session.execute(text(sql), params).fetchall()
+        return [(int(row[0]), float(row[1])) for row in rows]
 
     def create_page_revision(
         self,

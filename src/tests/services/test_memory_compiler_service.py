@@ -637,3 +637,47 @@ class TestMemoryCompilerWithImages:
 
         [image] = self.stack.llm_client.invoke.call_args.kwargs["images"]
         assert image["name"] == "flujo.png"
+
+
+class TestSavedLinksAreFetchedSafely:
+    """Fase 0 (R2): a link a person saved is never fetched from a private or metadata address."""
+
+    def setup_method(self):
+        self.stack = MemoryStack()
+
+    def link_item(self, url):
+        from iatoolkit.repositories.models import MemoryItem, MemoryItemType
+        return MemoryItem(company_id=self.stack.company.id, user_identifier="carmen@acme.cl",
+                          item_type=MemoryItemType.LINK, source_url=url)
+
+    def test_a_metadata_address_is_never_requested(self, monkeypatch):
+        import iatoolkit.common.url_safety as url_safety
+
+        calls = []
+        monkeypatch.setattr(url_safety.requests, "get", lambda *a, **k: calls.append(a) or None)
+        item = self.link_item("http://169.254.169.254/latest/meta-data/")
+
+        self.stack.compiler._enrich_item("acme", item)
+
+        assert calls == [] and item.content_text is None
+
+    def test_a_public_page_gives_its_title_and_start(self, monkeypatch):
+        import iatoolkit.common.url_safety as url_safety
+
+        class Raw:
+            def read(self, size, decode_content=True):
+                return b"<html><title>Despachos</title><body>Los viernes no se despacha.</body></html>"
+
+        class Response:
+            status_code, headers, encoding, raw = 200, {}, "utf-8", Raw()
+            def raise_for_status(self): pass
+            def close(self): pass
+
+        monkeypatch.setattr(url_safety, "assert_public_http_url", lambda url, **kwargs: None)
+        monkeypatch.setattr(url_safety.requests, "get", lambda *a, **k: Response())
+        item = self.link_item("https://example.com/despachos")
+        self.stack.memory_repo.save_item = lambda item: None
+
+        self.stack.compiler._enrich_item("acme", item)
+
+        assert item.content_text.startswith("Despachos") and "no se despacha" in item.content_text

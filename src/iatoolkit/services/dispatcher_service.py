@@ -3,6 +3,7 @@
 #
 # IAToolkit is open source software.
 
+from iatoolkit.common import memory_tools
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.services.inference_service import InferenceService
@@ -87,6 +88,19 @@ class Dispatcher:
     @classmethod
     def clear_tool_execution_hook(cls):
         cls._tool_execution_hook = None
+
+    @staticmethod
+    def _record_knowledge_use(company_short_name, function_name, arguments, result, user_identifier, runtime_source):
+        """Fase 2: one usage event per search or read of the company's knowledge (best effort)."""
+        try:
+            from iatoolkit import current_iatoolkit
+            from iatoolkit.services.memory_usage_service import MemoryUsageService
+
+            current_iatoolkit().get_injector().get(MemoryUsageService).record(
+                company_short_name, function_name, arguments, result, user_identifier=user_identifier,
+                channel=str(runtime_source or memory_tools.CHANNEL_CHAT))
+        except Exception as exc:
+            logging.warning("Memoria usage event skipped for %s: %s", function_name, exc)
 
     @classmethod
     def register_tool_type_handler(cls, tool_type: str, handler):
@@ -292,7 +306,13 @@ class Dispatcher:
             handler_kwargs = dict(kwargs)
             if user_identifier and function_name in self.USER_SCOPED_SYSTEM_TOOLS:
                 handler_kwargs["user_identifier"] = user_identifier
-            return handler(company_short_name, **handler_kwargs)
+            result = handler(company_short_name, **handler_kwargs)
+            # An evaluation replaying an agent is not a use of the company's knowledge.
+            if (function_name in memory_tools.KNOWLEDGE_TOOLS
+                    and str(runtime_source or "").strip().lower() != EVALUATION_REQUEST_SOURCE):
+                self._record_knowledge_use(company_short_name, function_name, kwargs, result,
+                                           user_identifier, runtime_source)
+            return result
 
         elif tool_def.tool_type == 'INFERENCE':
             # Delegate to Inference Service with DB config

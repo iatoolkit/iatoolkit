@@ -290,3 +290,32 @@ def test_pending_questions_survive_a_failing_provider(stack):
         MemoryQuestionService.register_assignment_provider(None)
 
     assert result["assigned_to_you"] == 0 and len(result["questions"]) == 1
+
+
+def test_of_two_answers_at_once_only_one_is_saved(stack):
+    question = stack.question_repo.add(MemoryQuestion(company_id=stack.company.id, question="¿Plazo de pago?"))
+    stack.question_repo.commit()
+    # Someone else answered between this person opening the question and saving.
+    original_claim = stack.question_repo.claim_open
+
+    def claim_after_someone_else(company_id, question_id, status, resolved_by, resolved_at):
+        original_claim(company_id, question_id, status, "juan@acme.cl", resolved_at)
+        return original_claim(company_id, question_id, status, resolved_by, resolved_at)
+
+    stack.question_repo.claim_open = claim_after_someone_else
+
+    result = stack.questions.answer("acme", question.id, "45 días.", "carmen@acme.cl")
+
+    assert result["error_code"] == "already_resolved"
+    assert stack.session.query(MemoryCapture).count() == 0
+
+
+def test_an_answer_that_cannot_be_saved_leaves_the_question_open(stack):
+    question = stack.question_repo.add(MemoryQuestion(company_id=stack.company.id, question="¿Plazo de pago?"))
+    stack.question_repo.commit()
+    stack.memory_service.save_capture = lambda **kwargs: {"status": "error", "error_message": "storage down"}
+
+    result = stack.questions.answer("acme", question.id, "45 días.", "carmen@acme.cl")
+
+    stack.session.refresh(question)
+    assert result["status"] == "error" and question.status == "open" and question.resolved_by is None

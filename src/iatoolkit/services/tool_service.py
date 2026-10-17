@@ -1559,6 +1559,10 @@ class ToolService:
 
         return selected_names
 
+    # Every `routing.force_include_capability` of system_tools_pack.yaml must be one of these
+    # (test_tool_service checks it), or its tools are never forced.
+    RUNTIME_TOOL_CAPABILITIES = ("has_sql_sources", "has_kb_collections", "has_knowledge_wikis", "has_user_memory")
+
     def _resolve_runtime_tool_capabilities(self, company_short_name: str) -> dict[str, bool]:
         has_sql_sources = False
         has_kb_collections = False
@@ -1584,6 +1588,10 @@ class ToolService:
             "has_sql_sources": has_sql_sources,
             "has_kb_collections": has_kb_collections,
             "has_knowledge_wikis": has_knowledge_wikis,
+            # Memoria has no per-company switch: wherever its tools are offered,
+            # the search, page and save tools always reach the model (a router
+            # that trims to top-k must not drop them).
+            "has_user_memory": True,
         }
 
 

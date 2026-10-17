@@ -174,3 +174,54 @@ class TestMemoryService:
         response = self.service.update_capture("acme", "juan@acme.cl", capture["capture_id"], capture_text="Cambio")
 
         assert response["status"] == "error"
+
+
+class TestFailedCapturesAreRetried:
+    """Fase 0 (R4): a capture that failed goes back to the queue a few times."""
+
+    def setup_method(self):
+        from tests.services.memory_test_support import MemoryStack
+        self.stack = MemoryStack()
+
+    def failed_capture(self, meta=None, minutes_ago=60):
+        from datetime import datetime, timedelta
+        from iatoolkit.repositories.models import MemoryCaptureStatus, MemoryItemStatus
+
+        saved = self.stack.memory_service.save_capture(
+            company_short_name="acme", user_identifier="carmen@acme.cl", capture_text="Plazo de pago: 45 días",
+            new_items=[{"item_type": "note", "content_text": "Plazo de pago: 45 días"}], meta=meta)
+        capture = self.stack.memory_repo.get_capture(self.stack.company.id, saved["capture"]["capture_id"])
+        capture.status = MemoryCaptureStatus.FAILED
+        capture.compile_error = "model down"
+        capture.updated_at = datetime.now() - timedelta(minutes=minutes_ago)
+        for item in self.stack.memory_repo.list_capture_items(capture.id):
+            item.status = MemoryItemStatus.FAILED
+        self.stack.session.commit()
+        capture.updated_at = datetime.now() - timedelta(minutes=minutes_ago)
+        self.stack.session.commit()
+        self.stack.trigger.trigger.reset_mock()
+        return capture
+
+    def test_a_failed_capture_goes_back_to_pending_and_compiles_again(self):
+        from iatoolkit.repositories.models import MemoryCaptureStatus, MemoryItemStatus
+
+        capture = self.failed_capture()
+
+        result = self.stack.memory_service.retry_failed_captures("acme")
+
+        assert result["retried"] == [capture.id]
+        assert capture.status == MemoryCaptureStatus.PENDING and capture.compile_error is None
+        assert capture.meta["retries"] == 1 and capture.meta["last_error"] == "model down"
+        assert all(i.status == MemoryItemStatus.PENDING for i in self.stack.memory_repo.list_capture_items(capture.id))
+        assert self.stack.trigger.trigger.call_args.kwargs["reason"] == "retry"
+
+    def test_recent_failures_corrections_and_spent_attempts_are_left_alone(self):
+        recent = self.failed_capture(minutes_ago=5)
+        correction = self.failed_capture(meta={"mode": "correction"})
+        spent = self.failed_capture(meta={"retries": 3})
+
+        result = self.stack.memory_service.retry_failed_captures("acme")
+
+        assert result["retried"] == [] and result["given_up"] == 1
+        self.stack.trigger.trigger.assert_not_called()
+        assert {recent.id, correction.id, spent.id}

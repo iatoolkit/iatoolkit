@@ -11,8 +11,9 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta
 
 from injector import inject
-from sqlalchemy import text
 
+from iatoolkit.common import memory_tools
+from iatoolkit.repositories.advisory_lock import advisory_lock
 from iatoolkit.repositories.database_manager import DatabaseManager
 from iatoolkit.repositories.memory_question_repo import MemoryQuestionRepo
 from iatoolkit.repositories.models import Company, MemoryQuestion, MemoryQuestionCandidate
@@ -40,7 +41,7 @@ class MemoryQuestionService:
     """
 
     SCAN_IDENTITY = "service:memory-questions"
-    SEARCH_TOOLS = frozenset({"iat_memory_search", "iat_document_search"})
+    SEARCH_TOOLS = memory_tools.SEARCH_TOOLS
     BATCH_SIZE = 20
     MAX_QUERIES_PER_SCAN = 1000
     MAX_OPEN_IN_PROMPT = 80
@@ -102,26 +103,34 @@ class MemoryQuestionService:
         answer_text = str(answer_text or "").strip()
         if not answer_text:
             return {"status": "error", "error_message": "write the answer"}
+        # Claimed first, in one UPDATE: two people answering at once save one answer.
+        resolved_at = datetime.now()
+        if not self.question_repo.claim_open(company.id, question.id, MemoryQuestion.STATUS_ANSWERED,
+                                             answered_by, resolved_at):
+            return self._already_resolved()
         content = f"Pregunta: {question.question}\nRespuesta: {answer_text}"
-        saved = self.memory_service.save_capture(
-            company_short_name=company_short_name,
-            user_identifier=answered_by,
-            capture_text=content,
-            title=question.question[:200],
-            new_items=[{
-                "item_type": "note",
-                "content_text": content,
-                "source_meta": {"origin": "memory_question", "question_id": question.id},
-            }],
-            meta={"origin": "memory_question", "question_id": question.id},
-        )
+        try:
+            saved = self.memory_service.save_capture(
+                company_short_name=company_short_name,
+                user_identifier=answered_by,
+                capture_text=content,
+                title=question.question[:200],
+                new_items=[{
+                    "item_type": "note",
+                    "content_text": content,
+                    "source_meta": {"origin": "memory_question", "question_id": question.id},
+                }],
+                meta={"origin": "memory_question", "question_id": question.id},
+            )
+        except Exception:
+            self.question_repo.reopen(company.id, question.id)
+            raise
         if saved.get("status") != "success":
+            self.question_repo.reopen(company.id, question.id)
             return saved
-        question.status = MemoryQuestion.STATUS_ANSWERED
+        self.question_repo.session.refresh(question)
         question.answer_text = answer_text
         question.answer_capture_id = (saved.get("capture") or {}).get("capture_id")
-        question.resolved_by = answered_by
-        question.resolved_at = datetime.now()
         self.question_repo.commit()
         return {"status": "success", "question": self.serialize(question)}
 
@@ -152,11 +161,16 @@ class MemoryQuestionService:
         _, question, error = self._open_question(company_short_name, question_id)
         if error:
             return error
-        question.status = MemoryQuestion.STATUS_DISMISSED
-        question.resolved_by = dismissed_by
-        question.resolved_at = datetime.now()
-        self.question_repo.commit()
+        if not self.question_repo.claim_open(question.company_id, question.id, MemoryQuestion.STATUS_DISMISSED,
+                                             dismissed_by, datetime.now()):
+            return self._already_resolved()
+        self.question_repo.session.refresh(question)
         return {"status": "success", "question": self.serialize(question)}
+
+    @staticmethod
+    def _already_resolved() -> dict:
+        return {"status": "error", "error_code": "already_resolved",
+                "error_message": "that question was already answered or dismissed"}
 
     def _open_question(self, company_short_name: str, question_id: int):
         company = self.profile_repo.get_company_by_short_name(company_short_name)
@@ -450,24 +464,8 @@ class MemoryQuestionService:
     @contextmanager
     def _company_lock(self, company_id: int):
         """One scan per company at a time, across workers (as the compiler does)."""
-        if self.db_manager.get_dialect() not in ("postgresql", "postgres"):
+        with advisory_lock(self.db_manager, self.ADVISORY_LOCK_NAMESPACE, company_id):
             yield
-            return
-        connection = self.db_manager.get_connection()
-        try:
-            connection.execute(
-                text("SELECT pg_advisory_lock(:namespace, :company_id)"),
-                {"namespace": self.ADVISORY_LOCK_NAMESPACE, "company_id": int(company_id)},
-            )
-            try:
-                yield
-            finally:
-                connection.execute(
-                    text("SELECT pg_advisory_unlock(:namespace, :company_id)"),
-                    {"namespace": self.ADVISORY_LOCK_NAMESPACE, "company_id": int(company_id)},
-                )
-        finally:
-            connection.close()
 
     # =====================================================================
     # Shape

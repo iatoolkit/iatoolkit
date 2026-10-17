@@ -15,8 +15,9 @@ from html import unescape
 
 import requests
 from injector import inject
-from sqlalchemy import text
 
+from iatoolkit.common.url_safety import fetch_with_safe_redirects
+from iatoolkit.repositories.advisory_lock import advisory_lock
 from iatoolkit.repositories.database_manager import DatabaseManager
 from iatoolkit.repositories.document_repo import DocumentRepo
 from iatoolkit.repositories.memory_repo import MemoryRepo
@@ -64,6 +65,8 @@ class MemoryCompilerService:
     # A document of the RAG that feeds the wiki (BL-014): read whole, part by part.
     DOCUMENT_MODE = "document"
     DOCUMENT_AGENT = "memory_document_ingest"
+    # A saved link is read up to this much (its title and the start of its text).
+    LINK_FETCH_MAX_BYTES = 512 * 1024
     # A meeting transcript (BL-015): decisions, procedures and owners, not the conversation.
     MEETING_AGENT = "memory_meeting_ingest"
     MEETING_KIND = "meeting"
@@ -153,24 +156,8 @@ class MemoryCompilerService:
         so the many commits made while compiling cannot release it early. Other
         databases (SQLite in tests and local runs) have no concurrent compilers.
         """
-        if self.db_manager.get_dialect() not in ("postgresql", "postgres"):
+        with advisory_lock(self.db_manager, self.ADVISORY_LOCK_NAMESPACE, company_id):
             yield
-            return
-        connection = self.db_manager.get_connection()
-        try:
-            connection.execute(
-                text("SELECT pg_advisory_lock(:namespace, :company_id)"),
-                {"namespace": self.ADVISORY_LOCK_NAMESPACE, "company_id": int(company_id)},
-            )
-            try:
-                yield
-            finally:
-                connection.execute(
-                    text("SELECT pg_advisory_unlock(:namespace, :company_id)"),
-                    {"namespace": self.ADVISORY_LOCK_NAMESPACE, "company_id": int(company_id)},
-                )
-        finally:
-            connection.close()
 
     def _agent_for(self, capture: MemoryCapture) -> str:
         mode = dict(capture.meta or {}).get("mode")
@@ -1019,9 +1006,15 @@ class MemoryCompilerService:
             return
 
         try:
-            response = requests.get(item.source_url, timeout=8, headers={"User-Agent": "IAToolkit Memory/1.0"})
+            # A link a person saved: never a private, loopback or metadata address,
+            # and every redirect checked the same way (SSRF).
+            response = fetch_with_safe_redirects(
+                item.source_url, allowed_schemes=("http", "https"), label="Memory link",
+                timeout=8, stream=True, headers={"User-Agent": "IAToolkit Memory/1.0"})
             response.raise_for_status()
-            html = response.text
+            raw = response.raw.read(self.LINK_FETCH_MAX_BYTES, decode_content=True)
+            response.close()
+            html = raw.decode(response.encoding or "utf-8", errors="replace")
         except Exception as exc:
             logging.warning("Could not fetch memory link %s: %s", item.source_url, exc)
             return

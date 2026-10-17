@@ -516,3 +516,31 @@ class TestDispatcherToolTypeHandlers:
 
         after = [call for call in hook.call_args_list if call.kwargs.get("event") == "after_dispatch"]
         assert after and after[-1].kwargs["status"] == "error"
+
+
+class TestKnowledgeUsageEvents:
+    """Fase 2: every search or read of the company's knowledge is recorded, not evaluation replays."""
+
+    def run_system(self, monkeypatch, function_name, runtime_source=None):
+        from unittest.mock import MagicMock
+        from iatoolkit.services.dispatcher_service import Dispatcher
+
+        recorded = []
+        monkeypatch.setattr(Dispatcher, "_record_knowledge_use",
+                            staticmethod(lambda *args: recorded.append(args)))
+        dispatcher = Dispatcher.__new__(Dispatcher)
+        dispatcher._tool_service = MagicMock()
+        dispatcher._tool_service.get_system_handler.return_value = lambda company, **kwargs: {"results": [1]}
+        tool_def = MagicMock(tool_type="SYSTEM")
+        dispatcher._dispatch_resolved_tool(company_short_name="acme", function_name=function_name, user_identifier="carmen@acme.cl",
+               tool_def=tool_def, runtime_source=runtime_source, query="plazo")
+        return recorded
+
+    def test_a_memory_search_is_recorded_with_its_channel(self, monkeypatch):
+        recorded = self.run_system(monkeypatch, "iat_memory_search", runtime_source="mcp")
+
+        assert recorded and recorded[0][1] == "iat_memory_search" and recorded[0][5] == "mcp"
+
+    def test_other_tools_and_evaluations_are_not(self, monkeypatch):
+        assert self.run_system(monkeypatch, "iat_sql_query") == []
+        assert self.run_system(monkeypatch, "iat_memory_search", runtime_source="evaluation") == []

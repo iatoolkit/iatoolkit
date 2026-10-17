@@ -871,6 +871,69 @@ class KnowledgeWikiPage(Base):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
 
 
+class MemoryUsageEvent(Base):
+    """
+    One use of the company's knowledge (Fase 2): a page or document search, or
+    a read of what it found, from the chat or an MCP client. Written by the tool
+    handlers (core) and the MCP backend (enterprise); Impacto and the
+    recognition read these instead of `iat_queries`.
+    """
+    __tablename__ = "iat_memory_usage_events"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_companies.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    user_identifier = Column(String, nullable=True)
+    channel = Column(String(16), nullable=False, default="chat")
+    tool = Column(String(64), nullable=False)
+    # Searches: what was asked and how much came back. Reads: what was read.
+    query = Column(String(300), nullable=True)
+    results = Column(Integer, nullable=False, default=0)
+    page_id = Column(Integer, nullable=True)
+    document_id = Column(Integer, nullable=True)
+
+    __table_args__ = (
+        Index("ix_iat_memory_usage_events_company_created", "company_id", "created_at"),
+    )
+
+
+class KnowledgeWikiPageIndex(Base):
+    """
+    The search index of a wiki page (Fase 1 of the Memoria architecture review):
+    the text to search and its embedding, so `search_pages` is one hybrid SQL
+    query (words + meaning, fused by RRF, as the RAG) instead of scoring every
+    page in Python.
+
+    Its own table, so `iat_knowledge_wiki_pages` keeps its shape and create_all()
+    builds this one with its index (no migration). The text is written with the
+    page (KnowledgeWikiRepo); the embedding afterwards (WikiPageIndexService),
+    and it is cleared whenever the text changes. A page without an embedding is
+    still found by its words.
+    """
+    __tablename__ = "iat_knowledge_wiki_page_index"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    page_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_knowledge_wiki_pages.id", ondelete="CASCADE"),
+                     nullable=False, unique=True)
+    wiki_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_knowledge_wikis.id", ondelete="CASCADE"),
+                     nullable=False, index=True)
+    company_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_companies.id", ondelete="CASCADE"), nullable=False)
+    search_text = Column(Text, nullable=False, default="")
+    content_hash = Column(String(64), nullable=False, default="")
+    # Dynamic size, as iat_vsdocs: whatever the company's embedding model returns.
+    embedding = Column(Vector, nullable=True)
+    embedded_hash = Column(String(64), nullable=True)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+
+    __table_args__ = (
+        Index(
+            "ix_iat_knowledge_wiki_page_index_text_simple_tsv",
+            func.to_tsvector(literal_column("'simple'::regconfig"), search_text),
+            postgresql_using="gin",
+        ).ddl_if(dialect="postgresql"),
+    )
+
+
 class KnowledgeWikiPageRevision(Base):
     """Immutable audit snapshot for a manual tenant wiki page change."""
     __tablename__ = "iat_knowledge_wiki_page_revisions"

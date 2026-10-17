@@ -885,7 +885,11 @@ class TenantWikiService:
                 "error_code": self.ERROR_PAGE_CHANGED,
                 "error_message": "page changed since it was read",
             }
-        self._write_page_document(
+        # The wiki's indexes list each page's path, title and summary: when an
+        # edit changes neither (most of the compiler's do not), they stay as they
+        # are instead of being rewritten from every page (Fase 1, R7).
+        listed_before = self._index_entry_key(page)
+        page = self._write_page_document(
             company_short_name,
             company_id=company.id,
             wiki=wiki,
@@ -903,7 +907,8 @@ class TenantWikiService:
             change_summary=change_summary,
             metadata=revision_metadata,
         )
-        self._refresh_root_index_if_generated(company_short_name, wiki)
+        if self._index_entry_key(page) != listed_before:
+            self._refresh_root_index_if_generated(company_short_name, wiki)
         return self.get_page(company_short_name, wiki_key=wiki.wiki_key, path=normalized_path, include_system=True)
 
     def delete_page(
@@ -1106,6 +1111,17 @@ class TenantWikiService:
                     if wiki and self.normalize_wiki_key(wiki.wiki_key) in allowed_keys
                 ]
 
+        indexed = self._indexed_search(
+            company_short_name, wikis, query, normalized_query, limit, user_identifier, visibility_filter)
+        if indexed is not None:
+            return {
+                "status": "success",
+                "query": query,
+                "wiki_key": normalized_wiki_key,
+                "count": len(indexed),
+                "results": indexed,
+            }
+
         results = []
         for wiki in wikis:
             if not wiki or wiki.status == KnowledgeWikiStatus.ARCHIVED:
@@ -1152,6 +1168,65 @@ class TenantWikiService:
             "count": len(results[:bounded_limit]),
             "results": results[:bounded_limit],
         }
+
+    # The index search asks for more candidates than it returns: pages the reader
+    # may not see are dropped after ranking.
+    INDEX_CANDIDATES = 60
+
+    def _indexed_search(self, company_short_name: str, wikis: list, query: str, normalized_query: str, limit,
+                        user_identifier, visibility_filter) -> list[dict] | None:
+        """
+        The search on the page index (iat_knowledge_wiki_page_index): one hybrid
+        query, words and meaning fused by RRF, as the RAG. None when it does not
+        apply (no query, not Postgres) or fails, and the full scan answers.
+        """
+        if not normalized_query or not self.knowledge_wiki_repo.is_postgres():
+            return None
+        live = [wiki for wiki in wikis if wiki and wiki.status != KnowledgeWikiStatus.ARCHIVED]
+        if not live:
+            return []
+        try:
+            embedding = self.page_index_service.query_embedding(company_short_name, query)
+            ranked = self.knowledge_wiki_repo.hybrid_search_pages(
+                [wiki.id for wiki in live], query, embedding, candidates=self.INDEX_CANDIDATES)
+        except Exception as exc:
+            self.knowledge_wiki_repo.rollback()
+            logging.warning("Indexed wiki search failed for %s, scanning instead: %s", company_short_name, exc)
+            return None
+        by_id = {wiki.id: wiki for wiki in live}
+        filters: dict[int, object] = {}
+        bounded_limit = min(max(int(limit or 5), 1), 25)
+        pages = self.knowledge_wiki_repo.get_pages_by_ids(list(by_id), [page_id for page_id, _ in ranked])
+        results = []
+        for page_id, score in ranked:
+            page = pages.get(page_id)
+            if page is None or page.status == KnowledgeWikiPageStatus.ARCHIVED:
+                continue
+            wiki = by_id.get(page.wiki_id)
+            if wiki.id not in filters:
+                # Per wiki: each one carries its own access control mode.
+                filters[wiki.id] = self._access_visibility_filter(
+                    company_short_name, wiki, user_identifier, visibility_filter)
+            wiki_filter = filters[wiki.id]
+            if wiki_filter is not None and not wiki_filter(page.path):
+                continue
+            results.append({
+                **self.serialize_page(page, include_body=False),
+                "wiki_key": wiki.wiki_key,
+                "wiki_name": wiki.name,
+                "url": self._reader_url(company_short_name, wiki, page.path),
+                "score": round(score, 6),
+            })
+            if len(results) >= bounded_limit:
+                break
+        return results
+
+    @property
+    def page_index_service(self):
+        # Resolved here, not injected: the embedding service builds on the company configuration.
+        from iatoolkit import current_iatoolkit
+        from iatoolkit.services.wiki_page_index_service import WikiPageIndexService
+        return current_iatoolkit().get_injector().get(WikiPageIndexService)
 
     def lint_wikis(self, company_short_name: str, *, wiki_key: str | None = None) -> dict:
         company = self._get_company(company_short_name)
@@ -1716,6 +1791,12 @@ class TenantWikiService:
         parsed = self.markdown_wiki_service.parse_frontmatter_document(markdown or "")
         frontmatter = parsed.get("frontmatter") if isinstance(parsed.get("frontmatter"), dict) else {}
         return bool(frontmatter.get(self.ROOT_INDEX_GENERATED_FLAG))
+
+    @staticmethod
+    def _index_entry_key(page: KnowledgeWikiPage) -> tuple:
+        """What a page contributes to the wiki's indexes."""
+        status = page.status.value if hasattr(page.status, "value") else str(page.status)
+        return (page.path, page.title, page.summary or "", status, tuple(page.tags or []))
 
     def _refresh_root_index_if_generated(self, company_short_name: str, wiki: KnowledgeWiki) -> None:
         storage_key = self._root_index_storage_key(wiki)

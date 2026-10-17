@@ -51,6 +51,29 @@ class MemoryQuestionRepo:
             .all()
         )
 
+    def claim_open(self, company_id: int, question_id: int, status: str, resolved_by: str, resolved_at) -> bool:
+        """Resolves the question only if it is still open, in one UPDATE: of two people answering at
+        once, exactly one wins (Fase 0, R17). Commits."""
+        claimed = (
+            self.session.query(MemoryQuestion)
+            .filter(MemoryQuestion.company_id == company_id, MemoryQuestion.id == question_id,
+                    MemoryQuestion.status == MemoryQuestion.STATUS_OPEN)
+            .update({MemoryQuestion.status: status, MemoryQuestion.resolved_by: resolved_by,
+                     MemoryQuestion.resolved_at: resolved_at}, synchronize_session=False)
+        )
+        self.commit()
+        return bool(claimed)
+
+    def reopen(self, company_id: int, question_id: int) -> None:
+        """Undoes a claim whose answer could not be saved."""
+        (
+            self.session.query(MemoryQuestion)
+            .filter(MemoryQuestion.company_id == company_id, MemoryQuestion.id == question_id)
+            .update({MemoryQuestion.status: MemoryQuestion.STATUS_OPEN, MemoryQuestion.resolved_by: None,
+                     MemoryQuestion.resolved_at: None}, synchronize_session=False)
+        )
+        self.commit()
+
     def get_question(self, company_id: int, question_id: int) -> MemoryQuestion | None:
         return (
             self.session.query(MemoryQuestion)

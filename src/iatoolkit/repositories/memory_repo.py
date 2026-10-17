@@ -131,6 +131,19 @@ class MemoryRepo:
             .all()
         )
 
+    def list_failed_captures(self, company_id: int, failed_before, limit: int = 50) -> list[MemoryCapture]:
+        """Captures whose compilation failed before `failed_before`, oldest first (to retry them)."""
+        if not company_id:
+            return []
+        return (
+            self.session.query(MemoryCapture)
+            .filter_by(company_id=company_id, status=MemoryCaptureStatus.FAILED)
+            .filter(MemoryCapture.updated_at < failed_before)
+            .order_by(MemoryCapture.updated_at.asc(), MemoryCapture.id.asc())
+            .limit(limit)
+            .all()
+        )
+
     def add_page_sources(self, company_id: int, wiki_page_id: int, item_ids: list[int]) -> None:
         """Links items to a wiki page, keeping the links it already has."""
         if not company_id or not wiki_page_id:
