@@ -681,3 +681,75 @@ class TestSavedLinksAreFetchedSafely:
         self.stack.compiler._enrich_item("acme", item)
 
         assert item.content_text.startswith("Despachos") and "no se despacha" in item.content_text
+
+
+class TestCompilationDoesNotKeepWorkersWaiting:
+    """BL-016, Fase 3: a run that finds the company's lock taken leaves; a long run stops in time."""
+
+    def setup_method(self):
+        self.stack = MemoryStack()
+
+    def save(self, text):
+        return self.stack.memory_service.save_capture(
+            company_short_name="acme", user_identifier="carmen@acme.cl", capture_text=text,
+            new_items=[{"item_type": "note", "content_text": text}])
+
+    def test_a_run_that_finds_the_lock_taken_is_absorbed(self, monkeypatch):
+        from contextlib import contextmanager
+
+        @contextmanager
+        def taken(company_id):
+            yield False
+
+        monkeypatch.setattr(self.stack.compiler, "_company_lock", taken)
+        self.save("Plazo de pago: 45 días")
+
+        result = self.stack.compiler.compile_pending_for_company("acme")
+
+        assert result["absorbed"] is True and result["compiled_count"] == 0
+        self.stack.llm_client.invoke.assert_not_called()
+
+    def test_a_run_out_of_time_stops_and_says_so(self, monkeypatch):
+        self.save("Plazo de pago: 45 días")
+        self.save("Despachos los viernes no")
+        self.stack.compiler.MAX_RUN_SECONDS = -1
+
+        result = self.stack.compiler.compile_pending_for_company("acme")
+
+        assert result["stopped"] == "time_limit"
+        assert result["processed_count"] == 1 and result["pending_count"] == 1
+
+
+class TestANewVersionReplacesTheOldOne:
+    """BL-016, Fase 3: a new version marks what the previous one taught, never its own lines."""
+
+    from iatoolkit.services.memory_compiler_service import MemoryCompilerService
+
+    def test_only_lines_from_before_the_replacement_are_marked(self):
+        body = ("- Precio mayorista: $1.000 (Lista de precios, 2026-09-01)\n"
+                "- Precio mayorista: $1.200 (Lista de precios, 2026-10-17)\n"
+                "- Según Carmen, se revisa cada mes. (Carmen, 2026-09-03)")
+
+        marked = self.MemoryCompilerService._mark_obsolete_lines(
+            body, {"Lista de precios"}, "2026-10-17",
+            mark=self.MemoryCompilerService.OBSOLETE_REPLACED_MARK, before="2026-10-17")
+
+        lines = marked.split("\n")
+        assert lines[0].endswith("**[obsoleto: hay una versión nueva del documento, 2026-10-17]**")
+        assert "obsoleto" not in lines[1] and "obsoleto" not in lines[2]
+
+    def test_a_line_is_marked_once_whatever_the_reason(self):
+        body = "- Plazo: 30 días (Política, 2026-09-01) **[obsoleto: se eliminó el documento, 2026-09-10]**"
+
+        assert self.MemoryCompilerService._mark_obsolete_lines(body, {"Política"}, "2026-10-17") == body
+
+    def test_the_sources_say_who_reads_each_capture(self):
+        from iatoolkit.services.memory_sources import MemorySourceRegistry
+
+        document = MemorySourceRegistry.for_capture({"mode": "document"})
+        assert document.agent_for({"mode": "document"}) == "memory_document_ingest"
+        assert document.agent_for({"mode": "document", "kind": "meeting"}) == "memory_meeting_ingest"
+        assert document.on_new_version == "replace" and document.on_removal == "mark_obsolete"
+        assert MemorySourceRegistry.for_capture({}).handler == "_compile_person_capture"
+        assert MemorySourceRegistry.for_capture({"mode": "unknown"}).key == "people"
+        assert MemorySourceRegistry.for_capture({"mode": "document_removed"}).agent is None

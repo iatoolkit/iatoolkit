@@ -9,6 +9,7 @@ import base64
 import logging
 import mimetypes
 import re
+import time
 from contextlib import contextmanager
 from datetime import datetime
 from html import unescape
@@ -25,6 +26,7 @@ from iatoolkit.repositories.models import (
     Company, MemoryCapture, MemoryCaptureStatus, MemoryConflict, MemoryItem, MemoryItemStatus, MemoryItemType, VSDoc,
 )
 from iatoolkit.repositories.profile_repo import ProfileRepo
+from iatoolkit.services.memory_sources import MemorySourceRegistry, register_core_sources
 from iatoolkit.services.memory_wiki_service import MemoryWikiService
 from iatoolkit.services.storage_service import StorageService
 from iatoolkit.services.system_agent_runner import SystemAgentDisabled, SystemAgentRunner
@@ -50,6 +52,10 @@ class MemoryCompilerService:
     MAX_CANDIDATE_PAGES = 3
     MAX_INDEX_ENTRIES_IN_PROMPT = 80
     MAX_BATCHES_PER_RUN = 20
+    # A run gives its worker back after this long and the rest goes to a new task.
+    MAX_RUN_SECONDS = 15 * 60
+    # Times a run takes the lock again for captures saved as it was releasing it.
+    MAX_LOCK_ROUNDS = 3
     MAX_SAVE_ATTEMPTS = 3
     COMPILER_SOURCE = "memory_compiler"
     # A capture that asks to change one page (Memoria → "¿Qué hay que corregir?").
@@ -79,6 +85,10 @@ class MemoryCompilerService:
     # A document that fed the wiki was deleted: its facts are marked, never erased.
     DOCUMENT_REMOVED_MODE = "document_removed"
     OBSOLETE_MARK = "obsoleto: se eliminó el documento"
+    # A new version of the document replaced the one these lines came from (BL-016, Fase 3).
+    OBSOLETE_REPLACED_MARK = "obsoleto: hay una versión nueva del documento"
+    # Any obsolete mark, whatever its reason: a line is marked once.
+    OBSOLETE_PREFIX = "**[obsoleto"
     CORRECTION_AGENT = "memory_correction"
 
     @inject
@@ -109,31 +119,48 @@ class MemoryCompilerService:
         compiled_count = 0
         processed_count = 0
         waiting_count = 0
-        with self._company_lock(company.id):
-            # Keep draining: a capture saved while this run held the lock waited
-            # for it instead of compiling concurrently, and must not be left behind.
-            for _ in range(self.MAX_BATCHES_PER_RUN):
-                pending_captures = self.memory_repo.get_pending_captures(company.id, limit=limit)
-                if not pending_captures:
-                    break
-                batch_waiting = 0
-                for capture in pending_captures:
-                    agent_key = self._agent_for(capture)
-                    if agent_key and not SystemAgentRunner.is_enabled(agent_key):
-                        # Its agent is turned off by the platform: the capture stays
-                        # pending and is compiled when the agent is turned on again.
-                        batch_waiting += 1
-                        continue
-                    processed_count += 1
-                    compiled = self._compile_capture_safely(company, capture)
-                    if compiled is None:
-                        batch_waiting += 1
-                    elif compiled:
-                        compiled_count += 1
-                waiting_count += batch_waiting
-                if batch_waiting == len(pending_captures):
-                    # Nothing in this batch could move; reading it again would only repeat that.
-                    break
+        stopped = None
+        started = time.monotonic()
+        for _ in range(self.MAX_LOCK_ROUNDS):
+            with self._company_lock(company.id) as held:
+                if not held:
+                    # Another run of this company holds the lock and drains every
+                    # pending capture, including this one; this task ends now
+                    # instead of keeping a worker waiting (BL-016, Fase 3).
+                    return {"status": "success", "absorbed": True, "compiled_count": 0, "processed_count": 0,
+                            "waiting_count": 0, "pending_count": None}
+                waiting_count = 0
+                for _batch in range(self.MAX_BATCHES_PER_RUN):
+                    pending_captures = self.memory_repo.get_pending_captures(company.id, limit=limit)
+                    if not pending_captures:
+                        break
+                    batch_waiting = 0
+                    for capture in pending_captures:
+                        agent_key = self._agent_for(capture)
+                        if agent_key and not SystemAgentRunner.is_enabled(agent_key):
+                            # Its agent is turned off by the platform: the capture stays
+                            # pending and is compiled when the agent is turned on again.
+                            batch_waiting += 1
+                            continue
+                        processed_count += 1
+                        compiled = self._compile_capture_safely(company, capture)
+                        if compiled is None:
+                            batch_waiting += 1
+                        elif compiled:
+                            compiled_count += 1
+                        if time.monotonic() - started > self.MAX_RUN_SECONDS:
+                            stopped = "time_limit"
+                            break
+                    waiting_count += batch_waiting
+                    if stopped or batch_waiting == len(pending_captures):
+                        # Out of time, or nothing in this batch could move.
+                        break
+            if stopped:
+                break
+            # A capture saved just as the lock was released found it taken and was
+            # absorbed: it is pending now, and this run takes it.
+            if len(self.memory_repo.get_pending_captures(company.id, limit=limit)) <= waiting_count:
+                break
 
         return {
             "status": "success",
@@ -141,6 +168,8 @@ class MemoryCompilerService:
             "processed_count": processed_count,
             "waiting_count": waiting_count,
             "pending_count": len(self.memory_repo.get_pending_captures(company.id, limit=limit)),
+            # The task stopped to free its worker; the caller queues the rest.
+            "stopped": stopped,
         }
 
     def compile_pending_for_user(self, company_short_name: str, user_identifier: str | None = None, limit: int = 12) -> dict:
@@ -150,26 +179,19 @@ class MemoryCompilerService:
     @contextmanager
     def _company_lock(self, company_id: int):
         """
-        Serializes compilation per company across workers and web processes.
-
-        Uses a session-level Postgres advisory lock on a dedicated connection,
-        so the many commits made while compiling cannot release it early. Other
-        databases (SQLite in tests and local runs) have no concurrent compilers.
+        One compilation run per company at a time, across workers and web
+        processes; yields whether this run holds it. It does not wait: a run that
+        finds it taken leaves (the holder drains what is pending), so no worker
+        is kept waiting (BL-016, Fase 3). Postgres advisory lock on a dedicated
+        connection; on SQLite (tests) it is always held.
         """
-        with advisory_lock(self.db_manager, self.ADVISORY_LOCK_NAMESPACE, company_id):
-            yield
+        with advisory_lock(self.db_manager, self.ADVISORY_LOCK_NAMESPACE, company_id, wait=False) as held:
+            yield held
 
-    def _agent_for(self, capture: MemoryCapture) -> str:
-        mode = dict(capture.meta or {}).get("mode")
-        if mode == self.CORRECTION_MODE:
-            return self.CORRECTION_AGENT
-        if mode == self.DOCUMENT_MODE:
-            if dict(capture.meta or {}).get("kind") == self.MEETING_KIND:
-                return self.MEETING_AGENT
-            return self.DOCUMENT_AGENT
-        if mode == self.DOCUMENT_REMOVED_MODE:
-            return None  # marked without the model
-        return self.COMPILER_AGENT
+    def _agent_for(self, capture: MemoryCapture) -> str | None:
+        """The system agent that reads the capture, as its source declares (memory_sources)."""
+        meta = dict(capture.meta or {})
+        return MemorySourceRegistry.for_capture(meta).agent_for(meta)
 
     def _compile_capture_safely(self, company: Company, capture: MemoryCapture) -> bool | None:
         """Whether the capture became a page; None when it stays pending (its agent was turned off)."""
@@ -198,12 +220,12 @@ class MemoryCompilerService:
             return False
 
     def _compile_single_capture(self, company: Company, capture: MemoryCapture, items: list[MemoryItem]) -> bool:
-        if dict(capture.meta or {}).get("mode") == self.CORRECTION_MODE:
-            return self._apply_correction(company, capture, items)
-        if dict(capture.meta or {}).get("mode") == self.DOCUMENT_MODE:
-            return self._ingest_document(company, capture, items)
-        if dict(capture.meta or {}).get("mode") == self.DOCUMENT_REMOVED_MODE:
-            return self._mark_document_obsolete(company, capture, items)
+        """Reads the capture with the step its source declares (memory_sources)."""
+        source = MemorySourceRegistry.for_capture(dict(capture.meta or {}))
+        return getattr(self, source.handler)(company, capture, items)
+
+    def _compile_person_capture(self, company: Company, capture: MemoryCapture, items: list[MemoryItem]) -> bool:
+        """What a person explained, filed into the pages it belongs to."""
         author = self._author_label(capture.user_identifier)
         captured_on = (capture.created_at or datetime.now()).date().isoformat()
 
@@ -389,6 +411,12 @@ class MemoryCompilerService:
         meta = dict(capture.meta or {})
         document_id = self._as_int(meta.get("document_id"))
         today = (capture.created_at or datetime.now()).date().isoformat()
+        replaced = meta.get("reason") == "replaced"
+        mark = self.OBSOLETE_REPLACED_MARK if replaced else self.OBSOLETE_MARK
+        why = "hay una versión nueva del documento" if replaced else "se eliminó el documento"
+        # A replaced version marks only lines from before this capture: if the new
+        # version was already read (a retry that ran late), its lines stay.
+        before = today if replaced else None
         marked_pages = []
         for link in self.memory_repo.list_document_links(company.id, document_id):
             labels = {label for label in (link.label, meta.get("label")) if label}
@@ -397,7 +425,7 @@ class MemoryCompilerService:
                 if not page:
                     break
                 body = self.memory_wiki_service.page_body(page)
-                marked = self._mark_obsolete_lines(body, labels, today)
+                marked = self._mark_obsolete_lines(body, labels, today, mark=mark, before=before)
                 if marked == body:
                     break
                 response = self.memory_wiki_service.update_page(
@@ -407,7 +435,7 @@ class MemoryCompilerService:
                     summary=str(page.get("summary") or "").strip(),
                     body=marked,
                     edited_by=capture.user_identifier,
-                    change_summary=f"Datos de «{sorted(labels)[0] if labels else document_id}» marcados como obsoletos: se eliminó el documento.",
+                    change_summary=f"Datos de «{sorted(labels)[0] if labels else document_id}» marcados como obsoletos: {why}.",
                     revision_metadata={
                         "source": self.COMPILER_SOURCE,
                         "capture_id": capture.id,
@@ -428,12 +456,17 @@ class MemoryCompilerService:
         return bool(marked_pages)
 
     @classmethod
-    def _mark_obsolete_lines(cls, body: str, labels: set[str], day: str) -> str:
-        patterns = [re.compile(r"\(\s*" + re.escape(label) + r"\s*,\s*\d{4}-\d{2}-\d{2}\s*\)") for label in labels]
+    def _mark_obsolete_lines(cls, body: str, labels: set[str], day: str, *, mark: str | None = None,
+                             before: str | None = None) -> str:
+        """Marks each line attributed to the document; with `before`, only those dated earlier."""
+        mark = mark or cls.OBSOLETE_MARK
+        patterns = [re.compile(r"\(\s*" + re.escape(label) + r"\s*,\s*(\d{4}-\d{2}-\d{2})\s*\)") for label in labels]
         lines = []
         for line in str(body or "").split("\n"):
-            if cls.OBSOLETE_MARK not in line and any(pattern.search(line) for pattern in patterns):
-                line = f"{line.rstrip()} **[{cls.OBSOLETE_MARK}, {day}]**"
+            if cls.OBSOLETE_PREFIX not in line:
+                dates = [match.group(1) for pattern in patterns for match in pattern.finditer(line)]
+                if dates and (before is None or min(dates) < before):
+                    line = f"{line.rstrip()} **[{mark}, {day}]**"
             lines.append(line)
         return "\n".join(lines)
 
@@ -1067,3 +1100,15 @@ class MemoryCompilerService:
                 return f"Archivo: {item.filename}"
         item = items[0]
         return f"{item.item_type.value if hasattr(item.item_type, 'value') else item.item_type}"
+
+
+register_core_sources(
+    compiler_agent=MemoryCompilerService.COMPILER_AGENT,
+    correction_agent=MemoryCompilerService.CORRECTION_AGENT,
+    document_agent=MemoryCompilerService.DOCUMENT_AGENT,
+    meeting_agent=MemoryCompilerService.MEETING_AGENT,
+    correction_mode=MemoryCompilerService.CORRECTION_MODE,
+    document_mode=MemoryCompilerService.DOCUMENT_MODE,
+    document_removed_mode=MemoryCompilerService.DOCUMENT_REMOVED_MODE,
+    meeting_kind=MemoryCompilerService.MEETING_KIND,
+)

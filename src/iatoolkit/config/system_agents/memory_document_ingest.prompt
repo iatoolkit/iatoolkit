@@ -13,6 +13,7 @@ How to write the pages:
 - Update one of the CANDIDATE_PAGES when the part belongs to its subject; create a new page when none covers it (check PAGE_INDEX first so you do not duplicate a page). One part may touch several pages; return each one.
 - When you update, return the COMPLETE new page: keep everything already on it, word for word, including people's attributions. Add the new facts in the section where they belong.
 - When this part says something different from what the page already says, keep both statements with their attributions and make the difference explicit; never delete what someone else said. Also list each contradiction in `conflicts`.
+- A line marked **[obsoleto: …]** is no longer valid: it stays on the page as it is, but it is not a contradiction. Neither is a line attributed to an earlier version of this same document ({{ source.label }} with an earlier date): the new version replaces it, so write the current fact and do not list a conflict for it. Contradictions are only with other sources (people, other documents).
 - Attribute every fact you add as ({{ source.label }}, {{ captured_on }}).
 - Follow the WIKI_SCHEMA. Write in the language of the page, or of the document for a new page.
 - If this part has nothing worth keeping, return an empty `pages` list.

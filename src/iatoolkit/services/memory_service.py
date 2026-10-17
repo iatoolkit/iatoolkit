@@ -203,11 +203,15 @@ class MemoryService:
                                       *,
                                       document_id: int,
                                       label: str,
-                                      removed_by: str | None = None) -> dict:
+                                      removed_by: str | None = None,
+                                      reason: str = "removed") -> dict:
         """
-        A document that fed the wiki was deleted (BL-014): queued so the compiler
-        marks its facts as obsolete on the pages that cite it. Nothing is erased.
-        Does nothing when no page cites the document.
+        A document that fed the wiki was deleted (BL-014), or a new version of it
+        replaced this one (`reason="replaced"`, BL-016 Fase 3): queued so the
+        compiler marks its facts as obsolete on the pages that cite it. Nothing is
+        erased. Queue it before the new version: captures compile in order, so the
+        new version is read with the old lines already marked. Does nothing when
+        no page cites the document.
         """
         company = self.profile_repo.get_company_by_short_name(company_short_name)
         if not company:
@@ -222,10 +226,12 @@ class MemoryService:
             new_items=[{
                 "item_type": "note",
                 "title": label,
-                "content_text": f"Se eliminó el documento «{label}».",
+                "content_text": (f"Hay una versión nueva del documento «{label}»." if reason == "replaced"
+                                 else f"Se eliminó el documento «{label}»."),
                 "source_meta": {"origin": "memory_document_removed", "rag_document_id": document_id},
             }],
-            meta={"mode": MemoryCompilerService.DOCUMENT_REMOVED_MODE, "document_id": document_id, "label": label},
+            meta={"mode": MemoryCompilerService.DOCUMENT_REMOVED_MODE, "document_id": document_id, "label": label,
+                  "reason": "replaced" if reason == "replaced" else "removed"},
         )
 
     # Fase 0 (R4): a capture whose compilation failed (the model was down, a
