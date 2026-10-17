@@ -12,6 +12,19 @@ from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.common.interfaces.secret_provider import SecretProvider
 
 
+def test_local_documents_remain_readable_without_external_storage_urls(tmp_path):
+    """RAG asks for optional URLs even when documents live on the local disk."""
+    config = MagicMock(spec=ConfigurationService)
+    config.get_configuration.return_value = {
+        'iatoolkit_storage': {'type': 'local', 'path': str(tmp_path)},
+    }
+    storage = StorageService(config_service=config, secret_provider=MagicMock(spec=SecretProvider))
+    key = storage.upload_document('acme', b'contract content', 'contract.txt', 'text/plain')
+
+    assert storage.generate_presigned_url('acme', key) is None
+    assert storage.get_document_content('acme', key) == b'contract content'
+
+
 class PrefixAwareConnector:
     def __init__(self, files):
         self.files = list(files)

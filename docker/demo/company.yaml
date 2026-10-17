@@ -1,0 +1,91 @@
+id: sample_company
+name: Sample Company
+locale: en_US
+llm:
+  model: gpt-5.2
+  available_models:
+    - id: gpt-5.2
+      label: GPT-5.2
+      provider: openai
+  provider_api_keys:
+    openai: OPENAI_API_KEY
+data_sources:
+  sql:
+    - database: sample_db
+      schema: public
+      connection_string_env: SAMPLE_DATABASE_URI
+      description: Northwind demonstration sales, orders, products, customers and employees.
+      include_all_tables: true
+tools:
+  - function_name: document_search
+    description: Search the sample employee contracts and supplier manuals.
+    params:
+      type: object
+      properties:
+        query:
+          type: string
+      required: [query]
+prompts:
+  prompt_categories: [Sales, Finance]
+  prompt_list:
+    - category: Sales
+      name: analisis_ventas
+      description: Sales Analysis
+      order: 1
+    - category: Sales
+      name: supplier_report
+      description: Suppliers Report
+      order: 2
+      custom_fields:
+        - data_key: supplier_id
+          label: Supplier ID
+    - category: Finance
+      name: analisis_despachos
+      description: Supply Chain Analysis
+      order: 3
+      custom_fields:
+        - data_key: init_date
+          label: From date
+          type: date
+        - data_key: end_date
+          label: To date
+          type: date
+parameters:
+  verify_account: false
+  external_urls:
+    logout_url: ''
+web_search:
+  enabled: false
+branding:
+  header_background_color: '#4C6A8D'
+  header_text_color: '#FFFFFF'
+  brand_primary_color: '#4C6A8D'
+  brand_secondary_color: '#9EADC0'
+  brand_text_on_primary: '#FFFFFF'
+  brand_text_on_secondary: '#FFFFFF'
+help_files:
+  onboarding_cards: onboarding_cards.yaml
+  help_content: help_content.yaml
+knowledge_base:
+  parsing_provider: basic
+  collections:
+    - name: supplier_manual
+      parser_provider: basic
+    - name: employee_contract
+      parser_provider: basic
+  document_sources:
+    supplier_manuals:
+      collection: supplier_manual
+      path: /opt/demo-resources/sample_data/supplier_manuals
+    employee_contracts:
+      collection: employee_contract
+      path: /opt/demo-resources/sample_data/employee_contracts
+connectors:
+  iatoolkit_storage:
+    type: local
+    path: /var/lib/iatoolkit/storage
+embedding_provider:
+  provider: openai
+  model: text-embedding-3-small
+  api_key_secret_ref: OPENAI_API_KEY
+  dimensions: 1536

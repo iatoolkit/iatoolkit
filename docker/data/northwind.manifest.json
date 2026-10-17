@@ -1,0 +1,21 @@
+{
+  "dataset": "Sample Company Northwind",
+  "exported_at": "2026-10-16",
+  "source_schema": "public",
+  "source_postgresql_major": 18,
+  "tables": {
+    "categories": 8,
+    "customers": 40,
+    "employee_territories": 17,
+    "employees": 10,
+    "order_details": 855,
+    "orders": 270,
+    "products": 64,
+    "regions": 4,
+    "shippers": 3,
+    "suppliers": 20,
+    "territories": 12
+  },
+  "sql_sha256": "b36172c6d69f0fa754b443af027f1078212289f6f50aa49501c3d435e5d19336",
+  "archive_sha256": "3b54e3ba0d0ea7c1697047da4aaafb353783c7334264e21d188b88028180c2ae"
+}

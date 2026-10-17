@@ -151,6 +151,7 @@ Perfect for developers, small teams, single-business use cases, and experimentat
 
 ## 📚 Documentation
 
+- 🐳 **[Docker installation](docker/README.md)** – Community Edition with PostgreSQL, Redis and populated Northwind data
 - 🚀 **[Quickstart](docs/quickstart.md)** – Set up your environment and run the project
 - ☁️ **[Deployment Guide](docs/deployment_guide.md)** – Production deployment instructions
 - 🏗️ **[Companies & Components](docs/companies_and_components.md)** – how Company modules work

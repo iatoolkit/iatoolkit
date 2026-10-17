@@ -1,0 +1,75 @@
+# Customer deployment: published images only; no source checkout or build.
+# Keep the IAToolkit image tag aligned with src/iatoolkit/__init__.py.
+name: iatoolkit-community
+
+x-app: &app
+  image: ghcr.io/iatoolkit/iatoolkit:2.66.0
+  environment: &environment
+    DATABASE_URI: postgresql://iatoolkit:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in docker/.env}@postgres:5432/iatoolkit
+    SAMPLE_DATABASE_URI: postgresql://iatoolkit:${POSTGRES_PASSWORD}@postgres:5432/sample_db
+    REDIS_URL: redis://redis:6379/0
+    OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+    SESSION_COOKIE_SAMESITE: Lax
+    IAT_DB_POOL_SIZE: '3'
+    IAT_DB_MAX_OVERFLOW: '3'
+  volumes:
+    - app_data:/var/lib/iatoolkit
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.2-pg18-trixie
+    environment:
+      POSTGRES_DB: iatoolkit
+      POSTGRES_USER: iatoolkit
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in docker/.env}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U iatoolkit -d iatoolkit']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.4.8-alpine
+    command: [redis-server, --appendonly, 'yes']
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  init:
+    <<: *app
+    command: [python, -m, distribution.bootstrap, database]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  app:
+    <<: *app
+    ports:
+      - '${IATOOLKIT_BIND_ADDRESS:-127.0.0.1}:${IATOOLKIT_PORT:-8080}:8000'
+    depends_on:
+      init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=5)"]
+      interval: 15s
+      timeout: 8s
+      start_period: 45s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  app_data:
