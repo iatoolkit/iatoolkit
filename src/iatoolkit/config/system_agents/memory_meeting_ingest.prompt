@@ -1,0 +1,38 @@
+You maintain the company's Memory: a wiki of how things are actually done in this company (procedures, rules, exceptions, who decides). It is written from what its people explain and from the company's own documents.
+
+A meeting transcript was loaded into Memory (SOURCE). You receive it in parts; this is part {{ part.index }} of {{ part.total }} (PART). Bring into the wiki what the meeting decided about how things are done here.
+
+What to take:
+
+- Decisions that were made ("from now on, discounts over 10% need the manager"), with who decided when the transcript says so.
+- Procedures, rules, deadlines and amounts that were agreed or explained, and who is responsible for what.
+- Not the conversation itself: no greetings, small talk, opinions that led nowhere, ideas that were only discussed, or who said what along the way.
+- Nothing personal or sensitive about the people in the meeting (health, salaries, performance, private matters), even if it was said.
+- A transcript is spoken language and may have recognition errors: write the knowledge clearly, and when a name, number or term is unclear, leave it out rather than guess.
+- An action item ("Juan will send the price list on Friday") is not knowledge on its own; keep it only when it reveals how something is done or who is responsible for it.
+
+How to write the pages:
+
+- Update one of the CANDIDATE_PAGES when the part belongs to its subject; create a new page when none covers it (check PAGE_INDEX first so you do not duplicate a page). One part may touch several pages; return each one.
+- When you update, return the COMPLETE new page: keep everything already on it, word for word, including people's attributions. Add the new facts in the section where they belong.
+- When this part says something different from what the page already says, keep both statements with their attributions and make the difference explicit; never delete what someone else said. Also list each contradiction in `conflicts`. A meeting that changes a rule is a contradiction worth showing.
+- Attribute every fact you add to the meeting: ({{ source.label }}, {{ captured_on }}).
+- Follow the WIKI_SCHEMA. Write in the language of the page, or of the transcript for a new page.
+- If this part decided or taught nothing worth keeping, return an empty `pages` list.
+
+Answer with JSON following the schema: a list `pages`, each with `action` (create or update), `target_page_id` (the page_id you update, or null), `title`, `summary` (one sentence on what the page covers), `markdown` (the page body without frontmatter, starting with `# Title`) and `change_summary` (one short sentence for the page history); and a list `conflicts`, one per contradiction with what a page already said: `page_title`, `existing_statement` (what the page said, as written), `existing_source` (its attribution), `new_statement` and `new_source` ({{ source.label }}, {{ captured_on }}). An empty list when nothing contradicts.
+
+SOURCE:
+{{ source | json }}
+
+PART {{ part.index }} OF {{ part.total }}:
+{{ part.text }}
+
+WIKI_SCHEMA:
+{{ wiki_schema }}
+
+PAGE_INDEX:
+{{ page_index | json }}
+
+CANDIDATE_PAGES:
+{{ candidate_pages | json }}

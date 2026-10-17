@@ -1768,3 +1768,31 @@ class TestDocumentListAndReadTools:
             IAToolkitException.ErrorType.DOCUMENT_NOT_FOUND, "Document '9' not found.")
         assert self.service.get_system_handler("iat_document_read")("acme", document_id=9) == {
             "status": "error", "error_message": "Document '9' not found."}
+
+
+class TestMemoryQuestionTools:
+    def setup_method(self):
+        self.questions = MagicMock()
+        self.questions.pending_for.return_value = {"status": "success", "questions": []}
+        self.questions.answer.return_value = {"status": "success"}
+        self.service = ToolService.__new__(ToolService)
+
+    def test_pending_questions_are_the_users(self, monkeypatch):
+        monkeypatch.setattr(ToolService, "_memory_question_service", staticmethod(lambda: self.questions))
+
+        result = self.service._handle_memory_pending_questions_tool("acme", limit=5, user_identifier="carmen@acme.cl")
+
+        assert result["status"] == "success"
+        self.questions.pending_for.assert_called_once_with("acme", "carmen@acme.cl", limit=5)
+
+    def test_an_answer_is_saved_as_the_user_and_needs_one(self, monkeypatch):
+        monkeypatch.setattr(ToolService, "_memory_question_service", staticmethod(lambda: self.questions))
+
+        self.service._handle_memory_answer_question_tool("acme", question_id="12", answer="45 días",
+                                                        user_identifier="carmen@acme.cl")
+        anonymous = self.service._handle_memory_answer_question_tool("acme", question_id=12, answer="x")
+        no_id = self.service._handle_memory_answer_question_tool("acme", question_id="abc", answer="x",
+                                                                 user_identifier="carmen@acme.cl")
+
+        self.questions.answer.assert_called_once_with("acme", 12, "45 días", "carmen@acme.cl")
+        assert anonymous["status"] == "error" and no_id["status"] == "error"

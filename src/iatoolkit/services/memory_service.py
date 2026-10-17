@@ -164,10 +164,12 @@ class MemoryService:
                               card: dict | None = None,
                               path: str = "",
                               author: str | None = None,
-                              source_meta: dict | None = None) -> dict:
+                              source_meta: dict | None = None,
+                              kind: str | None = None) -> dict:
         """
         A RAG document that feeds the wiki (BL-014), queued as a capture so the
-        compiler reads it whole, part by part (`memory_document_ingest`).
+        compiler reads it whole, part by part (`memory_document_ingest`; a
+        meeting transcript, `kind="meeting"`, with `memory_meeting_ingest`).
 
         The capture does not copy the document: its one item points at it
         (`source_meta.rag_document_id`) and carries no bytes, and the compiler
@@ -190,6 +192,7 @@ class MemoryService:
                 "label": label,
                 "card": dict(card or {}),
                 "path": path or "",
+                **({"kind": kind} if kind else {}),
                 **({"source": dict(source_meta)} if source_meta else {}),
             },
         )

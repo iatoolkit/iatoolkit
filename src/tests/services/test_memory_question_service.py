@@ -257,3 +257,36 @@ def test_with_the_review_agent_off_nothing_is_reviewed_and_the_cursor_stays(stac
     stack.questions.scan_company("acme")
     assert stack.llm_client.invoke.called
     assert stack.question_repo.find_cursor(stack.company.id).last_query_id > before
+
+
+def test_pending_questions_list_the_persons_suggested_ones_first(stack):
+    many = stack.question_repo.add(MemoryQuestion(company_id=stack.company.id, question="¿Horario?", times_asked=9))
+    mine = stack.question_repo.add(MemoryQuestion(company_id=stack.company.id, question="¿Plazo?", times_asked=2))
+    stack.question_repo.commit()
+    MemoryQuestionService.register_assignment_provider(
+        lambda company, email: {mine.id} if email == "carmen@acme.cl" else set())
+    try:
+        result = stack.questions.pending_for("acme", "carmen@acme.cl")
+        other = stack.questions.pending_for("acme", "juan@acme.cl", limit=1)
+    finally:
+        MemoryQuestionService.register_assignment_provider(None)
+
+    assert [(q["question"], q["assigned_to_you"]) for q in result["questions"]] == [("¿Plazo?", True), ("¿Horario?", False)]
+    assert result["assigned_to_you"] == 1 and result["open"] == 2
+    assert [q["id"] for q in other["questions"]] == [many.id]
+
+
+def test_pending_questions_survive_a_failing_provider(stack):
+    stack.question_repo.add(MemoryQuestion(company_id=stack.company.id, question="¿Plazo?"))
+    stack.question_repo.commit()
+
+    def broken(company, email):
+        raise RuntimeError("down")
+
+    MemoryQuestionService.register_assignment_provider(broken)
+    try:
+        result = stack.questions.pending_for("acme", "carmen@acme.cl")
+    finally:
+        MemoryQuestionService.register_assignment_provider(None)
+
+    assert result["assigned_to_you"] == 0 and len(result["questions"]) == 1

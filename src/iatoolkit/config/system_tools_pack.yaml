@@ -575,6 +575,64 @@ tools:
       required:
         - content
         - title
+  - function_name: iat_memory_pending_questions
+    description: Lista las preguntas sobre la empresa que la IA no supo responder y siguen abiertas, primero las que se le sugirieron a este usuario por ser quien más sabe del tema, después las más preguntadas. Úsala cuando el usuario pregunte qué preguntas tiene pendientes, quiera ayudar a completar la Memoria de la empresa o pida responder las preguntas de su área. Para responder una, usa `iat_memory_answer_question`.
+    routing_profile:
+      tags:
+        - memory
+        - company_memory
+        - questions
+        - pending
+        - unanswered
+      intents:
+        - List the unanswered questions the user could answer.
+        - Show the questions suggested to the user for their area.
+      examples:
+        - iat_memory_pending_questions(limit=5)
+      cost:
+        penalty: 0.1
+        latency_class: low
+        expensive: false
+    parameters:
+      type: object
+      properties:
+        limit:
+          type: integer
+          description: Cuántas preguntas listar, como máximo 15.
+      required: []
+  - function_name: iat_memory_answer_question
+    description: Responde una pregunta sin respuesta de la Memoria de la empresa (de `iat_memory_pending_questions`). La respuesta queda en la Memoria con el nombre del usuario, la ve TODA la empresa, y la pregunta deja de estar pendiente. Antes de llamarla, muéstrale al usuario el texto que vas a guardar y espera que lo confirme. Redacta `answer` en tono neutro, completo y autocontenido, con solo lo que el usuario dijo.
+    execution_config:
+      side_effects: true
+      destructive: false
+    routing_profile:
+      tags:
+        - memory
+        - company_memory
+        - questions
+        - answer
+        - know_how
+      intents:
+        - Answer an unanswered question of the company memory with what the user explained.
+        - Use only after the user confirms the text to save.
+      examples:
+        - iat_memory_answer_question(question_id=12, answer="El plazo de pago a proveedores es de 45 días desde la factura; para proveedores nuevos, 30.")
+      cost:
+        penalty: 0.1
+        latency_class: medium
+        expensive: false
+    parameters:
+      type: object
+      properties:
+        question_id:
+          type: integer
+          description: El id de la pregunta, de `iat_memory_pending_questions`.
+        answer:
+          type: string
+          description: La respuesta, redactada en tono neutro y autocontenida (debe entenderse sin la conversación).
+      required:
+        - question_id
+        - answer
   - function_name: iat_image_search
     description: Busca imágenes en la base de conocimiento visual de la empresa usando una descripción de texto. Útil cuando el usuario pide 'ver' algo, 'muéstrame una foto de...', o busca gráficos y diagramas.
     routing:

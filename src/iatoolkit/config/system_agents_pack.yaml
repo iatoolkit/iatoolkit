@@ -195,6 +195,65 @@ agents:
     inputs: [source, part, captured_on, wiki_schema, page_index, candidate_pages]
     default_model: null
 
+  - key: memory_meeting_ingest
+    name: Lector de reuniones de Memoria
+    name_en: Memory meeting reader
+    description: >-
+      (Memoria de la empresa) Lee las transcripciones de reuniones de las carpetas
+      marcadas como reuniones y lleva a la wiki las decisiones, los procedimientos y
+      los responsables que se acordaron, no la conversación.
+    description_en: >-
+      (Company memory) Reads the meeting transcripts of the folders marked as
+      meetings and files into the wiki the decisions, procedures and owners agreed,
+      not the conversation.
+    module: memory
+    prompt: memory_meeting_ingest.prompt
+    output_schema:
+      type: object
+      properties:
+        pages:
+          type: array
+          items:
+            type: object
+            properties:
+              action:
+                type: string
+                enum: [create, update]
+              # Nullable as a type list: the structured-output validator rejects null under anyOf.
+              target_page_id:
+                type: [integer, "null"]
+              title:
+                type: string
+              summary:
+                type: string
+              markdown:
+                type: string
+              change_summary:
+                type: string
+            required: [action, target_page_id, title, markdown]
+            additionalProperties: false
+        conflicts:
+          type: array
+          items:
+            type: object
+            properties:
+              page_title:
+                type: string
+              existing_statement:
+                type: string
+              existing_source:
+                type: string
+              new_statement:
+                type: string
+              new_source:
+                type: string
+            required: [page_title, existing_statement, new_statement]
+            additionalProperties: false
+      required: [pages]
+      additionalProperties: false
+    inputs: [source, part, captured_on, wiki_schema, page_index, candidate_pages]
+    default_model: null
+
   - key: memory_image_ingest
     name: Lector de imágenes de Memoria
     name_en: Memory image reader

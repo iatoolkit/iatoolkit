@@ -376,6 +376,7 @@ ui:
     profile: "Perfil"
     preferences: "Preferencias"
     connections: "Conexiones"
+    memory_questions: "Preguntas para mí"
     first_name: "Nombre"
     last_name: "Apellido"
     full_name: "Nombre completo"

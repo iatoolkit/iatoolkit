@@ -450,6 +450,21 @@ class TestMemoryCompilerWithDocuments(_DocumentFixture):
         assert revision["metadata"]["mode"] == "document"
         assert revision["metadata"]["document_id"] == self.document.id
 
+    def test_a_meeting_transcript_is_read_by_the_meeting_reader(self):
+        response = self.stack.memory_service.save_document_capture(
+            "acme", document_id=self.document.id, label="Comité comercial 14-10", card={}, path="Reuniones",
+            kind="meeting")
+        assert response["status"] == "success", response
+        self.stack.llm_client.invoke.return_value = {"structured_output": {"pages": []}}
+
+        self.stack.compiler.compile_pending_for_company("acme")
+
+        calls = self.stack.agent_calls("memory_meeting_ingest")
+        assert calls and calls[0]["source"]["kind"] == "meeting"
+        assert self.stack.agent_calls("memory_document_ingest") == []
+        assert self.stack.llm_client.invoke.call_args.kwargs["execution_trace"] == {
+            "prompt_name": "system_agent:memory_meeting_ingest"}
+
     def test_the_capture_points_at_the_document_without_copying_it(self):
         capture = self.save_document()
 

@@ -28,6 +28,8 @@ class Dispatcher:
         "iat_memory_search",
         "iat_memory_get_page",
         "iat_memory_save",
+        "iat_memory_pending_questions",
+        "iat_memory_answer_question",
         "iat_wiki_search",
         "iat_wiki_get_page",
     }

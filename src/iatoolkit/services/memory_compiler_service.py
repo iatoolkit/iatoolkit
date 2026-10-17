@@ -64,6 +64,9 @@ class MemoryCompilerService:
     # A document of the RAG that feeds the wiki (BL-014): read whole, part by part.
     DOCUMENT_MODE = "document"
     DOCUMENT_AGENT = "memory_document_ingest"
+    # A meeting transcript (BL-015): decisions, procedures and owners, not the conversation.
+    MEETING_AGENT = "memory_meeting_ingest"
+    MEETING_KIND = "meeting"
     DOCUMENT_PART_CHARS = 12000
     MAX_PAGES_PER_PART = 5
     # An image of the RAG (no text) is looked at by its own agent, with vision.
@@ -174,6 +177,8 @@ class MemoryCompilerService:
         if mode == self.CORRECTION_MODE:
             return self.CORRECTION_AGENT
         if mode == self.DOCUMENT_MODE:
+            if dict(capture.meta or {}).get("kind") == self.MEETING_KIND:
+                return self.MEETING_AGENT
             return self.DOCUMENT_AGENT
         if mode == self.DOCUMENT_REMOVED_MODE:
             return None  # marked without the model
@@ -319,6 +324,8 @@ class MemoryCompilerService:
 
         captured_on = (capture.created_at or datetime.now()).date().isoformat()
         source = {"label": label, "card": meta.get("card") or {}, "path": meta.get("path") or ""}
+        if meta.get("kind"):
+            source["kind"] = meta["kind"]
         # What reads each step: a part of the text, or the document's images (it had no text).
         if parts:
             readers = [
@@ -548,7 +555,7 @@ class MemoryCompilerService:
                               candidates: list[dict],
                               captured_on: str):
         return self._ingest_with_llm(
-            company, capture, self.DOCUMENT_AGENT,
+            company, capture, self._agent_for(capture) or self.DOCUMENT_AGENT,
             {"source": source, "part": part, "captured_on": captured_on, **self._wiki_context(company, candidates)},
             question=f"Read memory document {source.get('label')} (part {part['index']} of {part['total']})",
         )

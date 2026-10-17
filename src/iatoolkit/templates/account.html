@@ -23,6 +23,11 @@
                 {% if connections_url %}
                 <a href="{{ connections_url }}" {% if active_section == 'mcp_connections' %}aria-current="page"{% endif %}><i class="bi bi-plug" aria-hidden="true"></i><span>{{ t('ui.account.connections') }}</span></a>
                 {% endif %}
+                {# Enterprise: the unanswered questions this person could answer (BL-015). #}
+                {% set memory_questions_url = optional_url_for('memory_questions_page', company_short_name=company_short_name) %}
+                {% if memory_questions_url %}
+                <a href="{{ memory_questions_url }}" {% if active_section == 'memory_questions' %}aria-current="page"{% endif %}><i class="bi bi-question-circle" aria-hidden="true"></i><span>{{ t('ui.account.memory_questions') }}</span></a>
+                {% endif %}
             </nav>
         </aside>
         <main class="account-main" id="account-main">

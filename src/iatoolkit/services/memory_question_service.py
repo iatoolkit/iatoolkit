@@ -58,6 +58,16 @@ class MemoryQuestionService:
 
     # The system agent (config/system_agents_pack.yaml) that classifies the turns.
     REVIEW_AGENT = "memory_question_review"
+    # What the chat's "my pending questions" lists at most.
+    MAX_PENDING_FOR_PERSON = 15
+
+    # Who each open question was suggested to lives in Enterprise (BL-015); it
+    # registers here which open questions are someone's: (company, email) -> ids.
+    _assignment_provider = None
+
+    @classmethod
+    def register_assignment_provider(cls, provider) -> None:
+        cls._assignment_provider = provider
 
     @inject
     def __init__(self,
@@ -114,6 +124,28 @@ class MemoryQuestionService:
         question.resolved_at = datetime.now()
         self.question_repo.commit()
         return {"status": "success", "question": self.serialize(question)}
+
+    def pending_for(self, company_short_name: str, user_identifier: str, limit: int | None = None) -> dict:
+        """The open questions for a person to answer: first the ones suggested to them, then the most asked."""
+        company = self.profile_repo.get_company_by_short_name(company_short_name)
+        if not company:
+            return {"status": "error", "error_message": "company not found"}
+        mine: set[int] = set()
+        provider = type(self)._assignment_provider
+        if provider is not None and user_identifier:
+            try:
+                mine = {int(i) for i in provider(company_short_name, user_identifier) or ()}
+            except Exception:
+                logging.exception("Memoria assignment provider failed for %s", company_short_name)
+        questions = self.question_repo.list_questions(company.id, status=MemoryQuestion.STATUS_OPEN)
+        questions.sort(key=lambda q: (q.id not in mine, -(q.times_asked or 0)))
+        limit = max(1, min(int(limit or self.MAX_PENDING_FOR_PERSON), self.MAX_PENDING_FOR_PERSON))
+        return {
+            "status": "success",
+            "questions": [{**self.serialize(q), "assigned_to_you": q.id in mine} for q in questions[:limit]],
+            "assigned_to_you": len(mine.intersection(q.id for q in questions)),
+            "open": len(questions),
+        }
 
     def dismiss(self, company_short_name: str, question_id: int, dismissed_by: str) -> dict:
         """'No aplica': the question leaves the list without adding anything to Memoria."""

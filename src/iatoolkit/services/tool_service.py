@@ -117,6 +117,8 @@ class ToolService:
             "iat_memory_search": self._handle_memory_search_tool,
             "iat_memory_get_page": self._handle_memory_get_page_tool,
             "iat_memory_save": self._handle_memory_save_tool,
+            "iat_memory_pending_questions": self._handle_memory_pending_questions_tool,
+            "iat_memory_answer_question": self._handle_memory_answer_question_tool,
             "iat_wiki_search": self._handle_wiki_search_tool,
             "iat_wiki_get_page": self._handle_wiki_get_page_tool,
             "iat_web_search": self._handle_web_search_tool,
@@ -393,6 +395,37 @@ class ToolService:
             )
 
         return response
+
+    @staticmethod
+    def _memory_question_service():
+        # Resolved here, not injected: the question service builds on Memoria's services.
+        from iatoolkit.services.memory_question_service import MemoryQuestionService
+        return current_iatoolkit().get_injector().get(MemoryQuestionService)
+
+    def _handle_memory_pending_questions_tool(self,
+                                              company_short_name: str,
+                                              limit: int | None = None,
+                                              user_identifier: str | None = None,
+                                              **kwargs):
+        """The unanswered questions the person could answer, theirs first (BL-015)."""
+        if not user_identifier:
+            return {"status": "error", "error_message": "memory not available without an identified user"}
+        return self._memory_question_service().pending_for(company_short_name, user_identifier, limit=limit)
+
+    def _handle_memory_answer_question_tool(self,
+                                            company_short_name: str,
+                                            question_id: int,
+                                            answer: str,
+                                            user_identifier: str | None = None,
+                                            **kwargs):
+        """Answers an unanswered question; the answer goes into Memoria with the person's name."""
+        if not user_identifier:
+            return {"status": "error", "error_message": "memory not available without an identified user"}
+        try:
+            question_id = int(question_id)
+        except (TypeError, ValueError):
+            return {"status": "error", "error_message": "question_id is required"}
+        return self._memory_question_service().answer(company_short_name, question_id, str(answer or ""), user_identifier)
 
     def _handle_memory_save_tool(self,
                                  company_short_name: str,
