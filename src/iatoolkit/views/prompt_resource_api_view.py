@@ -14,6 +14,7 @@ from injector import inject
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.auth_service import AuthService
 from iatoolkit.services.prompt_resource_service import PromptResourceService
+from iatoolkit.common import access
 
 
 class PromptResourceApiView(MethodView):
@@ -34,8 +35,7 @@ class PromptResourceApiView(MethodView):
                 return jsonify({"error": "Forbidden"}), 403
             return jsonify(auth_result), status_code
 
-        role = (auth_result.get("user_role") or "").lower()
-        if role not in {"admin", "owner"}:
+        if not access.person_can(company_short_name, auth_result, access.ADMIN):
             return jsonify({"error": "Forbidden"}), 403
 
         return auth_result
@@ -48,8 +48,7 @@ class PromptResourceApiView(MethodView):
                 return jsonify({"error": "Forbidden"}), 403
             return jsonify(auth_result), status_code
 
-        role = (auth_result.get("user_role") or "").lower()
-        if role not in {"editor", "admin", "owner"}:
+        if not access.person_can(company_short_name, auth_result, access.EDIT):
             return jsonify({"error": "Forbidden"}), 403
 
         return auth_result

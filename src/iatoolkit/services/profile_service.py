@@ -28,6 +28,7 @@ from typing import List, Dict
 from sqlalchemy import update
 from iatoolkit.common.interfaces.signup_policy_resolver import SignupPolicyResolver
 from iatoolkit.services.signup_policy_resolver import AllowAllSignupPolicyResolver
+from iatoolkit.common import access
 
 
 class ProfileService:
@@ -107,6 +108,10 @@ class ProfileService:
         return first_name, last_name
 
     def _build_session_user_profile(self, user: User, company: Company, user_role: str | None) -> dict:
+        if access.Access.registered():
+            # What the person can do over the company (BL-010, Fase 1), for screens and
+            # prompt context; access is always decided with `access.can`.
+            user_role = access.effective_role(company.short_name, user.email)
         auth_method = str(getattr(user, "auth_method", "local") or "local").lower()
         is_local = auth_method == "local"
         user_identifier = user.email
@@ -150,6 +155,7 @@ class ProfileService:
             )
             .values(role="admin")
         )
+        access.role_assigned(company.short_name, user_email, "admin")
 
         updated_params = dict(params)
         updated_params.pop("bootstrap_admin_email", None)
@@ -430,7 +436,8 @@ class ProfileService:
             "last_name": user.last_name if user else "",
             "full_name": f"{user.first_name} {user.last_name}" if user else profile.get("user_fullname", ""),
             "email": profile.get("user_email") or session_info["user_identifier"],
-            "role": profile.get("user_role") or "user",
+            "role": (access.effective_role(company_short_name, session_info["user_identifier"])
+                     if access.Access.registered() else profile.get("user_role")) or "user",
             "auth_method": method,
             "can_edit_name": bool(user and method == "local"),
             "language": self.lang_service.get_current_language(),
@@ -952,8 +959,11 @@ class ProfileService:
         # get the company users from the repo
         company_users =  self.profile_repo.get_company_users_with_details(company_short_name)
 
+        effective = access.effective_roles(company_short_name, [u.email for u, _, _ in company_users]) \
+            if access.Access.registered() else {}
         users_data = []
         for user, role, last_access in company_users:
+            role = effective.get(user.email, role) if access.Access.registered() else role
             users_data.append({
                 "first_name": user.first_name,
                 "last_name": user.last_name,

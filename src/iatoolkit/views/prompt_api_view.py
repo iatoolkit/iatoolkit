@@ -12,6 +12,7 @@ from iatoolkit.services.auth_service import AuthService
 from iatoolkit.common.exceptions import IAToolkitException
 from injector import inject
 import logging
+from iatoolkit.common import access
 
 
 class PromptApiView(MethodView):
@@ -69,7 +70,10 @@ class PromptApiView(MethodView):
                 include_all = request.args.get('all', 'false').lower() == 'true'
 
                 # return prompts based on filter
-                return jsonify(self.prompt_service.get_prompts(company_short_name, include_all=include_all))
+                # The chat's list holds the agents this person may use (BL-010, Fase 1).
+                user_identifier = None if include_all else auth_result.get("user_identifier")
+                return jsonify(self.prompt_service.get_prompts(company_short_name, include_all=include_all,
+                                                               user_identifier=user_identifier))
 
         except Exception as e:
             logging.exception(
@@ -90,8 +94,7 @@ class PromptApiView(MethodView):
                 return jsonify({"error": "Forbidden"}), 403
             return jsonify(auth_result), status_code
 
-        role = str(auth_result.get("user_role") or "").strip().lower()
-        if role not in {"admin", "owner"}:
+        if not access.person_can(company_short_name, auth_result, access.ADMIN):
             return jsonify({"error": "Forbidden"}), 403
 
         return auth_result
@@ -156,9 +159,11 @@ class PromptApiView(MethodView):
     def delete(self, company_short_name, prompt_name):
         """Deletes a prompt."""
         try:
-            auth_result = self.auth_service.verify_for_company(company_short_name)
-            if not auth_result.get("success"):
-                return jsonify(auth_result), 401
+            # Deleting an agent is administering it, like creating or editing one
+            # (BL-010, Fase 1: it had no check at all).
+            auth_result = self._require_admin_auth(company_short_name)
+            if isinstance(auth_result, tuple):
+                return auth_result
 
             self.prompt_service.delete_prompt(company_short_name, prompt_name)
 

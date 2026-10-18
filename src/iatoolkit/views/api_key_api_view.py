@@ -8,6 +8,7 @@ from flask.views import MethodView
 from injector import inject
 from iatoolkit.services.auth_service import AuthService
 from iatoolkit.services.api_key_service import ApiKeyService
+from iatoolkit.common import access
 
 
 class ApiKeyApiView(MethodView):
@@ -25,8 +26,7 @@ class ApiKeyApiView(MethodView):
         if not auth_result.get("success"):
             return jsonify(auth_result), auth_result.get("status_code", 401)
 
-        role = (auth_result.get("user_role") or "").lower()
-        if role not in {"admin", "owner"}:
+        if not access.person_can(company_short_name, auth_result, access.ADMIN):
             return jsonify({"error": "Forbidden"}), 403
 
         return auth_result

@@ -3,7 +3,7 @@
 
 import pytest
 from flask import Flask
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 from iatoolkit.views.login_view import (
     LoginView,
     GoogleLoginStartView,
@@ -440,7 +440,7 @@ class TestLoginView:
             company_short_name=self.company_short_name,
             user_identifier=self.user_identifier,
         )
-        self.prompt_service.get_prompts.assert_called_once_with(self.company_short_name)
+        self.prompt_service.get_prompts.assert_called_once_with(self.company_short_name, user_identifier=ANY)
         self.branding_service.get_company_branding.assert_called_once()
         self.config_service.get_configuration.assert_called_once()
 
@@ -499,7 +499,7 @@ class TestLoginView:
             company_short_name=self.company_short_name,
             user_identifier=self.user_identifier,
         )
-        self.prompt_service.get_prompts.assert_called_once_with(self.company_short_name)
+        self.prompt_service.get_prompts.assert_called_once_with(self.company_short_name, user_identifier=ANY)
         self.branding_service.get_company_branding.assert_called_once()
         self.config_service.get_configuration.assert_called_once()
 

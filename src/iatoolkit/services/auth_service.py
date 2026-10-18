@@ -17,6 +17,7 @@ import logging
 import re
 import unicodedata
 import hashlib
+from iatoolkit.common import access
 
 
 class AuthService:
@@ -354,6 +355,13 @@ class AuthService:
         return f"{cls.SERVICE_PREFIX}{name.strip('-') or getattr(api_key_entry, 'id', 'key')}"
 
     def _role_in_company(self, company_short_name: str, user_identifier: str) -> str | None:
+        """What the person can do over the company, by its old role name (BL-010, Fase 1).
+
+        Views decide with `iatoolkit.common.access`; this name stays in the result to
+        tell a session from an API key and for screens that show it.
+        """
+        if access.Access.registered():
+            return access.effective_role(company_short_name, user_identifier)
         return self.profile_service.get_role_in_company(company_short_name, user_identifier)
 
     def verify_for_company(self, company_short_name: str, anonymous: bool = False) -> dict:

@@ -87,14 +87,16 @@ class TestPromptView:
         self.prompt_service.get_prompts.return_value = mock_response
         response = self.client.get(self.base_url)
         assert response.status_code == 200
-        self.prompt_service.get_prompts.assert_called_with(self.company_short_name, include_all=False)
+        self.prompt_service.get_prompts.assert_called_with(self.company_short_name, include_all=False,
+                                                           user_identifier='test_user_id')
 
     def test_get_list_admin_all(self):
         """Test retrieving all prompts (admin view)."""
         self.prompt_service.get_prompts.return_value = {}
         response = self.client.get(f"{self.base_url}?all=true")
         assert response.status_code == 200
-        self.prompt_service.get_prompts.assert_called_with(self.company_short_name, include_all=True)
+        self.prompt_service.get_prompts.assert_called_with(self.company_short_name, include_all=True,
+                                                           user_identifier=None)
 
     # --- POST Tests ---
     def test_post_create_prompt(self):

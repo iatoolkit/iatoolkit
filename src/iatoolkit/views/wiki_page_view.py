@@ -59,10 +59,8 @@ class WikiPageView(MethodView):
                                     next=request.full_path.rstrip('?')))
 
         page_kwargs = {"wiki_key": wiki_key, "path": page_path or "/", "user_identifier": user_identifier}
-        # From the database, never from the session profile (an SSO hook writes it).
-        user_role = self.profile_service.get_role_in_company(company_short_name, user_identifier)
-        if self.tenant_wiki_service.viewer_may_read_system_wiki(company_short_name, wiki_key, user_role):
-            # A system wiki its feature opened to this role (Memoria for admin and owner).
+        if self.tenant_wiki_service.viewer_may_read_system_wiki(company_short_name, wiki_key, user_identifier):
+            # A system wiki its feature opened to this person (Memoria for company admins).
             page_kwargs["include_system"] = True
         result = self.tenant_wiki_service.get_page(company_short_name, **page_kwargs)
         wiki = result.get("wiki") or {}

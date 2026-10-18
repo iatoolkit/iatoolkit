@@ -14,6 +14,7 @@ from iatoolkit.services.dispatcher_service import Dispatcher
 from iatoolkit.repositories.models import Tool
 from iatoolkit.common.exceptions import IAToolkitException
 import logging
+from iatoolkit.common import access
 
 class ToolApiView(MethodView):
     """
@@ -81,8 +82,7 @@ class ToolApiView(MethodView):
                 return jsonify({"error": "Forbidden"}), 403
             return jsonify(auth_result), status_code
 
-        role = str(auth_result.get("user_role") or "").strip().lower()
-        if role not in {"admin", "owner"}:
+        if not access.person_can(company_short_name, auth_result, access.ADMIN):
             return jsonify({"error": "Forbidden"}), 403
 
         return auth_result

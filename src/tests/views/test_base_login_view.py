@@ -2,7 +2,7 @@
 # IAToolkit is open source software.
 
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 from flask import Flask
 from iatoolkit.views.base_login_view import BaseLoginView
 from iatoolkit.repositories.models import Company  # Import Company for spec
@@ -90,7 +90,8 @@ class TestBaseLoginView:
         self.mock_services["query_service"].prepare_context.assert_called_once_with(
             company_short_name=COMPANY_SHORT_NAME, user_identifier=USER_IDENTIFIER
         )
-        self.mock_services["prompt_service"].get_prompts.assert_called_once_with(COMPANY_SHORT_NAME)
+        self.mock_services["prompt_service"].get_prompts.assert_called_once_with(
+            COMPANY_SHORT_NAME, user_identifier=ANY)
 
         mock_rt.assert_called_once()
         template_name, ctx = mock_rt.call_args[0], mock_rt.call_args[1]

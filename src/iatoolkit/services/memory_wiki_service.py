@@ -12,6 +12,7 @@ from injector import inject
 
 from iatoolkit.services.markdown_wiki_service import MarkdownWikiService
 from iatoolkit.services.tenant_wiki_service import TenantWikiService
+from iatoolkit.common.access import ADMIN
 
 
 class MemoryWikiService:
@@ -223,7 +224,8 @@ def _read_schema_template(path: str) -> str:
         return ""
 
 
-# Memoria's wiki opens in the wiki viewer for admin and owner only ("Ver como wiki",
-# BL-014); for every other role, and for the wiki tools and MCP, it stays hidden.
-TenantWikiService.register_system_wiki_readers(MemoryWikiService.SYSTEM_OWNER, {"admin", "owner"})
+# Memoria's wiki opens in the wiki viewer only for those who administer the company
+# ("Ver como wiki", BL-014); for everyone else, and for the wiki tools and MCP, it
+# stays hidden.
+TenantWikiService.register_system_wiki_readers(MemoryWikiService.SYSTEM_OWNER, ADMIN)
 

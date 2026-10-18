@@ -86,7 +86,7 @@ class BaseLoginView(MethodView):
                 ((llm_request_defaults.get("reasoning") or {}).get("effort")) or ""
             ).strip().lower()
 
-            prompts = self.prompt_service.get_prompts(company_short_name)
+            prompts = self.prompt_service.get_prompts(company_short_name, user_identifier=user_identifier)
 
             # Get the entire 'js_messages' block in the correct language.
             js_translations = self.i18n_service.get_translation_block('js_messages')

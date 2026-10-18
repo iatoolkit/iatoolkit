@@ -25,6 +25,7 @@ from iatoolkit.services.structured_output_service import StructuredOutputService
 import logging
 import re
 import unicodedata
+from iatoolkit.common import access
 
 class PromptService:
     PROMPT_NAME_MAX_LENGTH = 255
@@ -654,7 +655,8 @@ class PromptService:
 
         return normalized_options
 
-    def get_prompts(self, company_short_name: str, include_all: bool = False) -> dict:
+    def get_prompts(self, company_short_name: str, include_all: bool = False,
+                    user_identifier: str | None = None) -> dict:
         try:
             # validate company
             company = self.profile_repo.get_company_by_short_name(company_short_name)
@@ -677,6 +679,10 @@ class PromptService:
                         self.get_runtime_policy_role(getattr(prompt, 'runtime_policy', None))
                     )
                 ]
+                if user_identifier:
+                    # A person sees the agents they may use (BL-010, Fase 1).
+                    all_prompts = [prompt for prompt in all_prompts
+                                   if access.can(company_short_name, user_identifier, access.USE, "agent", prompt.name)]
 
             # group by category
             prompts_by_category = defaultdict(list)

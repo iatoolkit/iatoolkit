@@ -32,6 +32,7 @@ from iatoolkit.repositories.models import (
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.markdown_wiki_service import MarkdownWikiService
 from iatoolkit.services.storage_service import StorageService
+from iatoolkit.common import access
 
 
 class TenantWikiService:
@@ -120,29 +121,29 @@ class TenantWikiService:
     def is_system_wiki(cls, wiki: KnowledgeWiki | None) -> bool:
         return cls.wiki_system_owner(wiki) is not None
 
-    # Roles that may read a system wiki in the browser viewer, by owning feature
-    # (BL-014: Memoria's wiki for admin and owner). Only the viewer asks: the
-    # wiki tools, MCP resources and reader links keep leaving system wikis out.
-    _system_wiki_reader_roles: dict[str, frozenset[str]] = {}
+    # The level over the company a person needs to read a system wiki in the
+    # browser viewer, by owning feature (BL-014: Memoria's wiki for those who
+    # administer the company). Only the viewer asks: the wiki tools, MCP
+    # resources and reader links keep leaving system wikis out.
+    _system_wiki_reader_levels: dict[str, int] = {}
 
     @classmethod
-    def register_system_wiki_readers(cls, system_owner: str, roles) -> None:
+    def register_system_wiki_readers(cls, system_owner: str, level: int) -> None:
         owner = str(system_owner or "").strip()
         if owner:
-            cls._system_wiki_reader_roles[owner] = frozenset(
-                str(role or "").strip().lower() for role in (roles or ()) if str(role or "").strip())
+            cls._system_wiki_reader_levels[owner] = int(level)
 
-    def viewer_may_read_system_wiki(self, company_short_name: str, wiki_key: str, user_role: str | None) -> bool:
-        """Whether this role may open this system wiki in the viewer; False for a wiki that is not a system wiki."""
-        role = str(user_role or "").strip().lower()
-        if not role:
+    def viewer_may_read_system_wiki(self, company_short_name: str, wiki_key: str, user_identifier: str | None) -> bool:
+        """Whether this person may open this system wiki in the viewer; False for a wiki that is not a system wiki."""
+        if not user_identifier:
             return False
         company = self._get_company(company_short_name)
         if not company:
             return False
         wiki = self.knowledge_wiki_repo.get_wiki_by_key(company.id, self.normalize_wiki_key(wiki_key))
         owner = self.wiki_system_owner(wiki)
-        return bool(owner) and role in self._system_wiki_reader_roles.get(owner, frozenset())
+        level = self._system_wiki_reader_levels.get(owner) if owner else None
+        return level is not None and access.can(company_short_name, user_identifier, level, "company")
 
     def ensure_system_wiki(
         self,

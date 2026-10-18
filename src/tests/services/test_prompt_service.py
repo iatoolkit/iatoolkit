@@ -88,6 +88,17 @@ class TestPromptService:
         result = self.prompt_service.get_prompts(company_short_name='test_company')
         assert result == {'message': []}
 
+    def test_get_prompts_lists_only_the_agents_the_person_may_use(self, monkeypatch):
+        from iatoolkit.common import access
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_prompts.return_value = [self._build_prompt_mock(1, 'cobranza', True),
+                                                        self._build_prompt_mock(2, 'ventas', True)]
+        monkeypatch.setattr(access, "can", lambda company, user, level, rtype, key=None, path=None: key == 'ventas')
+
+        result = self.prompt_service.get_prompts(company_short_name='test_company', user_identifier='ana@acme.cl')
+
+        assert [p['prompt'] for c in result['message'] for p in c['prompts']] == ['ventas']
+
     def test_get_prompts_filters_inactive_rows_for_chat(self):
         self.profile_repo.get_company_by_short_name.return_value = self.mock_company
         active_prompt = self._build_prompt_mock(1, 'active_prompt', True)

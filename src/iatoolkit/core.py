@@ -195,6 +195,13 @@ class IAToolkit:
         thread.start()
         return thread
 
+    @staticmethod
+    def _effective_role(company_short_name: str | None, user_identifier: str | None) -> str | None:
+        if not company_short_name or not user_identifier:
+            return None
+        from iatoolkit.common import access
+        return access.effective_role(company_short_name, user_identifier)
+
     def _get_config_value(self, key: str, default=None):
         # get a value from the config dict or the environment variable
         return self.config.get(key, os.getenv(key, default))
@@ -653,7 +660,10 @@ class IAToolkit:
                 'app_name': 'IAToolkit',
                 'user_identifier': session_info.get('user_identifier'),
                 'company_short_name': route_company_short_name or session_info.get('company_short_name'),
-                'user_role': user_profile.get('user_role'),
+                # What the person can do over the company (BL-010, Fase 1), never the
+                # role an SSO hook may have written into the session profile.
+                'user_role': self._effective_role(route_company_short_name or session_info.get('company_short_name'),
+                                                  session_info.get('user_identifier')),
                 'user_is_local': user_profile.get('user_is_local'),
                 'user_email': user_profile.get('user_email'),
                 'iatoolkit_base_url': request.url_root,

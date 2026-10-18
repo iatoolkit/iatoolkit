@@ -10,6 +10,7 @@ from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.auth_service import AuthService
 import logging
+from iatoolkit.common import access
 
 
 #: The configuration keys a company may change about itself.
@@ -33,11 +34,6 @@ TENANT_WRITABLE_CONFIG_KEYS = frozenset({
     "branding.brand_secondary_color",
 })
 
-#: Editing the company's own configuration is an administrative act. The same two
-#: roles already gate editing company.yaml as a file, and leaving the key-by-key
-#: path open to any authenticated member meant one door was locked and the other
-#: was not, on the same file.
-CONFIG_WRITE_ROLES = frozenset({"admin", "owner"})
 
 
 class ConfigurationApiView(MethodView):
@@ -146,8 +142,9 @@ class ConfigurationApiView(MethodView):
             if not auth_result.get("success"):
                 return jsonify(auth_result), 401
 
-            role = str(auth_result.get("user_role") or "").strip().lower()
-            if role not in CONFIG_WRITE_ROLES:
+            # Editing the company's own configuration is administering the company: the
+            # same level that gates editing company.yaml as a file.
+            if not access.person_can(company_short_name, auth_result, access.ADMIN):
                 return jsonify({'error': 'Forbidden'}), 403
 
             payload = request.get_json()

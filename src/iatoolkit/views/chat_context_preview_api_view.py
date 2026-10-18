@@ -13,6 +13,7 @@ from injector import inject
 
 from iatoolkit.services.auth_service import AuthService
 from iatoolkit.services.query_service import QueryService
+from iatoolkit.common import access
 
 
 class ChatContextPreviewApiView(MethodView):
@@ -33,8 +34,7 @@ class ChatContextPreviewApiView(MethodView):
                 return jsonify({"error": "Forbidden"}), 403
             return jsonify(auth_result), status_code
 
-        role = (auth_result.get("user_role") or "").lower()
-        if role not in {"admin", "owner"}:
+        if not access.person_can(company_short_name, auth_result, access.ADMIN):
             return jsonify({"error": "Forbidden"}), 403
 
         return auth_result

@@ -121,7 +121,7 @@
                         <i class="bi bi-question-circle-fill"></i>
                 </a>
                 {% set admin_dashboard_url = optional_url_for('admin_dashboard', company_short_name=company_short_name, _external=True) %}
-                {% if user_role != "user" and license == 'enterprise' and admin_dashboard_url %}
+                {% if user_role and user_role != "user" and license == 'enterprise' and admin_dashboard_url %}
                     <a href="{{ admin_dashboard_url }}"
                        target="_blank"
                            id="preferences-button"

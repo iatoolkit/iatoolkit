@@ -4,13 +4,13 @@ from injector import inject
 from iatoolkit.services.auth_service import AuthService
 from iatoolkit.services.profile_service import ProfileService
 import logging
+from iatoolkit.common import access
 
 
 class UsersApiView(MethodView):
     """
     list company users and their roles
     """
-    MANAGER_ROLES = {"editor", "admin", "owner"}
     @inject
     def __init__(self,
                  auth_service: AuthService,
@@ -25,7 +25,7 @@ class UsersApiView(MethodView):
                 return jsonify(auth_result), auth_result.get("status_code", 401)
             # Who is in the company and with which role is for the people who run it
             # (the admin's Team screen), not for every user (BL-010, Fase 0).
-            if "user_role" in auth_result and str(auth_result.get("user_role") or "").lower() not in self.MANAGER_ROLES:
+            if "user_role" in auth_result and not access.person_can(company_short_name, auth_result, access.EDIT):
                 return jsonify({"error": "Forbidden"}), 403
 
             # get users of the company

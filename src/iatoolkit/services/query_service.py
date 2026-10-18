@@ -25,6 +25,7 @@ import time
 import json
 import re
 from dataclasses import dataclass
+from iatoolkit.common import access
 
 
 @dataclass
@@ -1511,6 +1512,12 @@ class QueryService:
             if not prompt_name and not question:
                 return {"error": True,
                         "error_message": self.i18n_service.t('services.start_query')}
+
+            # Using an agent is a level-1 permission over it (BL-010, Fase 1): the chat,
+            # the API and MCP all run through here.
+            if prompt_name and not access.can(company_short_name, user_identifier, access.USE, "agent", prompt_name):
+                return {"error": True, "status_code": 403,
+                        "error_message": self.i18n_service.t('errors.access.agent_denied', prompt_name=prompt_name)}
 
             # output contract
             prompt_output_contract = self._resolve_prompt_output_contract(company, prompt_name)

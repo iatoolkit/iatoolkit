@@ -762,6 +762,16 @@ class TestQueryService:
             mock_set_context.assert_called_once()
             assert self.mock_history_manager.populate_request_params.call_count == 2
 
+    def test_llm_query_refuses_an_agent_the_person_may_not_use(self, monkeypatch):
+        from iatoolkit.common import access
+        monkeypatch.setattr(access, "can", lambda *args, **kwargs: False)
+
+        result = self.service.llm_query("acme", "ana@acme.cl", prompt_name="cobranza")
+
+        assert result["error"] is True
+        assert result["status_code"] == 403
+        assert "errors.access.agent_denied" in result["error_message"]
+
     def test_llm_query_fails_if_company_not_found(self):
         self.mock_profile_repo.get_company_by_short_name.return_value = None
         result = self.service.llm_query("invalid_company", "user")

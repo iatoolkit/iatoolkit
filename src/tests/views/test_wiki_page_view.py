@@ -198,24 +198,25 @@ def test_an_unknown_company_is_a_404(wiki_app):
     wiki_service.get_page.assert_not_called()
 
 
-def test_memorias_wiki_opens_for_admin_and_owner_only(wiki_app):
+def test_memorias_wiki_opens_for_who_the_service_lets_in(wiki_app):
     app, profile, wiki_service = wiki_app
     wiki_service.viewer_may_read_system_wiki.return_value = True
-    # The role comes from the database (ProfileService.get_role_in_company), never from
-    # the session profile an SSO hook writes (BL-010, Fase 0).
-    profile.get_current_session_info.return_value = {**SESSION, "profile": {"user_role": "user"}}
-    profile.get_role_in_company.return_value = "admin"
+    # The person is asked about, never the role in the session profile an SSO hook
+    # writes (BL-010, Fases 0 y 1).
+    profile.get_current_session_info.return_value = {**SESSION, "profile": {"user_role": "admin"}}
     wiki_service.get_page.return_value = served("# Créditos\n\nPlazo 30. (Política de crédito v3, 2026-10-16)\n",
                                                 title="Créditos", path="creditos.md")
 
     response = app.test_client().get("/acme/wiki/iatoolkit-memory/creditos.md")
 
     assert response.status_code == 200
-    wiki_service.viewer_may_read_system_wiki.assert_called_once_with("acme", "iatoolkit-memory", "admin")
+    wiki_service.viewer_may_read_system_wiki.assert_called_once_with(
+        "acme", "iatoolkit-memory", SESSION["user_identifier"])
     assert wiki_service.get_page.call_args.kwargs["include_system"] is True
 
 
-def test_system_wiki_readers_are_registered_per_feature():
+def test_system_wiki_readers_are_registered_per_feature(monkeypatch):
+    from iatoolkit.common import access
     from iatoolkit.services.memory_wiki_service import MemoryWikiService
 
     service = TenantWikiService.__new__(TenantWikiService)
@@ -224,11 +225,13 @@ def test_system_wiki_readers_are_registered_per_feature():
     wikis = {"iatoolkit-memory": SimpleNamespace(settings={TenantWikiService.SYSTEM_OWNER_SETTING: MemoryWikiService.SYSTEM_OWNER}),
              "kb": SimpleNamespace(settings={})}
     service.knowledge_wiki_repo = SimpleNamespace(get_wiki_by_key=lambda company_id, key: wikis.get(key))
+    roles = {"duena@acme.cl": "owner", "admin@acme.cl": "admin", "editor@acme.cl": "editor"}
+    monkeypatch.setattr(access.Access, "_decider", access.RoleAccessDecider(lambda c, u: roles.get(u)))
 
-    assert service.viewer_may_read_system_wiki("acme", "iatoolkit-memory", "owner") is True
-    assert service.viewer_may_read_system_wiki("acme", "iatoolkit-memory", "Admin") is True
-    assert service.viewer_may_read_system_wiki("acme", "iatoolkit-memory", "editor") is False
+    # Memoria's wiki: for those who administer the company.
+    assert service.viewer_may_read_system_wiki("acme", "iatoolkit-memory", "duena@acme.cl") is True
+    assert service.viewer_may_read_system_wiki("acme", "iatoolkit-memory", "admin@acme.cl") is True
+    assert service.viewer_may_read_system_wiki("acme", "iatoolkit-memory", "editor@acme.cl") is False
     assert service.viewer_may_read_system_wiki("acme", "iatoolkit-memory", None) is False
     # Not a system wiki: the normal rules apply, nothing to open.
-    assert service.viewer_may_read_system_wiki("acme", "kb", "admin") is False
-
+    assert service.viewer_may_read_system_wiki("acme", "kb", "admin@acme.cl") is False
