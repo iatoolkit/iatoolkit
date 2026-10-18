@@ -1269,7 +1269,7 @@ class QueryService:
         if not prompt_output_contract:
             return {'rebuild_needed': True, 'error': f"Prompt '{prompt_name}' not found"}
 
-        tools = self.tool_service.get_tools_for_llm(company)
+        tools = self.tool_service.get_tools_for_llm(company, user_identifier=user_identifier)
         is_agent_execution = self._is_agentic_execution(prompt_output_contract)
         tools, _tool_router_metrics = self._apply_prompt_tool_policy(
             company_short_name=company_short_name,
@@ -1528,6 +1528,11 @@ class QueryService:
                 prompt_output_contract=prompt_output_contract,
             )
             effective_model = self._resolve_model(company_short_name, model, prompt_output_contract)
+            # Using a model is a level-1 permission over it (BL-010, Fase 2).
+            if effective_model and not access.can(company_short_name, user_identifier, access.USE, "model",
+                                                  effective_model):
+                return {"error": True, "status_code": 403,
+                        "error_message": self.i18n_service.t('errors.access.model_denied', model=effective_model)}
             output_schema = self._build_output_text_schema_payload(
                 company_short_name,
                 effective_model,
@@ -1616,7 +1621,7 @@ class QueryService:
             is_agent_execution = self._is_agentic_execution(prompt_output_contract) and not is_agent_session_execution
 
             # get the tools availables for this company
-            tools = self.tool_service.get_tools_for_llm(company)
+            tools = self.tool_service.get_tools_for_llm(company, user_identifier=user_identifier)
             log_stage("load_tools")
             tools, tool_router_metrics = self._apply_prompt_tool_policy(
                 company_short_name=company_short_name,
@@ -1920,7 +1925,7 @@ class QueryService:
                 )
 
             is_agent_execution = self._is_agentic_execution(prompt_output_contract)
-            tools = self.tool_service.get_tools_for_llm(company)
+            tools = self.tool_service.get_tools_for_llm(company, user_identifier=user_identifier)
             tools, tool_router_metrics = self._apply_prompt_tool_policy(
                 company_short_name=company_short_name,
                 prompt_output_contract=prompt_output_contract,
@@ -2060,7 +2065,7 @@ class QueryService:
             effective_model = self._resolve_model(company_short_name, None, {})
             provider = self._get_provider(company_short_name, effective_model)
             history_type = self._get_history_type(company_short_name, effective_model)
-            tools = self.tool_service.get_tools_for_llm(company)
+            tools = self.tool_service.get_tools_for_llm(company, user_identifier=user_identifier)
             runtime_context, _user_profile, selected_system_prompt_keys = self.context_builder.build_system_context(
                 company_short_name,
                 user_identifier,

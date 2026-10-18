@@ -100,7 +100,7 @@ class FakeToolService:
     def __init__(self, sql_service):
         self.sql_service = sql_service
 
-    def get_tools_for_llm(self, company):
+    def get_tools_for_llm(self, company, user_identifier=None):
         return [
             {
                 "type": "function",

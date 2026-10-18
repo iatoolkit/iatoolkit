@@ -93,3 +93,20 @@ class TestHooks:
 
         Access.register(FakeDecider(allowed=False))
         assert not access.decider_for(lambda company, user: "admin").can("acme", "ad@acme.cl", ADMIN, "company")
+
+
+class TestModels:
+    def test_the_chat_offers_only_the_models_the_person_may_use(self):
+        class OnlyMini(FakeDecider):
+            def can(self, company, user, level, rtype, key=None, path=None):
+                return key == "gpt-mini"
+        Access.register(OnlyMini())
+        models = [{"id": "gpt-big"}, {"id": "gpt-mini"}]
+
+        default, allowed = access.filter_llm_models("acme", "ana@acme.cl", "gpt-big", models)
+
+        assert default == "gpt-mini" and allowed == [{"id": "gpt-mini"}]
+
+    def test_without_groups_the_models_are_unchanged(self):
+        models = [{"id": "gpt-big"}]
+        assert access.filter_llm_models("acme", "ana@acme.cl", "gpt-big", models) == ("gpt-big", models)

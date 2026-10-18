@@ -56,6 +56,23 @@ class Dispatcher:
         self._company_instances = None
         self._company_instances_revision = -1
 
+    @staticmethod
+    def _scope_tool_call(company_short_name: str, function_name: str, user_identifier: str | None,
+                         kwargs: dict) -> dict:
+        from iatoolkit.common import access
+        if not user_identifier or not access.Access.registered():
+            # No person (internal runs), or no groups (core alone): nothing is restricted.
+            return kwargs
+        from iatoolkit import current_iatoolkit
+        from iatoolkit.services.resource_access_scope import ResourceAccessScope
+        try:
+            injector = current_iatoolkit().get_injector()
+        except Exception:
+            # No running IAToolkit (unit tests of the dispatcher alone): nothing to scope with.
+            return kwargs
+        scope = injector.get(ResourceAccessScope)
+        return scope.scope_tool_call(company_short_name, function_name, user_identifier, kwargs)
+
     def _safe_rollback(self):
         """
         Best-effort rollback for the shared scoped session used by repositories.
@@ -228,6 +245,9 @@ class Dispatcher:
             )
             return result
         try:
+            # What the person may reach (BL-010, Fase 2): the tool, and the SQL source,
+            # collections or wikis the call names or would search.
+            kwargs = self._scope_tool_call(company_short_name, function_name, user_identifier, kwargs)
             result = self._dispatch_resolved_tool(
                 company_short_name=company_short_name,
                 function_name=function_name,

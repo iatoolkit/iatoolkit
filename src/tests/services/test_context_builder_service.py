@@ -216,6 +216,7 @@ class TestContextBuilderService:
         assert selected_keys == ["core_identity", "memory_usage", "sql_core"]
         self.mock_company_context.get_company_context_blocks.assert_called_once_with(
             MOCK_COMPANY_SHORT_NAME,
+            allowed_databases=None,
             include_sql_context=False,
             include_yaml_context=False,
         )
@@ -283,6 +284,7 @@ class TestContextBuilderService:
         assert "Global YAML Context" not in context
         self.mock_company_context.get_company_context_blocks.assert_called_once_with(
             MOCK_COMPANY_SHORT_NAME,
+            allowed_databases=None,
             include_sql_context=False,
             include_yaml_context=False,
         )

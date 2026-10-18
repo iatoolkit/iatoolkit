@@ -22,6 +22,7 @@ from iatoolkit.common.util import Utility
 import logging
 import secrets
 from urllib.parse import urljoin, urlparse
+from iatoolkit.common import access
 
 
 def _normalize_safe_next_target(raw_target: str | None) -> str | None:
@@ -487,6 +488,8 @@ class FinalizeContextView(MethodView):
             branding_data = self.branding_service.get_company_branding(company_short_name)
 
             default_llm_model, available_llm_models = self.config_service.get_llm_configuration(company_short_name)
+            default_llm_model, available_llm_models = access.filter_llm_models(
+                company_short_name, user_identifier, default_llm_model, available_llm_models)
             llm_request_defaults = self.config_service.get_llm_request_defaults(company_short_name) or {}
             llm_default_reasoning_effort = str(
                 ((llm_request_defaults.get("reasoning") or {}).get("effort")) or ""

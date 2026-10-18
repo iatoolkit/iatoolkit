@@ -176,6 +176,22 @@ def role_assigned(company_short_name: str, user_identifier: str, role: str) -> N
                             company_short_name, exc)
 
 
+def filter_llm_models(company_short_name: str, user_identifier: str | None, default_model: str | None,
+                      models: list[dict]) -> tuple[str | None, list[dict]]:
+    """The chat's model choice limited to the models this person may use (BL-010, Fase 2).
+
+    When the company's default is not among them, the first one they may use becomes
+    their default."""
+    if not user_identifier or not Access.registered():
+        return default_model, models
+    allowed = [m for m in models or [] if can(company_short_name, user_identifier, USE, "model",
+                                              str((m or {}).get("id") or ""))]
+    allowed_ids = [str(m.get("id")) for m in allowed]
+    if default_model and default_model not in allowed_ids:
+        default_model = allowed_ids[0] if allowed_ids else None
+    return default_model, allowed
+
+
 def person_can(company_short_name: str, auth_result: dict | None, level: int, resource_type: str = "company",
                resource_key: str | None = None) -> bool:
     """A signed-in person's access, from an AuthService result.

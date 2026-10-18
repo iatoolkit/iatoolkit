@@ -199,7 +199,7 @@ class ContextBuilderService:
 
         # 1. Get user profile
         user_profile = self.profile_service.get_profile_by_identifier(company_short_name, user_identifier)
-        available_tools = self.tool_service.get_tools_for_llm(company)
+        available_tools = self.tool_service.get_tools_for_llm(company, user_identifier=user_identifier)
 
         # 2. Render the base system prompt (iatoolkit standard)
         system_prompt_payload = self.prompt_service.get_system_prompt_payload(
@@ -223,9 +223,13 @@ class ContextBuilderService:
             service_list=available_tools,
         )
 
-        # 3. Get company specific context (DB Schemas, Docs, etc.)
-        company_context_blocks = self.company_context_service.get_company_context_blocks(company_short_name)
-        collection_context = self._build_collection_context(company_short_name)
+        # 3. Get company specific context (DB Schemas, Docs, etc.), limited to the SQL
+        # sources and collections this person may use (BL-010, Fase 2).
+        allowed_databases, allowed_collections = self._access_restrictions(company_short_name, user_identifier)
+        company_context_blocks = self.company_context_service.get_company_context_blocks(
+            company_short_name, allowed_databases=allowed_databases)
+        collection_context = "" if allowed_collections == [] else self._build_collection_context(
+            company_short_name, collection_names=allowed_collections)
 
         final_system_context = self._join_context_sections(
             rendered_sections.get("identity"),
@@ -274,6 +278,24 @@ class ContextBuilderService:
 
         return capabilities
 
+    def _access_restrictions(self, company_short_name: str,
+                             user_identifier: str | None) -> tuple[list[str] | None, list[str] | None]:
+        """(SQL sources, collections) this person may use; None where nothing is restricted."""
+        from iatoolkit.common import access
+        if not user_identifier or not access.Access.registered():
+            return None, None
+        from iatoolkit import current_iatoolkit
+        from iatoolkit.services.resource_access_scope import ResourceAccessScope
+        from iatoolkit.services.sql_source_service import SqlSourceService
+        injector = current_iatoolkit().get_injector()
+        scope = injector.get(ResourceAccessScope)
+        databases = [str(s.get("database") or "") for s in
+                     injector.get(SqlSourceService).list_sources(company_short_name, include_inactive=False) or []
+                     if s.get("database")]
+        allowed_databases = scope.allowed_databases(company_short_name, user_identifier, databases)
+        return (None if len(allowed_databases) == len(databases) else allowed_databases,
+                scope.allowed_collections(company_short_name, user_identifier))
+
     def build_agent_system_context(
         self,
         company_short_name: str,
@@ -312,6 +334,12 @@ class ContextBuilderService:
             resource_bindings,
             PromptResourceType.RAG_COLLECTION.value,
         )
+        # The agent's sources and collections, minus those this person may not use.
+        allowed_databases, allowed_collections = self._access_restrictions(company_short_name, user_identifier)
+        if allowed_databases is not None:
+            sql_sources = [s for s in sql_sources if s in allowed_databases]
+        if allowed_collections is not None:
+            rag_collections = [c for c in rag_collections if c in allowed_collections]
 
         prompt_capabilities = self._resolve_system_prompt_capabilities(enabled_tools)
         if self.SQL_TOOL_NAME in enabled_tool_names and not sql_sources:
@@ -370,6 +398,7 @@ class ContextBuilderService:
         company_context_policy = context_policy.get("company_context_blocks") or {}
         company_context_blocks = self.company_context_service.get_company_context_blocks(
             company_short_name,
+            allowed_databases=allowed_databases,
             include_sql_context=bool(company_context_policy.get("sql_context")),
             include_yaml_context=bool(company_context_policy.get("yaml_context")),
         )

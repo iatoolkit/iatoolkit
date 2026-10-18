@@ -18,6 +18,7 @@ from iatoolkit.common.util import Utility
 from iatoolkit.services.jwt_service import JWTService
 from iatoolkit.repositories.models import Company
 import logging
+from iatoolkit.common import access
 
 
 class BaseLoginView(MethodView):
@@ -81,6 +82,8 @@ class BaseLoginView(MethodView):
             # --- FAST PATH: Render the chat page directly ---
             # LLM configuration: default model and availables
             default_llm_model, available_llm_models = self.config_service.get_llm_configuration(company_short_name)
+            default_llm_model, available_llm_models = access.filter_llm_models(
+                company_short_name, user_identifier, default_llm_model, available_llm_models)
             llm_request_defaults = self.config_service.get_llm_request_defaults(company_short_name) or {}
             llm_default_reasoning_effort = str(
                 ((llm_request_defaults.get("reasoning") or {}).get("effort")) or ""

@@ -31,6 +31,7 @@ from iatoolkit.services.system_tools import (
 )
 from iatoolkit.services.tool_output_contract import clone_output_contract, normalize_output_contract
 from iatoolkit import current_iatoolkit
+from iatoolkit.common import access
 
 
 class ToolService:
@@ -1510,9 +1511,11 @@ class ToolService:
 
         return set(required) == set(properties.keys())
 
-    def get_tools_for_llm(self, company: Company) -> list[dict]:
+    def get_tools_for_llm(self, company: Company, user_identifier: str | None = None) -> list[dict]:
         """
         Returns the list of tools (System + Company) formatted for the LLM (OpenAI Schema).
+        With a person, only the tools they may use (BL-010, Fase 2): the model is not
+        offered what the dispatcher would refuse.
         """
         tools = []
 
@@ -1537,6 +1540,9 @@ class ToolService:
 
             tools.append(ai_tool)
 
+        if user_identifier and access.Access.registered():
+            tools = [tool for tool in tools
+                     if access.can(company.short_name, user_identifier, access.USE, "tool", tool["name"])]
         return tools
 
     def get_always_include_tool_names(self, company_short_name: str, tools: list[dict]) -> list[str]:

@@ -52,6 +52,7 @@ class CompanyContextService:
         include_sql_context: bool = True,
         include_yaml_context: bool = True,
         selected_context_files: List[str] | None = None,
+        allowed_databases: List[str] | None = None,
     ) -> dict[str, str]:
         """
         Builds the full context by aggregating three sources:
@@ -78,7 +79,9 @@ class CompanyContextService:
         # schema expansion and expose SQL through dedicated schema/query tools.
         if include_sql_context:
             try:
-                sql_context, db_tables = self._get_sql_enriched_context(company_short_name)
+                # allowed_databases: the sources this person may query (BL-010); None is all.
+                sql_context, db_tables = self._get_sql_enriched_context(company_short_name,
+                                                                        allowed_databases=allowed_databases)
                 sql_context = sql_context.strip()
                 sql_source_table_scopes = self._get_sql_source_table_scopes(company_short_name)
             except Exception as e:

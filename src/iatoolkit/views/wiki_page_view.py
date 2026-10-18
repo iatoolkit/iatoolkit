@@ -16,6 +16,7 @@ from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.services.markdown_wiki_service import MarkdownWikiService
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.tenant_wiki_service import TenantWikiService
+from iatoolkit.common import access
 
 
 class WikiPageView(MethodView):
@@ -62,7 +63,11 @@ class WikiPageView(MethodView):
         if self.tenant_wiki_service.viewer_may_read_system_wiki(company_short_name, wiki_key, user_identifier):
             # A system wiki its feature opened to this person (Memoria for company admins).
             page_kwargs["include_system"] = True
-        result = self.tenant_wiki_service.get_page(company_short_name, **page_kwargs)
+        if access.can(company_short_name, user_identifier, access.USE, "knowledge_wiki", wiki_key):
+            result = self.tenant_wiki_service.get_page(company_short_name, **page_kwargs)
+        else:
+            # A wiki this person may not see (BL-010, Fase 2).
+            result = {"status": TenantWikiService.ACCESS_STATUS_FORBIDDEN}
         wiki = result.get("wiki") or {}
         context = {
             "company_short_name": company_short_name,
