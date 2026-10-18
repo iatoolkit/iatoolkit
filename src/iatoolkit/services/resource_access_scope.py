@@ -101,6 +101,48 @@ class ResourceAccessScope:
                     scoped["allowed_wiki_keys"] = [k for k in allowed if not requested or k in requested]
         return scoped
 
+    # ---------------------------------------------------------------- the RAG API
+    def scope_collection(self, company_short_name: str, user_identifier: str | None, collection,
+                         *, multi: bool):
+        """A collection argument narrowed for this person (the RAG REST API, BL-010).
+
+        Named collections must all be visible; with none named, the visible ones
+        (a list when `multi`, the only one otherwise). Raises PERMISSION."""
+        if not user_identifier or not access.Access.registered():
+            return collection
+        named = _as_list(collection)
+        if named:
+            denied = [c for c in named if not self._can_see_collection(company_short_name, user_identifier, c)]
+            if denied:
+                raise _denied(f"No access to the collection '{denied[0]}'.")
+            return collection
+        allowed = self.allowed_collections(company_short_name, user_identifier)
+        if allowed is None:
+            return collection
+        if not allowed:
+            raise _denied("No access to any document collection.")
+        if multi:
+            return allowed
+        if len(allowed) == 1:
+            return allowed[0]
+        raise _denied("Name the collection: you can see only some of them.")
+
+    def document_allowed(self, company_short_name: str, user_identifier: str | None, document_id) -> bool:
+        if not user_identifier or not access.Access.registered():
+            return True
+        collection = self._document_collection(company_short_name, document_id)
+        return not collection or self._can_see_collection(company_short_name, user_identifier, collection)
+
+    def visible_collection_filter(self, company_short_name: str, user_identifier: str | None):
+        """`fn(collection_name) -> bool` for lists of documents; None when nothing is restricted."""
+        if not user_identifier or not access.Access.registered():
+            return None
+        allowed = self.allowed_collections(company_short_name, user_identifier)
+        if allowed is None:
+            return None
+        allowed_set = set(allowed)
+        return lambda name: name in allowed_set
+
     # ------------------------------------------------------------------- listings
     def allowed_collections(self, company_short_name: str, user_identifier: str | None) -> list[str] | None:
         """The collections the person may see, or None when nothing is restricted for them."""

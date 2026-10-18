@@ -19,6 +19,7 @@ from iatoolkit.services.prompt_service import PromptService
 from iatoolkit.services.structured_output_service import StructuredOutputService
 from iatoolkit.common.util import Utility
 from iatoolkit.repositories.models import Company, PromptResourceType
+from iatoolkit.common import access
 
 
 class ContextBuilderService:
@@ -227,7 +228,8 @@ class ContextBuilderService:
         # sources and collections this person may use (BL-010, Fase 2).
         allowed_databases, allowed_collections = self._access_restrictions(company_short_name, user_identifier)
         company_context_blocks = self.company_context_service.get_company_context_blocks(
-            company_short_name, allowed_databases=allowed_databases)
+            company_short_name, allowed_databases=allowed_databases,
+            table_filter=access.sql_table_filter(company_short_name, user_identifier))
         collection_context = "" if allowed_collections == [] else self._build_collection_context(
             company_short_name, collection_names=allowed_collections)
 
@@ -386,6 +388,7 @@ class ContextBuilderService:
             sql_context = self.company_context_service.get_sql_context(
                 company_short_name,
                 allowed_databases=sql_sources,
+                table_filter=access.sql_table_filter(company_short_name, user_identifier),
             )
 
         collection_context = ""
@@ -399,6 +402,7 @@ class ContextBuilderService:
         company_context_blocks = self.company_context_service.get_company_context_blocks(
             company_short_name,
             allowed_databases=allowed_databases,
+            table_filter=access.sql_table_filter(company_short_name, user_identifier),
             include_sql_context=bool(company_context_policy.get("sql_context")),
             include_yaml_context=bool(company_context_policy.get("yaml_context")),
         )

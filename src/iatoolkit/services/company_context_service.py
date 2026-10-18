@@ -53,6 +53,7 @@ class CompanyContextService:
         include_yaml_context: bool = True,
         selected_context_files: List[str] | None = None,
         allowed_databases: List[str] | None = None,
+        table_filter=None,
     ) -> dict[str, str]:
         """
         Builds the full context by aggregating three sources:
@@ -81,7 +82,8 @@ class CompanyContextService:
             try:
                 # allowed_databases: the sources this person may query (BL-010); None is all.
                 sql_context, db_tables = self._get_sql_enriched_context(company_short_name,
-                                                                        allowed_databases=allowed_databases)
+                                                                        allowed_databases=allowed_databases,
+                                                                        table_filter=table_filter)
                 sql_context = sql_context.strip()
                 sql_source_table_scopes = self._get_sql_source_table_scopes(company_short_name)
             except Exception as e:
@@ -138,11 +140,13 @@ class CompanyContextService:
             )
         return files
 
-    def get_sql_context(self, company_short_name: str, allowed_databases: List[str] | None = None) -> str:
+    def get_sql_context(self, company_short_name: str, allowed_databases: List[str] | None = None,
+                        table_filter=None) -> str:
         try:
             sql_context, _ = self._get_sql_enriched_context(
                 company_short_name,
                 allowed_databases=allowed_databases,
+                table_filter=table_filter,
             )
             return sql_context
         except Exception as e:
@@ -177,7 +181,8 @@ class CompanyContextService:
             return False
         return bool(cls._table_name_candidates(table_name) & allowed_tables)
 
-    def _get_sql_enriched_context(self, company_short_name: str, allowed_databases: List[str] | None = None):
+    def _get_sql_enriched_context(self, company_short_name: str, allowed_databases: List[str] | None = None,
+                                  table_filter=None):
         """
         Generates the SQL context for the LLM using the enriched schema logic.
         It iterates over configured databases, fetches their enriched structure,
@@ -218,6 +223,15 @@ class CompanyContextService:
                         table_name: table_data
                         for table_name, table_data in enriched_structure.items()
                         if self._table_is_allowed(table_name, allowed_tables)
+                    }
+                    if not enriched_structure:
+                        continue
+                if table_filter is not None:
+                    # Tables the person may not query (enterprise's knowledge tables, BL-010).
+                    enriched_structure = {
+                        table_name: table_data
+                        for table_name, table_data in enriched_structure.items()
+                        if table_filter(db_name, table_name)
                     }
                     if not enriched_structure:
                         continue

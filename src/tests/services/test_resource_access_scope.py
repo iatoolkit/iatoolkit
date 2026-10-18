@@ -79,3 +79,12 @@ class TestResourceAccessScope:
         Access.register(type("Open", (Decider,), {"DENIED": set()})())
         assert self.call("iat_document_search", query="x") == {"query": "x"}
         assert self.scope.allowed_collections("acme", "ana@acme.cl") is None
+
+    def test_the_rag_api_collection_argument(self):
+        assert self.scope.scope_collection("acme", "ana@acme.cl", None, multi=True) == ["Contratos"]
+        assert self.scope.scope_collection("acme", "ana@acme.cl", "", multi=False) == "Contratos"
+        with pytest.raises(IAToolkitException):
+            self.scope.scope_collection("acme", "ana@acme.cl", "Personas", multi=False)
+        assert self.scope.document_allowed("acme", "ana@acme.cl", 7) is False
+        visible = self.scope.visible_collection_filter("acme", "ana@acme.cl")
+        assert visible("Contratos") and not visible("Personas")

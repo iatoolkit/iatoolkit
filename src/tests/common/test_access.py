@@ -110,3 +110,27 @@ class TestModels:
     def test_without_groups_the_models_are_unchanged(self):
         models = [{"id": "gpt-big"}]
         assert access.filter_llm_models("acme", "ana@acme.cl", "gpt-big", models) == ("gpt-big", models)
+
+
+class TestStampAndTables:
+    def test_stamp_and_table_filter_come_from_the_decider(self):
+        class WithTables(FakeDecider):
+            def stamp(self, company):
+                return "abc"
+
+            def sql_table_resource(self, company, database):
+                return "knowledge_table" if database == "knowledge_tables" else None
+
+            def can(self, company, user, level, rtype, key=None, path=None):
+                return not (rtype == "knowledge_table" and key == "remuneraciones")
+        Access.register(WithTables())
+
+        allowed = access.sql_table_filter("acme", "ana@acme.cl")
+
+        assert access.stamp("acme") == "abc"
+        assert allowed("knowledge_tables", "ventas") and not allowed("knowledge_tables", "remuneraciones")
+        assert allowed("erp", "remuneraciones")
+
+    def test_without_a_decider_nothing_is_filtered(self):
+        assert access.stamp("acme") is None
+        assert access.sql_table_filter("acme", "ana@acme.cl") is None

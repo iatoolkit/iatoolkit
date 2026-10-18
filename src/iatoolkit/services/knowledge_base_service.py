@@ -610,7 +610,11 @@ class KnowledgeBaseService:
             else:
                 query = query.filter(Document.status == status)
 
-        if collection:
+        if isinstance(collection, (list, tuple, set)):
+            # Several collections: those a person may see (BL-010). An empty list is none.
+            names = [str(c).strip().lower() for c in collection if str(c or "").strip()]
+            query = query.join(Document.collection_type).filter(func.lower(CollectionType.name).in_(names or [""]))
+        elif collection:
             normalized_collection = str(collection).strip().lower()
             query = query.join(Document.collection_type).filter(
                 func.lower(CollectionType.name) == normalized_collection

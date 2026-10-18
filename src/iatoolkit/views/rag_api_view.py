@@ -39,6 +39,35 @@ class RagApiView(MethodView):
         self.utility = utility
         self.i18n_service = i18n_service
 
+    # What a person may reach (BL-010): only the collections and documents they may see.
+    @staticmethod
+    def _access_scope():
+        from iatoolkit import current_iatoolkit
+        from iatoolkit.services.resource_access_scope import ResourceAccessScope
+        return current_iatoolkit().get_injector().get(ResourceAccessScope)
+
+    def _scoped_collection(self, company_short_name: str, auth_result: dict, collection, *, multi: bool):
+        """The collection argument narrowed to what the person sees; raises PERMISSION."""
+        from iatoolkit.common import access
+        if not access.Access.registered():
+            return collection
+        return self._access_scope().scope_collection(company_short_name, auth_result.get("user_identifier"),
+                                                     collection, multi=multi)
+
+    def _document_denied(self, company_short_name: str, auth_result: dict, document_id):
+        from iatoolkit.common import access
+        if not access.Access.registered():
+            return None
+        if self._access_scope().document_allowed(company_short_name, auth_result.get("user_identifier"), document_id):
+            return None
+        return jsonify({'result': 'error', 'message': 'No access to that document.'}), 403
+
+    @staticmethod
+    def _permission_denied(exc: IAToolkitException):
+        if exc.error_type == IAToolkitException.ErrorType.PERMISSION:
+            return jsonify({'result': 'error', 'message': exc.message, 'error_message': exc.message}), 403
+        return None
+
     def dispatch_request(self, *args, **kwargs):
         """
         Sobreescribimos el dispatch para soportar el mapeo de acciones personalizadas
@@ -111,7 +140,8 @@ class RagApiView(MethodView):
             keyword = data.get('filename_keyword')
             from_date_str = data.get('from_date')
             to_date_str = data.get('to_date')
-            collection = data.get('collection', '')
+            collection = self._scoped_collection(company_short_name, auth_result, data.get('collection', ''),
+                                                 multi=True)
             metadata_key = str(data.get('metadata_key') or '').strip()
             metadata_value = str(data.get('metadata_value') or '').strip()
             metadata_match_mode = str(data.get('metadata_match_mode') or '').strip().lower()
@@ -181,6 +211,8 @@ class RagApiView(MethodView):
             }), 200
 
         except IAToolkitException as e:
+            if self._permission_denied(e):
+                return self._permission_denied(e)
             return jsonify({'result': 'error', 'message': e.message}), e.http_code
         except Exception as e:
             return jsonify({'result': 'error', 'message': str(e)}), 500
@@ -242,6 +274,9 @@ class RagApiView(MethodView):
                 return jsonify(auth_result), auth_result.get("status_code")
 
             # 2. Get content from service
+            denied = self._document_denied(company_short_name, auth_result, document_id)
+            if denied:
+                return denied
             file_bytes, filename = self.knowledge_base_service.get_document_content(document_id)
 
             if not file_bytes:
@@ -262,6 +297,8 @@ class RagApiView(MethodView):
             )
 
         except IAToolkitException as e:
+            if self._permission_denied(e):
+                return self._permission_denied(e)
             return jsonify({'result': 'error', 'message': e.message}), e.http_code
         except Exception as e:
             return jsonify({'result': 'error', 'message': str(e)}), 500
@@ -278,6 +315,9 @@ class RagApiView(MethodView):
                 return jsonify(auth_result), auth_result.get("status_code")
 
             # 2. Call Service
+            denied = self._document_denied(company_short_name, auth_result, document_id)
+            if denied:
+                return denied
             success = self.knowledge_base_service.delete_document(document_id)
 
             if success:
@@ -288,6 +328,8 @@ class RagApiView(MethodView):
                 return jsonify({'result': 'error', 'message': msg}), 404
 
         except IAToolkitException as e:
+            if self._permission_denied(e):
+                return self._permission_denied(e)
             return jsonify({'result': 'error', 'message': e.message}), e.http_code
         except Exception as e:
             return jsonify({'result': 'error', 'message': str(e)}), 500
@@ -308,7 +350,7 @@ class RagApiView(MethodView):
             data = request.get_json() or {}
             query = data.get('query')
             n_results = int(data.get('k', 5))
-            collection = data.get('collection')
+            collection = self._scoped_collection(company_short_name, auth_result, data.get('collection'), multi=True)
             metadata_filter = data.get('metadata_filter')
             # The Search Lab can compare modes; empty means the company's own.
             search_mode = str(data.get('search_mode') or '').strip().lower() or None
@@ -340,6 +382,8 @@ class RagApiView(MethodView):
             }), 200
 
         except IAToolkitException as e:
+            if self._permission_denied(e):
+                return self._permission_denied(e)
             return jsonify({'result': 'error', 'error_message': e.message}), 501
         except Exception as e:
             return jsonify({'result': 'error', 'error_message': str(e)}), 500
@@ -360,6 +404,7 @@ class RagApiView(MethodView):
                 return self._bad_request("query is required", error_code="INVALID_REQUEST")
 
             collection, n_results, metadata_filter = self._parse_common_search_params(data)
+            collection = self._scoped_collection(company_short_name, auth_result, collection, multi=True)
 
             chunks = self.knowledge_base_service.search(
                 company_short_name=company_short_name,
@@ -381,6 +426,8 @@ class RagApiView(MethodView):
         except ValueError as e:
             return self._bad_request(str(e), error_code="INVALID_REQUEST")
         except IAToolkitException as e:
+            if self._permission_denied(e):
+                return self._permission_denied(e)
             return jsonify({"result": "error", "error_code": "INTERNAL_ERROR", "message": e.message}), e.http_code
         except Exception as e:
             return jsonify({"result": "error", "error_code": "INTERNAL_ERROR", "message": str(e)}), 500
@@ -401,6 +448,7 @@ class RagApiView(MethodView):
                 return self._bad_request("query is required", error_code="INVALID_REQUEST")
 
             collection, n_results, metadata_filter = self._parse_common_search_params(data)
+            collection = self._scoped_collection(company_short_name, auth_result, collection, multi=False)
 
             results = self.visual_kb_service.search_images(
                 company_short_name=company_short_name,
@@ -422,6 +470,8 @@ class RagApiView(MethodView):
         except ValueError as e:
             return self._bad_request(str(e), error_code="INVALID_REQUEST")
         except IAToolkitException as e:
+            if self._permission_denied(e):
+                return self._permission_denied(e)
             return jsonify({"result": "error", "error_code": "INTERNAL_ERROR", "message": e.message}), e.http_code
         except Exception as e:
             return jsonify({"result": "error", "error_code": "INTERNAL_ERROR", "message": str(e)}), 500
@@ -442,6 +492,7 @@ class RagApiView(MethodView):
                 return self._bad_request("image_base64 is required", error_code="INVALID_REQUEST")
 
             collection, n_results, metadata_filter = self._parse_common_search_params(data)
+            collection = self._scoped_collection(company_short_name, auth_result, collection, multi=False)
             image_bytes = self.utility.normalize_base64_payload(image_base64)
             if not image_bytes:
                 return self._bad_request("image_base64 is empty or invalid", error_code="INVALID_REQUEST")
@@ -466,6 +517,8 @@ class RagApiView(MethodView):
         except ValueError as e:
             return self._bad_request(str(e), error_code="INVALID_REQUEST")
         except IAToolkitException as e:
+            if self._permission_denied(e):
+                return self._permission_denied(e)
             return jsonify({"result": "error", "error_code": "INTERNAL_ERROR", "message": e.message}), e.http_code
         except Exception as e:
             return jsonify({"result": "error", "error_code": "INTERNAL_ERROR", "message": str(e)}), 500

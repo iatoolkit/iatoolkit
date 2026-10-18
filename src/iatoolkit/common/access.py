@@ -192,6 +192,38 @@ def filter_llm_models(company_short_name: str, user_identifier: str | None, defa
     return default_model, allowed
 
 
+def stamp(company_short_name: str) -> str | None:
+    """A value that changes whenever the company's groups, members or grants change.
+
+    A person's chat context is built once and cached; when this changes, it is rebuilt
+    so the tools, SQL schema and collections it describes follow the new access."""
+    decider = Access._decider
+    hook = getattr(decider, "stamp", None) if decider is not None else None
+    if not callable(hook):
+        return None
+    try:
+        return hook(company_short_name)
+    except Exception as exc:
+        logging.warning("Access stamp of %s not read: %s", company_short_name, exc)
+        return None
+
+
+def sql_table_filter(company_short_name: str, user_identifier: str | None):
+    """`fn(database, table) -> bool` for the SQL schema shown to this person, or None.
+
+    Some SQL sources hold resources of their own (enterprise's knowledge tables): the
+    decider names their resource type, and each table needs level 1 over it."""
+    decider = Access._decider
+    hook = getattr(decider, "sql_table_resource", None) if decider is not None else None
+    if not user_identifier or not callable(hook):
+        return None
+
+    def allowed(database: str, table: str) -> bool:
+        resource_type = hook(company_short_name, database)
+        return not resource_type or can(company_short_name, user_identifier, USE, resource_type, table)
+    return allowed
+
+
 def person_can(company_short_name: str, auth_result: dict | None, level: int, resource_type: str = "company",
                resource_key: str | None = None) -> bool:
     """A signed-in person's access, from an AuthService result.

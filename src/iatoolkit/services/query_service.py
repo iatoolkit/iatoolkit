@@ -962,6 +962,18 @@ class QueryService:
 
         return paths
 
+    def _access_changed_since_context(self, company_short_name: str, user_identifier: str) -> bool:
+        if not access.Access.registered():
+            return False
+        current = access.stamp(company_short_name)
+        if not current:
+            return False
+        try:
+            built_with = self.session_context.get_access_stamp(company_short_name, user_identifier)
+        except Exception:
+            return False
+        return built_with is not None and built_with != current
+
     def _ensure_valid_history(self, company,
                               user_identifier: str,
                               effective_model: str,
@@ -987,6 +999,10 @@ class QueryService:
         needs_rebuild = self.history_manager.populate_request_params(
             handle, user_turn_prompt, ignore_history
         )
+        # A context built before an access change describes tools, SQL sources or
+        # collections the person may no longer use (or misses new ones): rebuild it.
+        if not needs_rebuild and self._access_changed_since_context(company.short_name, user_identifier):
+            needs_rebuild = True
 
         if needs_rebuild:
             logging.warning(f"No valid history for {company.short_name}/{user_identifier}. Rebuilding context...")
@@ -1240,6 +1256,9 @@ class QueryService:
 
         # Determine if we need to persist the prepared context again.
         rebuild_is_needed = (prev_version != current_version)
+
+        # The access the context was built with: when it changes, the context is rebuilt.
+        self.session_context.save_access_stamp(company_short_name, user_identifier, access.stamp(company_short_name))
 
         # Save the prepared context and its version for `set_context_for_llm` to use.
         self.session_context.save_prepared_context(company_short_name,

@@ -217,12 +217,13 @@ class TestContextBuilderService:
         self.mock_company_context.get_company_context_blocks.assert_called_once_with(
             MOCK_COMPANY_SHORT_NAME,
             allowed_databases=None,
+            table_filter=None,
             include_sql_context=False,
             include_yaml_context=False,
         )
         self.mock_company_context.get_sql_context.assert_called_once_with(
             MOCK_COMPANY_SHORT_NAME,
-            allowed_databases=["erp"],
+            allowed_databases=["erp"], table_filter=None,
         )
         self.mock_prompt_service.get_system_prompt_payload.assert_called_once_with(
             company_id=1,
@@ -285,6 +286,7 @@ class TestContextBuilderService:
         self.mock_company_context.get_company_context_blocks.assert_called_once_with(
             MOCK_COMPANY_SHORT_NAME,
             allowed_databases=None,
+            table_filter=None,
             include_sql_context=False,
             include_yaml_context=False,
         )
@@ -331,7 +333,7 @@ class TestContextBuilderService:
         self.mock_util.render_prompt_from_string.assert_not_called()
         self.mock_company_context.get_sql_context.assert_called_once_with(
             MOCK_COMPANY_SHORT_NAME,
-            allowed_databases=["erp"],
+            allowed_databases=["erp"], table_filter=None,
         )
 
     def test_render_system_prompt_sections_uses_company_name_alias(self):

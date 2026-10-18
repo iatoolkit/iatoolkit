@@ -190,6 +190,18 @@ class UserSessionContextService:
             normalized.append(key)
         return normalized
 
+    def save_access_stamp(self, company_short_name: str, user_identifier: str, stamp: str | None):
+        """The company's access stamp the person's cached context was built with (BL-010)."""
+        session_key = self._get_session_key(company_short_name, user_identifier)
+        if session_key and stamp:
+            RedisSessionManager.hset(session_key, "access_stamp", stamp)
+
+    def get_access_stamp(self, company_short_name: str, user_identifier: str) -> Optional[str]:
+        session_key = self._get_session_key(company_short_name, user_identifier)
+        if not session_key:
+            return None
+        return RedisSessionManager.hget(session_key, "access_stamp")
+
     def save_context_version(self,
             company_short_name: str,
             user_identifier: str,

@@ -638,3 +638,47 @@ class TestRagApiView:
         data = response.get_json()
         assert data["result"] == "error"
         assert data["error_code"] == "INVALID_REQUEST"
+
+
+class TestRagApiAccess:
+    """BL-010: the RAG API reaches only the collections and documents the person sees."""
+
+    @pytest.fixture(autouse=True)
+    def setup_method(self):
+        # The suite's own setup is a fixture: reuse what it builds, not its tests.
+        yield from _as_generator(TestRagApiView.setup_method.__pytest_wrapped__.obj(self))
+
+    def _restrict(self, monkeypatch, scope):
+        from iatoolkit.common import access
+        from iatoolkit.views.rag_api_view import RagApiView
+        monkeypatch.setattr(access.Access, "registered", classmethod(lambda cls: True))
+        monkeypatch.setattr(RagApiView, "_access_scope", staticmethod(lambda: scope))
+
+    def test_a_search_in_a_hidden_collection_is_refused(self, monkeypatch):
+        from unittest.mock import MagicMock
+        from iatoolkit.common.exceptions import IAToolkitException
+        scope = MagicMock()
+        scope.scope_collection.side_effect = IAToolkitException(IAToolkitException.ErrorType.PERMISSION, "No access")
+        self._restrict(monkeypatch, scope)
+
+        response = self.client.post(f"/{self.company_short_name}/api/rag/search", json={"query": "x", "collection": "Personas"})
+
+        assert response.status_code == 403
+
+    def test_a_hidden_document_is_not_deleted(self, monkeypatch):
+        from unittest.mock import MagicMock
+        scope = MagicMock()
+        scope.document_allowed.return_value = False
+        self._restrict(monkeypatch, scope)
+
+        response = self.client.delete(f"/{self.company_short_name}/api/rag/files/7")
+
+        assert response.status_code == 403
+        self.mock_kb_service.delete_document.assert_not_called()
+
+
+def _as_generator(result):
+    if hasattr(result, "__next__"):
+        yield from result
+    else:
+        yield

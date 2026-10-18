@@ -762,6 +762,18 @@ class TestQueryService:
             mock_set_context.assert_called_once()
             assert self.mock_history_manager.populate_request_params.call_count == 2
 
+    def test_a_context_built_before_an_access_change_is_rebuilt(self, monkeypatch):
+        from iatoolkit.common import access
+        monkeypatch.setattr(access.Access, "registered", classmethod(lambda cls: True))
+        monkeypatch.setattr(access, "stamp", lambda company: "new")
+        self.mock_session_context.get_access_stamp.return_value = "old"
+        assert self.service._access_changed_since_context("acme", "ana@acme.cl") is True
+
+        self.mock_session_context.get_access_stamp.return_value = "new"
+        assert self.service._access_changed_since_context("acme", "ana@acme.cl") is False
+        self.mock_session_context.get_access_stamp.return_value = None  # a session from before: left alone
+        assert self.service._access_changed_since_context("acme", "ana@acme.cl") is False
+
     def test_llm_query_refuses_an_agent_the_person_may_not_use(self, monkeypatch):
         from iatoolkit.common import access
         monkeypatch.setattr(access, "can", lambda *args, **kwargs: False)
