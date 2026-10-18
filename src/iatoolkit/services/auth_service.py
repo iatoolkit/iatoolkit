@@ -14,6 +14,8 @@ from iatoolkit.repositories.models import AccessLog
 from iatoolkit.infra.google_auth_client import GoogleAuthClient, GoogleAuthError
 from flask import request
 import logging
+import re
+import unicodedata
 import hashlib
 
 
@@ -284,7 +286,11 @@ class AuthService:
                 "success": True,
                 "company_short_name": session_info['company_short_name'],
                 "user_identifier": session_info['user_identifier'],
-                "user_role": (session_info.get('profile') or {}).get('user_role'),
+                # From the database, never from the stored session profile: an SSO
+                # hook writes that profile, and must not be able to grant admin
+                # (BL-010, Fase 0).
+                "user_role": self._role_in_company(session_info['company_short_name'],
+                                                   session_info['user_identifier']),
             }
 
         # --- Priority 2: Check for a valid API Key in headers ---
@@ -311,7 +317,22 @@ class AuthService:
         # get the company from the api_key_entry
         company = api_key_entry.company
 
-        # For API calls, the external_user_id must be provided in the request.
+        # The key is a service account (BL-010, Fase 0): it acts as itself unless it
+        # was allowed to act for users. Every result says which key acted.
+        principal = self.service_principal(api_key_entry)
+        base = {
+            "success": True,
+            "company_short_name": company.short_name,
+            "auth_type": "api_key",
+            "auth_principal": principal,
+            "api_key_id": api_key_entry.id,
+        }
+        # Only an explicit False: a key loaded before the column existed keeps acting for users.
+        if getattr(api_key_entry, "can_act_for_users", None) is False:
+            # Whatever user the request names is ignored: the key cannot pass for anyone.
+            return {**base, "user_identifier": principal, "acting_for": None}
+
+        # A key allowed to act for users must say who (unless the endpoint allows none).
         data = request.get_json(silent=True) or {}
         user_identifier = data.get('user_identifier', '')
         if not anonymous and not user_identifier:
@@ -320,11 +341,20 @@ class AuthService:
                     "error_message": self.i18n_service.t('errors.auth.no_user_identifier_api'),
                     "status_code": 403}
 
-        return {
-            "success": True,
-            "company_short_name": company.short_name,
-            "user_identifier": user_identifier
-        }
+        return {**base, "user_identifier": user_identifier, "acting_for": user_identifier or None}
+
+    SERVICE_PREFIX = "service:"
+
+    @classmethod
+    def service_principal(cls, api_key_entry) -> str:
+        """The identity a key acts with by itself: "service:<key name>" (lowercase, dashes)."""
+        raw = unicodedata.normalize("NFKD", str(getattr(api_key_entry, "key_name", "") or ""))
+        ascii_name = raw.encode("ascii", "ignore").decode("ascii").strip().lower()
+        name = re.sub(r"[^a-z0-9._-]+", "-", ascii_name)
+        return f"{cls.SERVICE_PREFIX}{name.strip('-') or getattr(api_key_entry, 'id', 'key')}"
+
+    def _role_in_company(self, company_short_name: str, user_identifier: str) -> str | None:
+        return self.profile_service.get_role_in_company(company_short_name, user_identifier)
 
     def verify_for_company(self, company_short_name: str, anonymous: bool = False) -> dict:
         """

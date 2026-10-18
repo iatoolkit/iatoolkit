@@ -30,6 +30,8 @@ class ApiKeyService:
             "key_name": api_key.key_name,
             "key": api_key.key,
             "is_active": api_key.is_active,
+            # BL-010, Fase 0: whether the key may name the user it acts for.
+            "can_act_for_users": bool(getattr(api_key, "can_act_for_users", False)),
             "created_at": api_key.created_at.isoformat() if api_key.created_at else None,
             "last_used_at": api_key.last_used_at.isoformat() if api_key.last_used_at else None,
         }
@@ -65,7 +67,7 @@ class ApiKeyService:
 
         return {"data": self._api_key_to_dict(api_key)}
 
-    def create_api_key_entry(self, company_short_name: str, key_name: str) -> Dict:
+    def create_api_key_entry(self, company_short_name: str, key_name: str, can_act_for_users: bool = False) -> Dict:
         company, error = self._get_company(company_short_name)
         if error:
             return error
@@ -81,7 +83,8 @@ class ApiKeyService:
         alphabet = string.ascii_letters + string.digits
         key = ''.join(secrets.choice(alphabet) for _ in range(length))
 
-        api_key = ApiKey(key=key, company_id=company.id, key_name=key_name)
+        # A new key acts as itself unless the admin allows it to act for users (BL-010).
+        api_key = ApiKey(key=key, company_id=company.id, key_name=key_name, can_act_for_users=bool(can_act_for_users))
         created = self.api_key_repo.create_api_key(api_key)
         return {"data": self._api_key_to_dict(created)}
 
@@ -89,7 +92,8 @@ class ApiKeyService:
                              company_short_name: str,
                              api_key_id: int,
                              key_name: str | None = None,
-                             is_active: bool | None = None) -> Dict:
+                             is_active: bool | None = None,
+                             can_act_for_users: bool | None = None) -> Dict:
         company, error = self._get_company(company_short_name)
         if error:
             return error
@@ -98,7 +102,7 @@ class ApiKeyService:
         if not api_key:
             return {"error": "API key not found.", "status_code": 404}
 
-        if key_name is None and is_active is None:
+        if key_name is None and is_active is None and can_act_for_users is None:
             return {"error": "No changes provided.", "status_code": 400}
 
         if key_name is not None:
@@ -115,6 +119,11 @@ class ApiKeyService:
             if not isinstance(is_active, bool):
                 return {"error": "Invalid value for is_active.", "status_code": 400}
             api_key.is_active = is_active
+
+        if can_act_for_users is not None:
+            if not isinstance(can_act_for_users, bool):
+                return {"error": "Invalid value for can_act_for_users.", "status_code": 400}
+            api_key.can_act_for_users = can_act_for_users
 
         updated = self.api_key_repo.update_api_key(api_key)
         return {"data": self._api_key_to_dict(updated)}

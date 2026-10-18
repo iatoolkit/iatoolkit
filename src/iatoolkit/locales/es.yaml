@@ -2105,6 +2105,11 @@ ui:
     routing_profile_hint: "Usado por el router enterprise para rankear y seleccionar herramientas candidatas."
 
   api_key:
+    can_act_for_users: "Puede actuar en nombre de usuarios"
+    can_act_for_users_help: "Sin esta opción, la llave actúa como sí misma (service:<nombre>) y no puede hacerse pasar por nadie. Actívala solo para integraciones que deben indicar el usuario por el que actúan (un portal con login propio, un gateway MCP)."
+    acts: "Actúa"
+    acts_as_itself: "Como sí misma"
+    acts_for_users: "En nombre de usuarios"
     title: "API Keys"
     subtitle: "Administra las API keys de la empresa para autenticar solicitudes externas."
     new_btn: "Nueva API Key"

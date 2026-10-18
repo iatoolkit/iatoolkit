@@ -9,6 +9,7 @@ from sqlalchemy import Column, Integer, BigInteger, String, DateTime, Enum, Text
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm import relationship, class_mapper
 from sqlalchemy.sql import func, literal_column
+from sqlalchemy.sql import text as sql_text
 from sqlalchemy import UniqueConstraint, Index
 from sqlalchemy.dialects.postgresql import JSONB
 from datetime import datetime
@@ -125,6 +126,11 @@ class ApiKey(Base):
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.now)
     last_used_at = Column(DateTime, nullable=True) # Opcional: para rastrear uso
+    # A key is a service account that acts as itself ("service:<key name>"). Only with
+    # this on may it name the user it acts for, who must belong to the company
+    # (BL-010, Fase 0). Keys created before it existed keep acting for users;
+    # migration: iatoolkit-enterprise/migrations/2026-10-18-api-keys-can-act-for-users.sql
+    can_act_for_users = Column(Boolean, nullable=False, default=False, server_default=sql_text("true"))
 
     company = relationship("Company", back_populates="api_keys")
 

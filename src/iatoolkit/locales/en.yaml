@@ -2087,6 +2087,11 @@ ui:
     routing_profile_hint: "Used by enterprise tool routing to rank and select candidate tools."
 
   api_key:
+    can_act_for_users: "May act on behalf of users"
+    can_act_for_users_help: "Without this, the key acts as itself (service:<name>) and cannot pass for anyone. Turn it on only for integrations that must name the user they act for (a portal with its own login, an MCP gateway)."
+    acts: "Acts"
+    acts_as_itself: "As itself"
+    acts_for_users: "On behalf of users"
     title: "API Keys"
     subtitle: "Manage company API keys used to authenticate external requests."
     new_btn: "New API Key"

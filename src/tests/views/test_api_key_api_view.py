@@ -71,7 +71,9 @@ class TestApiKeyApiView:
 
         assert resp.status_code == 201
         assert resp.json == expected
-        self.mock_api_key_service.create_api_key_entry.assert_called_once_with(self.COMPANY, "prod_key")
+        # New keys act as themselves unless asked (BL-010, Fase 0).
+        self.mock_api_key_service.create_api_key_entry.assert_called_once_with(self.COMPANY, "prod_key",
+                                                                               can_act_for_users=False)
 
     def test_update_api_key_success(self):
         payload = {"key_name": "renamed", "is_active": False}
@@ -87,6 +89,7 @@ class TestApiKeyApiView:
             api_key_id=5,
             key_name="renamed",
             is_active=False,
+            can_act_for_users=None,
         )
 
     def test_delete_api_key_success(self):

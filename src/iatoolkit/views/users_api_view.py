@@ -10,6 +10,7 @@ class UsersApiView(MethodView):
     """
     list company users and their roles
     """
+    MANAGER_ROLES = {"editor", "admin", "owner"}
     @inject
     def __init__(self,
                  auth_service: AuthService,
@@ -22,6 +23,10 @@ class UsersApiView(MethodView):
             auth_result = self.auth_service.verify_for_company(company_short_name, anonymous=True)
             if not auth_result.get("success"):
                 return jsonify(auth_result), auth_result.get("status_code", 401)
+            # Who is in the company and with which role is for the people who run it
+            # (the admin's Team screen), not for every user (BL-010, Fase 0).
+            if "user_role" in auth_result and str(auth_result.get("user_role") or "").lower() not in self.MANAGER_ROLES:
+                return jsonify({"error": "Forbidden"}), 403
 
             # get users of the company
             users = self.profile_service.get_company_users(company_short_name)

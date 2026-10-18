@@ -23,6 +23,7 @@ class TestAuthServiceVerify:
     def setup_method(self):
         """Set up mocks for verify() tests."""
         self.mock_profile_service = MagicMock(spec=ProfileService)
+        self.mock_profile_service.profile_repo = MagicMock()
         self.mock_api_key_service = MagicMock(spec=ApiKeyService)
         self.mock_jwt_service = MagicMock(spec=JWTService)
         self.mock_db_manager = MagicMock(spec=DatabaseManager)
@@ -50,9 +51,10 @@ class TestAuthServiceVerify:
         session_info = {
             "user_identifier": "user_session_123",
             "company_short_name": "testco",
-            "profile": {"user_role": "admin"}
+            "profile": {"user_role": "user"}
         }
         self.mock_profile_service.get_current_session_info.return_value = session_info
+        self.mock_profile_service.get_role_in_company.return_value = "admin"
 
         with self.app.test_request_context():
             result = self.service.verify()
@@ -60,8 +62,20 @@ class TestAuthServiceVerify:
         assert result['success'] is True
         assert result['user_identifier'] == "user_session_123"
         assert result['company_short_name'] == "testco"
+        # The role comes from iat_user_company, not from the stored session profile.
         assert result['user_role'] == "admin"
         self.mock_api_key_service.get_active_api_key_entry.assert_not_called()
+
+    def test_a_role_written_in_the_session_profile_grants_nothing(self):
+        """BL-010, Fase 0: an SSO hook that writes user_role: admin into the profile is not an admin."""
+        self.mock_profile_service.get_current_session_info.return_value = {
+            "user_identifier": "jperez", "company_short_name": "testco", "profile": {"user_role": "admin"}}
+        self.mock_profile_service.get_role_in_company.return_value = None
+
+        with self.app.test_request_context():
+            result = self.service.verify()
+
+        assert result['user_role'] is None
 
     def test_verify_success_with_api_key_and_user_identifier(self):
         """verify() should succeed if a valid API key and user_identifier in JSON are provided."""
@@ -79,6 +93,29 @@ class TestAuthServiceVerify:
         assert result['company_short_name'] == "apico"
         assert result['user_identifier'] == "api-user-456"
         self.mock_api_key_service.get_active_api_key_entry.assert_called_once_with("valid-api-key")
+
+    def test_a_key_without_delegation_acts_as_itself_whatever_the_body_says(self):
+        """BL-010, Fase 0: a key is a service account; only with delegation may it name a user."""
+        self.mock_profile_service.get_current_session_info.return_value = {}
+        key = ApiKey(id=7, key="k", key_name="Integración VIA", company=self.mock_company, can_act_for_users=False)
+        self.mock_api_key_service.get_active_api_key_entry.return_value = key
+
+        with self.app.test_request_context(headers={'Authorization': 'Bearer k'}, json={'user_identifier': 'jefe@apico.cl'}):
+            result = self.service.verify()
+
+        assert result['user_identifier'] == "service:integracion-via"
+        assert result['acting_for'] is None and result['auth_type'] == "api_key" and result['api_key_id'] == 7
+
+    def test_a_key_with_delegation_acts_for_the_user_it_names_and_says_so(self):
+        self.mock_profile_service.get_current_session_info.return_value = {}
+        key = ApiKey(id=8, key="k", key_name="Portal", company=self.mock_company, can_act_for_users=True)
+        self.mock_api_key_service.get_active_api_key_entry.return_value = key
+
+        with self.app.test_request_context(headers={'Authorization': 'Bearer k'}, json={'user_identifier': 'ana@apico.cl'}):
+            result = self.service.verify()
+
+        assert result['user_identifier'] == "ana@apico.cl" and result['acting_for'] == "ana@apico.cl"
+        assert result['auth_principal'] == "service:portal"
 
     def test_verify_fails_with_api_key_but_no_user_identifier(self):
         """REPURPOSED: verify() should fail with 403 if API key is valid but user_identifier is missing."""

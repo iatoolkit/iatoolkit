@@ -201,8 +201,10 @@ def test_an_unknown_company_is_a_404(wiki_app):
 def test_memorias_wiki_opens_for_admin_and_owner_only(wiki_app):
     app, profile, wiki_service = wiki_app
     wiki_service.viewer_may_read_system_wiki.return_value = True
-    # As ProfileService.get_current_session_info returns it: the role inside the profile.
-    profile.get_current_session_info.return_value = {**SESSION, "profile": {"user_role": "admin"}}
+    # The role comes from the database (ProfileService.get_role_in_company), never from
+    # the session profile an SSO hook writes (BL-010, Fase 0).
+    profile.get_current_session_info.return_value = {**SESSION, "profile": {"user_role": "user"}}
+    profile.get_role_in_company.return_value = "admin"
     wiki_service.get_page.return_value = served("# Créditos\n\nPlazo 30. (Política de crédito v3, 2026-10-16)\n",
                                                 title="Créditos", path="creditos.md")
 

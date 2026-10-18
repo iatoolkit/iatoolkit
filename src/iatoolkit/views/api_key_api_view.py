@@ -56,7 +56,8 @@ class ApiKeyApiView(MethodView):
 
         data = request.get_json() or {}
         key_name = (data.get("key_name") or "").strip()
-        result = self.api_key_service.create_api_key_entry(company_short_name, key_name)
+        result = self.api_key_service.create_api_key_entry(
+            company_short_name, key_name, can_act_for_users=bool(data.get("can_act_for_users")))
         return self._build_response(result, success_status_code=201)
 
     def put(self, company_short_name: str, api_key_id: int):
@@ -70,12 +71,14 @@ class ApiKeyApiView(MethodView):
             key_name = key_name.strip()
 
         is_active = data["is_active"] if "is_active" in data else None
+        can_act_for_users = data["can_act_for_users"] if "can_act_for_users" in data else None
 
         result = self.api_key_service.update_api_key_entry(
             company_short_name=company_short_name,
             api_key_id=api_key_id,
             key_name=key_name,
-            is_active=is_active
+            is_active=is_active,
+            can_act_for_users=can_act_for_users,
         )
         return self._build_response(result, success_status_code=200)
 

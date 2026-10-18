@@ -396,6 +396,20 @@ class ProfileService:
             "profile": profile
         }
 
+    def get_role_in_company(self, company_short_name: str, user_identifier: str) -> str | None:
+        """
+        The person's role in the company as iat_user_company records it; None if
+        not a member. Every authorization reads the role here, never from the
+        stored session profile: an SSO hook writes that profile (BL-010, Fase 0).
+        """
+        try:
+            company = self.profile_repo.get_company_by_short_name(company_short_name)
+            user = self.profile_repo.get_user_by_email(str(user_identifier or "").strip().lower()) if company else None
+            return self.profile_repo.get_user_role_in_company(company.id, user.id) if user else None
+        except Exception as exc:
+            logging.warning("Role of %s in %s could not be read: %s", user_identifier, company_short_name, exc)
+            return None
+
     def _account_user(self, company_short_name: str, session_info: dict):
         profile = session_info.get("profile") or {}
         method = (profile.get("extras") or {}).get("auth_method")

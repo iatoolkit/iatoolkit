@@ -59,8 +59,8 @@ class WikiPageView(MethodView):
                                     next=request.full_path.rstrip('?')))
 
         page_kwargs = {"wiki_key": wiki_key, "path": page_path or "/", "user_identifier": user_identifier}
-        # The role lives in the session's profile (ProfileService.get_current_session_info).
-        user_role = (session_info.get('profile') or {}).get('user_role') or session_info.get('user_role')
+        # From the database, never from the session profile (an SSO hook writes it).
+        user_role = self.profile_service.get_role_in_company(company_short_name, user_identifier)
         if self.tenant_wiki_service.viewer_may_read_system_wiki(company_short_name, wiki_key, user_role):
             # A system wiki its feature opened to this role (Memoria for admin and owner).
             page_kwargs["include_system"] = True
