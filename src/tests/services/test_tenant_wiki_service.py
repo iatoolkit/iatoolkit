@@ -1474,7 +1474,7 @@ class TestWikiPageIndex:
         pages = self.sync_two_pages()
         repo = self.service.knowledge_wiki_repo
         monkeypatch.setattr(repo, "is_postgres", lambda: True)
-        monkeypatch.setattr(repo, "hybrid_search_pages", lambda wiki_ids, query, embedding, candidates=40: [
+        monkeypatch.setattr(repo, "hybrid_search_pages", lambda wiki_ids, query, embedding, candidates=40, audience_keys=None: [
             (pages["handoff.md"].id, 0.03), (pages["pricing.md"].id, 0.02)])
         index = MagicMock()
         index.query_embedding.return_value = [0.1]

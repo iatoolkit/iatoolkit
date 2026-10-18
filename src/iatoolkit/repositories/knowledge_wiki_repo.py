@@ -299,7 +299,7 @@ class KnowledgeWikiRepo:
     RRF_K = 60
 
     def hybrid_search_pages(self, wiki_ids: list[int], query_text: str, query_embedding: list[float] | None,
-                            candidates: int = 40) -> list[tuple[int, float]]:
+                            candidates: int = 40, audience_keys: list | None = None) -> list[tuple[int, float]]:
         """
         (page_id, rrf_score) of the best pages of these wikis, best first: by
         words (Postgres full text, 'simple', terms OR'ed, the GIN index) and, when
@@ -313,6 +313,15 @@ class KnowledgeWikiRepo:
         tsquery = "replace(plainto_tsquery('simple'::regconfig, :text_terms)::text, ' & ', ' | ')::tsquery"
         params = {"wiki_ids": list(wiki_ids), "text_terms": query_text or "", "candidates": int(candidates),
                   "archived": KnowledgeWikiPageStatus.ARCHIVED.name}
+        # Audiences (BL-010, Fase 3): only pages whose audience is listed, None being the
+        # whole company. Filtered here, before the limit, not after the ranking.
+        audience_sql = ""
+        if audience_keys is not None:
+            keys = [k for k in audience_keys if k]
+            clauses = (["p.audience_key IS NULL"] if None in audience_keys else []) + \
+                (["p.audience_key = ANY(:audience_keys)"] if keys else [])
+            audience_sql = f" AND ({' OR '.join(clauses) or 'FALSE'})"
+            params["audience_keys"] = keys
         branches = [f"""
                 SELECT page_id, ROW_NUMBER() OVER (ORDER BY text_rank DESC, page_id ASC) AS rank
                 FROM (
@@ -320,7 +329,7 @@ class KnowledgeWikiRepo:
                     FROM iat_knowledge_wiki_page_index i
                     JOIN iat_knowledge_wiki_pages p ON p.id = i.page_id,
                          (SELECT {tsquery} AS q) terms
-                    WHERE i.wiki_id = ANY(:wiki_ids) AND p.status::text <> :archived
+                    WHERE i.wiki_id = ANY(:wiki_ids) AND p.status::text <> :archived{audience_sql}
                       AND {tsvector} @@ terms.q
                     ORDER BY text_rank DESC
                     LIMIT :candidates
@@ -336,7 +345,7 @@ class KnowledgeWikiRepo:
                            i.embedding::vector({dims}) <=> CAST(:query_embedding AS vector({dims})) AS distance
                     FROM iat_knowledge_wiki_page_index i
                     JOIN iat_knowledge_wiki_pages p ON p.id = i.page_id
-                    WHERE i.wiki_id = ANY(:wiki_ids) AND p.status::text <> :archived
+                    WHERE i.wiki_id = ANY(:wiki_ids) AND p.status::text <> :archived{audience_sql}
                       AND i.embedding IS NOT NULL AND vector_dims(i.embedding) = {dims}
                     ORDER BY distance ASC
                     LIMIT :candidates

@@ -134,3 +134,59 @@ class TestStampAndTables:
     def test_without_a_decider_nothing_is_filtered(self):
         assert access.stamp("acme") is None
         assert access.sql_table_filter("acme", "ana@acme.cl") is None
+
+
+class AudienceDecider(FakeDecider):
+    def audience_visible(self, company, user, key):
+        return user == "ana@acme.cl" and key == "group:rrhh"
+
+    def visible_audiences(self, company, user):
+        return ["group:rrhh"] if user == "ana@acme.cl" else []
+
+    def audience_label(self, company, key):
+        return {"group:rrhh": "RRHH"}.get(key)
+
+    def audience_for_folder(self, company, folder_id):
+        return "memory_folder:3" if folder_id == 3 else None
+
+
+class BrokenAudienceDecider(FakeDecider):
+    def audience_visible(self, *args):
+        raise RuntimeError("down")
+
+    def visible_audiences(self, *args):
+        raise RuntimeError("down")
+
+    def audience_label(self, *args):
+        raise RuntimeError("down")
+
+    def audience_for_folder(self, *args):
+        raise RuntimeError("down")
+
+
+class TestAudiences:
+    """Memoria's audiences (BL-010, Fase 3): who reads a page."""
+
+    def test_without_a_decider_everything_is_the_companys(self):
+        assert access.audience_visible("acme", "ana@acme.cl", "group:rrhh")
+        assert access.visible_audiences("acme", "ana@acme.cl") is None
+        assert access.audience_for_folder("acme", 3) is None
+        assert access.audience_label("acme", None) is None
+        assert access.audience_label("acme", "group:rrhh") == "group:rrhh"
+
+    def test_the_decider_decides_who_reads_an_audience(self):
+        Access.register(AudienceDecider())
+        assert access.audience_visible("acme", "ana@acme.cl", "group:rrhh")
+        assert not access.audience_visible("acme", "luis@acme.cl", "group:rrhh")
+        assert access.audience_visible("acme", "luis@acme.cl", None)
+        assert access.visible_audiences("acme", "luis@acme.cl") == []
+        assert access.audience_label("acme", "group:rrhh") == "RRHH"
+        assert access.audience_for_folder("acme", 3) == "memory_folder:3"
+        assert access.audience_for_folder("acme", 4) is None
+
+    def test_a_failing_decider_shows_nothing_restricted_and_keeps_new_content_restricted(self):
+        Access.register(BrokenAudienceDecider())
+        assert not access.audience_visible("acme", "ana@acme.cl", "group:rrhh")
+        assert access.visible_audiences("acme", "ana@acme.cl") == []
+        assert access.audience_label("acme", "group:rrhh") == "group:rrhh"
+        assert access.audience_for_folder("acme", 3) == "memory_folder:3"

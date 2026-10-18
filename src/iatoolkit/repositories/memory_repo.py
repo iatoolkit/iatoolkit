@@ -109,12 +109,21 @@ class MemoryRepo:
             .all()
         )
 
-    def list_recent_items(self, company_id: int, limit: int = 25) -> list[MemoryItem]:
+    def list_recent_items(self, company_id: int, limit: int = 25, audience_keys: list | None = None) -> list[MemoryItem]:
+        """The company's latest items; with `audience_keys`, only those of captures of those
+        audiences (None in the list is the whole company; BL-010, Fase 3)."""
         if not company_id:
             return []
+        query = self.session.query(MemoryItem).filter(MemoryItem.company_id == company_id)
+        if audience_keys is not None:
+            from sqlalchemy import false, or_
+            keys = [k for k in audience_keys if k]
+            clauses = ([MemoryCapture.audience_key.is_(None)] if None in audience_keys else []) + \
+                ([MemoryCapture.audience_key.in_(keys)] if keys else [])
+            query = query.join(MemoryCapture, MemoryCapture.id == MemoryItem.capture_id) \
+                .filter(or_(*clauses) if clauses else false())
         return (
-            self.session.query(MemoryItem)
-            .filter_by(company_id=company_id)
+            query
             .order_by(MemoryItem.created_at.desc(), MemoryItem.id.desc())
             .limit(limit)
             .all()

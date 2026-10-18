@@ -543,9 +543,10 @@ class TenantWikiService:
         *,
         wiki_key: str,
         visibility_filter: Callable[[str], bool] | None = None,
+        audience_keys: list | None = None,
     ) -> dict:
         """
-        The administrative view of a wiki: everything it contains.
+        The administrative view of a wiki: everything it contains (of `audience_keys`, when given).
 
         Access labels are deliberately not applied here. This backs the admin
         panel, which runs in an operator's context and has no end-user identity
@@ -559,7 +560,7 @@ class TenantWikiService:
         wiki = self.knowledge_wiki_repo.get_wiki_by_key(company.id, self.normalize_wiki_key(wiki_key))
         if not wiki:
             return {"status": "error", "error_message": "wiki not found"}
-        page_entries = self._page_entries(wiki)
+        page_entries = self._audience_entries(self._page_entries(wiki), audience_keys)
         visible_entries = self._filter_page_entries(page_entries, visibility_filter=visibility_filter)
         generated_markdown = self.markdown_wiki_service.render_generic_index(visible_entries, title=wiki.name)
         home_markdown, source_storage_key = self._resolve_home_markdown(
@@ -652,9 +653,12 @@ class TenantWikiService:
         user_identifier: str | None = None,
         bypass_access_control: bool = False,
         include_system: bool = False,
+        audience_keys: list | None = None,
     ) -> dict:
         """
         Reads one page, or the reader's home page when `path` is "/" or empty.
+        With `audience_keys`, a page of another audience is "not found" and the
+        home page lists only pages of those audiences (Memoria, BL-010 Fase 3).
 
         A system wiki answers "wiki not found" unless `include_system` is set:
         only the feature that owns it reads it this way.
@@ -686,7 +690,8 @@ class TenantWikiService:
 
         normalized_path = self._normalize_page_path(path)
         if normalized_path in {"", "/"}:
-            entries = self._filter_page_entries(self._page_entries(wiki), visibility_filter=visibility_filter)
+            entries = self._filter_page_entries(self._audience_entries(self._page_entries(wiki), audience_keys),
+                                                visibility_filter=visibility_filter)
             markdown, source_storage_key = self._resolve_home_markdown(
                 company_short_name,
                 wiki,
@@ -707,7 +712,8 @@ class TenantWikiService:
                 },
             }
         if normalized_path == self.INDEX_FILENAME:
-            entries = self._filter_page_entries(self._page_entries(wiki), visibility_filter=visibility_filter)
+            entries = self._filter_page_entries(self._audience_entries(self._page_entries(wiki), audience_keys),
+                                                visibility_filter=visibility_filter)
             authored_index_markdown, authored_index_storage_key = self._resolve_home_markdown(
                 company_short_name,
                 wiki,
@@ -731,6 +737,8 @@ class TenantWikiService:
         if page is None:
             page = self.knowledge_wiki_repo.get_page_by_slug(wiki.id, self.markdown_wiki_service.slugify(path))
         if page is None or page.status == KnowledgeWikiPageStatus.ARCHIVED:
+            return {"status": "error", "error_message": "page not found"}
+        if not self.audience_allows(page, audience_keys):
             return {"status": "error", "error_message": "page not found"}
         if visibility_filter is not None and not visibility_filter(page.path):
             # A page that exists but is withheld says so, naming the label it
@@ -764,6 +772,7 @@ class TenantWikiService:
         wiki_key: str,
         page_id: int,
         include_system: bool = False,
+        audience_keys: list | None = None,
     ) -> dict:
         """Reads a page by its numeric id; same contract as `get_page`."""
         company = self._get_company(company_short_name)
@@ -780,6 +789,7 @@ class TenantWikiService:
             wiki_key=wiki.wiki_key,
             path=page.path,
             include_system=include_system,
+            audience_keys=audience_keys,
         )
 
     def create_page(
@@ -1068,10 +1078,13 @@ class TenantWikiService:
         visibility_filter: Callable[[str], bool] | None = None,
         user_identifier: str | None = None,
         include_system: bool = False,
+        audience_keys: list | None = None,
     ) -> dict:
         """
         Without `wiki_key`, searches every tenant wiki except system wikis. A
         system wiki is searched only when named and `include_system` is set.
+        `audience_keys` (Memoria, BL-010 Fase 3): only pages of those audiences
+        (None in the list is the whole company); omitted, no audience filter.
         """
         company = self._get_company(company_short_name)
         if not company:
@@ -1113,7 +1126,8 @@ class TenantWikiService:
                 ]
 
         indexed = self._indexed_search(
-            company_short_name, wikis, query, normalized_query, limit, user_identifier, visibility_filter)
+            company_short_name, wikis, query, normalized_query, limit, user_identifier, visibility_filter,
+            audience_keys=audience_keys)
         if indexed is not None:
             return {
                 "status": "success",
@@ -1137,6 +1151,8 @@ class TenantWikiService:
             pages = self.knowledge_wiki_repo.list_pages(wiki.id, include_archived=False, limit=self.MAX_PAGES)
             for page in pages:
                 if page.status == KnowledgeWikiPageStatus.ARCHIVED:
+                    continue
+                if not self.audience_allows(page, audience_keys):
                     continue
                 # Filtered before scoring: a denied page must not even influence
                 # the ranking, let alone contribute a snippet.
@@ -1175,7 +1191,7 @@ class TenantWikiService:
     INDEX_CANDIDATES = 60
 
     def _indexed_search(self, company_short_name: str, wikis: list, query: str, normalized_query: str, limit,
-                        user_identifier, visibility_filter) -> list[dict] | None:
+                        user_identifier, visibility_filter, audience_keys: list | None = None) -> list[dict] | None:
         """
         The search on the page index (iat_knowledge_wiki_page_index): one hybrid
         query, words and meaning fused by RRF, as the RAG. None when it does not
@@ -1189,7 +1205,8 @@ class TenantWikiService:
         try:
             embedding = self.page_index_service.query_embedding(company_short_name, query)
             ranked = self.knowledge_wiki_repo.hybrid_search_pages(
-                [wiki.id for wiki in live], query, embedding, candidates=self.INDEX_CANDIDATES)
+                [wiki.id for wiki in live], query, embedding, candidates=self.INDEX_CANDIDATES,
+                audience_keys=audience_keys)
         except Exception as exc:
             self.knowledge_wiki_repo.rollback()
             logging.warning("Indexed wiki search failed for %s, scanning instead: %s", company_short_name, exc)
@@ -1202,6 +1219,8 @@ class TenantWikiService:
         for page_id, score in ranked:
             page = pages.get(page_id)
             if page is None or page.status == KnowledgeWikiPageStatus.ARCHIVED:
+                continue
+            if not self.audience_allows(page, audience_keys):
                 continue
             wiki = by_id.get(page.wiki_id)
             if wiki.id not in filters:
@@ -1749,7 +1768,9 @@ class TenantWikiService:
         visibility_filter: Callable[[str], bool] | None = None,
     ) -> tuple[str, str]:
         all_entries = self._page_entries(wiki)
-        visible_entries = self._filter_page_entries(entries or all_entries, visibility_filter=visibility_filter)
+        # An empty list is "nothing visible" (an audience with no pages), never "everything".
+        visible_entries = self._filter_page_entries(all_entries if entries is None else entries,
+                                                    visibility_filter=visibility_filter)
         if visibility_filter is not None and len(visible_entries) != len(all_entries):
             generated_storage_key = self.markdown_wiki_service.join_storage_path(
                 wiki.root_storage_key,
@@ -2414,6 +2435,32 @@ class TenantWikiService:
         return checksum or None
 
     @staticmethod
+    def audience_allows(page, audience_keys: list | None) -> bool:
+        """Whether a page (or a serialized one) belongs to one of `audience_keys`; None allows all."""
+        if audience_keys is None:
+            return True
+        key = page.get("audience_key") if isinstance(page, dict) else getattr(page, "audience_key", None)
+        return (key or None) in audience_keys
+
+    @classmethod
+    def _audience_entries(cls, entries: list[dict], audience_keys: list | None) -> list[dict]:
+        if audience_keys is None:
+            return entries
+        return [entry for entry in entries if cls.audience_allows(entry, audience_keys)]
+
+    def set_page_audience(self, company_short_name: str, *, wiki_key: str, page_id: int,
+                          audience_key: str | None) -> bool:
+        """Sets a page's audience (Memoria, BL-010 Fase 3). True when the page exists."""
+        company = self._get_company(company_short_name)
+        wiki = self.knowledge_wiki_repo.get_wiki_by_key(company.id, self.normalize_wiki_key(wiki_key)) if company else None
+        page = self.knowledge_wiki_repo.get_page_by_id(wiki.id, page_id) if wiki else None
+        if page is None:
+            return False
+        page.audience_key = audience_key or None
+        self.knowledge_wiki_repo.session.commit()
+        return True
+
+    @staticmethod
     def serialize_page(page: KnowledgeWikiPage, *, include_body: bool = False) -> dict:
         payload = {
             "id": page.id,
@@ -2425,6 +2472,7 @@ class TenantWikiService:
             "source_storage_key": page.source_storage_key,
             "status": page.status.value if hasattr(page.status, "value") else str(page.status),
             "tags": page.tags or [],
+            "audience_key": getattr(page, "audience_key", None),
             "owner": page.owner,
             "checksum": TenantWikiService.page_checksum(page),
             "last_synced_at": page.last_synced_at.isoformat() if page.last_synced_at else None,

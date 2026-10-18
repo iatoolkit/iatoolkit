@@ -794,6 +794,7 @@ ui:
     access_add_group: "Add group"
     access_reset: "Back to company access"
     access_saved: "Access updated."
+    access_memory_restricted: "What Memoria knows from this folder ({count} pages) is now seen only by those with access to it."
     access_group: "Group"
     access_level: "Level"
     team_invite_user: "Invite user"

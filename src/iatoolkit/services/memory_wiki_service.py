@@ -13,6 +13,7 @@ from injector import inject
 from iatoolkit.services.markdown_wiki_service import MarkdownWikiService
 from iatoolkit.services.tenant_wiki_service import TenantWikiService
 from iatoolkit.common.access import ADMIN
+from iatoolkit.common import access
 
 
 class MemoryWikiService:
@@ -52,32 +53,40 @@ class MemoryWikiService:
     def read_schema(cls) -> str:
         return _read_schema_template(str(cls.SCHEMA_TEMPLATE_PATH))
 
-    def list_pages(self, company_short_name: str) -> list[dict]:
-        """Every page of the company's Memoria, without bodies."""
-        response = self.tenant_wiki_service.get_index(company_short_name, wiki_key=self.WIKI_KEY)
+    # Audiences (BL-010, Fase 3): `audience_keys` lists the audiences to include (None in
+    # the list is the whole company); omitted, every page (the compiler's own bookkeeping
+    # and the administration).
+
+    def list_pages(self, company_short_name: str, audience_keys: list | None = None) -> list[dict]:
+        """Every page of the company's Memoria (of `audience_keys`, when given), without bodies."""
+        response = self.tenant_wiki_service.get_index(company_short_name, wiki_key=self.WIKI_KEY,
+                                                      audience_keys=audience_keys)
         if response.get("status") != "success":
             return []
         return list(response.get("entries") or [])[:self.MAX_INDEX_ENTRIES]
 
-    def search_pages(self, company_short_name: str, query: str, limit: int = 5) -> list[dict]:
+    def search_pages(self, company_short_name: str, query: str, limit: int = 5,
+                     audience_keys: list | None = None) -> list[dict]:
         response = self.tenant_wiki_service.search_pages(
             company_short_name,
             query=query,
             wiki_key=self.WIKI_KEY,
             limit=limit,
             include_system=True,
+            audience_keys=audience_keys,
         )
         if response.get("status") != "success":
             return []
         return list(response.get("results") or [])
 
-    def get_page(self, company_short_name: str, page_id: int) -> dict | None:
-        """The page with its markdown and `checksum`, or None."""
+    def get_page(self, company_short_name: str, page_id: int, audience_keys: list | None = None) -> dict | None:
+        """The page with its markdown and `checksum`, or None (also when it is of another audience)."""
         response = self.tenant_wiki_service.get_page_by_id(
             company_short_name,
             wiki_key=self.WIKI_KEY,
             page_id=page_id,
             include_system=True,
+            audience_keys=audience_keys,
         )
         if response.get("status") != "success":
             return None
@@ -91,9 +100,11 @@ class MemoryWikiService:
                     summary: str = "",
                     edited_by: str | None = None,
                     change_summary: str | None = None,
-                    revision_metadata: dict | None = None) -> dict:
-        path = self._available_path(company_short_name, title)
-        return self.tenant_wiki_service.create_page(
+                    revision_metadata: dict | None = None,
+                    audience_key: str | None = None) -> dict:
+        """A new page; one of a restricted audience lives under its own folder (`rrhh/...`)."""
+        path = self._available_path(company_short_name, title, audience_key=audience_key)
+        response = self.tenant_wiki_service.create_page(
             company_short_name,
             wiki_key=self.WIKI_KEY,
             path=path,
@@ -103,6 +114,12 @@ class MemoryWikiService:
             change_summary=change_summary,
             revision_metadata=revision_metadata,
         )
+        page_id = ((response or {}).get("page") or {}).get("id")
+        if audience_key and page_id:
+            self.tenant_wiki_service.set_page_audience(company_short_name, wiki_key=self.WIKI_KEY,
+                                                       page_id=page_id, audience_key=audience_key)
+            response["page"]["audience_key"] = audience_key
+        return response
 
     def update_page(self,
                     company_short_name: str,
@@ -162,6 +179,16 @@ class MemoryWikiService:
             return None
         return response.get("revision")
 
+    def set_page_audience(self, company_short_name: str, page_id: int, audience_key: str | None) -> bool:
+        return self.tenant_wiki_service.set_page_audience(company_short_name, wiki_key=self.WIKI_KEY,
+                                                          page_id=page_id, audience_key=audience_key)
+
+    def list_audience_pages(self, company_short_name: str, audience_key: str | None) -> list[dict]:
+        """Every page of one audience, with no cap (re-scoping and deleting go through all of them)."""
+        response = self.tenant_wiki_service.get_index(company_short_name, wiki_key=self.WIKI_KEY,
+                                                      audience_keys=[audience_key or None])
+        return list(response.get("entries") or []) if response.get("status") == "success" else []
+
     def delete_page(self, company_short_name: str, *, page: dict, edited_by: str | None = None) -> dict:
         return self.tenant_wiki_service.delete_page(
             company_short_name,
@@ -205,8 +232,18 @@ class MemoryWikiService:
         merged.setdefault("status", "published")
         return self.markdown_wiki_service.render_frontmatter_document(merged, str(body or "").strip() + "\n")
 
-    def _available_path(self, company_short_name: str, title: str) -> str:
+    def audience_folder(self, company_short_name: str, audience_key: str | None) -> str:
+        """The path prefix of an audience's pages: its name, slugified ("" for the whole company)."""
+        if not audience_key:
+            return ""
+        label = access.audience_label(company_short_name, audience_key) or audience_key
+        return self.markdown_wiki_service.slugify(label) or self.markdown_wiki_service.slugify(audience_key) or "restringido"
+
+    def _available_path(self, company_short_name: str, title: str, audience_key: str | None = None) -> str:
+        folder = self.audience_folder(company_short_name, audience_key)
         base = self.markdown_wiki_service.slugify(title) or "pagina"
+        if folder:
+            base = f"{folder}/{base}"
         taken = {str(entry.get("path") or "") for entry in self.list_pages(company_short_name)}
         candidate = f"{base}.md"
         suffix = 2

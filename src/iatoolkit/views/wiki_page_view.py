@@ -63,6 +63,9 @@ class WikiPageView(MethodView):
         if self.tenant_wiki_service.viewer_may_read_system_wiki(company_short_name, wiki_key, user_identifier):
             # A system wiki its feature opened to this person (Memoria for company admins).
             page_kwargs["include_system"] = True
+            # Memoria's pages and its home list follow the reader's audiences (BL-010, Fase 3).
+            from iatoolkit.services.memory_service import MemoryService
+            page_kwargs["audience_keys"] = MemoryService.audiences_for(company_short_name, user_identifier)
         if access.can(company_short_name, user_identifier, access.USE, "knowledge_wiki", wiki_key):
             result = self.tenant_wiki_service.get_page(company_short_name, **page_kwargs)
         else:

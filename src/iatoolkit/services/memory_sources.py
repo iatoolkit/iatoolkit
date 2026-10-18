@@ -20,8 +20,10 @@ over three services. A source now declares, in one place:
   version is read; "add": both stay, as two people saying things);
 - `on_removal`: what its removal does ("mark_obsolete": its lines are marked,
   never erased; "none");
-- `visibility`: who may read what it teaches. "company" for every source today;
-  the field is where Fase 4 (BL-010) will declare restricted sources.
+- `visibility`: who may read what it teaches: "company" (people, corrections in the
+  page's audience) or "folder" (a document: its folder's audience when restricted).
+  The capture carries the audience (`audience_key`) and the compiler writes it only
+  into pages of that audience (BL-010, Fase 3).
 
 A new source registers here (`MemorySourceRegistry.register`) instead of adding
 another branch to the compiler.
@@ -36,6 +38,8 @@ VERSION_ADD = "add"
 REMOVAL_MARK_OBSOLETE = "mark_obsolete"
 REMOVAL_NONE = "none"
 VISIBILITY_COMPANY = "company"
+# What it teaches is for its folder's audience when the folder is restricted (BL-010, Fase 3).
+VISIBILITY_FOLDER = "folder"
 
 
 @dataclass(frozen=True)
@@ -93,7 +97,7 @@ def register_core_sources(*, compiler_agent: str, correction_agent: str, documen
     MemorySourceRegistry.register(MemorySource(
         key="document", mode=document_mode, handler="_ingest_document", agent=document_agent,
         kind_agents={meeting_kind: meeting_agent},
-        on_new_version=VERSION_REPLACE, on_removal=REMOVAL_MARK_OBSOLETE,
+        on_new_version=VERSION_REPLACE, on_removal=REMOVAL_MARK_OBSOLETE, visibility=VISIBILITY_FOLDER,
         description="A document of a Memoria folder (Drive or uploaded), or a meeting transcript.",
     ))
     MemorySourceRegistry.register(MemorySource(

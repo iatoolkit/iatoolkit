@@ -32,6 +32,7 @@ from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.memory_compiler_service import MemoryCompilerService
 from iatoolkit.services.memory_wiki_service import MemoryWikiService
 from iatoolkit.services.storage_service import StorageService
+from iatoolkit.common import access
 
 
 class MemoryService:
@@ -110,7 +111,9 @@ class MemoryService:
                      capture_text: str | None = None,
                      new_items: list[dict] | None = None,
                      title: str | None = None,
-                     meta: dict | None = None) -> dict:
+                     meta: dict | None = None,
+                     audience_key: str | None = None) -> dict:
+        """`audience_key` (BL-010, Fase 3): who may see what it teaches; None is the whole company."""
         company = self.profile_repo.get_company_by_short_name(company_short_name)
         if not company:
             return {"status": "error", "error_message": "company not found"}
@@ -123,6 +126,7 @@ class MemoryService:
             title=(title or capture_text or "")[:200] or None,
             status=MemoryCaptureStatus.PENDING,
             meta=dict(meta or {}),
+            audience_key=audience_key or None,
         )
         self.memory_repo.create_capture(capture)
 
@@ -166,7 +170,8 @@ class MemoryService:
                               path: str = "",
                               author: str | None = None,
                               source_meta: dict | None = None,
-                              kind: str | None = None) -> dict:
+                              kind: str | None = None,
+                              audience_key: str | None = None) -> dict:
         """
         A RAG document that feeds the wiki (BL-014), queued as a capture so the
         compiler reads it whole, part by part (`memory_document_ingest`; a
@@ -177,10 +182,14 @@ class MemoryService:
         reads the document's fragments from the RAG when it gets to it.
         """
         label = str(label or "").strip() or f"Documento {document_id}"
+        # A document of a restricted folder teaches only that folder's audience (BL-010, Fase 3).
+        if audience_key is None:
+            audience_key = access.audience_for_folder(company_short_name, (source_meta or {}).get("folder_id"))
         return self.save_capture(
             company_short_name=company_short_name,
             user_identifier=author or self.DOCUMENT_SOURCE_IDENTITY,
             title=label,
+            audience_key=audience_key,
             new_items=[{
                 "item_type": "file",
                 "title": label,
@@ -216,13 +225,17 @@ class MemoryService:
         company = self.profile_repo.get_company_by_short_name(company_short_name)
         if not company:
             return {"status": "error", "error_message": "company not found"}
-        if not self.memory_repo.list_page_ids_for_document(company.id, document_id):
+        page_ids = self.memory_repo.list_page_ids_for_document(company.id, document_id)
+        if not page_ids:
             return {"status": "skipped", "reason": "no page cites this document"}
         label = str(label or "").strip() or f"Documento {document_id}"
+        # The pages that cite it share an audience: the mark runs in it.
+        first_page = self.memory_wiki_service.get_page(company_short_name, page_ids[0]) or {}
         return self.save_capture(
             company_short_name=company_short_name,
             user_identifier=removed_by or self.DOCUMENT_SOURCE_IDENTITY,
             title=label,
+            audience_key=first_page.get("audience_key"),
             new_items=[{
                 "item_type": "note",
                 "title": label,
@@ -335,6 +348,46 @@ class MemoryService:
             "capture": self.serialize_capture(capture, refreshed_items, company_short_name=company_short_name),
         }
 
+    @staticmethod
+    def audiences_for(company_short_name: str, user_identifier: str | None) -> list | None:
+        """The audiences a person may read (BL-010, Fase 3): the whole company (None) plus the
+        restricted ones they see; None when nothing is filtered (administration, core alone)."""
+        if not access.Access.registered():
+            return None
+        visible = access.visible_audiences(company_short_name, user_identifier)
+        return None if visible is None else [None, *visible]
+
+    def restrict_document_pages(self, company_short_name: str, document_ids, audience_key: str) -> int:
+        """A folder became restricted (BL-010, Fase 3): the company pages that cite its documents
+        move to its audience, so what they say stops reaching the whole company. The page keeps
+        its path; how many moved is returned."""
+        company = self.profile_repo.get_company_by_short_name(company_short_name)
+        if not company or not audience_key:
+            return 0
+        page_ids = set()
+        for document_id in {int(d) for d in document_ids or [] if d}:
+            page_ids.update(self.memory_repo.list_page_ids_for_document(company.id, document_id))
+        moved = 0
+        for page_id in sorted(page_ids):
+            page = self.memory_wiki_service.get_page(company_short_name, page_id, audience_keys=[None])
+            if page is None:
+                continue
+            if self.memory_wiki_service.set_page_audience(company_short_name, page_id, audience_key):
+                moved += 1
+        if moved:
+            logging.info("Memoria: %s company pages of %s moved to audience %s", moved, company_short_name, audience_key)
+        return moved
+
+    def delete_audience_pages(self, company_short_name: str, audience_key: str, deleted_by: str | None = None) -> int:
+        """The audience is gone (its folder was deleted): its pages go with it. How many were deleted."""
+        if not audience_key:
+            return 0
+        deleted = 0
+        for page in self.memory_wiki_service.list_audience_pages(company_short_name, audience_key):
+            result = self.memory_wiki_service.delete_page(company_short_name, page=page, edited_by=deleted_by)
+            deleted += 1 if result.get("status") == "success" else 0
+        return deleted
+
     def get_memory_dashboard(self, company_short_name: str, user_identifier: str) -> dict:
         """What the chat's Memoria panel shows: the user's own captures and the company's pages."""
         self._compile_on_demand(company_short_name)
@@ -351,11 +404,16 @@ class MemoryService:
             "status": "success",
             "captures": serialized_captures,
             "recent_items": serialized_captures,
-            "pages": self.list_pages(company_short_name),
+            "pages": self.list_pages(company_short_name, user_identifier=user_identifier),
         }
 
-    def list_pages(self, company_short_name: str) -> list[dict]:
-        return [self.serialize_page(entry) for entry in self.memory_wiki_service.list_pages(company_short_name)]
+    def list_pages(self, company_short_name: str, user_identifier: str | None = None,
+                   audience_keys: list | None = None) -> list[dict]:
+        """The pages; with a person, those of the audiences they may read."""
+        if audience_keys is None and user_identifier:
+            audience_keys = self.audiences_for(company_short_name, user_identifier)
+        return [self.serialize_page(entry)
+                for entry in self.memory_wiki_service.list_pages(company_short_name, audience_keys=audience_keys)]
 
     def search_pages(self,
                      company_short_name: str,
@@ -368,9 +426,11 @@ class MemoryService:
         if not company:
             return {"status": "error", "results": [], "error_message": "company not found"}
 
+        audiences = self.audiences_for(company_short_name, user_identifier)
         results = []
         source_items_by_page_id = {}
-        for entry in self.memory_wiki_service.search_pages(company_short_name, query, limit=limit):
+        for entry in self.memory_wiki_service.search_pages(company_short_name, query, limit=limit,
+                                                           audience_keys=audiences):
             page_id = entry.get("id")
             source_items = self._load_page_source_items(company.id, page_id)
             source_items_by_page_id[page_id] = source_items
@@ -399,6 +459,7 @@ class MemoryService:
             normalized_query=normalized_query,
             query_tokens=self._tokenize(query),
             limit=limit,
+            audience_keys=audiences,
         )
 
         response = {
@@ -441,7 +502,9 @@ class MemoryService:
         if not company:
             return {"status": "error", "error_message": "company not found"}
 
-        page = self.memory_wiki_service.get_page(company_short_name, page_id)
+        # A page of an audience the person may not read is "not found" (BL-010, Fase 3).
+        page = self.memory_wiki_service.get_page(company_short_name, page_id,
+                                                 audience_keys=self.audiences_for(company_short_name, user_identifier))
         if not page:
             return {"status": "error", "error_message": "page not found"}
 
@@ -489,12 +552,16 @@ class MemoryService:
         text = str(instruction or "").strip()
         if not text:
             return {"status": "error", "error_message": "write what to correct or add"}
-        if not self.memory_wiki_service.get_page(company_short_name, page_id):
+        page = self.memory_wiki_service.get_page(company_short_name, page_id,
+                                                 audience_keys=self.audiences_for(company_short_name, user_identifier))
+        if not page:
             return {"status": "error", "error_message": "page not found"}
         response = self.save_capture(
             company_short_name=company_short_name,
             user_identifier=user_identifier,
             capture_text=text,
+            # A correction lives in its page's audience (BL-010, Fase 3).
+            audience_key=page.get("audience_key"),
             title=f"Corrección: {text}"[:200],
             new_items=[{"item_type": "note", "content_text": text, "source_meta": {"origin": "page_correction"}}],
             meta={
@@ -782,8 +849,9 @@ class MemoryService:
                           company_id: int,
                           normalized_query: str,
                           query_tokens: list[str],
-                          limit: int) -> list[dict]:
-        items = self.memory_repo.list_recent_items(company_id, limit=max(limit * 12, 60))
+                          limit: int,
+                          audience_keys: list | None = None) -> list[dict]:
+        items = self.memory_repo.list_recent_items(company_id, limit=max(limit * 12, 60), audience_keys=audience_keys)
         ranked = []
         for item in items:
             score = self._score_memory_item_match(normalized_query, query_tokens, item)

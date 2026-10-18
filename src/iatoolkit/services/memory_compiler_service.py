@@ -26,11 +26,12 @@ from iatoolkit.repositories.models import (
     Company, MemoryCapture, MemoryCaptureStatus, MemoryConflict, MemoryItem, MemoryItemStatus, MemoryItemType, VSDoc,
 )
 from iatoolkit.repositories.profile_repo import ProfileRepo
-from iatoolkit.services.memory_sources import MemorySourceRegistry, register_core_sources
+from iatoolkit.services.memory_sources import VISIBILITY_FOLDER, MemorySourceRegistry, register_core_sources
 from iatoolkit.services.memory_wiki_service import MemoryWikiService
 from iatoolkit.services.storage_service import StorageService
 from iatoolkit.services.system_agent_runner import SystemAgentDisabled, SystemAgentRunner
 from iatoolkit.services.tenant_wiki_service import TenantWikiService
+from iatoolkit.common import access
 
 
 class MemoryCompilerService:
@@ -222,6 +223,14 @@ class MemoryCompilerService:
     def _compile_single_capture(self, company: Company, capture: MemoryCapture, items: list[MemoryItem]) -> bool:
         """Reads the capture with the step its source declares (memory_sources)."""
         source = MemorySourceRegistry.for_capture(dict(capture.meta or {}))
+        if source.visibility == VISIBILITY_FOLDER and not getattr(capture, "audience_key", None):
+            # A document saved before its folder was restricted (or before audiences
+            # existed) takes the folder's audience now: the restrictive side.
+            folder_id = (dict(capture.meta or {}).get("source") or {}).get("folder_id")
+            audience = access.audience_for_folder(company.short_name, folder_id)
+            if audience:
+                capture.audience_key = audience
+                self.memory_repo.save_capture(capture)
         return getattr(self, source.handler)(company, capture, items)
 
     def _compile_person_capture(self, company: Company, capture: MemoryCapture, items: list[MemoryItem]) -> bool:
@@ -244,6 +253,7 @@ class MemoryCompilerService:
                 compiled,
                 candidates,
                 edited_by=capture.user_identifier,
+                audience_key=self._audience(capture)[0],
                 default_title=self._default_page_title(capture, items),
                 revision_metadata={
                     "source": self.COMPILER_SOURCE,
@@ -282,7 +292,8 @@ class MemoryCompilerService:
                     *,
                     edited_by: str,
                     default_title: str,
-                    revision_metadata: dict) -> dict:
+                    revision_metadata: dict,
+                    audience_key: str | None = None) -> dict:
         """Creates or updates the page the model returned; the wiki's response (it may say the page changed)."""
         target = self._resolve_target(compiled, candidates)
         title = str(compiled.get("title") or (target or {}).get("title") or default_title).strip()
@@ -298,6 +309,7 @@ class MemoryCompilerService:
                 edited_by=edited_by,
                 change_summary=change_summary,
                 revision_metadata=revision_metadata,
+                audience_key=audience_key,
             )
         return self.memory_wiki_service.update_page(
             company.short_name,
@@ -356,7 +368,7 @@ class MemoryCompilerService:
         touched: list[int] = []
         for index, (part_text, read) in enumerate(readers, start=1):
             for attempt in range(1, self.MAX_SAVE_ATTEMPTS + 1):
-                candidates = self._document_candidates(company, source, part_text, touched)
+                candidates = self._document_candidates(company, source, part_text, touched, capture)
                 answer = read(candidates)
                 if answer is None:
                     raise RuntimeError(f"the model could not read part {index} of {len(readers)}")
@@ -367,6 +379,7 @@ class MemoryCompilerService:
                     response = self._write_page(
                         company, compiled, candidates,
                         edited_by=capture.user_identifier,
+                        audience_key=self._audience(capture)[0],
                         default_title=label,
                         revision_metadata=revision_metadata,
                     )
@@ -535,30 +548,35 @@ class MemoryCompilerService:
             parts.append("\n\n".join(current))
         return parts
 
-    def _document_candidates(self, company: Company, source: dict, part_text: str, touched: list[int]) -> list[dict]:
+    def _document_candidates(self, company: Company, source: dict, part_text: str, touched: list[int],
+                             capture: MemoryCapture | None = None) -> list[dict]:
         """The pages this document already wrote first, then the ones its part is most likely about."""
+        audience = self._audience(capture) if capture is not None else [None]
         ordered: list[int] = list(touched)
         card = source.get("card") or {}
         query = " ".join(part for part in (
             str(source.get("label") or ""), str(card.get("summary") or ""), part_text[:300],
         ) if part).strip()
         if query:
-            for result in self.memory_wiki_service.search_pages(company.short_name, query, limit=self.MAX_CANDIDATE_PAGES):
+            for result in self.memory_wiki_service.search_pages(company.short_name, query, limit=self.MAX_CANDIDATE_PAGES,
+                                                                audience_keys=audience):
                 if result.get("id") not in ordered:
                     ordered.append(result.get("id"))
         candidates = []
         for page_id in ordered[:self.MAX_CANDIDATE_PAGES + len(touched)]:
-            page = self.memory_wiki_service.get_page(company.short_name, page_id)
+            page = self.memory_wiki_service.get_page(company.short_name, page_id, audience_keys=audience)
             if page:
                 candidates.append(page)
         return candidates
 
-    def _wiki_context(self, company: Company, candidates: list[dict]) -> dict:
+    def _wiki_context(self, company: Company, candidates: list[dict], capture: MemoryCapture | None = None) -> dict:
         return {
             "wiki_schema": str(self.memory_wiki_service.read_schema() or "")[:7000],
             "page_index": [
                 {"page_id": entry.get("id"), "title": entry.get("title"), "summary": entry.get("summary")}
-                for entry in (self.memory_wiki_service.list_pages(company.short_name) or [])[:self.MAX_INDEX_ENTRIES_IN_PROMPT]
+                for entry in (self.memory_wiki_service.list_pages(
+                    company.short_name, audience_keys=self._audience(capture) if capture is not None else [None]) or []
+                )[:self.MAX_INDEX_ENTRIES_IN_PROMPT]
             ],
             "candidate_pages": [
                 {"page_id": page.get("id"), "title": page.get("title"),
@@ -576,7 +594,7 @@ class MemoryCompilerService:
                               captured_on: str):
         return self._ingest_with_llm(
             company, capture, self._agent_for(capture) or self.DOCUMENT_AGENT,
-            {"source": source, "part": part, "captured_on": captured_on, **self._wiki_context(company, candidates)},
+            {"source": source, "part": part, "captured_on": captured_on, **self._wiki_context(company, candidates, capture)},
             question=f"Read memory document {source.get('label')} (part {part['index']} of {part['total']})",
         )
 
@@ -589,7 +607,7 @@ class MemoryCompilerService:
                                captured_on: str):
         return self._ingest_with_llm(
             company, capture, self.IMAGE_AGENT,
-            {"source": source, "captured_on": captured_on, **self._wiki_context(company, candidates)},
+            {"source": source, "captured_on": captured_on, **self._wiki_context(company, candidates, capture)},
             question=f"Look at memory image {source.get('label')}",
             images=images,
         )
@@ -776,6 +794,11 @@ class MemoryCompilerService:
         capture.last_compiled_at = datetime.now()
         self.memory_repo.save_capture(capture)
 
+    @staticmethod
+    def _audience(capture: MemoryCapture) -> list:
+        """The one audience a capture compiles into (BL-010, Fase 3): it sees and writes only its pages."""
+        return [getattr(capture, "audience_key", None) or None]
+
     def _load_candidate_pages(self, company: Company, capture: MemoryCapture, items: list[MemoryItem]) -> list[dict]:
         """Pages the capture most likely belongs to, read in full (markdown and checksum)."""
         ordered_ids: list[int] = []
@@ -788,15 +811,17 @@ class MemoryCompilerService:
         for page_id in self.memory_repo.list_page_ids_for_items([item.id for item in items if getattr(item, "id", None)]):
             add(page_id)
         query = self._memory_capture_query(capture, items)
+        audience = self._audience(capture)
         if query:
-            for result in self.memory_wiki_service.search_pages(company.short_name, query, limit=self.MAX_CANDIDATE_PAGES):
+            for result in self.memory_wiki_service.search_pages(company.short_name, query, limit=self.MAX_CANDIDATE_PAGES,
+                                                                audience_keys=audience):
                 add(result.get("id"))
 
         candidates = []
         for page_id in ordered_ids:
             if len(candidates) >= self.MAX_CANDIDATE_PAGES:
                 break
-            page = self.memory_wiki_service.get_page(company.short_name, page_id)
+            page = self.memory_wiki_service.get_page(company.short_name, page_id, audience_keys=audience)
             if page:
                 candidates.append(page)
         return candidates
@@ -827,7 +852,7 @@ class MemoryCompilerService:
             author=author,
             captured_on=captured_on,
             wiki_schema=self.memory_wiki_service.read_schema(),
-            index_entries=self.memory_wiki_service.list_pages(company.short_name),
+            index_entries=self.memory_wiki_service.list_pages(company.short_name, audience_keys=self._audience(capture)),
         )
         native_pdf_attachments = self._build_capture_native_pdf_attachments(company.short_name, items)
         try:

@@ -527,6 +527,10 @@ class MemoryCapture(Base):
     title = Column(String, nullable=True)
     status = Column(Enum(MemoryCaptureStatus), nullable=False, default=MemoryCaptureStatus.PENDING)
     meta = Column(JSON_NATIVE, nullable=True)
+    # Who may see what this capture teaches (BL-010, Fase 3): NULL is the whole company,
+    # "memory_folder:<id>" a folder with its own access. The compiler writes it only into
+    # pages of the same audience. Migration: migrations/2026-10-18-memoria-audiencia.sql
+    audience_key = Column(String(255), nullable=True)
     compile_error = Column(Text, nullable=True)
     last_compiled_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now, nullable=False)
@@ -859,6 +863,9 @@ class KnowledgeWikiPage(Base):
     # An empty list denies the page under access control, which is why the sync
     # writes them from the wiki's access manifest and never from frontmatter.
     access_tags = Column(JSON_NATIVE, nullable=False, default=list)
+    # A Memoria page's audience (BL-010, Fase 3): NULL is the whole company. A page never
+    # mixes audiences. Migration: migrations/2026-10-18-memoria-audiencia.sql
+    audience_key = Column(String(255), nullable=True)
     owner = Column(String, nullable=True)
     source_meta = Column(JSON_NATIVE, nullable=False, default=dict)
     last_synced_at = Column(DateTime, nullable=True)

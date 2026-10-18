@@ -808,6 +808,7 @@ ui:
     access_add_group: "Agregar grupo"
     access_reset: "Volver al acceso de la empresa"
     access_saved: "Acceso actualizado."
+    access_memory_restricted: "Lo que Memoria sabe de esta carpeta ({count} páginas) ahora solo lo ven quienes tienen acceso a ella."
     access_group: "Grupo"
     access_level: "Nivel"
     team_invite_user: "Invitar usuario"

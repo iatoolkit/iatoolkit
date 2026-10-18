@@ -224,6 +224,65 @@ def sql_table_filter(company_short_name: str, user_identifier: str | None):
     return allowed
 
 
+# ---------------------------------------------------------------------- audiences
+# Who may see a piece of Memoria content (BL-010, Fase 3). An audience key is None
+# (the whole company) or names what decides it: "memory_folder:<id>", "group:<key>".
+
+def audience_visible(company_short_name: str, user_identifier: str | None, audience_key: str | None) -> bool:
+    if not audience_key:
+        return True
+    decider = Access._decider
+    hook = getattr(decider, "audience_visible", None) if decider is not None else None
+    if not callable(hook):
+        return True
+    try:
+        return bool(hook(company_short_name, user_identifier, audience_key))
+    except Exception as exc:
+        logging.warning("Audience %s for %s not resolved: %s", audience_key, user_identifier, exc)
+        return False
+
+
+def visible_audiences(company_short_name: str, user_identifier: str | None) -> list[str] | None:
+    """The restricted audiences a person sees; None when they see every one (or nothing is restricted).
+
+    The whole company's content (audience None) is always visible besides these."""
+    decider = Access._decider
+    hook = getattr(decider, "visible_audiences", None) if decider is not None else None
+    if not callable(hook):
+        return None
+    try:
+        return hook(company_short_name, user_identifier)
+    except Exception as exc:
+        logging.warning("Visible audiences of %s not resolved: %s", user_identifier, exc)
+        return []
+
+
+def audience_label(company_short_name: str, audience_key: str | None) -> str | None:
+    """The name people see for an audience (the folder's or group's name); None for the whole company."""
+    if not audience_key:
+        return None
+    decider = Access._decider
+    hook = getattr(decider, "audience_label", None) if decider is not None else None
+    try:
+        return (hook(company_short_name, audience_key) if callable(hook) else None) or audience_key
+    except Exception:
+        return audience_key
+
+
+def audience_for_folder(company_short_name: str, folder_id) -> str | None:
+    """The audience new content from a Memoria folder takes: its own when the folder is restricted."""
+    decider = Access._decider
+    hook = getattr(decider, "audience_for_folder", None) if decider is not None else None
+    if not callable(hook) or folder_id in (None, ""):
+        return None
+    try:
+        return hook(company_short_name, folder_id)
+    except Exception as exc:
+        # Unknown: the folder's own audience, the restrictive side.
+        logging.warning("Audience of folder %s not resolved: %s", folder_id, exc)
+        return f"memory_folder:{folder_id}"
+
+
 def person_can(company_short_name: str, auth_result: dict | None, level: int, resource_type: str = "company",
                resource_key: str | None = None) -> bool:
     """A signed-in person's access, from an AuthService result.
