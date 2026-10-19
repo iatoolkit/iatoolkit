@@ -663,6 +663,7 @@ ui:
     team_user_remove: "Quitar de la empresa"
     team_user_remove_confirm: "¿Quitar a {email} de la empresa? Pierde el acceso de inmediato; su cuenta no se borra."
     team_user_removed: "Persona quitada de la empresa."
+    team_user_unverified: "Cuenta sin verificar"
     team_groups_edit: "Grupos"
     team_groups_modal_title: "Grupos de la persona"
     team_groups_save: "Guardar"

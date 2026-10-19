@@ -156,6 +156,18 @@ class TestAuthServiceVerify:
         # FIX: The service returns 402 for invalid keys, not 401.
         assert result['status_code'] == 402
 
+    def test_a_rejected_api_key_is_never_logged_whole(self, caplog):
+        self.mock_profile_service.get_current_session_info.return_value = {}
+        self.mock_api_key_service.get_active_api_key_entry.return_value = None
+        secret = "zgpFN8VCRrY7mub4iIGSmA5BpL6qgGuIsPq5Jg2s"
+
+        with caplog.at_level("ERROR"), self.app.test_request_context(headers={'Authorization': f'Bearer {secret}'}):
+            self.service.verify()
+
+        logged = " ".join(record.getMessage() for record in caplog.records)
+        assert "Invalid or inactive IAToolkit API Key" in logged
+        assert secret not in logged and "prefix=zgpF" in logged
+
     def test_verify_fails_with_no_credentials(self):
         """verify() should fail with 401 if no credentials are provided at all."""
         self.mock_profile_service.get_current_session_info.return_value = {}

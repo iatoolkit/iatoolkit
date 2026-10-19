@@ -310,7 +310,8 @@ class AuthService:
         # check if the api-key is valid and active
         api_key_entry = self.api_key_service.get_active_api_key_entry(api_key)
         if not api_key_entry:
-            logging.error(f"Invalid or inactive IAToolkit API Key: {api_key}")
+            # Never the key itself: a mistyped or just-rotated key would end up in the logs.
+            logging.error("Invalid or inactive IAToolkit API Key: %s", self.key_fingerprint(api_key))
             return {"success": False,
                     "error_message": self.i18n_service.t('errors.auth.invalid_api_key'),
                     "status_code": 402}
@@ -345,6 +346,14 @@ class AuthService:
         return {**base, "user_identifier": user_identifier, "acting_for": user_identifier or None}
 
     SERVICE_PREFIX = "service:"
+
+    @staticmethod
+    def key_fingerprint(api_key: str) -> str:
+        """What a log may say about a key: its first characters and a short hash, enough to
+        match it against the API Keys screen without exposing it."""
+        value = str(api_key or "")
+        digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:12]
+        return f"prefix={value[:4]}… len={len(value)} sha256={digest}"
 
     @classmethod
     def service_principal(cls, api_key_entry) -> str:
