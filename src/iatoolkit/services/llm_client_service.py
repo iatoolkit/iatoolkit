@@ -412,11 +412,12 @@ class llmClient:
                             tool_attachments_count = len(tool_native_attachments or [])
 
                             # add the return value into the list of messages
+                            tool_output_text = self._serialize_tool_output(result)
                             last_tool_output_message = {
                                 "type": "function_call_output",
                                 "call_id": tool_call.call_id,
                                 "status": "completed",
-                                "output": self._serialize_tool_output(result)
+                                "output": tool_output_text
                             }
                             input_messages.append(last_tool_output_message)
                             history_messages.append(dict(last_tool_output_message))
@@ -442,7 +443,11 @@ class llmClient:
                         f_call_identity = {
                             function_name: args,
                             'time': f'{elapsed:.1f}',
-                            self.TOOL_CALL_RESULT_KEY: self._tool_call_result(tool_status, result),
+                            self.TOOL_CALL_RESULT_KEY: self._tool_call_result(
+                                tool_status,
+                                result,
+                                tokens=self._count_text_tokens(tool_output_text),
+                            ),
                         }
                         f_calls.append(f_call_identity)
                         f_call_time += elapsed
@@ -739,8 +744,9 @@ class llmClient:
         }
 
     @classmethod
-    def _tool_call_result(cls, tool_status: str | None, result) -> dict:
-        """`ok` or `error`, and the start of what the tool returned."""
+    def _tool_call_result(cls, tool_status: str | None, result, *, tokens: int | None = None) -> dict:
+        """`ok` or `error`, the start of what the tool returned and, when given,
+        how many tokens the whole output took in the model's context."""
         failed = tool_status in {"error", "retry_generated"}
         if isinstance(result, dict):
             status = str(result.get("status") or "").strip().lower()
@@ -748,7 +754,10 @@ class llmClient:
         excerpt = " ".join(cls._serialize_tool_output(result).split())
         if len(excerpt) > cls.TOOL_CALL_EXCERPT_MAX_LENGTH:
             excerpt = excerpt[:cls.TOOL_CALL_EXCERPT_MAX_LENGTH - 1].rstrip() + "…"
-        return {"status": "error" if failed else "ok", "excerpt": excerpt}
+        payload = {"status": "error" if failed else "ok", "excerpt": excerpt}
+        if tokens is not None:
+            payload["tokens"] = tokens
+        return payload
 
     @staticmethod
     def _serialize_tool_output(result) -> str:
@@ -1711,8 +1720,12 @@ class llmClient:
         return normalized.strip()
 
     def count_tokens(self, text, history = []):
-        content = (text or "") + json.dumps(history)
+        return self._count_text_tokens((text or "") + json.dumps(history))
 
+    def _count_text_tokens(self, content: str) -> int:
+        """Tokens of `content` with the GPT-4o family tokenizer: an estimate for
+        other models, close enough to tell what fills the context."""
+        content = content or ""
         try:
             if self.encoding is None:
                 try:

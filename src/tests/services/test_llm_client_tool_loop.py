@@ -215,16 +215,37 @@ class TestToolLoop(_LLMClientFixture):
             _final_response(),
         ]
 
+        # One token per character, so the count is checkable.
+        self.client.encoding = MagicMock(encode=lambda text: list(text))
+
         self._invoke()
 
         [call] = self._recorded_calls()
         # The tool name stays the first key: every reader takes it from there.
         assert next(iter(call)) == "list_dbs"
         assert call["list_dbs"] == {}
+        output = '{"status": "success", "content": {"databases": ["KB_TASK"]}}'
         assert call["result"] == {
             "status": "ok",
-            "excerpt": '{"status": "success", "content": {"databases": ["KB_TASK"]}}',
+            "excerpt": output,
+            # Tokens of the whole output the model received, not of the excerpt.
+            "tokens": len(output),
         }
+
+    def test_tokens_count_the_whole_output_even_when_the_excerpt_is_cut(self):
+        long_rows = [{"id": index, "text": "x" * 50} for index in range(200)]
+        self.dispatcher.dispatch.return_value = long_rows
+        self.client.encoding = MagicMock(encode=lambda text: list(text))
+        self.proxy.create_response.side_effect = [
+            _tool_response('r1', ('call1', 'iat_sql_query', '{"query": "SELECT 1"}')),
+            _final_response(),
+        ]
+
+        self._invoke()
+
+        [call] = self._recorded_calls()
+        assert call["result"]["excerpt"].endswith("…")
+        assert call["result"]["tokens"] == len(llmClient._serialize_tool_output(long_rows))
 
     def test_an_error_returned_as_a_payload_is_recorded_as_an_error(self):
         # An MCP server with no connection does not raise: it answers with its error.
