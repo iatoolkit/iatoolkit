@@ -156,7 +156,18 @@ class OpenAIAdapter:
                 })
 
         if previous_response_id and has_function_outputs and function_output_items:
-            return function_output_items
+            # Only the outputs answering the previous response's calls. The tool loop
+            # keeps every round's outputs in its input (client-side providers need
+            # them), and they come last; earlier rounds are already in the chain
+            # `previous_response_id` points to. Sending them all again repeated every
+            # tool result in each following round, so the context grew quadratically
+            # and long tool loops hit context_length_exceeded.
+            latest_round: List[Dict[str, Any]] = []
+            for item in reversed(normalized_items):
+                if item.get("type") != "function_call_output":
+                    break
+                latest_round.append(item)
+            return list(reversed(latest_round)) or function_output_items
 
         return normalized_items
 

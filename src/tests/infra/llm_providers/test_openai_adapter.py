@@ -474,6 +474,63 @@ class TestOpenAIAdapter:
             }
         ]
 
+    def test_create_response_with_previous_response_id_sends_only_the_latest_tool_round(self):
+        """Server-side history: each tool round continues from the previous response,
+        which already holds the earlier rounds. The tool loop keeps every round in its
+        input (client-side providers need it), so only the trailing outputs - the ones
+        answering the previous response's calls - may be sent; resending the rest
+        repeated every tool result in each following round."""
+        mock_response = MagicMock()
+        mock_response.id = 'resp-round-3'
+        mock_response.model = 'gpt-4.1'
+        mock_response.status = 'completed'
+        mock_response.output = []
+        mock_response.output_text = 'done'
+        mock_response.usage = None
+        self.mock_openai_client.responses.create.return_value = mock_response
+
+        def assistant_calling(*call_ids):
+            return {
+                'role': 'assistant',
+                'content': '',
+                'tool_calls': [
+                    {'id': call_id, 'type': 'function',
+                     'function': {'name': 'iat_sql_query', 'arguments': '{"query":"SELECT 1"}'}}
+                    for call_id in call_ids
+                ],
+            }
+
+        def output(call_id):
+            return {'type': 'function_call_output', 'call_id': call_id,
+                    'status': 'completed', 'output': f'rows for {call_id}'}
+
+        # input_messages as the tool loop leaves it before the third follow-up.
+        input_data = [
+            {'role': 'user', 'content': 'the whole prompt context'},
+            assistant_calling('call_1'),
+            output('call_1'),
+            assistant_calling('call_2', 'call_3'),
+            output('call_2'),
+            output('call_3'),
+            assistant_calling('call_4'),
+            output('call_4'),
+        ]
+
+        self.adapter.create_response(model='gpt-4.1', input=input_data, previous_response_id='resp-round-2')
+
+        call_kwargs = self.mock_openai_client.responses.create.call_args.kwargs
+        assert call_kwargs['previous_response_id'] == 'resp-round-2'
+        assert call_kwargs['input'] == [
+            {'type': 'function_call_output', 'call_id': 'call_4', 'output': 'rows for call_4'},
+        ]
+
+        # A round with several calls sends all of them.
+        self.adapter.create_response(model='gpt-4.1', input=input_data[:6], previous_response_id='resp-round-1')
+        assert self.mock_openai_client.responses.create.call_args.kwargs['input'] == [
+            {'type': 'function_call_output', 'call_id': 'call_2', 'output': 'rows for call_2'},
+            {'type': 'function_call_output', 'call_id': 'call_3', 'output': 'rows for call_3'},
+        ]
+
     def test_create_response_converts_assistant_tool_calls_to_function_call_items(self):
         mock_response = MagicMock()
         mock_response.id = 'resp-client-history'
