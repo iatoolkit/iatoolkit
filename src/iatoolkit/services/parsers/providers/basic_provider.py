@@ -13,6 +13,7 @@ import shutil
 
 import fitz
 from docx import Document
+from docx.table import Table
 from injector import inject, singleton
 from PIL import Image
 
@@ -180,8 +181,14 @@ class BasicParsingProvider:
             file_like_object = io.BytesIO(file_content)
             doc = Document(file_like_object)
 
+            # Paragraphs and tables in document order: a table is often the core
+            # of a policy (who approves what, which carrier for which weight).
             md_content = ""
-            for para in doc.paragraphs:
+            for block in doc.iter_inner_content():
+                if isinstance(block, Table):
+                    md_content += self._docx_table_to_markdown(block)
+                    continue
+                para = block
                 if para.style.name.startswith("Heading"):
                     level = int(para.style.name.replace("Heading ", ""))
                     md_content += f"{'#' * level} {para.text}\n\n"
@@ -194,6 +201,19 @@ class BasicParsingProvider:
             return md_content
         except Exception as e:
             raise ValueError(f"Error reading .docx file: {e}")
+
+    @staticmethod
+    def _docx_table_to_markdown(table) -> str:
+        """A Word table as a Markdown table; its first row is the header."""
+        rows = []
+        for row in table.rows:
+            cells = [" ".join(cell.text.split()).replace("|", "\\|") for cell in row.cells]
+            rows.append(f"| {' | '.join(cells)} |")
+        if not rows:
+            return ""
+        width = len(table.rows[0].cells)
+        rows.insert(1, f"|{' --- |' * width}")
+        return "\n".join(rows) + "\n\n"
 
     def read_pdf(self, file_content):
         try:

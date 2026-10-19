@@ -39,6 +39,29 @@ class TestBasicParsingProvider:
             self.provider.file_to_txt("test.txt", b'\xff\xfe\xff')
         assert "FILE_FORMAT_ERROR" == excinfo.value.error_type.name
 
+    def test_read_docx_keeps_tables_in_document_order(self):
+        import io
+        from docx import Document
+
+        doc = Document()
+        doc.add_heading("Elección del transportista", level=2)
+        doc.add_paragraph("El transportista se elige por el peso:")
+        table = doc.add_table(rows=3, cols=2)
+        for row, values in zip(table.rows, [("Peso", "Transportista"),
+                                            ("Menos de 20 kg", "Global Parcel"),
+                                            ("Más de 500 kg", "Continental | Freight")]):
+            for cell, value in zip(row.cells, values):
+                cell.text = value
+        doc.add_paragraph("Si el cliente pide otro, se respeta.")
+        buffer = io.BytesIO()
+        doc.save(buffer)
+
+        text = self.provider.file_to_txt("manual.docx", buffer.getvalue())
+
+        assert "| Peso | Transportista |\n| --- | --- |\n| Menos de 20 kg | Global Parcel |" in text
+        assert "| Más de 500 kg | Continental \\| Freight |" in text
+        assert text.index("se elige por el peso") < text.index("| Peso |") < text.index("otro, se respeta")
+
     def test_file_excel_when_excel_content(self):
         self.mock_excel_service.read_excel.return_value = 'json_content'
         result = self.provider.file_to_txt("test.xlsx", "dummy_content")
