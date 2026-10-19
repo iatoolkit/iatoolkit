@@ -772,6 +772,13 @@ class VSDoc(Base):
     # it from iatoolkit-enterprise/migrations/2026-10-15-vsdocs-text-index.sql,
     # since create_all() never adds an index to a table that already exists.
     __table_args__ = (
+        # Every search filters by company. Without this index a small tenant's
+        # search walked the shared HNSW graph through another tenant's millions of
+        # chunks (hnsw.max_scan_tuples random reads), returning in minutes and with
+        # fewer results than asked. With it, the planner fetches the tenant's own
+        # chunks and sorts them exactly. Existing databases get it from
+        # iatoolkit-enterprise/migrations/2026-10-19-vsdocs-company-index.sql.
+        Index("ix_iat_vsdocs_company_id", "company_id"),
         Index(
             "ix_iat_vsdocs_text_simple_tsv",
             func.to_tsvector(literal_column("'simple'::regconfig"), text),
@@ -797,6 +804,9 @@ class VSImage(Base):
 
     company = relationship("Company", back_populates="vsimages")
     document_image = relationship("DocumentImage", back_populates="vsimage")
+
+    # Same reason as VSDoc's: image searches filter by company.
+    __table_args__ = (Index("ix_iat_vsimages_company_id", "company_id"),)
 
     def to_dict(self):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
