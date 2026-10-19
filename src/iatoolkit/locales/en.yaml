@@ -2690,7 +2690,7 @@ ui:
     collection_deleted: "Collection deleted."
     ingestion: "Ingestion"
     ingestion_description: "Ingest documents into the knowledge base."
-    workbench: "Workbench"
+    workbench: "Playground"
     documents: "Documents"
     retrieval_lab: "Retrieval Lab."
     retrieval_description: "Test semantic search and context retrieval."

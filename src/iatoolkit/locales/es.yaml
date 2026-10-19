@@ -2708,7 +2708,7 @@ ui:
     collection_deleted: "Colección eliminada."
     ingestion: "Ingesta"
     ingestion_description: "Ingestar documentos en la base de conocimiento."
-    workbench: "Area de trabajo"
+    workbench: "Playground"
     documents: "Documentos"
     retrieval_lab: "Laboratorio de recuperación"
     retrieval_description: "Probar la búsqueda semántica y la recuperación de contexto."
