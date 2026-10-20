@@ -31,38 +31,44 @@ class TestBaseLoginView:
         }
         self.view_instance = BaseLoginView(**self.mock_services)
 
-    def test_handle_login_path_slow_path(self):
-        """Slow path: should render onboarding_shell.html with correct context."""
-        # Arrange
+    def test_a_context_to_rebuild_is_started_and_the_chat_renders_directly(self):
+        """No loading shell with onboarding cards: starting the context calls no model (BL-009)."""
         self.mock_services["query_service"].prepare_context.return_value = {"rebuild_needed": True}
-        self.mock_services["branding_service"].get_company_branding.return_value = {"logo": "logo.png"}
         self.mock_services["config_service"].get_configuration.return_value = [{"title": "Card 1"}]
+        self.mock_services["config_service"].get_llm_configuration.return_value = (
+            "test-model",
+            [{"id": "test-model", "label": "Test model", "description": "desc"}],
+        )
 
         app = Flask(__name__)
         with app.test_request_context():
             with patch("iatoolkit.views.base_login_view.render_template") as mock_rt:
-                # Act: Call with the new signature
                 _ = self.view_instance._handle_login_path(
                     company_short_name=COMPANY_SHORT_NAME,
                     user_identifier=USER_IDENTIFIER,
                     target_url=DUMMY_TARGET_URL
                 )
 
-        # Assert
-        self.mock_services["query_service"].prepare_context.assert_called_once_with(
+        self.mock_services["query_service"].set_context_for_llm.assert_called_once_with(
             company_short_name=COMPANY_SHORT_NAME, user_identifier=USER_IDENTIFIER
         )
-        self.mock_services["branding_service"].get_company_branding.assert_called_once_with(COMPANY_SHORT_NAME)
-        self.mock_services["config_service"].get_configuration.assert_called_once_with(COMPANY_SHORT_NAME, 'onboarding_cards')
+        assert mock_rt.call_args[0][0] == "chat.html"
+        assert mock_rt.call_args[1]["onboarding_cards"] == [{"title": "Card 1"}]
 
-        mock_rt.assert_called_once()
-        template_name, ctx = mock_rt.call_args[0], mock_rt.call_args[1]
-        assert template_name[0] == "onboarding_shell.html"
-        assert ctx["company_short_name"] == COMPANY_SHORT_NAME
-        assert ctx["user_identifier"] == USER_IDENTIFIER
-        assert ctx["iframe_src_url"] == DUMMY_TARGET_URL
-        assert ctx["branding"] == {"logo": "logo.png"}
-        assert ctx["onboarding_cards"] == [{"title": "Card 1"}]
+    def test_an_unchanged_context_is_not_started_again(self):
+        self.mock_services["query_service"].prepare_context.return_value = {"rebuild_needed": False}
+        self.mock_services["config_service"].get_llm_configuration.return_value = ("test-model", [])
+
+        app = Flask(__name__)
+        with app.test_request_context():
+            with patch("iatoolkit.views.base_login_view.render_template"):
+                self.view_instance._handle_login_path(
+                    company_short_name=COMPANY_SHORT_NAME,
+                    user_identifier=USER_IDENTIFIER,
+                    target_url=DUMMY_TARGET_URL
+                )
+
+        self.mock_services["query_service"].set_context_for_llm.assert_not_called()
 
     def test_handle_login_path_fast_path_without_token(self):
         """Fast path: should render chat.html with redeem_token as None."""

@@ -55,11 +55,13 @@ class BaseLoginView(MethodView):
                            target_url: str,
                            redeem_token: str = None):
         """
-        Centralized logic to decide between the fast path and the slow path.
+        Starts the session's context and renders the chat. `target_url` (the old
+        loading shell's iframe) is no longer used: since BL-009 starting the context
+        calls no model, so there is nothing to wait for behind onboarding cards.
         """
         self._trigger_warmup(company_short_name, "post_login")
 
-        # --- Get the company branding and onboarding_cards
+        # --- Get the company branding and onboarding_cards (the chat's help button shows them)
         branding_data = self.branding_service.get_company_branding(company_short_name)
         onboarding_cards = self.config_service.get_configuration(company_short_name, 'onboarding_cards')
 
@@ -67,46 +69,39 @@ class BaseLoginView(MethodView):
         prep_result = self.query_service.prepare_context(
             company_short_name=company_short_name, user_identifier=user_identifier
         )
-
         if prep_result.get('rebuild_needed'):
-            # --- SLOW PATH: Render the loading shell ---
-            return render_template(
-                "onboarding_shell.html",
-                company_short_name=company_short_name,
-                user_identifier=user_identifier,
-                iframe_src_url=target_url,
-                branding=branding_data,
-                onboarding_cards=onboarding_cards
+            # Starts the history with the prepared context, in the session only.
+            self.query_service.set_context_for_llm(
+                company_short_name=company_short_name, user_identifier=user_identifier
             )
-        else:
-            # --- FAST PATH: Render the chat page directly ---
-            # LLM configuration: default model and availables
-            default_llm_model, available_llm_models = self.config_service.get_llm_configuration(company_short_name)
-            default_llm_model, available_llm_models = access.filter_llm_models(
-                company_short_name, user_identifier, default_llm_model, available_llm_models)
-            llm_request_defaults = self.config_service.get_llm_request_defaults(company_short_name) or {}
-            llm_default_reasoning_effort = str(
-                ((llm_request_defaults.get("reasoning") or {}).get("effort")) or ""
-            ).strip().lower()
 
-            prompts = self.prompt_service.get_prompts(company_short_name, user_identifier=user_identifier)
+        # LLM configuration: default model and availables
+        default_llm_model, available_llm_models = self.config_service.get_llm_configuration(company_short_name)
+        default_llm_model, available_llm_models = access.filter_llm_models(
+            company_short_name, user_identifier, default_llm_model, available_llm_models)
+        llm_request_defaults = self.config_service.get_llm_request_defaults(company_short_name) or {}
+        llm_default_reasoning_effort = str(
+            ((llm_request_defaults.get("reasoning") or {}).get("effort")) or ""
+        ).strip().lower()
 
-            # Get the entire 'js_messages' block in the correct language.
-            js_translations = self.i18n_service.get_translation_block('js_messages')
+        prompts = self.prompt_service.get_prompts(company_short_name, user_identifier=user_identifier)
 
-            return render_template(
-                "chat.html",
-                company_short_name=company_short_name,
-                user_identifier=user_identifier,
-                prompts=prompts,
-                branding=branding_data,
-                onboarding_cards=onboarding_cards,
-                js_translations=js_translations,
-                redeem_token=redeem_token,
-                llm_default_model=default_llm_model,
-                llm_available_models = available_llm_models,
-                llm_default_reasoning_effort=llm_default_reasoning_effort,
-                )
+        # Get the entire 'js_messages' block in the correct language.
+        js_translations = self.i18n_service.get_translation_block('js_messages')
+
+        return render_template(
+            "chat.html",
+            company_short_name=company_short_name,
+            user_identifier=user_identifier,
+            prompts=prompts,
+            branding=branding_data,
+            onboarding_cards=onboarding_cards,
+            js_translations=js_translations,
+            redeem_token=redeem_token,
+            llm_default_model=default_llm_model,
+            llm_available_models = available_llm_models,
+            llm_default_reasoning_effort=llm_default_reasoning_effort,
+        )
 
     def _trigger_warmup(self, company_short_name: str, trigger: str):
         try:
