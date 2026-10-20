@@ -666,6 +666,35 @@ tools:
       required:
         - question_id
         - answer
+  - function_name: iat_memory_register_question
+    description: Registra una pregunta sobre cómo se hacen las cosas en la empresa que la Memoria de la empresa no pudo responder, para que alguien que sabe la responda y la Memoria lo aprenda. Úsala cuando, después de buscar en la Memoria y en los documentos, no encontraste la respuesta, o cuando el usuario pida agregar la pregunta a la Memoria. No guarda quién preguntó. No la uses para preguntas personales, del momento o que no son de la empresa. Cuéntale al usuario que quedó registrada y qué pasa después (o que no se registró, si así lo dice el resultado).
+    execution_config:
+      side_effects: true
+      destructive: false
+    routing_profile:
+      tags:
+        - memory
+        - company_memory
+        - questions
+        - unanswered
+        - gap
+      intents:
+        - Register a question about the company that the memory could not answer.
+        - Add the user's question to the company memory's open questions.
+      examples:
+        - iat_memory_register_question(question="¿Cuál es el procedimiento para emitir una factura en euros?")
+      cost:
+        penalty: 0.1
+        latency_class: low
+        expensive: false
+    parameters:
+      type: object
+      properties:
+        question:
+          type: string
+          description: La pregunta, redactada en tono neutro y autocontenida (debe entenderse sin la conversación), sin nombres ni datos personales.
+      required:
+        - question
   - function_name: iat_image_search
     description: Busca imágenes en la base de conocimiento visual de la empresa usando una descripción de texto. Útil cuando el usuario pide 'ver' algo, 'muéstrame una foto de...', o busca gráficos y diagramas.
     routing:

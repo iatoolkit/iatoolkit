@@ -121,6 +121,7 @@ class ToolService:
             "iat_memory_save": self._handle_memory_save_tool,
             "iat_memory_pending_questions": self._handle_memory_pending_questions_tool,
             "iat_memory_answer_question": self._handle_memory_answer_question_tool,
+            "iat_memory_register_question": self._handle_memory_register_question_tool,
             "iat_wiki_search": self._handle_wiki_search_tool,
             "iat_wiki_get_page": self._handle_wiki_get_page_tool,
             "iat_web_search": self._handle_web_search_tool,
@@ -428,6 +429,18 @@ class ToolService:
         except (TypeError, ValueError):
             return {"status": "error", "error_message": "question_id is required"}
         return self._memory_question_service().answer(company_short_name, question_id, str(answer or ""), user_identifier)
+
+    def _handle_memory_register_question_tool(self,
+                                              company_short_name: str,
+                                              question: str,
+                                              user_identifier: str | None = None,
+                                              **kwargs):
+        """Registers a question the Memoria could not answer, so someone who knows answers it."""
+        if not user_identifier:
+            return {"status": "error", "error_message": "memory not available without an identified user"}
+        channel = str(kwargs.get("_iat_runtime_source") or "chat").strip() or "chat"
+        return self._memory_question_service().register_question(
+            company_short_name, user_identifier, str(question or ""), channel=channel)
 
     def _handle_memory_save_tool(self,
                                  company_short_name: str,

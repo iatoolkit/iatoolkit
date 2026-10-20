@@ -319,3 +319,47 @@ def test_an_answer_that_cannot_be_saved_leaves_the_question_open(stack):
 
     stack.session.refresh(question)
     assert result["status"] == "error" and question.status == "open" and question.resolved_by is None
+
+
+# --- A question someone says the Memoria does not answer (chat or MCP) ---------------
+
+
+def candidates(stack):
+    return stack.question_repo.list_pending_candidates(stack.company.id, 50)
+
+
+def test_a_registered_question_waits_as_a_candidate_of_its_channel(stack):
+    result = stack.questions.register_question("acme", "julia@acme.cl", "  ¿Cómo se emite una  factura en euros? ",
+                                               channel="mcp")
+
+    assert result["registered"] is True
+    [candidate] = candidates(stack)
+    assert candidate.query_text == "¿Cómo se emite una factura en euros?"
+    assert candidate.source == "mcp"
+
+
+def test_an_empty_question_is_refused(stack):
+    assert stack.questions.register_question("acme", "julia@acme.cl", "   ")["status"] == "error"
+    assert candidates(stack) == []
+
+
+def test_a_topic_in_content_the_person_cannot_read_is_not_opened_for_the_company(stack, monkeypatch):
+    monkeypatch.setattr(stack.memory_service, "audiences_for", lambda *args: [None])
+    monkeypatch.setattr(stack.memory_service.memory_wiki_service, "list_pages", lambda *args, **kwargs: [
+        {"title": "Política de comisiones y bonos", "summary": "La comisión y el bono anual del equipo comercial.",
+         "audience_key": "memory_folder:5"},
+        {"title": "Despacho de pedidos", "summary": "Transportistas por peso.", "audience_key": None},
+    ])
+
+    hidden = stack.questions.register_question("acme", "julia@acme.cl", "¿Cómo se calcula el bono anual?")
+    shown = stack.questions.register_question("acme", "julia@acme.cl", "¿Los envíos van con seguro de carga?")
+
+    assert hidden["registered"] is False and hidden["reason"] == "restricted"
+    assert shown["registered"] is True
+    assert [c.query_text for c in candidates(stack)] == ["¿Los envíos van con seguro de carga?"]
+
+
+def test_whoever_reads_everything_registers_any_topic(stack, monkeypatch):
+    monkeypatch.setattr(stack.memory_service, "audiences_for", lambda *args: None)
+
+    assert stack.questions.register_question("acme", "ana@acme.cl", "¿Cómo se calcula el bono anual?")["registered"]

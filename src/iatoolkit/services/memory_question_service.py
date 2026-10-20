@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 
@@ -205,6 +206,85 @@ class MemoryQuestionService:
             self.question_repo.commit()
         except Exception:
             logging.exception("Memoria search miss could not be recorded for %s", company_short_name)
+
+    # =====================================================================
+    # A question someone says the Memoria does not answer
+    # =====================================================================
+
+    # Words that say nothing about the topic of a question.
+    QUESTION_STOPWORDS = frozenset({
+        "como", "cual", "cuales", "cuando", "cuanto", "cuanta", "cuantos", "cuantas", "donde", "quien", "quienes",
+        "para", "pero", "porque", "sobre", "entre", "desde", "hasta", "esta", "este", "estos", "estas", "esto",
+        "puedo", "puede", "pueden", "podemos", "debo", "debe", "tiene", "tienen", "tenemos", "hacer", "hace",
+        "existe", "algun", "alguna", "empresa", "nuestra", "nuestro", "what", "when", "where", "which", "does",
+        "there", "this", "that", "with", "from", "have", "should", "company",
+    })
+    QUESTION_TOPIC_PREFIX = 5
+
+    def register_question(self, company_short_name: str, user_identifier: str | None, question: str,
+                          channel: str = memory_tools.CHANNEL_CHAT) -> dict:
+        """
+        A question the Memoria could not answer, as the AI or the person says (chat or MCP).
+        Over MCP the answer is written outside IAToolkit, so only they know it went unanswered.
+
+        It enters as a candidate: the hourly review writes it neutrally, gives it a topic,
+        groups it with the open ones and someone is assigned, as with any other. Who asked
+        is not kept. A question whose topic is in content the person may not read (a
+        restricted folder) is not opened for the whole company (BL-015, hallazgo 1).
+        """
+        text = " ".join(str(question or "").split())
+        if not text:
+            return {"status": "error", "error_message": "question is required"}
+        company = self.profile_repo.get_company_by_short_name(company_short_name)
+        if not company:
+            return {"status": "error", "error_message": "company not found"}
+        if self._topic_is_restricted_for(company_short_name, user_identifier, text):
+            return {
+                "status": "success",
+                "registered": False,
+                "reason": "restricted",
+                "message": "No quedó registrada como pregunta abierta de la empresa: ese tema puede estar en "
+                           "información de acceso restringido. Consúltalo con la persona a cargo del área.",
+            }
+        self.question_repo.add(MemoryQuestionCandidate(
+            company_id=company.id,
+            query_text=text[:self.MAX_CANDIDATE_CHARS],
+            source=channel if channel in (memory_tools.CHANNEL_CHAT, memory_tools.CHANNEL_MCP) else memory_tools.CHANNEL_CHAT,
+        ))
+        self.question_repo.commit()
+        return {
+            "status": "success",
+            "registered": True,
+            "message": "Registrada. Dentro de la próxima hora se suma a las preguntas sin respuesta de la empresa "
+                       "(junto a las parecidas) y se le sugiere a quien sabe del tema; cuando alguien la responda, "
+                       "la Memoria lo aprende.",
+        }
+
+    def _topic_is_restricted_for(self, company_short_name: str, user_identifier: str | None, question: str) -> bool:
+        """Whether a page the person may not read covers the question's topic (its title or summary)."""
+        visible = self.memory_service.audiences_for(company_short_name, user_identifier)
+        if visible is None:
+            return False  # they read everything: nothing hidden to give away
+        hidden = [page for page in self.memory_service.memory_wiki_service.list_pages(company_short_name)
+                  if page.get("audience_key") and page.get("audience_key") not in visible]
+        if not hidden:
+            return False
+        words = self._topic_words(question)
+        if not words:
+            return False
+        needed = min(2, len(words))
+        for page in hidden:
+            page_words = self._topic_words(f"{page.get('title') or ''} {page.get('summary') or ''}")
+            if sum(1 for word in words if word in page_words) >= needed:
+                return True
+        return False
+
+    @classmethod
+    def _topic_words(cls, text: str) -> set[str]:
+        """The question's topic words, cut to a prefix so "bono" and "bonos" match."""
+        normalized = MemoryService._normalize_text(text)
+        return {word[:cls.QUESTION_TOPIC_PREFIX] for word in re.findall(r"[a-z0-9]+", normalized)
+                if len(word) >= 4 and word not in cls.QUESTION_STOPWORDS}
 
     def has_pending_work(self, company_short_name: str) -> bool:
         """Whether a scan would find anything new; lets the hourly dispatch skip quiet tenants."""

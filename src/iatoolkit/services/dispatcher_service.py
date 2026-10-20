@@ -31,6 +31,7 @@ class Dispatcher:
         "iat_memory_save",
         "iat_memory_pending_questions",
         "iat_memory_answer_question",
+        "iat_memory_register_question",
         "iat_wiki_search",
         "iat_wiki_get_page",
         # The schema shown is the person's: their sources and tables (BL-017).

@@ -157,6 +157,22 @@ class TestToolService:
         assert empty["status"] == "error"
         self.service._memory_service.save_capture.assert_not_called()
 
+    def test_handle_memory_register_question_tool_registers_it_with_its_channel(self):
+        questions = MagicMock()
+        questions.register_question.return_value = {"status": "success", "registered": True}
+
+        with patch.object(ToolService, "_memory_question_service", return_value=questions):
+            result = self.service._handle_memory_register_question_tool(
+                company_short_name="my_company", question="¿Cómo se emite una factura en euros?",
+                user_identifier="julia@acme.cl", _iat_runtime_source="mcp")
+            anonymous = self.service._handle_memory_register_question_tool(
+                company_short_name="my_company", question="¿Algo?")
+
+        questions.register_question.assert_called_once_with(
+            "my_company", "julia@acme.cl", "¿Cómo se emite una factura en euros?", channel="mcp")
+        assert result["registered"] is True
+        assert anonymous["status"] == "error"
+
     def test_handle_wiki_search_tool_delegates_to_service(self):
         self.service._knowledge_wiki_service = MagicMock()
         self.service._knowledge_wiki_service.search_pages.return_value = {"status": "success", "results": []}
