@@ -191,7 +191,9 @@ llm:
     first 1500, with a note that tells the model which tool to call again; its tool
     call arguments longer than that become a short JSON note; and its reasoning
     (`reasoning_content`, `reasoning_details`) is dropped. The calls and their output
-    messages stay, so the history is always valid for the provider.
+    messages stay, so the history is always valid for the provider. The last turn
+    is cut the same way as soon as it ends if what it carries for its tools
+    (outputs, arguments and reasoning) passes 40000 characters; its answer stays.
   - Within a turn, a tool output over 40000 characters is cut before the model
     reads it, with a notice to narrow the query (filters, aggregates, LIMIT); the
     cut is logged as a warning.

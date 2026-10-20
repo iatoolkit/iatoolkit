@@ -664,6 +664,28 @@ class TestOldToolOutputs:
         assert last["reasoning_content"].startswith("thinking")
         assert len(json.loads(last["tool_calls"][0]["function"]["arguments"])["rows"]) == 2000
 
+    def test_a_last_turn_that_carries_too_much_for_its_tools_is_cut_too(self):
+        history = [{"role": "user", "content": "company context"}]
+        history += _tool_turn(0, "ok")
+        heavy = "r" * (HistoryManagerService.MAX_KEPT_TOOL_PAYLOAD_CHARS // 2 + 10)
+        last = _tool_turn(1, heavy)
+        last[1:1] = [dict(m) for m in _tool_turn(2, heavy)[1:3]]  # a second round in the same turn
+        history += last
+
+        HistoryManagerService._trim_old_tool_outputs(history)
+
+        outputs = [m["output"] for m in history[5:] if m.get("type") == "function_call_output"]
+        assert len(outputs) == 2
+        assert all(HistoryManagerService.TRIMMED_TOOL_OUTPUT_MARKER in output for output in outputs)
+        assert history[-1]["content"] == "a1"  # its answer stays
+
+    def test_a_light_last_turn_keeps_its_outputs(self):
+        history = [{"role": "user", "content": "company context"}] + _tool_turn(0, self.LONG)
+
+        HistoryManagerService._trim_old_tool_outputs(history)
+
+        assert history[3]["output"] == self.LONG
+
     def test_a_compaction_cuts_the_old_outputs_of_the_turns_it_keeps(self):
         history = [{"role": "user", "content": "company context"}]
         for index in range(4):

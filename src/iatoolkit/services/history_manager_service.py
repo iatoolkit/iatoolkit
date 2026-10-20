@@ -68,6 +68,11 @@ class HistoryManagerService:
     #: one a follow-up ("of those...") refers to; with two, one turn of 80k of
     #: results kept a compacted history at 130k.
     KEEP_TOOL_OUTPUT_TURNS = 1
+    #: ...unless what that turn carries for its tools (outputs, arguments and
+    #: reasoning) passes this: a turn of eight SQL rounds left 142k tokens for a
+    #: follow-up answered from the conversation in 5 seconds. Its answer stays,
+    #: and the model can call the tools again.
+    MAX_KEPT_TOOL_PAYLOAD_CHARS = 40000
     #: What is kept of a cut output: its beginning, enough to remember its shape.
     TRIMMED_TOOL_OUTPUT_CHARS = 1500
     TRIMMED_TOOL_OUTPUT_MARKER = "[tool output trimmed"
@@ -405,9 +410,13 @@ class HistoryManagerService:
         then stays the same from turn to turn, which is what a prompt cache reuses.
         """
         turn_starts = cls.turn_starts(context_history)
-        if len(turn_starts) <= cls.KEEP_TOOL_OUTPUT_TURNS:
+        if len(turn_starts) < cls.KEEP_TOOL_OUTPUT_TURNS or not turn_starts:
             return
         boundary = turn_starts[-cls.KEEP_TOOL_OUTPUT_TURNS]
+        kept_payload = cls._tool_payload_chars(context_history[boundary:])
+        if kept_payload > cls.MAX_KEPT_TOOL_PAYLOAD_CHARS:
+            logging.info(f"Last turn carries {kept_payload} characters for its tools: cut as an older turn.")
+            boundary = len(context_history)
         tool_names = {}
         for message in context_history[:boundary]:
             if not isinstance(message, dict):
@@ -437,6 +446,24 @@ class HistoryManagerService:
                 f"{cls.TRIMMED_TOOL_OUTPUT_MARKER}: {len(output)} characters, from an earlier turn. "
                 f"Call {tool} again if you need all of it.]"
             )
+
+    @staticmethod
+    def _tool_payload_chars(messages: list) -> int:
+        """Characters of tool outputs, tool call arguments and reasoning in these messages."""
+        total = 0
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            if message.get("type") == "function_call_output" and isinstance(message.get("output"), str):
+                total += len(message["output"])
+            total += len(str(message.get("reasoning_content") or ""))
+            if message.get("reasoning_details"):
+                total += len(json.dumps(message["reasoning_details"], default=str))
+            for call in message.get("tool_calls") or []:
+                function = call.get("function") if isinstance(call, dict) else None
+                if isinstance(function, dict) and isinstance(function.get("arguments"), str):
+                    total += len(function["arguments"])
+        return total
 
     def _cap_stored_history(self, company_short_name: str, model: Optional[str], context_history: list):
         """Keeps the stored history under STORED_HISTORY_MAX_BUDGETS budgets, whole turns at a time."""
