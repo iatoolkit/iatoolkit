@@ -113,6 +113,9 @@ llm:
   # Tool loop budget: model responses that request tools, per answer
   max_tool_rounds: 25
 
+  # Optional cap on the conversation history, below the model's window
+  max_context_tokens: 200000
+
   # Optional provider capability overrides for attachment planner
   capabilities_overrides:
     openai:
@@ -162,6 +165,16 @@ llm:
   Independently, after 3 consecutive rounds in which every call failed, tools are
   disabled for the rest of that answer. `stats.tool_loop_stop_reason` on the query
   records either stop (`tool_budget_exhausted` or `repeated_tool_failures`).
+- `max_context_tokens` (optional, default: only the model's window): the most tokens
+  the conversation history may take. IAToolkit owns the history with every provider
+  and sends it whole on each turn, so this is a cost cap: without it the budget is
+  the model's `context_window` (from the model catalogue, written by `models-sync`)
+  minus up to 32k reserved for the answer, or 400k for a model with no known window.
+  When a turn leaves the history at 70% of the budget, the older turns are compacted
+  in the background into a summary by the `history_compaction` system agent; its model
+  is chosen like any system agent's, with `system_agents.history_compaction.model`.
+  If a turn would reach 95% before that lands, it is compacted in line, and past the
+  budget the oldest whole turns are dropped.
 - `api-key` (legacy optional fallback): global API key reference.
 
 ## 4.3 `embedding_provider` (default text embeddings)

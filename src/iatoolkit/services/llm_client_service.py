@@ -502,6 +502,10 @@ class llmClient:
             combined_stats["tool_time_ms_total"] = int(round(f_call_time * 1000))
             combined_stats["tool_round_count"] = tool_round_count
             combined_stats["tool_error_count"] = tool_error_count
+            # The size of the conversation at the end of the turn: what the last
+            # call read plus what it wrote. Not the sum over rounds, which is what
+            # is billed; this is what the next turn will start from (BL-009).
+            combined_stats["context_tokens"] = self._context_tokens(response)
             if tool_loop_stop_reason:
                 combined_stats["tool_loop_stop_reason"] = tool_loop_stop_reason
             if isinstance(execution_metadata, dict):
@@ -673,6 +677,13 @@ class llmClient:
         if result:
             payload["result"] = result
         return payload
+
+    @staticmethod
+    def _context_tokens(response) -> int:
+        usage = getattr(response, "usage", None)
+        if usage is None:
+            return 0
+        return int(getattr(usage, "input_tokens", 0) or 0) + int(getattr(usage, "output_tokens", 0) or 0)
 
     def _build_partial_usage_stats(self,
                                    stats: dict,

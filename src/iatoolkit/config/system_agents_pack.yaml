@@ -312,3 +312,25 @@ agents:
       additionalProperties: false
     inputs: [source, captured_on, wiki_schema, page_index, candidate_pages]
     default_model: null
+
+  - key: history_compaction
+    name: Compactación del historial
+    name_en: History compaction
+    description: >-
+      (Chat) Resume la parte antigua de una conversación larga cuando se acerca al límite de contexto del
+      modelo, para que la conversación siga sin perder lo importante.
+    description_en: >-
+      (Chat) Summarizes the older part of a long conversation when it nears the model's context limit,
+      so the conversation can go on without losing what matters.
+    module: chat
+    prompt: history_compaction.prompt
+    output_schema:
+      type: object
+      properties:
+        summary:
+          type: string
+      required: [summary]
+      additionalProperties: false
+    inputs: [previous_summary, transcript]
+    default_model: null
+

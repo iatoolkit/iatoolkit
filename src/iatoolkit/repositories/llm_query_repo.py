@@ -35,17 +35,31 @@ class LLMQueryRepo:
         self.session.commit()
         return query
 
-    @staticmethod
-    def not_context_init():
-        """Filter for rows that are a conversation turn, not a context initialization."""
+    #: iat_queries.prompt_name of the platform's own model calls (system agents,
+    #: see system_agent_catalog.PROMPT_NAME_PREFIX). Restated here because the
+    #: catalog sits above the repositories.
+    SYSTEM_AGENT_PROMPT_PREFIX = "system_agent:"
+
+    @classmethod
+    def conversation_turns_only(cls):
+        """Filter for rows a person asked: not a context initialization, not a system agent run.
+
+        A system agent's execution is billed like any other call, but it is the
+        platform's own work (a memory compilation, a history compaction): shown in
+        a user's history or replayed as a turn, it would read as a question they
+        never asked.
+        """
         request_source = LLMQuery.stats["request_source"].as_string()
-        return or_(request_source.is_(None), request_source != CONTEXT_INIT_REQUEST_SOURCE)
+        return and_(
+            or_(request_source.is_(None), request_source != CONTEXT_INIT_REQUEST_SOURCE),
+            or_(LLMQuery.prompt_name.is_(None), ~LLMQuery.prompt_name.startswith(cls.SYSTEM_AGENT_PROMPT_PREFIX)),
+        )
 
     # get user query history
     def get_history(self, company: Company, user_identifier: str, limit: int = 100) -> list[LLMQuery]:
         return self.session.query(LLMQuery).filter(
             LLMQuery.user_identifier == user_identifier,
-            self.not_context_init(),
+            self.conversation_turns_only(),
         ).filter_by(company_id=company.id).order_by(LLMQuery.created_at.desc()).limit(limit).all()
 
 

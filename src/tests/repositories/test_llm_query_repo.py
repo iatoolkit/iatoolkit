@@ -770,3 +770,35 @@ def test_get_history_skips_context_init_rows():
     history = LLMQueryRepo(db_manager).get_history(company, 'u1')
 
     assert sorted(q.query for q in history) == ['hola', 'legacy']
+
+
+def test_get_history_skips_system_agent_runs():
+    from iatoolkit.repositories.database_manager import DatabaseManager
+    from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
+    from iatoolkit.repositories.models import Company, LLMQuery
+
+    db_manager = DatabaseManager('sqlite:///:memory:')
+    db_manager.create_all()
+    session = db_manager.get_session()
+    company = Company(name='acme', short_name='acme')
+    session.add(company)
+    session.commit()
+    session.add_all([
+        LLMQuery(company_id=company.id, user_identifier='u1', query='Compactación del historial', output='{}',
+                 prompt_name='system_agent:history_compaction', stats={"total_tokens": 900}),
+        LLMQuery(company_id=company.id, user_identifier='u1', query='hola', output='respuesta',
+                 prompt_name='sales_agent'),
+        LLMQuery(company_id=company.id, user_identifier='u1', query='chat', output='respuesta'),
+    ])
+    session.commit()
+
+    history = LLMQueryRepo(db_manager).get_history(company, 'u1')
+
+    assert sorted(q.query for q in history) == ['chat', 'hola']
+
+
+def test_the_system_agent_prefix_matches_the_catalog():
+    from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
+    from iatoolkit.services.system_agent_catalog import PROMPT_NAME_PREFIX
+
+    assert LLMQueryRepo.SYSTEM_AGENT_PROMPT_PREFIX == PROMPT_NAME_PREFIX

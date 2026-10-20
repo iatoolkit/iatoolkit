@@ -83,7 +83,18 @@ class TestUserSessionContextService(unittest.TestCase):
             'last_response_id',
             'initial_response_id',
             'context_history',
+            'context_tokens',
         )
+
+    def test_context_tokens_round_trip(self):
+        self.mock_redis_manager.hget.return_value = "120000"
+
+        self.service.save_context_tokens(self.company_short_name, self.user_identifier, 120000)
+
+        self.mock_redis_manager.hset.assert_called_once_with(self.session_key, 'context_tokens', '120000')
+        self.assertEqual(self.service.get_context_tokens(self.company_short_name, self.user_identifier), 120000)
+        self.mock_redis_manager.hget.return_value = "not a number"
+        self.assertEqual(self.service.get_context_tokens(self.company_short_name, self.user_identifier), 0)
 
     def test_clear_all_context_also_clears_selected_system_prompt_keys(self):
         self.service.clear_all_context(self.company_short_name, self.user_identifier)

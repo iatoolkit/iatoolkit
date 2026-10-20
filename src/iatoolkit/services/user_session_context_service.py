@@ -31,6 +31,7 @@ class UserSessionContextService:
             # 'profile_data' should not be deleted
             RedisSessionManager.hdel(session_key, "context_version")
             RedisSessionManager.hdel(session_key, "context_history")
+            RedisSessionManager.hdel(session_key, "context_tokens")
             # Left by the server-side history removed in BL-009; still cleared so
             # sessions created before it do not keep them.
             RedisSessionManager.hdel(session_key, "last_response_id")
@@ -41,7 +42,28 @@ class UserSessionContextService:
         """Clears only the LLM history (context_history, plus the legacy server-side ids)."""
         session_key = self._get_session_key(company_short_name, user_identifier, model=model)
         if session_key:
-            RedisSessionManager.hdel(session_key, "last_response_id", "initial_response_id", "context_history")
+            RedisSessionManager.hdel(
+                session_key, "last_response_id", "initial_response_id", "context_history", "context_tokens"
+            )
+
+    def save_context_tokens(self,
+                            company_short_name: str,
+                            user_identifier: str,
+                            context_tokens: int,
+                            model: str = None):
+        """The context size the provider reported for the last turn (BL-009)."""
+        session_key = self._get_session_key(company_short_name, user_identifier, model=model)
+        if session_key:
+            RedisSessionManager.hset(session_key, "context_tokens", str(int(context_tokens or 0)))
+
+    def get_context_tokens(self, company_short_name: str, user_identifier: str, model: str = None) -> int:
+        session_key = self._get_session_key(company_short_name, user_identifier, model=model)
+        if not session_key:
+            return 0
+        try:
+            return int(RedisSessionManager.hget(session_key, "context_tokens") or 0)
+        except (TypeError, ValueError):
+            return 0
 
     def save_context_history(
             self,

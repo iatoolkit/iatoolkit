@@ -6,6 +6,7 @@
 
 import logging
 import json
+import time
 from typing import Dict, Any, Optional
 from iatoolkit.services.user_session_context_service import UserSessionContextService
 from iatoolkit.services.i18n_service import I18nService
@@ -39,6 +40,19 @@ class HistoryManagerService:
     #: 400k window on an answer that is almost never that long.
     MAX_OUTPUT_RESERVE_TOKENS = 32000
 
+    #: Share of the budget at which a finished turn asks for a background
+    #: compaction, and at which the next turn compacts in line because the
+    #: background one did not land in time (BL-009, Fase E).
+    COMPACTION_TRIGGER_SHARE = 0.70
+    INLINE_COMPACTION_SHARE = 0.95
+    #: How long a turn waits for a compaction that is writing the history.
+    HISTORY_LOCK_WAIT_SECONDS = 2.0
+    HISTORY_LOCK_TTL_SECONDS = 30
+
+    #: Marks the message that holds the summary of the compacted turns. It goes
+    #: to the model as it is, so it also tells the model what the text is.
+    SUMMARY_PREFIX = "[Summary of the earlier conversation]"
+
     @inject
     def __init__(self,
                  session_context: UserSessionContextService,
@@ -53,6 +67,35 @@ class HistoryManagerService:
         self.profile_repo = profile_repo
         self.llm_client = llm_client
         self.configuration_service = configuration_service
+        # Resolved on first use: the compaction service needs this one.
+        self._compaction_service = None
+        self._compaction_trigger = None
+
+    @property
+    def compaction_service(self):
+        if self._compaction_service is None:
+            from iatoolkit import current_iatoolkit
+            from iatoolkit.services.history_compaction_service import HistoryCompactionService
+
+            self._compaction_service = current_iatoolkit().get_injector().get(HistoryCompactionService)
+        return self._compaction_service
+
+    @compaction_service.setter
+    def compaction_service(self, service):
+        self._compaction_service = service
+
+    @property
+    def compaction_trigger(self):
+        if self._compaction_trigger is None:
+            from iatoolkit import current_iatoolkit
+            from iatoolkit.common.interfaces.history_compaction_trigger import HistoryCompactionTrigger
+
+            self._compaction_trigger = current_iatoolkit().get_injector().get(HistoryCompactionTrigger)
+        return self._compaction_trigger
+
+    @compaction_trigger.setter
+    def compaction_trigger(self, trigger):
+        self._compaction_trigger = trigger
 
     def initialize_context(self,
                            company_short_name: str,
@@ -77,6 +120,10 @@ class HistoryManagerService:
         Returns True if a rebuild is needed, False otherwise.
         """
         model = getattr(handle, "model", None)
+        budget = self.context_budget_tokens(handle.company_short_name, model)
+        if not ignore_history:
+            self._compact_in_line_if_needed(handle.company_short_name, handle.user_identifier, model,
+                                            user_turn_prompt, budget)
         context_history = self.session_context.get_context_history(
             handle.company_short_name, handle.user_identifier, model=model) or []
 
@@ -91,10 +138,7 @@ class HistoryManagerService:
         # Append the current user turn to the context sent to the API
         context_history.append({"role": "user", "content": user_turn_prompt})
 
-        self._trim_context_history(
-            context_history,
-            self.context_budget_tokens(handle.company_short_name, model),
-        )
+        self._trim_context_history(context_history, budget)
 
         handle.request_params = {'context_history': context_history}
         return False
@@ -108,6 +152,21 @@ class HistoryManagerService:
         user_identifier = history_handle.user_identifier
         model = getattr(history_handle, "model", None)
 
+        # A compaction writing the history meanwhile would be overwritten by the
+        # read-modify-write below. Waited for briefly; if it never frees, the turn
+        # is saved anyway: the compaction is what gets lost, never the turn.
+        lock_key = self.history_lock_key(company_short_name, user_identifier, model)
+        locked = self.acquire_history_lock(lock_key, wait_seconds=self.HISTORY_LOCK_WAIT_SECONDS)
+        try:
+            self._append_turn(company_short_name, user_identifier, model, user_turn_prompt, response)
+        finally:
+            if locked:
+                self.release_history_lock(lock_key)
+
+        self._record_context_size(company_short_name, user_identifier, model, response)
+
+    def _append_turn(self, company_short_name: str, user_identifier: str, model: Optional[str],
+                     user_turn_prompt: str, response: Dict[str, Any]):
         # get the history for this company/user/model
         context_history = self.session_context.get_context_history(
             company_short_name,
@@ -134,6 +193,77 @@ class HistoryManagerService:
             context_history,
             model=model)
 
+    # ------------------------------------------------------------------
+    # Compaction (BL-009, Fase E)
+    # ------------------------------------------------------------------
+
+    def _record_context_size(self, company_short_name: str, user_identifier: str, model: Optional[str],
+                             response: Dict[str, Any]):
+        """Keeps the context size the provider measured, and asks for a compaction past the threshold."""
+        stats = response.get("stats") if isinstance(response, dict) else None
+        context_tokens = self._positive_int((stats or {}).get("context_tokens"))
+        if not context_tokens:
+            return
+        try:
+            self.session_context.save_context_tokens(company_short_name, user_identifier, context_tokens, model=model)
+            budget = self.context_budget_tokens(company_short_name, model)
+            if context_tokens >= budget * self.COMPACTION_TRIGGER_SHARE:
+                self.compaction_trigger.trigger(company_short_name, user_identifier, model)
+        except Exception as e:
+            # A compaction that is not asked for now is asked for on the next turn.
+            logging.warning(f"Could not request the history compaction of {company_short_name}/{user_identifier}: {e}")
+
+    def _compact_in_line_if_needed(self, company_short_name: str, user_identifier: str, model: Optional[str],
+                                   user_turn_prompt: str, budget: int):
+        """Compacts now when the turn about to run would not fit: the background one did not land in time."""
+        try:
+            measured = self.session_context.get_context_tokens(company_short_name, user_identifier, model=model)
+            if not measured:
+                return
+            estimated = measured + self.llm_client.count_tokens(user_turn_prompt or "")
+            if estimated < budget * self.INLINE_COMPACTION_SHARE:
+                return
+            result = self.compaction_service.compact(company_short_name, user_identifier, model)
+            logging.info(f"In-line compaction of {company_short_name}/{user_identifier}: {result}")
+        except Exception as e:
+            # The trim that follows still keeps the request inside the window.
+            logging.warning(f"In-line history compaction failed for {company_short_name}/{user_identifier}: {e}")
+
+    @staticmethod
+    def history_lock_key(company_short_name: str, user_identifier: str, model: Optional[str]) -> str:
+        return f"lock:history:{company_short_name}/{user_identifier}/{model or ''}"
+
+    def acquire_history_lock(self, lock_key: str, wait_seconds: float = 0.0) -> bool:
+        deadline = time.monotonic() + max(wait_seconds, 0.0)
+        while True:
+            if self.session_context.acquire_lock(lock_key, expire_seconds=self.HISTORY_LOCK_TTL_SECONDS):
+                return True
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.05)
+
+    def release_history_lock(self, lock_key: str):
+        self.session_context.release_lock(lock_key)
+
+    @classmethod
+    def summary_message(cls, summary: str) -> dict:
+        return {"role": "user", "content": f"{cls.SUMMARY_PREFIX}\n\n{str(summary or '').strip()}"}
+
+    @classmethod
+    def is_summary_message(cls, message: Any) -> bool:
+        return (
+            isinstance(message, dict)
+            and message.get("role") == "user"
+            and isinstance(message.get("content"), str)
+            and message["content"].startswith(cls.SUMMARY_PREFIX)
+        )
+
+    @classmethod
+    def summary_text(cls, message: Any) -> str:
+        if not cls.is_summary_message(message):
+            return ""
+        return message["content"][len(cls.SUMMARY_PREFIX):].strip()
+
     def context_budget_tokens(self, company_short_name: str, model: Optional[str]) -> int:
         """How many tokens the history may take for this model: its window minus room for the answer."""
         model_config = {}
@@ -145,11 +275,29 @@ class HistoryManagerService:
                 model_config = {}
 
         context_window = self._positive_int(model_config.get("context_window"))
-        if not context_window:
-            return self.DEFAULT_CONTEXT_BUDGET_TOKENS
-        max_output = self._positive_int(model_config.get("max_output_tokens")) or 0
-        reserve = min(max_output, self.MAX_OUTPUT_RESERVE_TOKENS)
-        return max(context_window - reserve, 1)
+        if context_window:
+            max_output = self._positive_int(model_config.get("max_output_tokens")) or 0
+            reserve = min(max_output, self.MAX_OUTPUT_RESERVE_TOKENS)
+            budget = max(context_window - reserve, 1)
+        else:
+            budget = self.DEFAULT_CONTEXT_BUDGET_TOKENS
+
+        # A company may cap it below the window: filling a million-token window
+        # on every turn is a cost decision, not a technical one.
+        company_cap = self._company_context_cap(company_short_name)
+        return min(budget, company_cap) if company_cap else budget
+
+    def _company_context_cap(self, company_short_name: str) -> int:
+        """`llm.max_context_tokens` in company.yaml; 0 when not set."""
+        if self.configuration_service is None:
+            return 0
+        try:
+            llm_config = self.configuration_service.get_configuration(company_short_name, "llm") or {}
+        except Exception:
+            return 0
+        if not isinstance(llm_config, dict):
+            return 0
+        return self._positive_int(llm_config.get("max_context_tokens"))
 
     @staticmethod
     def _positive_int(value) -> int:
@@ -161,12 +309,17 @@ class HistoryManagerService:
             return 0
         return number if number > 0 else 0
 
-    @staticmethod
-    def _turn_starts(context_history: list) -> list[int]:
-        """Indexes where a turn begins: each user message after the prepared context."""
+    @classmethod
+    def turn_starts(cls, context_history: list) -> list[int]:
+        """Indexes where a turn begins: each user message after the prepared context.
+
+        A compaction summary is not a turn: it stays with the prepared context,
+        so trimming never drops it before the turns it is older than.
+        """
         return [
             index for index, message in enumerate(context_history)
             if index > 0 and isinstance(message, dict) and message.get("role") == "user"
+            and not cls.is_summary_message(message)
         ]
 
     def _trim_context_history(self, context_history: list, budget_tokens: Optional[int] = None):
@@ -189,7 +342,7 @@ class HistoryManagerService:
 
         total_tokens = sum(token_counts)
         while total_tokens > budget:
-            turn_starts = self._turn_starts(context_history)
+            turn_starts = self.turn_starts(context_history)
             if len(turn_starts) < 2:
                 break  # only the current turn is left after the context
             first, second = turn_starts[0], turn_starts[1]

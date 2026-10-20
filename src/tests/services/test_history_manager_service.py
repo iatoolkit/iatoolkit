@@ -169,6 +169,11 @@ class TestHistoryManager(unittest.TestCase):
         }
         self.assertEqual(manager.context_budget_tokens("acme", "gpt-5"), 368000)
 
+        # A company cap below the window wins.
+        configuration_service.get_configuration.return_value = {"max_context_tokens": 200000}
+        self.assertEqual(manager.context_budget_tokens("acme", "gpt-5"), 200000)
+        configuration_service.get_configuration.return_value = {}
+
         # A model no sync has seen keeps the previous fixed budget.
         configuration_service.get_llm_model_config.return_value = {"id": "local-llm"}
         self.assertEqual(
