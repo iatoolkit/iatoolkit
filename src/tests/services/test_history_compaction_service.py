@@ -646,6 +646,24 @@ class TestOldToolOutputs:
             output = next(m for m in session.history if m.get("call_id") == call_id)["output"]
             assert HistoryManagerService.TRIMMED_TOOL_OUTPUT_MARKER in output
 
+    def test_old_turns_drop_their_reasoning_and_long_arguments(self):
+        history = [{"role": "user", "content": "company context"}]
+        for index in range(2):
+            turn = _tool_turn(index, "ok")
+            turn[1]["reasoning_content"] = "thinking " * 1000
+            turn[1]["reasoning_details"] = [{"type": "reasoning.text", "text": "..."}]
+            turn[1]["tool_calls"][0]["function"]["arguments"] = json.dumps({"rows": ["r"] * 2000})
+            history += turn
+
+        HistoryManagerService._trim_old_tool_outputs(history)
+
+        old, last = history[2], history[6]
+        assert "reasoning_content" not in old and "reasoning_details" not in old
+        assert json.loads(old["tool_calls"][0]["function"]["arguments"])["trimmed"].startswith("10")
+        assert old["tool_calls"][0]["id"] == "call-0"  # the call keeps its id and name
+        assert last["reasoning_content"].startswith("thinking")
+        assert len(json.loads(last["tool_calls"][0]["function"]["arguments"])["rows"]) == 2000
+
     def test_a_compaction_cuts_the_old_outputs_of_the_turns_it_keeps(self):
         history = [{"role": "user", "content": "company context"}]
         for index in range(4):

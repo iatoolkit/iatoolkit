@@ -390,13 +390,19 @@ class HistoryManagerService:
 
     @classmethod
     def _trim_old_tool_outputs(cls, context_history: list):
-        """Cuts the long tool outputs of all but the last KEEP_TOOL_OUTPUT_TURNS turns, in place.
+        """Cuts what the turns before the last KEEP_TOOL_OUTPUT_TURNS carry for their tools, in place.
 
-        Each output keeps its message (a tool call without its output is a
-        history every provider rejects) and its beginning, plus a note naming the
-        tool so the model knows it can call it again. An output is cut once: the
-        stored history then stays the same from turn to turn, which is what a
-        provider's prompt cache reuses.
+        - Long tool outputs keep their beginning and a note naming the tool, so
+          the model knows it can call it again.
+        - Long tool call arguments (a whole dataset passed to an Excel, for
+          example) become a short valid JSON object: some adapters parse them.
+        - The reasoning of those turns is dropped: providers need it only within
+          the turn that produced it, and 8 rounds of it stayed in a compacted
+          history (110k tokens one turn after compacting, in production).
+
+        Every call keeps its message and its output message, so the history is
+        always valid for the provider. A message is cut once: the stored history
+        then stays the same from turn to turn, which is what a prompt cache reuses.
         """
         turn_starts = cls.turn_starts(context_history)
         if len(turn_starts) <= cls.KEEP_TOOL_OUTPUT_TURNS:
@@ -404,9 +410,19 @@ class HistoryManagerService:
         boundary = turn_starts[-cls.KEEP_TOOL_OUTPUT_TURNS]
         tool_names = {}
         for message in context_history[:boundary]:
-            for call in (message.get("tool_calls") or []) if isinstance(message, dict) else []:
-                if isinstance(call, dict):
-                    tool_names[call.get("id")] = (call.get("function") or {}).get("name")
+            if not isinstance(message, dict):
+                continue
+            message.pop("reasoning_content", None)
+            message.pop("reasoning_details", None)
+            for call in message.get("tool_calls") or []:
+                if not isinstance(call, dict):
+                    continue
+                function = call.get("function") if isinstance(call.get("function"), dict) else {}
+                tool_names[call.get("id")] = function.get("name")
+                arguments = function.get("arguments")
+                if isinstance(arguments, str) and len(arguments) > cls.TRIMMED_TOOL_OUTPUT_CHARS:
+                    function["arguments"] = json.dumps(
+                        {"trimmed": f"{len(arguments)} characters of arguments, from an earlier turn"})
         for message in context_history[:boundary]:
             if not isinstance(message, dict) or message.get("type") != "function_call_output":
                 continue

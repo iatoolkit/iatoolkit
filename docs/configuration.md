@@ -186,10 +186,12 @@ llm:
     compaction again; only an installation without workers compacts in line.
   - Past the budget, the request drops the oldest whole turns, and the stored
     history is kept under two budgets.
-  - Tool outputs longer than 1500 characters are cut to their first 1500 once a
-    newer turn has followed theirs (also in the turns a compaction keeps verbatim),
-    with a note that tells the model which tool to call again. The call and its
-    output message stay, so the history is always valid for the provider.
+  - Once a newer turn has followed (also in the turns a compaction keeps
+    verbatim), a turn's tool outputs longer than 1500 characters are cut to their
+    first 1500, with a note that tells the model which tool to call again; its tool
+    call arguments longer than that become a short JSON note; and its reasoning
+    (`reasoning_content`, `reasoning_details`) is dropped. The calls and their output
+    messages stay, so the history is always valid for the provider.
   - Within a turn, a tool output over 40000 characters is cut before the model
     reads it, with a notice to narrow the query (filters, aggregates, LIMIT); the
     cut is logged as a warning.
