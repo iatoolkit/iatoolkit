@@ -163,22 +163,28 @@ class TestHistoryManager(unittest.TestCase):
         }
         self.assertEqual(manager.context_budget_tokens("acme", "deepseek-chat"), 112000)
 
-        # gpt-5 declares 128k of output: only 32k is reserved.
+        # A window larger than the platform cap is capped: the window is a
+        # ceiling, not a target.
         configuration_service.get_llm_model_config.return_value = {
             "id": "gpt-5", "context_window": 400000, "max_output_tokens": 128000,
         }
+        self.assertEqual(manager.context_budget_tokens("acme", "gpt-5"),
+                         HistoryManagerService.DEFAULT_MAX_CONTEXT_TOKENS)
+
+        # A company may raise it; then only 32k of gpt-5's 128k output is reserved.
+        configuration_service.get_configuration.return_value = {"max_context_tokens": 500000}
         self.assertEqual(manager.context_budget_tokens("acme", "gpt-5"), 368000)
 
-        # A company cap below the window wins.
-        configuration_service.get_configuration.return_value = {"max_context_tokens": 200000}
-        self.assertEqual(manager.context_budget_tokens("acme", "gpt-5"), 200000)
+        # Or lower it.
+        configuration_service.get_configuration.return_value = {"max_context_tokens": 50000}
+        self.assertEqual(manager.context_budget_tokens("acme", "deepseek-chat"), 50000)
         configuration_service.get_configuration.return_value = {}
 
-        # A model no sync has seen keeps the previous fixed budget.
+        # A model no sync has seen gets the platform cap too.
         configuration_service.get_llm_model_config.return_value = {"id": "local-llm"}
         self.assertEqual(
             manager.context_budget_tokens("acme", "local-llm"),
-            HistoryManagerService.DEFAULT_CONTEXT_BUDGET_TOKENS,
+            HistoryManagerService.DEFAULT_MAX_CONTEXT_TOKENS,
         )
 
     # --- update_history Tests ---

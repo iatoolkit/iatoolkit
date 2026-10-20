@@ -54,7 +54,13 @@ class HistoryCompactionService:
     #: Tool outputs and long answers are cut in the transcript the agent reads:
     #: the summary keeps facts, and a 200-row result would crowd out the rest.
     MAX_MESSAGE_CHARS = 4000
+    #: What one call to the agent reads. A longer stretch is summarized in
+    #: parts, oldest first, each part extending the summary of the previous one.
     MAX_TRANSCRIPT_CHARS = 400_000
+    #: Parts per compaction: in the background, enough for a history that grew
+    #: without compaction (before BL-009) without summarizing forever; in line,
+    #: one, because the person is waiting.
+    MAX_CHUNKS = 6
 
     @inject
     def __init__(self,
@@ -73,7 +79,19 @@ class HistoryCompactionService:
     # Entry point
     # ------------------------------------------------------------------
 
-    def compact(self, company_short_name: str, user_identifier: str, model: str) -> dict:
+    def compact(self, company_short_name: str, user_identifier: str, model: str,
+                max_chunks: Optional[int] = None) -> dict:
+        result = self._compact(company_short_name, user_identifier, model, max_chunks)
+        if result.get("status") != "compacted":
+            # A run that ends without applying anything is as worth knowing as
+            # one that does: in production both looked the same ("executed").
+            log = logging.warning if result.get("status") == "error" else logging.info
+            log("History of %s/%s (model=%s) not compacted: %s",
+                company_short_name, user_identifier, model, result)
+        return result
+
+    def _compact(self, company_short_name: str, user_identifier: str, model: str,
+                 max_chunks: Optional[int]) -> dict:
         history = self.session_context.get_context_history(company_short_name, user_identifier, model=model) or []
         budget = self.history_manager.context_budget_tokens(company_short_name, model)
         plan = self.plan(history, budget)
@@ -86,24 +104,68 @@ class HistoryCompactionService:
         if not company:
             return {"status": "error", "reason": "company_not_found"}
 
-        try:
-            response = self.system_agent_runner.run(
-                company,
-                self.AGENT_KEY,
-                {
-                    "previous_summary": plan.previous_summary,
-                    "transcript": self.render_transcript(plan.material),
-                },
-                user_identifier=user_identifier,
+        chunks = self.chunk_material(plan.material)
+        limit = max(int(max_chunks or self.MAX_CHUNKS), 1)
+        dropped_chunks = max(len(chunks) - limit, 0)
+        if dropped_chunks:
+            # The oldest parts go unsummarized: a cost bound, logged so a short
+            # summary of a very long conversation can be explained.
+            logging.warning(
+                "History of %s/%s (model=%s) needs %s parts to summarize; only the %s most recent are.",
+                company_short_name, user_identifier, model, len(chunks), limit,
             )
-        except SystemAgentUnavailable as e:
-            return {"status": "skipped", "reason": str(e)}
+            chunks = chunks[-limit:]
 
-        summary = self._summary_from(response)
-        if not summary:
-            return {"status": "error", "reason": "empty_summary"}
+        summary = plan.previous_summary
+        for chunk in chunks:
+            try:
+                response = self.system_agent_runner.run(
+                    company,
+                    self.AGENT_KEY,
+                    {"previous_summary": summary, "transcript": self.render_transcript(chunk)},
+                    user_identifier=user_identifier,
+                )
+            except SystemAgentUnavailable as e:
+                return {"status": "skipped", "reason": str(e)}
+            part = self._summary_from(response)
+            if not part:
+                return {"status": "error", "reason": "empty_summary"}
+            summary = part
 
-        return self._apply(company_short_name, user_identifier, model, plan, summary)
+        result = self._apply(company_short_name, user_identifier, model, plan, summary)
+        if result.get("status") == "compacted":
+            result["chunks"] = len(chunks)
+            if dropped_chunks:
+                result["dropped_chunks"] = dropped_chunks
+        return result
+
+    @classmethod
+    def chunk_material(cls, material: list) -> list[list]:
+        """The material split into parts the agent can read in one call, at turn boundaries.
+
+        A turn is never split, so a tool call stays with its result. A single
+        turn longer than a part is a part of its own (render_transcript clips it).
+        """
+        turns: list[list] = []
+        for message in material or []:
+            if (isinstance(message, dict) and message.get("role") == "user") or not turns:
+                turns.append([message])
+            else:
+                turns[-1].append(message)
+
+        chunks: list[list] = []
+        current: list = []
+        current_chars = 0
+        for turn in turns:
+            turn_chars = len(cls.render_transcript(turn))
+            if current and current_chars + turn_chars > cls.MAX_TRANSCRIPT_CHARS:
+                chunks.append(current)
+                current, current_chars = [], 0
+            current.extend(turn)
+            current_chars += turn_chars
+        if current:
+            chunks.append(current)
+        return chunks
 
     # ------------------------------------------------------------------
     # Planning
@@ -253,11 +315,27 @@ class HistoryCompactionService:
 
     @staticmethod
     def _summary_from(response: Any) -> str:
+        """The summary, however the model returned it.
+
+        The agent asks for `{"summary": ...}`, but over a long transcript a model
+        may answer the Markdown alone. That is still the summary; dropping it
+        threw away minutes of work and left the history to grow.
+        """
         if not isinstance(response, dict):
             return ""
-        structured = response.get("structured_output")
-        if isinstance(structured, dict) and isinstance(structured.get("summary"), str):
-            return structured["summary"].strip()
+        for key in ("structured_output", "parsed_output"):
+            structured = response.get(key)
+            if isinstance(structured, dict) and isinstance(structured.get("summary"), str):
+                return structured["summary"].strip()
+        answer = response.get("answer")
+        if isinstance(answer, str) and answer.strip():
+            text = answer.strip()
+            try:
+                parsed = json.loads(text)
+            except (TypeError, ValueError):
+                return text
+            if isinstance(parsed, dict) and isinstance(parsed.get("summary"), str):
+                return parsed["summary"].strip()
         return ""
 
     def _count(self, message: Any) -> int:

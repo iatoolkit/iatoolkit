@@ -39,15 +39,29 @@ class HistoryManagerService:
     #: declare 128k of output; reserving all of it would waste a quarter of a
     #: 400k window on an answer that is almost never that long.
     MAX_OUTPUT_RESERVE_TOKENS = 32000
+    #: The most the history may take, whatever the model's window. Every turn
+    #: (and every round of its tool loop) sends the whole history, so a
+    #: million-token window filled on each call is a cost nobody chose: seen in
+    #: production, three calls of 393k tokens for one question. A company may
+    #: set its own with `llm.max_context_tokens`.
+    DEFAULT_MAX_CONTEXT_TOKENS = 200000
 
     #: Share of the budget at which a finished turn asks for a background
     #: compaction, and at which the next turn compacts in line because the
     #: background one did not land in time (BL-009, Fase E).
     COMPACTION_TRIGGER_SHARE = 0.70
     INLINE_COMPACTION_SHARE = 0.95
+    #: Parts an in-line compaction may summarize: one, the person is waiting.
+    INLINE_COMPACTION_MAX_CHUNKS = 1
     #: How long a turn waits for a compaction that is writing the history.
     HISTORY_LOCK_WAIT_SECONDS = 2.0
     HISTORY_LOCK_TTL_SECONDS = 30
+    #: The stored history never grows past this many budgets. Only the copy sent
+    #: to the model used to be trimmed, so a conversation that was never
+    #: compacted kept every turn in the session (829k tokens seen on a 400k
+    #: budget). Two budgets leave the background compaction room to summarize
+    #: what is over one; past them, the oldest turns go.
+    STORED_HISTORY_MAX_BUDGETS = 2
 
     #: Marks the message that holds the summary of the compacted turns. It goes
     #: to the model as it is, so it also tells the model what the text is.
@@ -187,6 +201,8 @@ class HistoryManagerService:
         elif response.get('answer'):
             context_history.append({"role": "assistant", "content": response.get('answer', '')})
 
+        self._cap_stored_history(company_short_name, model, context_history)
+
         self.session_context.save_context_history(
             company_short_name,
             user_identifier,
@@ -215,7 +231,14 @@ class HistoryManagerService:
 
     def _compact_in_line_if_needed(self, company_short_name: str, user_identifier: str, model: Optional[str],
                                    user_turn_prompt: str, budget: int):
-        """Compacts now when the turn about to run would not fit: the background one did not land in time."""
+        """Handles a turn that would not fit because the background compaction did not land in time.
+
+        With workers, the turn asks for the compaction again and goes out
+        trimmed: a summary takes one to three minutes (seen in production), and
+        the request would die long before (gunicorn's timeout is 60s). Only an
+        installation without workers compacts in line, since nothing else ever
+        would.
+        """
         try:
             measured = self.session_context.get_context_tokens(company_short_name, user_identifier, model=model)
             if not measured:
@@ -223,7 +246,12 @@ class HistoryManagerService:
             estimated = measured + self.llm_client.count_tokens(user_turn_prompt or "")
             if estimated < budget * self.INLINE_COMPACTION_SHARE:
                 return
-            result = self.compaction_service.compact(company_short_name, user_identifier, model)
+            if self.compaction_trigger.trigger(company_short_name, user_identifier, model):
+                return
+            result = self.compaction_service.compact(
+                company_short_name, user_identifier, model,
+                max_chunks=self.INLINE_COMPACTION_MAX_CHUNKS,
+            )
             logging.info(f"In-line compaction of {company_short_name}/{user_identifier}: {result}")
         except Exception as e:
             # The trim that follows still keeps the request inside the window.
@@ -282,13 +310,12 @@ class HistoryManagerService:
         else:
             budget = self.DEFAULT_CONTEXT_BUDGET_TOKENS
 
-        # A company may cap it below the window: filling a million-token window
-        # on every turn is a cost decision, not a technical one.
-        company_cap = self._company_context_cap(company_short_name)
-        return min(budget, company_cap) if company_cap else budget
+        # The window is a ceiling, not a target: the cap is a cost decision.
+        cap = self._company_context_cap(company_short_name) or self.DEFAULT_MAX_CONTEXT_TOKENS
+        return min(budget, cap)
 
     def _company_context_cap(self, company_short_name: str) -> int:
-        """`llm.max_context_tokens` in company.yaml; 0 when not set."""
+        """`llm.max_context_tokens` in company.yaml; 0 when not set (the platform default applies)."""
         if self.configuration_service is None:
             return 0
         try:
@@ -322,7 +349,17 @@ class HistoryManagerService:
             and not cls.is_summary_message(message)
         ]
 
-    def _trim_context_history(self, context_history: list, budget_tokens: Optional[int] = None):
+    def _cap_stored_history(self, company_short_name: str, model: Optional[str], context_history: list):
+        """Keeps the stored history under STORED_HISTORY_MAX_BUDGETS budgets, whole turns at a time."""
+        cap = self.context_budget_tokens(company_short_name, model) * self.STORED_HISTORY_MAX_BUDGETS
+        # A cheap upper estimate first (a token is rarely under 3 characters):
+        # counting every save with the tokenizer would cost what this saves.
+        if len(json.dumps(context_history, default=str)) <= cap * 3:
+            return
+        self._trim_context_history(context_history, cap, purpose="stored")
+
+    def _trim_context_history(self, context_history: list, budget_tokens: Optional[int] = None,
+                              purpose: str = "request"):
         """Drops whole turns, oldest first, until the history fits the budget.
 
         A turn is a user message and everything up to the next one: the
@@ -341,6 +378,9 @@ class HistoryManagerService:
             return
 
         total_tokens = sum(token_counts)
+        initial_tokens = total_tokens
+        removed_turns = 0
+        removed_messages = 0
         while total_tokens > budget:
             turn_starts = self.turn_starts(context_history)
             if len(turn_starts) < 2:
@@ -350,9 +390,13 @@ class HistoryManagerService:
             del context_history[first:second]
             del token_counts[first:second]
             total_tokens -= removed_tokens
+            removed_turns += 1
+            removed_messages += second - first
+
+        if removed_turns:
             logging.warning(
-                f"History tokens exceed the budget of {budget}. Removed the oldest turn "
-                f"({second - first} messages). New total: {total_tokens} tokens."
+                f"History ({purpose}) over the budget of {budget} tokens: removed the {removed_turns} "
+                f"oldest turns ({removed_messages} messages), {initial_tokens} -> {total_tokens} tokens."
             )
 
     # --- this is for the history popup in the chat page

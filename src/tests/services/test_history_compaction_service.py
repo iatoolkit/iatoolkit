@@ -182,7 +182,7 @@ class TestCompact:
 
         result = service.compact("acme", "u1", "gpt-5")
 
-        assert result == {"status": "compacted", "summarized_messages": 6, "kept_messages": 6}
+        assert result == {"status": "compacted", "summarized_messages": 6, "kept_messages": 6, "chunks": 1}
         assert session.history[0] == {"role": "user", "content": "company context"}
         assert session.history[1] == HistoryManagerService.summary_message("the summary")
         assert [m["content"] for m in session.history[2:]] == ["q3", "a3", "q4", "a4", "q5", "a5"]
@@ -319,15 +319,28 @@ class TestTriggers:
         # The lock it did not take is not released by it.
         assert manager.history_lock_key("acme", "u1", "gpt-5") in session.locks
 
-    def test_a_turn_that_would_not_fit_compacts_in_line(self):
+    def test_without_workers_a_turn_that_would_not_fit_compacts_in_line(self):
         session = FakeSession(_history(1))
         session.context_tokens = 940
         manager = self._manager(session)
+        manager.compaction_trigger.trigger.return_value = False  # nothing runs in the background
 
         # 940 measured + 10 for the new turn = 95% of 1000.
         manager.populate_request_params(_Handle(), "q1")
 
-        manager.compaction_service.compact.assert_called_once_with("acme", "u1", "gpt-5")
+        manager.compaction_service.compact.assert_called_once_with("acme", "u1", "gpt-5", max_chunks=1)
+
+    def test_with_workers_the_turn_asks_again_and_never_waits_for_a_summary(self):
+        # A summary takes minutes; the request would die at the web timeout.
+        session = FakeSession(_history(1))
+        session.context_tokens = 940
+        manager = self._manager(session)
+        manager.compaction_trigger.trigger.return_value = True
+
+        manager.populate_request_params(_Handle(), "q1")
+
+        manager.compaction_trigger.trigger.assert_called_once_with("acme", "u1", "gpt-5")
+        manager.compaction_service.compact.assert_not_called()
 
     def test_a_turn_that_fits_does_not_compact(self):
         session = FakeSession(_history(1))
@@ -351,6 +364,7 @@ class TestTriggers:
         session = FakeSession(_history(1))
         session.context_tokens = 999
         manager = self._manager(session)
+        manager.compaction_trigger.trigger.return_value = False
         manager.compaction_service.compact.side_effect = RuntimeError("model down")
 
         handle = _Handle()
@@ -381,3 +395,90 @@ def test_context_tokens_is_what_the_last_call_read_and_wrote():
     response = LLMResponse('r', 'gpt-5', 'completed', json.dumps({"answer": "x"}), [], Usage(900, 50, 950))
 
     assert llmClient._context_tokens(response) == 950
+
+
+class TestSummaryAndStoredHistory:
+    @pytest.mark.parametrize("response, expected", [
+        ({"structured_output": {"summary": "a"}}, "a"),
+        ({"structured_output": None, "parsed_output": {"summary": "b"}}, "b"),
+        # The model answered the Markdown alone: that is the summary.
+        ({"structured_output": None, "answer": "**Objective**: c"}, "**Objective**: c"),
+        ({"structured_output": None, "answer": '{"summary": "d"}'}, "d"),
+        ({"structured_output": None, "answer": "  "}, ""),
+        (None, ""),
+    ])
+    def test_the_summary_is_read_however_the_model_returned_it(self, response, expected):
+        assert HistoryCompactionService._summary_from(response) == expected
+
+    def test_a_long_stretch_is_summarized_in_parts_oldest_first(self):
+        session = FakeSession(_history(6))
+        service, runner, _ = _service(session, budget=200)
+        calls = []
+
+        def summarize(*args, **kwargs):
+            calls.append(args[2])
+            return {"structured_output": {"summary": f"summary {len(calls)}"}}
+
+        runner.run.side_effect = summarize
+
+        with patch.object(HistoryCompactionService, "MAX_TRANSCRIPT_CHARS", 40):
+            result = service.compact("acme", "u1", "gpt-5")
+
+        assert result["status"] == "compacted"
+        assert result["chunks"] == len(calls) >= 2
+        # Each part extends the summary of the one before; the oldest goes first.
+        assert calls[0]["previous_summary"] == ""
+        assert "q0" in calls[0]["transcript"]
+        assert calls[1]["previous_summary"] == "summary 1"
+        assert session.history[1] == HistoryManagerService.summary_message(f"summary {len(calls)}")
+
+    def test_parts_beyond_the_limit_are_left_out_and_reported(self):
+        session = FakeSession(_history(6))
+        service, runner, _ = _service(session, budget=200)
+
+        with patch.object(HistoryCompactionService, "MAX_TRANSCRIPT_CHARS", 10):
+            result = service.compact("acme", "u1", "gpt-5", max_chunks=1)
+
+        assert runner.run.call_count == 1
+        assert result["dropped_chunks"] >= 1
+
+    def test_chunks_never_split_a_turn(self):
+        material = [
+            {"role": "user", "content": "q0"},
+            {"role": "assistant", "content": "", "tool_calls": [{"id": "c1", "function": {"name": "sql", "arguments": "{}"}}]},
+            {"type": "function_call_output", "call_id": "c1", "output": "rows"},
+            {"role": "assistant", "content": "a0"},
+            {"role": "user", "content": "q1"},
+            {"role": "assistant", "content": "a1"},
+        ]
+
+        with patch.object(HistoryCompactionService, "MAX_TRANSCRIPT_CHARS", 10):
+            chunks = HistoryCompactionService.chunk_material(material)
+
+        assert [len(chunk) for chunk in chunks] == [4, 2]
+
+    def test_the_stored_history_is_capped_at_two_budgets(self):
+        long = "x" * 4000
+        session = FakeSession(
+            [{"role": "user", "content": "company context"}]
+            + [m for i in range(30) for m in _turn(f"q{i} {long}", f"a{i} {long}")]
+        )
+        manager = _manager(session, _llm_client(tokens_per_message=1000), budget=10_000)
+        manager.compaction_trigger = MagicMock()
+
+        manager.update_history(_Handle(), "new question", {"answer": "new answer"})
+
+        # 63 messages of 1000 tokens against a cap of 20,000: the oldest whole turns go.
+        assert len(session.history) * 1000 <= 20_000
+        assert session.history[0] == {"role": "user", "content": "company context"}
+        assert [m["content"] for m in session.history[-2:]] == ["new question", "new answer"]
+
+    def test_a_stored_history_well_under_the_cap_is_not_even_counted(self):
+        session = FakeSession(_history(3))
+        llm_client = _llm_client(tokens_per_message=1)
+        manager = _manager(session, llm_client, budget=10_000)
+        manager.compaction_trigger = MagicMock()
+
+        manager.update_history(_Handle(), "q", {"answer": "a"})
+
+        llm_client.count_tokens.assert_not_called()

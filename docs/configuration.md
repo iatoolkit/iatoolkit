@@ -113,7 +113,7 @@ llm:
   # Tool loop budget: model responses that request tools, per answer
   max_tool_rounds: 25
 
-  # Optional cap on the conversation history, below the model's window
+  # Cap on the conversation history per model call (default 200000)
   max_context_tokens: 200000
 
   # Optional provider capability overrides for attachment planner
@@ -165,16 +165,20 @@ llm:
   Independently, after 3 consecutive rounds in which every call failed, tools are
   disabled for the rest of that answer. `stats.tool_loop_stop_reason` on the query
   records either stop (`tool_budget_exhausted` or `repeated_tool_failures`).
-- `max_context_tokens` (optional, default: only the model's window): the most tokens
-  the conversation history may take. IAToolkit owns the history with every provider
-  and sends it whole on each turn, so this is a cost cap: without it the budget is
-  the model's `context_window` (from the model catalogue, written by `models-sync`)
-  minus up to 32k reserved for the answer, or 400k for a model with no known window.
-  When a turn leaves the history at 70% of the budget, the older turns are compacted
-  in the background into a summary by the `history_compaction` system agent; its model
-  is chosen like any system agent's, with `system_agents.history_compaction.model`.
-  If a turn would reach 95% before that lands, it is compacted in line, and past the
-  budget the oldest whole turns are dropped.
+- `max_context_tokens` (optional, default `200000`): the most tokens the conversation
+  history may take on each model call. IAToolkit owns the history with every
+  provider and sends it whole on every call (each round of the tool loop included),
+  so this is a cost cap: the budget is the smaller of this value and the model's
+  `context_window` minus up to 32k reserved for the answer (`context_window` comes
+  from the model catalogue, written by `models-sync`). Raise it for a company that
+  needs long conversations on a large-window model; lower it to spend less.
+  - When a turn leaves the history at 70% of the budget, the older turns are
+    compacted in the background into a summary by the `history_compaction` system
+    agent (model: `system_agents.history_compaction.model`, like any system agent).
+  - When a turn would reach 95% before that lands, it asks for the compaction again;
+    only an installation without workers compacts in line.
+  - Past the budget, the request drops the oldest whole turns, and the stored
+    history is kept under two budgets.
 - `api-key` (legacy optional fallback): global API key reference.
 
 ## 4.3 `embedding_provider` (default text embeddings)
