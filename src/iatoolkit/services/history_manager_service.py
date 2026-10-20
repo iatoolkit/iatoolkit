@@ -54,9 +54,11 @@ class HistoryManagerService:
     INLINE_COMPACTION_SHARE = 0.95
     #: The size the history is kept near, whatever the budget: the budget stops
     #: a request from overflowing, this keeps every turn from resending 140k
-    #: tokens (70% of the 200k default) before the first compaction. A company
-    #: may set its own with `llm.compaction_budget_tokens`.
-    DEFAULT_COMPACTION_BUDGET_TOKENS = 64000
+    #: tokens (70% of the 200k default) before the first compaction. 64k
+    #: compacted every few SQL turns; with old tool outputs cut, 100k (asks at
+    #: 70k) leaves a long conversation alone. A company may set its own with
+    #: `llm.compaction_budget_tokens`.
+    DEFAULT_COMPACTION_BUDGET_TOKENS = 100000
 
     #: Tool outputs of the turns older than this many are cut down in the
     #: stored history: an SQL result or a schema is what the model needs on the

@@ -573,11 +573,11 @@ class TestCostDrivenHistory:
         manager = self._manager(session)
 
         with caplog.at_level("INFO"):
-            manager.update_history(_Handle(), "q1", {"answer": "a1", "stats": {"context_tokens": 50000}})
+            manager.update_history(_Handle(), "q1", {"answer": "a1", "stats": {"context_tokens": 80000}})
 
         line = next(r.getMessage() for r in caplog.records if r.getMessage().startswith("Context of acme/u1"))
-        assert "50000 tokens, 25% of the 200000 budget" in line
-        assert "compaction at 44800 -> requested" in line
+        assert "80000 tokens, 40% of the 200000 budget" in line
+        assert "compaction at 70000 -> requested" in line
 
     def test_the_recent_turns_keep_a_share_of_the_compaction_budget(self):
         session = FakeSession(_history(6))

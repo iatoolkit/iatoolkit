@@ -116,8 +116,8 @@ llm:
   # Cap on the conversation history per model call (default 200000)
   max_context_tokens: 200000
 
-  # Size the history is compacted toward (default 64000, never above the cap)
-  compaction_budget_tokens: 64000
+  # Size the history is compacted toward (default 100000, never above the cap)
+  compaction_budget_tokens: 100000
 
   # Optional provider capability overrides for attachment planner
   capabilities_overrides:
@@ -175,7 +175,7 @@ llm:
   `context_window` minus up to 32k reserved for the answer (`context_window` comes
   from the model catalogue, written by `models-sync`). Raise it for a company that
   needs long conversations on a large-window model; lower it to spend less.
-- `compaction_budget_tokens` (optional, default `64000`): the size the history is
+- `compaction_budget_tokens` (optional, default `100000`): the size the history is
   kept near, never above the budget. The budget stops a call from overflowing; this
   keeps each turn from resending far more than it needs.
   - When a turn leaves the history at 70% of this value, the older turns are
