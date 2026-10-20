@@ -270,7 +270,6 @@ class TestContextBuilderService:
                 "context_policy": {
                     "company_context_blocks": {
                         "markdown_context": False,
-                        "yaml_context": False,
                     }
                 },
                 "resource_bindings": [],
@@ -315,7 +314,6 @@ class TestContextBuilderService:
                     },
                     "company_context_blocks": {
                         "markdown_context": False,
-                        "yaml_context": False,
                     },
                 },
                 "resource_bindings": [
@@ -533,7 +531,6 @@ required:
         assert contract["context_policy"] == {
             "company_context_blocks": {
                 "markdown_context": True,
-                "yaml_context": True,
             },
             "runtime_instructions": {
                 "enabled": True,
@@ -562,7 +559,6 @@ required:
             context_policy={
                 "company_context_blocks": {
                     "markdown_context": False,
-                    "yaml_context": False,
                 },
                 "runtime_instructions": {
                     "enabled": False,
@@ -605,7 +601,6 @@ required:
         assert contract["context_policy"] == {
             "company_context_blocks": {
                 "markdown_context": False,
-                "yaml_context": False,
             },
             "runtime_instructions": {
                 "enabled": False,

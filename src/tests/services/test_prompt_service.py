@@ -132,7 +132,6 @@ class TestPromptService:
                     'context_policy': {
                         'company_context_blocks': {
                             'markdown_context': True,
-                            'yaml_context': True,
                         },
                         'runtime_instructions': {
                             'enabled': True,
@@ -475,7 +474,6 @@ class TestPromptService:
         assert saved_prompt.context_policy == {
             "company_context_blocks": {
                 "markdown_context": True,
-                "yaml_context": False,
             },
             "runtime_instructions": {
                 "enabled": True,
@@ -510,7 +508,6 @@ class TestPromptService:
         assert saved_prompt.context_policy == {
             "company_context_blocks": {
                 "markdown_context": False,
-                "yaml_context": False,
             },
             "runtime_instructions": {
                 "enabled": False,
