@@ -33,6 +33,8 @@ class Dispatcher:
         "iat_memory_answer_question",
         "iat_wiki_search",
         "iat_wiki_get_page",
+        # The schema shown is the person's: their sources and tables (BL-017).
+        "iat_sql_schema",
     }
     _tool_execution_hook = None
     # Tool types this module executes itself; an extension cannot take them over.

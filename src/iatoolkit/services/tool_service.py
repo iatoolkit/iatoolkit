@@ -110,6 +110,7 @@ class ToolService:
             "iat_generate_pdf": self.pdf_service.pdf_generator,
             "iat_send_email": self.mail_service.send_mail,
             "iat_sql_query": self.sql_service.exec_sql,
+            "iat_sql_schema": self._handle_sql_schema_tool,
             "iat_image_search": self._handle_image_search_tool,
             "iat_visual_search": self._handle_visual_search_tool,
             "iat_document_search": self._handle_document_search_tool,
@@ -488,6 +489,31 @@ class ToolService:
             allowed_wiki_keys=allowed_wiki_keys,
             user_identifier=user_identifier,
         )
+
+    def _handle_sql_schema_tool(
+        self,
+        company_short_name: str,
+        database_key: str,
+        table_names: list[str] | None = None,
+        user_identifier: str | None = None,
+        **kwargs,
+    ) -> str:
+        """The columns of the tables a question needs (BL-017): the base context carries only the map."""
+        catalog = self.company_context_service.sql_catalog
+        allowed_databases, table_filter = catalog.person_scope(company_short_name, user_identifier)
+        description = catalog.describe(
+            company_short_name, database_key, table_names,
+            allowed_databases=allowed_databases, table_filter=table_filter,
+        )
+        return catalog.render_tables(description)
+
+    @property
+    def company_context_service(self):
+        if getattr(self, "_company_context_service", None) is None:
+            from iatoolkit.services.company_context_service import CompanyContextService
+
+            self._company_context_service = current_iatoolkit().get_injector().get(CompanyContextService)
+        return self._company_context_service
 
     def _handle_wiki_get_page_tool(
         self,
@@ -1541,8 +1567,11 @@ class ToolService:
             tools.append(ai_tool)
 
         if user_identifier and access.Access.registered():
+            from iatoolkit.services.resource_access_scope import tool_access_key
+
             tools = [tool for tool in tools
-                     if access.can(company.short_name, user_identifier, access.USE, "tool", tool["name"])]
+                     if access.can(company.short_name, user_identifier, access.USE, "tool",
+                                   tool_access_key(tool["name"]))]
         return tools
 
     def get_always_include_tool_names(self, company_short_name: str, tools: list[dict]) -> list[str]:

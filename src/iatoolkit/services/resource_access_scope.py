@@ -32,7 +32,16 @@ from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.repositories.database_manager import DatabaseManager
 from iatoolkit.repositories.models import CollectionType, Company, Document, KnowledgeWiki
 
-SQL_TOOLS = frozenset({"iat_sql_query"})
+SQL_TOOLS = frozenset({"iat_sql_query", "iat_sql_schema"})
+#: Tools whose access follows another tool's (BL-017): whoever may query may read
+#: the schema of what they query, and nobody else. Without this a new tool falls
+#: to the type default and can end up wider or narrower than the one it serves.
+TOOL_ACCESS_ALIASES = {"iat_sql_schema": "iat_sql_query"}
+
+
+def tool_access_key(function_name: str) -> str:
+    """The tool name whose access list decides this tool's access."""
+    return TOOL_ACCESS_ALIASES.get(function_name, function_name)
 COLLECTION_TOOLS = frozenset({"iat_document_search", "iat_document_list", "iat_image_search", "iat_visual_search"})
 DOCUMENT_READ_TOOLS = frozenset({"iat_document_read"})
 WIKI_TOOLS = frozenset({"iat_wiki_search", "iat_wiki_get_page"})
@@ -55,7 +64,7 @@ class ResourceAccessScope:
         """The call's arguments, narrowed to what the person may reach; raises PERMISSION otherwise."""
         if not user_identifier:
             return arguments
-        if not access.can(company_short_name, user_identifier, USE, "tool", function_name):
+        if not access.can(company_short_name, user_identifier, USE, "tool", tool_access_key(function_name)):
             raise _denied(f"No access to the tool '{function_name}'.")
 
         scoped = dict(arguments)

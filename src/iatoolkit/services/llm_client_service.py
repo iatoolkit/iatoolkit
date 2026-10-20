@@ -1606,8 +1606,9 @@ class llmClient:
         sql {sql_query}
 
         **INSTRUCCIÓN OBLIGATORIA:**
-        1.  Analiza el error y corrige la sintaxis de la consulta SQL anterior.
-        2.  Llama a la herramienta `{function_name}` **OTRA VEZ**, inmediatamente, con la consulta corregida.
+        1.  Analiza el error y corrige la consulta SQL anterior. Si dice que una columna o una tabla
+            no existe, pide primero sus columnas reales con `iat_sql_schema`; no adivines otro nombre.
+        2.  Llama a la herramienta `{function_name}` **OTRA VEZ** con la consulta corregida.
         3.  **NO** respondas al usuario con este mensaje de error. Tu ÚNICA acción debe ser volver a llamar a la herramienta con la solución.
         """
 

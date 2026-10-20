@@ -3,10 +3,13 @@
 - Trabaja siempre con el dialecto SQL indicado para la base seleccionada.
 - Antes de escribir la consulta, revisa el contexto de la base y respeta su marcador
   `dialect=...` (por ejemplo `postgresql` o `mysql`).
-- Usa solo tablas, columnas y relaciones presentes en el schema provisto.
+- El contexto lista las bases y sus tablas, sin columnas. Antes de escribir la
+  consulta, pide con `iat_sql_schema` las columnas de las tablas que vas a usar,
+  todas en una sola llamada. Si una columna no aparece, pide la tabla que la tiene
+  en vez de suponerla.
+- Usa solo tablas de la lista y columnas que `iat_sql_schema` te haya mostrado.
   No inventes columnas ni supongas nombres parecidos.
-- Si la consulta requiere una base especifica, usa `iat_sql_query` con el
-  `database_key` correcto.
+- Ejecuta la consulta con `iat_sql_query` y el `database_key` correcto.
 - Si hay mas de una tabla, subconsulta o CTE, califica las columnas con alias
   en `SELECT`, `JOIN`, `ON`, `WHERE`, `GROUP BY`, `HAVING` y `ORDER BY`.
 - No mezcles sintaxis de distintos dialectos en la misma consulta.

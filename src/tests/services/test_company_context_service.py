@@ -82,24 +82,27 @@ class TestCompanyContextService:
         # Act
         result_context, db_tables = self.context_service._get_sql_enriched_context(self.COMPANY_NAME)
 
-        # Assert
+        # Assert: the base context carries the map (BL-017)...
         assert "## Bases de datos SQL disponibles" in result_context
         assert "### Base SQL (`database_key`): main_db" in result_context
         assert "- Descripcion: Main database" in result_context
+        assert "- `users`: User table" in result_context
+        assert "iat_sql_schema" in result_context
 
-        # Check Table info
-        assert "#### Tabla: `users`" in result_context
-        assert "- Descripcion: User table" in result_context
-
-        # Check Column info
-        assert "- `id` (INTEGER): Primary Key" in result_context
-
-        # Check JSONB info formatting
-        # Removed assertion for literal "JSON Structure:" text as code output is cleaner
-        assert "- **`role`** (string)" in result_context
+        # ...and never the columns: those come from iat_sql_schema.
+        assert "Primary Key" not in result_context
+        assert "role" not in result_context
 
         # Check returned tables list
         assert "users" in db_tables[0].get("table_name")
+
+        # The columns, JSONB structure included, are what the tool returns.
+        detail = self.context_service.sql_catalog.render_tables(
+            self.context_service.sql_catalog.describe(self.COMPANY_NAME, "main_db", ["users"])
+        )
+        assert "#### Tabla: `users`" in detail
+        assert "- `id` (INTEGER): Primary Key" in detail
+        assert "- **`role`** (string)" in detail
 
     def test_get_sql_enriched_context_no_config(self):
         """
@@ -132,8 +135,8 @@ class TestCompanyContextService:
 
         result_context, db_tables = self.context_service._get_sql_enriched_context(self.COMPANY_NAME)
 
-        assert "#### Tabla: `customers`" in result_context
-        assert "#### Tabla: `orders`" not in result_context
+        assert "- `customers`: Customers table" in result_context
+        assert "`orders`" not in result_context
         assert db_tables == [{'db_name': 'main_db', 'table_name': 'customers'}]
 
     def test_get_sql_enriched_context_handles_error(self):

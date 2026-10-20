@@ -181,129 +181,35 @@ class CompanyContextService:
             return False
         return bool(cls._table_name_candidates(table_name) & allowed_tables)
 
+    @property
+    def sql_catalog(self):
+        """What of each SQL source a person sees (BL-017); built here, it reads this service's schema."""
+        if getattr(self, "_sql_catalog", None) is None:
+            from iatoolkit.services.sql_catalog_service import SqlCatalogService
+
+            self._sql_catalog = SqlCatalogService(self, self.sql_source_service, self.sql_service)
+        return self._sql_catalog
+
     def _get_sql_enriched_context(self, company_short_name: str, allowed_databases: List[str] | None = None,
                                   table_filter=None):
         """
-        Generates the SQL context for the LLM using the enriched schema logic.
-        It iterates over configured databases, fetches their enriched structure,
-        and formats it into a prompt-friendly string.
+        The SQL block of the base context: a map of each source the person may
+        query, its tables with a one-line description and no columns (BL-017).
+
+        The columns travel only when a question needs them, through
+        `iat_sql_schema`: the whole schema in the base context was resent on
+        every model call and never compacted (~33k tokens at Maxxa).
+        Returns the block and the (db_name, table_name) pairs it covers.
         """
-        sql_sources = self.sql_source_service.list_sources(company_short_name, include_inactive=False)
-        if not sql_sources:
-            return '', []
-
-        allowed_database_set = {
-            str(database or "").strip()
-            for database in (allowed_databases or [])
-            if str(database or "").strip()
-        }
-        if allowed_databases is not None and not allowed_database_set:
-            return "", []
-
-        context_output = []
-        db_tables=[]
-
-        for source in sql_sources:
-            db_name = source.get('database')
-            if not db_name:
-                continue
-            if allowed_database_set and db_name not in allowed_database_set:
-                continue
-
-            allowed_tables = self._resolve_allowed_tables_for_source(source)
-
-            try:
-                # 1. Get the Enriched Schema (Physical + YAML)
-                enriched_structure = self.get_enriched_database_schema(company_short_name, db_name)
-                if not enriched_structure:
-                    continue
-
-                if allowed_tables is not None:
-                    enriched_structure = {
-                        table_name: table_data
-                        for table_name, table_data in enriched_structure.items()
-                        if self._table_is_allowed(table_name, allowed_tables)
-                    }
-                    if not enriched_structure:
-                        continue
-                if table_filter is not None:
-                    # Tables the person may not query (enterprise's knowledge tables, BL-010).
-                    enriched_structure = {
-                        table_name: table_data
-                        for table_name, table_data in enriched_structure.items()
-                        if table_filter(db_name, table_name)
-                    }
-                    if not enriched_structure:
-                        continue
-
-                # 2. Build Header for this Database
-                dialect = self.sql_service.get_database_dialect(company_short_name, db_name)
-                dialect_suffix = f" [dialect={dialect}]" if dialect else ""
-                db_context = f"### Base SQL (`database_key`): {db_name}{dialect_suffix}\n"
-
-                # Optional: Add DB description from config if available (useful context)
-                db_desc = source.get('description', '')
-                if db_desc:
-                    db_context += f"- Descripcion: {db_desc}\n"
-
-                db_context += (
-                    f"- Usa `iat_sql_query` con `database_key='{db_name}'` para consultar esta base.\n"
-                )
-
-                # 3. Format Tables
-                for table_name, table_data in enriched_structure.items():
-                    table_desc = table_data.get('description', '')
-                    columns = table_data.get('columns', [])
-
-                    # Table Header
-                    table_str = f"\n\n#### Tabla: `{table_name}`"
-                    if table_desc:
-                        table_str += f"\n- Descripcion: {table_desc}"
-
-                    table_str += "\n- Columnas:"
-
-                    # Format Columns
-                    for col in columns:
-                        col_name = col.get('name')
-                        col_type = col.get('type', 'unknown')
-                        col_desc = col.get('description', '')
-                        col_props = col.get('properties') # Nested JSONB structure
-
-                        col_line = f"\n  - `{col_name}` ({col_type})"
-                        if col_desc:
-                            col_line += f": {col_desc}"
-
-                        table_str += col_line
-
-                        # If it has nested properties (JSONB enriched from YAML), format them
-                        if col_props:
-                            table_str += "\n"
-                            table_str += self._format_json_schema(col_props, 2) # Indent level 2
-
-                    db_context += table_str
-
-                    # collect the table names for later use
-                    db_tables.append(
-                        {'db_name': db_name,
-                         'table_name': table_name,
-                         }
-                    )
-
-                context_output.append(db_context)
-
-            except Exception as e:
-                logging.warning(f"Could not generate enriched SQL context for '{db_name}': {e}")
-
-        if not context_output:
-            return "", []
-
-        header = (
-            "## Bases de datos SQL disponibles\n\n"
-            "Estas son las bases SQL que puedes consultar usando `iat_sql_query`. "
-            "El schema a continuacion incluye metadata enriquecida.\n"
+        sources = self.sql_catalog.sources(
+            company_short_name, allowed_databases=allowed_databases, table_filter=table_filter,
         )
-        return header + "\n\n---\n\n".join(context_output), db_tables
-
+        db_tables = [
+            {"db_name": source["database_key"], "table_name": table["name"]}
+            for source in sources
+            for table in source["tables"]
+        ]
+        return self.sql_catalog.render_map(sources), db_tables
 
     def _get_yaml_schema_context(
         self,

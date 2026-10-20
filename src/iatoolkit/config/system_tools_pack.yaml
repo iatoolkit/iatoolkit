@@ -220,6 +220,39 @@ tools:
       required:
         - database_key
         - query
+  - function_name: iat_sql_schema
+    description: "Columnas de tablas SQL: antes de escribir una consulta para iat_sql_query, pide aquí las columnas de las tablas que vas a usar. El contexto trae la lista de bases y tablas; esta herramienta trae sus columnas, tipos y descripciones. Pide varias tablas en una sola llamada."
+    routing:
+      force_include_capability: has_sql_sources
+    routing_profile:
+      tags:
+        - sql
+        - database
+        - schema
+        - columns
+      intents:
+        - Get the columns of SQL tables before writing a query.
+        - Inspect the structure of a configured SQL database.
+      examples:
+        - iat_sql_schema(database_key="erp", table_names=["customers", "orders"])
+      cost:
+        penalty: 0.05
+        latency_class: low
+        expensive: false
+    parameters:
+      type: object
+      properties:
+        database_key:
+          type: string
+          description: "Nombre exacto de la base, como aparece en el contexto."
+        table_names:
+          type: array
+          items:
+            type: string
+          description: "Tablas de esa base cuyas columnas necesitas (hasta 10)."
+      required:
+        - database_key
+        - table_names
   - function_name: iat_document_search
     description: Búsqueda semántica sobre documentos internos de la empresa para traer contexto adicional cuando haga falta. No usar si el usuario pide trabajar exclusivamente con un archivo ya adjunto en el turno actual. Usa metadata_filter solo cuando el usuario o el contexto indiquen un filtro de metadata concreto y necesario; si no hace falta, envía null.
     routing:
