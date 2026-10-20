@@ -165,21 +165,58 @@ class ModelRegistry:
             return candidate  # type: ignore[return-value]
         return self.get_provider(model or "")
 
-    def get_capabilities(self, model: str, provider: str | None = None) -> dict:
+    @staticmethod
+    def catalog_capabilities(model_config: dict | None) -> dict | None:
+        """The capabilities the model catalogue holds for a model, or None when unknown.
+
+        Written by `models-sync` from OpenRouter (BL-009, Fase F) and carried in
+        the model's configuration. Empty, or a company.yaml model outside the
+        catalogue, means unknown: the provider's rules decide.
+        """
+        capabilities = (model_config or {}).get("capabilities") if isinstance(model_config, dict) else None
+        if not isinstance(capabilities, dict):
+            return None
+        if not capabilities.get("supported_parameters") and not capabilities.get("input_modalities"):
+            return None
+        return capabilities
+
+    @staticmethod
+    def _declares(capabilities: dict | None, *parameters: str) -> bool | None:
+        """Whether the model declares any of `parameters`; None when nothing is known."""
+        if not capabilities:
+            return None
+        declared = {str(value).strip().lower() for value in capabilities.get("supported_parameters") or []}
+        if not declared:
+            return None
+        return any(parameter in declared for parameter in parameters)
+
+    def get_capabilities(self, model: str, provider: str | None = None, capabilities: dict | None = None) -> dict:
+        """What the request may carry for this model.
+
+        Two halves, both required: what the provider's adapter knows how to send,
+        and what the model accepts. The second comes from the model catalogue
+        (`capabilities`) when it is known; without it, the provider decides alone.
+        The catalogue only ever narrows: a parameter the adapter cannot send is
+        never offered because the model would accept it.
+        """
         normalized_provider = self.normalize_provider(provider=provider, model=model)
         # `openai_compatible` is absent on purpose. Its adapter targets any server
         # that speaks chat.completions — llama.cpp, vLLM, a private gateway — and
         # forwards no reasoning field, because one the server does not know earns a
         # 400. Claiming the capability here made the tenant's Models page offer a
         # reasoning control whose value went nowhere.
-        supports_reasoning_effort = normalized_provider in {
+        adapter_sends_reasoning = normalized_provider in {
             "openai",
             "xai",
             "openrouter",
             "deepseek",
         }
-        supports_text_verbosity = normalized_provider in {"openai", "xai", "openrouter"}
-        supports_store = normalized_provider in {"openai", "xai"}
+        adapter_sends_verbosity = normalized_provider in {"openai", "xai", "openrouter"}
+
+        model_reasons = self._declares(capabilities, "reasoning", "reasoning_effort")
+        model_takes_verbosity = self._declares(capabilities, "verbosity")
+        supports_reasoning_effort = adapter_sends_reasoning and model_reasons is not False
+        supports_text_verbosity = adapter_sends_verbosity and model_takes_verbosity is not False
 
         return {
             "provider": normalized_provider,
@@ -187,7 +224,7 @@ class ModelRegistry:
             "allowed_reasoning_efforts": list(self._reasoning_effort_options) if supports_reasoning_effort else [],
             "supports_text_verbosity": supports_text_verbosity,
             "allowed_text_verbosity": list(self._text_verbosity_options) if supports_text_verbosity else [],
-            "supports_store": supports_store,
+            "capabilities_source": "catalog" if model_reasons is not None else "provider",
         }
 
     def get_request_defaults(self, model: str) -> dict:

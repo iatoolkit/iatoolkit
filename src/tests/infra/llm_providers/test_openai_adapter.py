@@ -634,3 +634,18 @@ class TestOpenAIAdapter:
                 'output': '{"temperature":21}',
             },
         ]
+
+
+def test_the_proxy_decides_whether_reasoning_travels():
+    client = MagicMock()
+    response = MagicMock()
+    response.id, response.model, response.status = 'r', 'gpt-4.1', 'completed'
+    response.output, response.output_text, response.usage = [], 'ok', None
+    client.responses.create.return_value = response
+    adapter = OpenAIAdapter(openai_client=client)
+
+    adapter.create_response(model='gpt-5', input=[{'role': 'user', 'content': 'x'}], carries_reasoning=False)
+    assert 'include' not in client.responses.create.call_args.kwargs
+
+    adapter.create_response(model='some-new-model', input=[{'role': 'user', 'content': 'x'}], carries_reasoning=True)
+    assert client.responses.create.call_args.kwargs['include'] == ['reasoning.encrypted_content']

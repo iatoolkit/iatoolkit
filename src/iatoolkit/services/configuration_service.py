@@ -1435,7 +1435,11 @@ class ConfigurationService:
             provider=normalized.get("provider"),
             model=model_id,
         )
-        capabilities = self.model_registry.get_capabilities(model_id, provider=provider)
+        capabilities = self.model_registry.get_capabilities(
+            model_id,
+            provider=provider,
+            capabilities=self.model_registry.catalog_capabilities(normalized),
+        )
         descriptor = dict(normalized)
         descriptor["id"] = model_id
         descriptor["label"] = str(descriptor.get("label") or model_id).strip()

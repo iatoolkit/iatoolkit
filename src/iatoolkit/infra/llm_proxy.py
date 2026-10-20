@@ -160,6 +160,12 @@ class LLMProxy:
             provider=provider,
             request_kwargs=request_kwargs,
         )
+        request_kwargs = self._apply_model_capabilities(
+            model=model,
+            provider=provider,
+            model_config=model_config,
+            request_kwargs=request_kwargs,
+        )
         if telemetry_execution is not None:
             request_kwargs["telemetry_execution"] = telemetry_execution
 
@@ -449,6 +455,42 @@ class LLMProxy:
         merged_reasoning = dict(current_reasoning)
         merged_reasoning["effort"] = default_reasoning_effort
         effective_kwargs["reasoning"] = merged_reasoning
+        return effective_kwargs
+
+    def _apply_model_capabilities(
+        self,
+        model: str,
+        provider: str,
+        model_config: Dict[str, Any] | None,
+        request_kwargs: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Drops the parameters the model itself does not accept (BL-009, Fase F).
+
+        The steps before this one decide by provider: every OpenAI model gets a
+        reasoning effort and a verbosity, which a model that does not reason
+        (gpt-4.1, gpt-5-chat) refuses. When the catalogue knows the model, its
+        `supported_parameters` have the last word. When it does not, nothing
+        changes: the provider's rules stay as they were.
+        """
+        catalog_capabilities = ModelRegistry.catalog_capabilities(model_config)
+        if catalog_capabilities is None:
+            return request_kwargs
+
+        capabilities = self.model_registry.get_capabilities(
+            model, provider=provider, capabilities=catalog_capabilities
+        )
+        effective_kwargs = dict(request_kwargs or {})
+        if not capabilities.get("supports_reasoning_effort"):
+            effective_kwargs.pop("reasoning", None)
+            effective_kwargs.pop("reasoning_effort", None)
+        if not capabilities.get("supports_text_verbosity"):
+            text = effective_kwargs.get("text")
+            if isinstance(text, dict) and "verbosity" in text:
+                effective_kwargs["text"] = {key: value for key, value in text.items() if key != "verbosity"}
+        if provider == self.PROVIDER_OPENAI:
+            # Whether the model's reasoning can travel between calls: the adapter
+            # asks for it only then, instead of guessing from the model's name.
+            effective_kwargs["carries_reasoning"] = bool(capabilities.get("supports_reasoning_effort"))
         return effective_kwargs
 
     # -------------------------------------------------------------------------

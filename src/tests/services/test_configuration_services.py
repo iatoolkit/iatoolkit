@@ -1391,3 +1391,29 @@ class TestConfigurationServiceTenantNameGuard:
             service._load_and_merge_configs("neuroscope")
 
         assert any("neuroscope" in record.message for record in caplog.records)
+
+
+def test_model_descriptors_take_the_catalogue_capabilities():
+    service = ConfigurationService(
+        utility=Mock(spec=Utility),
+        llm_query_repo=Mock(spec=LLMQueryRepo),
+        profile_repo=Mock(spec=ProfileRepo),
+        asset_repo=Mock(spec=AssetRepository),
+        secret_provider=Mock(spec=SecretProvider),
+        model_registry=ModelRegistry(),
+    )
+
+    reasoning = service._build_llm_model_descriptor({
+        "id": "gpt-5", "provider": "openai",
+        "capabilities": {"supported_parameters": ["reasoning", "verbosity"], "input_modalities": ["text"]},
+    })
+    plain = service._build_llm_model_descriptor({
+        "id": "gpt-4.1", "provider": "openai",
+        "capabilities": {"supported_parameters": ["tools"], "input_modalities": ["text"]},
+    })
+    unknown = service._build_llm_model_descriptor({"id": "gpt-4.1", "provider": "openai"})
+
+    # What the chat's model selector reads to show the reasoning control.
+    assert reasoning["supports_reasoning_effort"] is True
+    assert plain["supports_reasoning_effort"] is False
+    assert unknown["supports_reasoning_effort"] is True

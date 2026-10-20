@@ -250,7 +250,8 @@ class SystemAgentRunner:
                              ignored, ignored_platform)
 
     def supports_images(self, company_short_name: str, model: str | None) -> bool:
-        """Whether the model's provider takes native images (llm_capabilities.yaml and the company's overrides)."""
+        """Whether the model takes native images: its provider's adapter sends them and,
+        when the model catalogue knows it, the model accepts them (BL-009, Fase F)."""
         if not model:
             return False
         try:
@@ -265,7 +266,7 @@ class SystemAgentRunner:
         if self._attachment_policy is None:
             self._attachment_policy = AttachmentPolicyService(self.configuration_service, Utility())
         try:
-            capabilities = self._attachment_policy.get_effective_provider_capabilities(company_short_name, provider)
+            capabilities = self._attachment_policy.get_effective_capabilities(company_short_name, provider, model)
         except Exception as exc:
             logging.warning("Capabilities of provider '%s' could not be read: %s", provider, exc)
             return False

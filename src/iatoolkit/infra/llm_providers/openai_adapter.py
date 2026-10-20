@@ -19,8 +19,9 @@ class OpenAIAdapter:
         self.client = openai_client
 
     #: Reasoning models whose reasoning can travel between calls as encrypted
-    #: items. Asked only of these: a model without reasoning answers the
-    #: `include` with a 400.
+    #: items, for a model the catalogue does not describe: a model without
+    #: reasoning answers the `include` with a 400. When the catalogue knows the
+    #: model, the proxy says so (`carries_reasoning`) and this list is not read.
     _ENCRYPTED_REASONING_MODEL_PREFIXES = ("gpt-5", "o1", "o3", "o4")
 
     def create_response(self,
@@ -35,7 +36,8 @@ class OpenAIAdapter:
                         attachments: Optional[List[Dict]] = None,
                         store: Optional[bool] = None,
                         metadata: Optional[Dict[str, str]] = None,
-                        telemetry_execution: Any = None) -> LLMResponse:
+                        telemetry_execution: Any = None,
+                        carries_reasoning: Optional[bool] = None) -> LLMResponse:
         """Llamada a la API de OpenAI y mapeo a estructura común.
 
         IAToolkit owns the history (BL-009): every call carries the whole
@@ -62,7 +64,7 @@ class OpenAIAdapter:
 
             # Nothing stays at OpenAI: the next call sends the history again.
             params['store'] = False
-            if self._carries_encrypted_reasoning(model):
+            if self._carries_encrypted_reasoning(model, carries_reasoning):
                 # Without a stored response the model would lose its reasoning
                 # between tool rounds; it comes back encrypted and is sent again.
                 params['include'] = ["reasoning.encrypted_content"]
@@ -93,7 +95,9 @@ class OpenAIAdapter:
             raise IAToolkitException(IAToolkitException.ErrorType.LLM_ERROR, error_message)
 
     @classmethod
-    def _carries_encrypted_reasoning(cls, model: str) -> bool:
+    def _carries_encrypted_reasoning(cls, model: str, carries_reasoning: Optional[bool] = None) -> bool:
+        if carries_reasoning is not None:
+            return carries_reasoning
         name = str(model or "").strip().lower()
         if "-chat" in name:
             return False  # gpt-5-chat-latest and the like do not reason

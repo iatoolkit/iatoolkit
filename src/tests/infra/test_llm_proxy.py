@@ -1243,3 +1243,64 @@ class TestAModelCarriesItsOwnRoute:
             )
 
         assert key == "from-the-company-file"
+
+
+class TestModelCapabilities:
+    """The proxy drops what the model itself does not accept (BL-009, Fase F)."""
+
+    def _proxy(self):
+        proxy = LLMProxy(
+            util=MagicMock(),
+            configuration_service=MagicMock(spec=ConfigurationService),
+            model_registry=ModelRegistry(),
+            secret_provider=MagicMock(spec=SecretProvider),
+            telemetry_service=MagicMock(),
+        )
+        return proxy
+
+    @staticmethod
+    def _config(*parameters):
+        return {"id": "m", "capabilities": {"supported_parameters": list(parameters), "input_modalities": ["text"]}}
+
+    def test_a_model_that_does_not_reason_loses_reasoning_and_verbosity(self):
+        kwargs = {"reasoning": {"effort": "low"}, "text": {"verbosity": "low", "format": {"type": "text"}}}
+
+        result = self._proxy()._apply_model_capabilities(
+            model="gpt-4.1", provider="openai", model_config=self._config("tools", "response_format"),
+            request_kwargs=kwargs,
+        )
+
+        assert "reasoning" not in result
+        assert result["text"] == {"format": {"type": "text"}}
+        assert result["carries_reasoning"] is False
+        # The caller's dict is left as it was.
+        assert kwargs["reasoning"] == {"effort": "low"}
+
+    def test_a_reasoning_model_keeps_them_and_carries_its_reasoning(self):
+        result = self._proxy()._apply_model_capabilities(
+            model="gpt-5", provider="openai", model_config=self._config("reasoning", "verbosity", "tools"),
+            request_kwargs={"reasoning": {"effort": "low"}, "text": {"verbosity": "low"}},
+        )
+
+        assert result["reasoning"] == {"effort": "low"}
+        assert result["text"] == {"verbosity": "low"}
+        assert result["carries_reasoning"] is True
+
+    def test_deepseek_chat_through_openrouter_gets_no_reasoning(self):
+        result = self._proxy()._apply_model_capabilities(
+            model="deepseek/deepseek-chat", provider="openrouter",
+            model_config=self._config("tools", "structured_outputs"),
+            request_kwargs={"reasoning": {"effort": "medium"}},
+        )
+
+        assert "reasoning" not in result
+        assert "carries_reasoning" not in result  # only the OpenAI adapter reads it
+
+    def test_a_model_the_catalogue_does_not_know_is_left_alone(self):
+        kwargs = {"reasoning": {"effort": "low"}, "text": {"verbosity": "low"}}
+
+        result = self._proxy()._apply_model_capabilities(
+            model="gpt-4.1", provider="openai", model_config={"id": "gpt-4.1"}, request_kwargs=kwargs,
+        )
+
+        assert result is kwargs
