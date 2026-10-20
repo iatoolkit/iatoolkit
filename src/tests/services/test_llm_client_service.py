@@ -697,6 +697,29 @@ class TestLLMClient:
             },
         ]
 
+    def test_invoke_cuts_a_tool_output_past_the_cap_before_the_model_reads_it(self):
+        """BL-009: every round resends every output, so one huge result is cut with a notice."""
+        dispatcher_mock = MagicMock()
+        dispatcher_mock.dispatch.return_value = "r" * (self.client.MAX_TOOL_OUTPUT_CHARS * 2)
+        injector_mock = MagicMock()
+        injector_mock.get.return_value = dispatcher_mock
+        toolkit_mock = MagicMock()
+        toolkit_mock.get_injector.return_value = injector_mock
+
+        with patch('iatoolkit.current_iatoolkit', return_value=toolkit_mock):
+            tool_call = ToolCall('call1', 'function_call', 'test_func', '{"a": 1}')
+            response_with_tools = LLMResponse('r1', 'gpt-4o', 'completed', '', [tool_call], Usage(10, 5, 15))
+            self.mock_proxy.create_response.side_effect = [response_with_tools, self.mock_llm_response]
+            result = self.client.invoke(
+                company=self.company, user_identifier='user1', model='gpt-5', question='q', context='c', tools=[{}], text={}
+            )
+
+        sent = self.mock_proxy.create_response.call_args_list[1].kwargs['input'][2]['output']
+        stored = next(m for m in result['history_messages'] if m.get('type') == 'function_call_output')['output']
+        assert sent == stored
+        assert len(sent) < self.client.MAX_TOOL_OUTPUT_CHARS + 400
+        assert "Resultado cortado" in sent
+
     def test_invoke_records_tool_child_span_for_successful_dispatch(self):
         dispatcher_mock = MagicMock()
         dispatcher_mock.dispatch.return_value = {

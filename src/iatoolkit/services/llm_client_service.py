@@ -66,6 +66,16 @@ class llmClient:
     # a wiki page withheld).
     TOOL_CALL_RESULT_KEY = "result"
     TOOL_CALL_EXCERPT_MAX_LENGTH = 300
+    # The most of one tool output the model reads (~10k tokens). Every round of
+    # the loop resends every output, so a few results of hundreds of rows took
+    # one turn from 54k to 133k tokens in production (BL-009). Past this, the
+    # model is told to narrow the query instead.
+    MAX_TOOL_OUTPUT_CHARS = 40000
+    TOOL_OUTPUT_CUT_NOTICE = (
+        "[Resultado cortado: se muestran {shown} de {total} caracteres. No lo completes ni "
+        "lo inventes: si necesitas el resto, vuelve a llamar la herramienta pidiendo menos "
+        "(filtros, agregaciones, LIMIT o por partes).]"
+    )
     TOOL_RESULT_FAILED_STATUSES = frozenset({"error", "auth_required", "forbidden", "unavailable"})
 
     @inject
@@ -408,7 +418,8 @@ class llmClient:
                             tool_attachments_count = len(tool_native_attachments or [])
 
                             # add the return value into the list of messages
-                            tool_output_text = self._serialize_tool_output(result)
+                            tool_output_text = self._cap_tool_output(
+                                company.short_name, function_name, self._serialize_tool_output(result))
                             last_tool_output_message = {
                                 "type": "function_call_output",
                                 "call_id": tool_call.call_id,
@@ -773,6 +784,17 @@ class llmClient:
             return json.dumps(result, ensure_ascii=False, default=str)
         except Exception:
             return str(result)
+
+    @classmethod
+    def _cap_tool_output(cls, company_short_name: str, function_name: str, text: str) -> str:
+        if not isinstance(text, str) or len(text) <= cls.MAX_TOOL_OUTPUT_CHARS:
+            return text
+        logging.warning(
+            f"[{company_short_name}] output of {function_name} cut to {cls.MAX_TOOL_OUTPUT_CHARS} "
+            f"of {len(text)} characters."
+        )
+        notice = cls.TOOL_OUTPUT_CUT_NOTICE.format(shown=cls.MAX_TOOL_OUTPUT_CHARS, total=len(text))
+        return f"{text[:cls.MAX_TOOL_OUTPUT_CHARS]}\n{notice}"
 
     @staticmethod
     def _split_tool_result_and_native_attachments(result):

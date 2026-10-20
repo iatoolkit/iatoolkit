@@ -618,7 +618,8 @@ class TestOldToolOutputs:
         assert outputs[0]["output"].startswith(self.LONG[:HistoryManagerService.TRIMMED_TOOL_OUTPUT_CHARS])
         assert "8000 characters" in outputs[0]["output"]
         assert "Call iat_sql_query again" in outputs[0]["output"]
-        assert outputs[1]["output"] == self.LONG and outputs[2]["output"] == self.LONG
+        assert HistoryManagerService.TRIMMED_TOOL_OUTPUT_MARKER in outputs[1]["output"]
+        assert outputs[2]["output"] == self.LONG  # the last turn, the one a follow-up refers to
 
     def test_a_cut_output_is_not_cut_again_and_short_ones_are_left(self):
         history = [{"role": "user", "content": "company context"}]
@@ -641,6 +642,36 @@ class TestOldToolOutputs:
 
         manager.update_history(_Handle(), "q2", {"answer": "a2"})
 
-        first = next(m for m in session.history if m.get("call_id") == "call-0")
-        assert HistoryManagerService.TRIMMED_TOOL_OUTPUT_MARKER in first["output"]
-        assert next(m for m in session.history if m.get("call_id") == "call-1")["output"] == self.LONG
+        for call_id in ("call-0", "call-1"):
+            output = next(m for m in session.history if m.get("call_id") == call_id)["output"]
+            assert HistoryManagerService.TRIMMED_TOOL_OUTPUT_MARKER in output
+
+    def test_a_compaction_cuts_the_old_outputs_of_the_turns_it_keeps(self):
+        history = [{"role": "user", "content": "company context"}]
+        for index in range(4):
+            history += _tool_turn(index, self.LONG)
+        session = FakeSession(history)
+        service, _, _ = _service(session, budget=1000, tokens_per_message=100)
+
+        assert service.compact("acme", "u1", "gpt-5")["status"] == "compacted"
+
+        outputs = [m for m in session.history if m.get("type") == "function_call_output"]
+        assert len(outputs) == 2  # the two turns kept verbatim
+        assert HistoryManagerService.TRIMMED_TOOL_OUTPUT_MARKER in outputs[0]["output"]
+        assert outputs[1]["output"] == self.LONG
+
+
+class TestToolOutputCap:
+    def test_a_long_output_is_cut_with_a_notice_to_narrow_the_query(self):
+        from iatoolkit.services.llm_client_service import llmClient
+        text = "x" * (llmClient.MAX_TOOL_OUTPUT_CHARS + 500)
+
+        capped = llmClient._cap_tool_output("acme", "iat_sql_query", text)
+
+        assert capped.startswith("x" * llmClient.MAX_TOOL_OUTPUT_CHARS)
+        assert f"{llmClient.MAX_TOOL_OUTPUT_CHARS} de {len(text)} caracteres" in capped
+        assert "LIMIT" in capped
+
+    def test_an_output_within_the_cap_is_left_as_it_is(self):
+        from iatoolkit.services.llm_client_service import llmClient
+        assert llmClient._cap_tool_output("acme", "iat_sql_query", "3 rows") == "3 rows"

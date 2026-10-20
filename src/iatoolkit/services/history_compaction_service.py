@@ -300,6 +300,9 @@ class HistoryCompactionService:
                 return {"status": "skipped", "reason": "history_changed"}
 
             compacted = [current[0], HistoryManagerService.summary_message(summary)] + current[plan.cut:]
+            # The turns kept verbatim keep their words, not their old tool
+            # outputs: else a compaction can leave the history as big as it was.
+            HistoryManagerService._trim_old_tool_outputs(compacted)
             self.session_context.save_context_history(company_short_name, user_identifier, compacted, model=model)
             # The provider's last measure described the long history; until the
             # next turn measures again, an estimate keeps the in-line check from

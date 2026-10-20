@@ -64,8 +64,10 @@ class HistoryManagerService:
     #: stored history: an SQL result or a schema is what the model needs on the
     #: turn that asked for it, and resending it whole on every later turn was
     #: most of the history's growth (4k -> 11k tokens on one SQL turn in
-    #: production). The model can call the tool again.
-    KEEP_TOOL_OUTPUT_TURNS = 2
+    #: production). The model can call the tool again. One: the last turn, the
+    #: one a follow-up ("of those...") refers to; with two, one turn of 80k of
+    #: results kept a compacted history at 130k.
+    KEEP_TOOL_OUTPUT_TURNS = 1
     #: What is kept of a cut output: its beginning, enough to remember its shape.
     TRIMMED_TOOL_OUTPUT_CHARS = 1500
     TRIMMED_TOOL_OUTPUT_MARKER = "[tool output trimmed"
