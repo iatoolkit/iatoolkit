@@ -403,7 +403,8 @@ class ContextBuilderService:
             company_short_name,
             allowed_databases=allowed_databases,
             table_filter=access.sql_table_filter(company_short_name, user_identifier),
-            include_sql_context=bool(company_context_policy.get("sql_context")),
+            # The agent's SQL is its bound sources (sql_context above), never the global map.
+            include_sql_context=False,
             include_yaml_context=bool(company_context_policy.get("yaml_context")),
         )
         markdown_context = (

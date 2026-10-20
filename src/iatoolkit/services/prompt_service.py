@@ -62,9 +62,11 @@ class PromptService:
     AGENT_ROLE_CHANNELS = PromptAgentRole.CHANNELS.value
     AGENT_ROLE_OPERATIONS = PromptAgentRole.OPERATIONS.value
     DEFAULT_CATEGORY_LABEL = "General"
+    # An agent's SQL comes only from the sources bound to it ("Global SQL" was
+    # removed: it never reached the context). A stored policy that still names
+    # sql_context loads and the key is ignored.
     COMPANY_CONTEXT_BLOCK_KEYS = {
         "markdown_context",
-        "sql_context",
         "yaml_context",
     }
 
@@ -187,13 +189,11 @@ class PromptService:
         if normalized == cls.AGENT_ROLE_WORKSPACE_CHAT:
             blocks = {
                 "markdown_context": True,
-                "sql_context": True,
                 "yaml_context": True,
             }
         else:
             blocks = {
                 "markdown_context": True,
-                "sql_context": False,
                 "yaml_context": False,
             }
         return {
