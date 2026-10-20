@@ -65,7 +65,6 @@ class CompanyContextService:
         sql_context = ""
         yaml_context = ""
         db_tables = []
-        sql_source_table_scopes = {}
 
         # 1. Context from Markdown (context/*.md)  files
         try:
@@ -85,7 +84,6 @@ class CompanyContextService:
                                                                         allowed_databases=allowed_databases,
                                                                         table_filter=table_filter)
                 sql_context = sql_context.strip()
-                sql_source_table_scopes = self._get_sql_source_table_scopes(company_short_name)
             except Exception as e:
                 logging.warning(f"Could not generate SQL context for '{company_short_name}': {e}")
 
@@ -95,7 +93,6 @@ class CompanyContextService:
                 yaml_schema_context = self._get_yaml_schema_context(
                     company_short_name,
                     db_tables,
-                    sql_source_table_scopes=sql_source_table_scopes,
                 ).strip()
                 if yaml_schema_context:
                     yaml_context = f"## Esquemas adicionales\n\n{yaml_schema_context}"
@@ -153,17 +150,6 @@ class CompanyContextService:
             logging.warning(f"Could not generate SQL context for '{company_short_name}': {e}")
             return ""
 
-    def _get_sql_source_table_scopes(self, company_short_name: str) -> dict[str, set[str] | None]:
-        scopes: dict[str, set[str] | None] = {}
-        sql_sources = self.sql_source_service.list_sources(company_short_name, include_inactive=False)
-
-        for source in sql_sources:
-            db_name = str(source.get("database") or "").strip()
-            if not db_name:
-                continue
-            scopes[db_name] = self._resolve_allowed_tables_for_source(source)
-        return scopes
-
     def _resolve_allowed_tables_for_source(self, source: dict) -> set[str] | None:
         if bool(source.get("include_all_tables", True)):
             return None
@@ -215,32 +201,25 @@ class CompanyContextService:
         self,
         company_short_name: str,
         db_tables: List[Dict],
-        sql_source_table_scopes: dict[str, set[str] | None] | None = None,
     ) -> str:
         # Get context from .yaml schema files using the repository
         yaml_schema_context = ''
-        sql_source_table_scopes = sql_source_table_scopes or {}
 
         try:
             # 1. List yaml files in the schema "folder"
             schema_files = self.asset_repo.list_files(company_short_name, AssetType.SCHEMA, extension='.yaml')
 
+            # A `<db>-<table>.yaml` of a configured SQL source belongs to the SQL
+            # schema, never to this block: it reaches the model through the
+            # catalogue (map + iat_sql_schema), which applies every filter. Read
+            # here, a table hidden from a person (a knowledge table they may not
+            # use) came back whole as an "additional schema".
+            sql_source_names = self._configured_sql_source_names(company_short_name)
+
             for filename in schema_files:
-                # skip tables that are already in the SQL context
                 if '-' in filename:
-                    dbname, f = filename.split("-", 1)
-                    table_name = f.split('.')[0]
-
-                    exists = any(
-                        item["db_name"] == dbname
-                        and bool(self._table_name_candidates(item["table_name"]) & self._table_name_candidates(table_name))
-                        for item in db_tables
-                    )
-                    if exists:
-                        continue
-
-                    allowed_tables = sql_source_table_scopes.get(dbname)
-                    if dbname in sql_source_table_scopes and not self._table_is_allowed(table_name, allowed_tables):
+                    dbname = self._normalize_identifier(filename.split("-", 1)[0])
+                    if dbname in sql_source_names:
                         continue
 
                 try:
@@ -262,6 +241,15 @@ class CompanyContextService:
             logging.warning(f"Error listing schema files for {company_short_name}: {e}")
 
         return yaml_schema_context
+
+    def _configured_sql_source_names(self, company_short_name: str) -> set[str]:
+        """Every SQL source of the company, active or not, by normalized name."""
+        try:
+            sources = self.sql_source_service.list_sources(company_short_name, include_inactive=True) or []
+        except Exception as e:
+            logging.warning(f"Could not list the SQL sources of '{company_short_name}': {e}")
+            return set()
+        return {self._normalize_identifier(s.get("database")) for s in sources if s.get("database")}
 
     def generate_schema_table(self, schema: dict) -> str:
         if not schema or not isinstance(schema, dict):

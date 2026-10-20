@@ -187,14 +187,12 @@ class TestCompanyContextService:
         self.context_service._get_yaml_schema_context.assert_called_with(
             self.COMPANY_NAME,
             ["users"],
-            sql_source_table_scopes={"main_db": None},
         )
 
     def test_get_company_context_blocks_can_skip_sql_context(self):
         self.mock_asset_repo.list_files.side_effect = lambda c, t, extension=None: ['intro.md'] if t == AssetType.CONTEXT else []
         self.mock_asset_repo.read_text.return_value = "MARKDOWN_CONTENT"
         self.context_service._get_sql_enriched_context = MagicMock(return_value=("SQL_CONTENT", ["users"]))
-        self.context_service._get_sql_source_table_scopes = MagicMock(return_value={"main_db": None})
         self.context_service._get_yaml_schema_context = MagicMock(return_value="YAML_EXTRA")
 
         blocks = self.context_service.get_company_context_blocks(
@@ -206,11 +204,9 @@ class TestCompanyContextService:
         assert blocks["sql_context"] == ""
         assert blocks["yaml_context"] == "## Esquemas adicionales\n\nYAML_EXTRA"
         self.context_service._get_sql_enriched_context.assert_not_called()
-        self.context_service._get_sql_source_table_scopes.assert_not_called()
         self.context_service._get_yaml_schema_context.assert_called_once_with(
             self.COMPANY_NAME,
             [],
-            sql_source_table_scopes={},
         )
 
     def test_get_company_context_blocks_can_skip_yaml_context(self):
@@ -532,14 +528,12 @@ class TestCompanyContextService:
         # Verify SQL service was NOT called
         self.mock_sql_service.get_database_structure.assert_not_called()
 
-    def test_yaml_context_skips_tables_excluded_from_sql_source_scope(self):
+    def test_yaml_context_skips_every_table_of_a_configured_sql_source(self):
+        # Its schema reaches the model through the SQL catalogue, with its filters (BL-017).
+        self.mock_sql_source_service.list_sources.return_value = [{'database': 'main_db'}]
         self.mock_asset_repo.list_files.return_value = ['main_db-orders.yaml']
 
-        result = self.context_service._get_yaml_schema_context(
-            self.COMPANY_NAME,
-            [],
-            sql_source_table_scopes={'main_db': {'customers'}},
-        )
+        result = self.context_service._get_yaml_schema_context(self.COMPANY_NAME, [])
 
         assert result == ""
         self.mock_asset_repo.read_text.assert_not_called()

@@ -167,3 +167,49 @@ class TestSchemaTool:
         tool = next(t for t in SYSTEM_TOOLS_DEFINITIONS if t["function_name"] == "iat_sql_schema")
         assert tool["parameters"]["required"] == ["database_key", "table_names"]
         assert tool["routing"]["force_include_capability"] == "has_sql_sources"
+
+
+class TestYamlBlockNeverCarriesSqlTables:
+    """The residual YAML block once showed a table the SQL map hid from the person."""
+
+    def _context(self, files):
+        from iatoolkit.common.util import Utility as RealUtility
+
+        source_service = MagicMock(spec=SqlSourceService)
+        source_service.list_sources.return_value = [{"database": "knowledge_tables", "description": "KT"}]
+        assets = MagicMock(spec=AssetRepository)
+        assets.list_files.side_effect = lambda company, asset_type, extension=None: list(files)
+        assets.read_text.side_effect = lambda company, asset_type, filename: files[filename]
+        context_service = CompanyContextService(
+            sql_service=MagicMock(spec=SqlService), utility=RealUtility(),
+            sql_source_service=source_service, asset_repo=assets,
+        )
+        context_service.get_enriched_database_schema = MagicMock(return_value={
+            "libro_mayor": {"columns": []}, "remuneraciones": {"columns": []},
+        })
+        return context_service
+
+    def test_a_table_hidden_from_the_person_does_not_come_back_as_yaml(self):
+        context_service = self._context({
+            "knowledge_tables-remuneraciones.yaml":
+                "remuneraciones:\n  description: Sueldos\n  columns:\n    sueldo:\n      description: Sueldo bruto\n",
+        })
+
+        blocks = context_service.get_company_context_blocks(
+            "acme", table_filter=lambda database, table: table != "remuneraciones",
+        )
+
+        assert "remuneraciones" not in blocks["sql_context"]
+        assert "Sueldo bruto" not in blocks["yaml_context"]
+        assert "remuneraciones" not in blocks["yaml_context"]
+
+    def test_yaml_not_tied_to_a_sql_source_is_still_included(self):
+        context_service = self._context({
+            "client_schema.yaml": "client:\n  description: Estructura del cliente\n",
+            "otra_base-tabla.yaml": "tabla:\n  description: Documentada sin fuente\n",
+        })
+
+        yaml_context = context_service.get_company_context_blocks("acme")["yaml_context"]
+
+        assert "Estructura del cliente" in yaml_context
+        assert "Documentada sin fuente" in yaml_context
