@@ -45,7 +45,6 @@ class TestQueryService:
         self.model_registry = MagicMock(spec=ModelRegistry)
         self.mock_telemetry_service = MagicMock(spec=TelemetryService)
         self.model_registry.get_provider.return_value = "openai"
-        self.model_registry.get_history_type.return_value = "server_side"
         self.mock_configuration_service.get_llm_model_config.return_value = None
         # The company default is read through the same resolution the model
         # picker uses, so the double answers from whatever llm block a test set.
@@ -233,7 +232,7 @@ class TestQueryService:
 
         # 2. Mock de History Manager
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': 'existing_id'}
+            handle.request_params = {'context_history': [{'role': 'user', 'content': 'ctx'}]}
             return False  # No rebuild needed
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
 
@@ -259,7 +258,8 @@ class TestQueryService:
         kwargs = self.mock_llm_client.invoke.call_args.kwargs
         assert kwargs['context'] == user_prompt
         assert kwargs['question'] == effective_q
-        assert kwargs['previous_response_id'] == 'existing_id'
+        assert kwargs['context_history'] == [{'role': 'user', 'content': 'ctx'}]
+        assert 'previous_response_id' not in kwargs
         assert kwargs["execution_metadata"]["request_source"] == "iatoolkit_mcp"
         assert kwargs["execution_metadata"]["tool_router"]["selected_system_prompt_keys"] == [
             "query_main", "format_styles"
@@ -299,7 +299,7 @@ class TestQueryService:
         )
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': 'existing_id'}
+            handle.request_params = {'context_history': [{'role': 'user', 'content': 'ctx'}]}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -329,7 +329,7 @@ class TestQueryService:
         )
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': 'existing_id'}
+            handle.request_params = {'context_history': [{'role': 'user', 'content': 'ctx'}]}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -366,7 +366,7 @@ class TestQueryService:
         self.mock_context_builder.build_user_turn_prompt.return_value = ("User prompt", "Hi", [])
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': 'existing_id'}
+            handle.request_params = {'context_history': [{'role': 'user', 'content': 'ctx'}]}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -394,7 +394,7 @@ class TestQueryService:
         self.mock_context_builder.build_user_turn_prompt.return_value = ("User prompt", "Hi", [])
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': 'existing_id'}
+            handle.request_params = {'context_history': [{'role': 'user', 'content': 'ctx'}]}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -419,7 +419,7 @@ class TestQueryService:
         )
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': 'existing_id'}
+            handle.request_params = {'context_history': [{'role': 'user', 'content': 'ctx'}]}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -437,53 +437,6 @@ class TestQueryService:
         self.mock_telemetry_service.resolve_execution_request.assert_called_once()
         telemetry_kwargs = self.mock_telemetry_service.resolve_execution_request.call_args.kwargs
         assert telemetry_kwargs["execution_metadata"]["request_source"] == "chat_ui"
-
-    def test_llm_query_retries_when_server_side_ignore_history_uses_stale_initial_response_id(self):
-        self.model_registry.get_history_type.return_value = "server_side"
-        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "q", [])
-
-        state = {"populate_calls": 0}
-
-        def populate_side_effect(handle, prompt, ignore):
-            state["populate_calls"] += 1
-            handle.request_params = {
-                "previous_response_id": "stale-init-id" if state["populate_calls"] == 1 else "fresh-init-id",
-                "context_history": None,
-            }
-            return False
-
-        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
-        self.mock_llm_client.invoke.side_effect = [
-            RuntimeError(
-                "Error calling LLM API: Error calling OpenAI API: Error code: 400 - "
-                "{'error': {'message': \"Previous response with id 'resp_123' not found.\", "
-                "'type': 'invalid_request_error', 'param': 'previous_response_id', "
-                "'code': 'previous_response_not_found'}}"
-            ),
-            {"valid_response": True, "answer": "ok"},
-        ]
-
-        with patch.object(self.service, "init_context", return_value={"response_id": "fresh-init-id"}) as init_mock:
-            result = self.service.llm_query(
-                company_short_name=MOCK_COMPANY_SHORT_NAME,
-                user_identifier=MOCK_LOCAL_USER_ID,
-                question="Hi",
-                model="gpt-test",
-                ignore_history=True,
-            )
-
-        assert result["valid_response"] is True
-        assert self.mock_llm_client.invoke.call_count == 2
-        first_invoke = self.mock_llm_client.invoke.call_args_list[0].kwargs
-        second_invoke = self.mock_llm_client.invoke.call_args_list[1].kwargs
-        assert first_invoke["previous_response_id"] == "stale-init-id"
-        assert second_invoke["previous_response_id"] == "fresh-init-id"
-        init_mock.assert_called_once_with(
-            company_short_name=MOCK_COMPANY_SHORT_NAME,
-            user_identifier=MOCK_LOCAL_USER_ID,
-            model="gpt-test",
-        )
-        assert self.mock_history_manager.update_history.call_count == 1
 
     def test_llm_query_sends_native_attachments_when_policy_requires_it(self):
         self.mock_attachment_policy_service.build_attachment_plan.side_effect = None
@@ -514,7 +467,7 @@ class TestQueryService:
         }
         self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "q", [])
         self.mock_history_manager.populate_request_params.side_effect = (
-            lambda handle, prompt, ignore: setattr(handle, "request_params", {"previous_response_id": None, "context_history": None}) or False
+            lambda handle, prompt, ignore: setattr(handle, "request_params", {"context_history": None}) or False
         )
         self.mock_llm_client.invoke.return_value = {"valid_response": True, "answer": "ok"}
 
@@ -597,7 +550,7 @@ class TestQueryService:
         }
         self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "q", [])
         self.mock_history_manager.populate_request_params.side_effect = (
-            lambda handle, prompt, ignore: setattr(handle, "request_params", {"previous_response_id": None, "context_history": None}) or False
+            lambda handle, prompt, ignore: setattr(handle, "request_params", {"context_history": None}) or False
         )
         self.mock_llm_client.invoke.return_value = {"valid_response": True, "answer": "ok"}
 
@@ -633,7 +586,7 @@ class TestQueryService:
         }
         self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "q", [])
         self.mock_history_manager.populate_request_params.side_effect = (
-            lambda handle, prompt, ignore: setattr(handle, "request_params", {"previous_response_id": None, "context_history": None}) or False
+            lambda handle, prompt, ignore: setattr(handle, "request_params", {"context_history": None}) or False
         )
         self.mock_llm_client.invoke.return_value = {"valid_response": True, "answer": "ok"}
 
@@ -681,7 +634,7 @@ class TestQueryService:
         }
         self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "q", [])
         self.mock_history_manager.populate_request_params.side_effect = (
-            lambda handle, prompt, ignore: setattr(handle, "request_params", {"previous_response_id": None, "context_history": None}) or False
+            lambda handle, prompt, ignore: setattr(handle, "request_params", {"context_history": None}) or False
         )
         self.mock_llm_client.invoke.return_value = {"valid_response": True, "answer": "ok"}
 
@@ -723,7 +676,7 @@ class TestQueryService:
         }
         self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "q", [])
         self.mock_history_manager.populate_request_params.side_effect = (
-            lambda handle, prompt, ignore: setattr(handle, "request_params", {"previous_response_id": None, "context_history": None}) or False
+            lambda handle, prompt, ignore: setattr(handle, "request_params", {"context_history": None}) or False
         )
         self.mock_llm_client.invoke.return_value = {"valid_response": True, "answer": "ok"}
 
@@ -798,7 +751,7 @@ class TestQueryService:
         self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "authors metrics", [])
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            handle.request_params = {'context_history': None}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -838,7 +791,7 @@ class TestQueryService:
         self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "authors metrics", [])
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            handle.request_params = {'context_history': None}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -884,7 +837,7 @@ class TestQueryService:
         }
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            handle.request_params = {'context_history': None}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -931,7 +884,7 @@ class TestQueryService:
         }
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            handle.request_params = {'context_history': None}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -968,7 +921,7 @@ class TestQueryService:
         self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "question", [])
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            handle.request_params = {'context_history': None}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -1000,7 +953,7 @@ class TestQueryService:
         self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "question", [])
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            handle.request_params = {'context_history': None}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -1034,7 +987,7 @@ class TestQueryService:
         }
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            handle.request_params = {'context_history': None}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -1066,7 +1019,7 @@ class TestQueryService:
         }
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            handle.request_params = {'context_history': None}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -1093,7 +1046,7 @@ class TestQueryService:
         }
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            handle.request_params = {'context_history': None}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -1125,7 +1078,7 @@ class TestQueryService:
         }
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            handle.request_params = {'context_history': None}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -1141,12 +1094,14 @@ class TestQueryService:
         invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
         assert invoke_kwargs["text"] == {"verbosity": "high"}
         assert invoke_kwargs["reasoning"] == {"effort": "high"}
-        assert invoke_kwargs["store"] is True
+        # `store` is accepted for old prompts and ignored: nothing is stored at
+        # the provider (BL-009).
+        assert "store" not in invoke_kwargs
         assert invoke_kwargs["execution_metadata"]["llm_request_options"]["applied"] == {
             "reasoning_effort": "high",
-            "store": True,
             "text_verbosity": "high",
         }
+        assert invoke_kwargs["execution_metadata"]["llm_request_options"]["ignored_keys"] == ["store"]
 
     def test_llm_query_applies_supported_prompt_request_options_for_openrouter_provider(self):
         self.mock_configuration_service.get_llm_model_config.return_value = {"provider": "openrouter"}
@@ -1165,7 +1120,7 @@ class TestQueryService:
         }
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            handle.request_params = {'context_history': None}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -1181,7 +1136,7 @@ class TestQueryService:
         invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
         assert invoke_kwargs["text"] == {"verbosity": "high"}
         assert invoke_kwargs["reasoning"] == {"effort": "high"}
-        assert invoke_kwargs["store"] is None
+        assert "store" not in invoke_kwargs
         assert invoke_kwargs["execution_metadata"]["llm_request_options"]["applied"] == {
             "reasoning_effort": "high",
             "text_verbosity": "high",
@@ -1203,7 +1158,7 @@ class TestQueryService:
         }
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            handle.request_params = {'context_history': None}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -1246,7 +1201,7 @@ class TestQueryService:
         }
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            handle.request_params = {'context_history': None}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -1278,7 +1233,7 @@ class TestQueryService:
         }
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            handle.request_params = {'context_history': None}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -1315,7 +1270,7 @@ class TestQueryService:
         }
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            handle.request_params = {'context_history': None}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -1352,7 +1307,7 @@ class TestQueryService:
         }
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            handle.request_params = {'context_history': None}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -1368,11 +1323,11 @@ class TestQueryService:
         invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
         assert invoke_kwargs["text"] == {}
         assert invoke_kwargs["reasoning"] is None
-        assert invoke_kwargs["store"] is None
+        assert "store" not in invoke_kwargs
         assert invoke_kwargs["execution_metadata"]["llm_request_options"]["ignored"] is True
         assert invoke_kwargs["execution_metadata"]["llm_request_options"]["reason"] == "provider_unsupported"
 
-    def test_llm_query_preserves_store_false_when_history_is_enabled(self):
+    def test_llm_query_ignores_a_store_option_and_reports_it(self):
         self.mock_tool_service.get_tools_for_llm.return_value = []
         self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt content", "question", [])
         self.mock_context_builder.get_prompt_output_contract.return_value = {
@@ -1386,7 +1341,7 @@ class TestQueryService:
         }
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            handle.request_params = {'context_history': None}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -1400,74 +1355,10 @@ class TestQueryService:
         )
 
         invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
-        assert invoke_kwargs["store"] is False
-        assert "store_forced_reason" not in invoke_kwargs["execution_metadata"]["llm_request_options"]
-
-    def test_llm_query_preserves_store_false_when_tools_are_present(self):
-        self.mock_tool_service.get_tools_for_llm.return_value = [
-            {"type": "function", "name": "tool_one", "description": "one", "parameters": {}, "strict": True},
-        ]
-        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt content", "question", [])
-        self.mock_context_builder.get_prompt_output_contract.return_value = {
-            "prompt_name": "sales_prompt",
-            "schema": None,
-            "schema_mode": "best_effort",
-            "response_mode": "chat_compatible",
-            "llm_request_options": {
-                "store": False,
-            },
-        }
-
-        def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': None, 'context_history': None}
-            return False
-
-        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
-        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
-
-        self.service.llm_query(
-            company_short_name=MOCK_COMPANY_SHORT_NAME,
-            user_identifier=MOCK_LOCAL_USER_ID,
-            prompt_name="sales_prompt",
-            model="gpt-5",
-            ignore_history=True,
-        )
-
-        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
-        assert invoke_kwargs["store"] is False
-        assert "store_forced_reason" not in invoke_kwargs["execution_metadata"]["llm_request_options"]
-
-    def test_llm_query_allows_store_false_when_history_is_ignored_and_no_tools_are_used(self):
-        self.mock_tool_service.get_tools_for_llm.return_value = []
-        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt content", "question", [])
-        self.mock_context_builder.get_prompt_output_contract.return_value = {
-            "prompt_name": "sales_prompt",
-            "schema": None,
-            "schema_mode": "best_effort",
-            "response_mode": "chat_compatible",
-            "llm_request_options": {
-                "store": False,
-            },
-        }
-
-        def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': None, 'context_history': None}
-            return False
-
-        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
-        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'ok'}
-
-        self.service.llm_query(
-            company_short_name=MOCK_COMPANY_SHORT_NAME,
-            user_identifier=MOCK_LOCAL_USER_ID,
-            prompt_name="sales_prompt",
-            model="gpt-5",
-            ignore_history=True,
-        )
-
-        invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
-        assert invoke_kwargs["store"] is False
-        assert "store_forced_reason" not in invoke_kwargs["execution_metadata"]["llm_request_options"]
+        assert "store" not in invoke_kwargs
+        options = invoke_kwargs["execution_metadata"]["llm_request_options"]
+        assert options["ignored_keys"] == ["store"]
+        assert options["applied"] == {}
 
     def test_llm_query_passes_gemini_response_schema_payload_when_prompt_contract_is_configured(self):
         self.model_registry.get_provider.return_value = "gemini"
@@ -1490,7 +1381,7 @@ class TestQueryService:
         }
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            handle.request_params = {'context_history': None}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -1542,7 +1433,7 @@ class TestQueryService:
         }
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            handle.request_params = {'context_history': None}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -1592,7 +1483,7 @@ class TestQueryService:
         }
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            handle.request_params = {'context_history': None}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -1630,7 +1521,7 @@ class TestQueryService:
         }
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            handle.request_params = {'context_history': None}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -1669,7 +1560,7 @@ class TestQueryService:
         }
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            handle.request_params = {'context_history': None}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -1694,7 +1585,7 @@ class TestQueryService:
         self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "usa mi memoria sobre onboarding", [])
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            handle.request_params = {'context_history': None}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -1721,7 +1612,7 @@ class TestQueryService:
         self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "qué opinas del onboarding", [])
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            handle.request_params = {'context_history': None}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -1750,7 +1641,7 @@ class TestQueryService:
         )
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            handle.request_params = {'context_history': None}
             return False
 
         def selector_hook(**kwargs):
@@ -1801,7 +1692,7 @@ class TestQueryService:
         )
 
         def populate_side_effect(handle, prompt, ignore):
-            handle.request_params = {'previous_response_id': None, 'context_history': None}
+            handle.request_params = {'context_history': None}
             return False
 
         def selector_hook(**kwargs):
@@ -1879,7 +1770,7 @@ class TestQueryService:
         assert [tool["name"] for tool in build_kwargs["enabled_tools"]] == ["crm_lookup"]
 
         invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
-        assert invoke_kwargs["previous_response_id"] is None
+        assert "previous_response_id" not in invoke_kwargs
         assert invoke_kwargs["context_history"] is None
         assert invoke_kwargs["context"].startswith(
             "### Agent Runtime Context\nAgent Minimal Context\n\n### Agent Turn\n"
@@ -2000,16 +1891,7 @@ class TestQueryService:
             model="gpt-test",
         )
 
-    def test_has_live_context_returns_true_from_last_response_or_history(self):
-        self.mock_session_context.get_last_response_id.return_value = "resp_123"
-
-        assert self.service.has_live_context(
-            MOCK_COMPANY_SHORT_NAME,
-            MOCK_LOCAL_USER_ID,
-            model="gpt-test",
-        ) is True
-
-        self.mock_session_context.get_last_response_id.return_value = None
+    def test_has_live_context_reads_the_client_side_history(self):
         self.mock_session_context.get_context_history.return_value = [{"role": "user", "content": "hola"}]
 
         assert self.service.has_live_context(
@@ -2053,7 +1935,7 @@ class TestQueryService:
 
         def populate_side_effect(handle, prompt, ignore_history):
             assert handle.type != "stateless"
-            handle.request_params = {"previous_response_id": "existing_ctx_123"}
+            handle.request_params = {"context_history": [{"role": "user", "content": "existing ctx"}]}
             return False
 
         self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
@@ -2075,7 +1957,7 @@ class TestQueryService:
         self.mock_history_manager.populate_request_params.assert_called_once()
 
         invoke_kwargs = self.mock_llm_client.invoke.call_args.kwargs
-        assert invoke_kwargs["previous_response_id"] == "existing_ctx_123"
+        assert invoke_kwargs["context_history"] == [{"role": "user", "content": "existing ctx"}]
         assert invoke_kwargs["context"] == "customer turn prompt"
 
     def test_llm_query_agent_session_requires_channel_capable_role(self):
@@ -2183,7 +2065,7 @@ class TestQueryService:
 
         assert result["execution_mode"] == "conversational"
         assert result["runtime_context"] == "Chat System Context"
-        assert result["history_type"] == HistoryManagerService.TYPE_SERVER_SIDE
+        assert result["history_type"] == HistoryManagerService.TYPE_CLIENT_SIDE
         assert result["selected_system_prompt_keys"] == ["core_identity", "chat_state_rules"]
         assert result["note"]
         assert result["final_input_preview"].startswith(

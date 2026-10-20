@@ -495,7 +495,8 @@ class FinalizeContextView(MethodView):
                 ((llm_request_defaults.get("reasoning") or {}).get("effort")) or ""
             ).strip().lower()
 
-            # 2. Finalize the context rebuild (the heavy task).
+            # 2. Start the conversation history with the prepared context. It is
+            # stored in the session only: no model is called on login (BL-009).
             self.query_service.set_context_for_llm(
                 company_short_name=company_short_name,
                 user_identifier=user_identifier

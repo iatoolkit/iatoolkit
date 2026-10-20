@@ -18,10 +18,14 @@ class OpenAIAdapter:
     def __init__(self, openai_client):
         self.client = openai_client
 
+    #: Reasoning models whose reasoning can travel between calls as encrypted
+    #: items. Asked only of these: a model without reasoning answers the
+    #: `include` with a 400.
+    _ENCRYPTED_REASONING_MODEL_PREFIXES = ("gpt-5", "o1", "o3", "o4")
+
     def create_response(self,
                         model: str,
                         input: List[Dict],
-                        previous_response_id: Optional[str] = None,
                         context_history: Optional[List[Dict]] = None,
                         tools: Optional[List[Dict]] = None,
                         text: Optional[Dict] = None,
@@ -32,11 +36,17 @@ class OpenAIAdapter:
                         store: Optional[bool] = None,
                         metadata: Optional[Dict[str, str]] = None,
                         telemetry_execution: Any = None) -> LLMResponse:
-        """Llamada a la API de OpenAI y mapeo a estructura común"""
+        """Llamada a la API de OpenAI y mapeo a estructura común.
+
+        IAToolkit owns the history (BL-009): every call carries the whole
+        conversation and nothing is kept at OpenAI. `store` is always False,
+        whatever a prompt or company.yaml still declares; it is accepted only so
+        configurations that set it keep loading.
+        """
+        _ = store
         try:
             input = self._normalize_input_items(
                 input_items=input,
-                previous_response_id=previous_response_id,
                 context_history=context_history,
             )
 
@@ -50,16 +60,18 @@ class OpenAIAdapter:
                 'input': input
             }
 
-            if previous_response_id:
-                params['previous_response_id'] = previous_response_id
+            # Nothing stays at OpenAI: the next call sends the history again.
+            params['store'] = False
+            if self._carries_encrypted_reasoning(model):
+                # Without a stored response the model would lose its reasoning
+                # between tool rounds; it comes back encrypted and is sent again.
+                params['include'] = ["reasoning.encrypted_content"]
             if tools:
                 params['tools'] = tools
             if text:
                 params['text'] = text
             if reasoning:
                 params['reasoning'] = reasoning
-            if store is not None:
-                params['store'] = store
             if metadata:
                 params['metadata'] = metadata
             tool_choice_payload = self._map_tool_choice(tool_choice, tools or [])
@@ -80,36 +92,34 @@ class OpenAIAdapter:
 
             raise IAToolkitException(IAToolkitException.ErrorType.LLM_ERROR, error_message)
 
+    @classmethod
+    def _carries_encrypted_reasoning(cls, model: str) -> bool:
+        name = str(model or "").strip().lower()
+        if "-chat" in name:
+            return False  # gpt-5-chat-latest and the like do not reason
+        return name.startswith(cls._ENCRYPTED_REASONING_MODEL_PREFIXES)
+
     def _normalize_input_items(
         self,
         input_items: Optional[List[Dict]],
-        previous_response_id: Optional[str] = None,
         context_history: Optional[List[Dict]] = None,
     ) -> List[Dict[str, Any]]:
         """
         Normalize our internal history format to the subset accepted by Responses API.
 
+        The client-side history comes first, then the items of the current call.
+
         Important cases:
         - Assistant messages with `tool_calls` must become top-level `function_call` items.
+        - An assistant message's encrypted reasoning items go back in front of its
+          own message and calls, the order OpenAI produced them in.
         - `function_call_output` items must not include internal-only fields such as `status`.
-        - Without `previous_response_id`, include client-side `context_history` before
-          the current turn so OpenAI can run from locally managed history if needed.
-        - When continuing from a prior response with `previous_response_id`, tool follow-ups
-          should only append the `function_call_output` items because the previous response
-          already contains the originating user/assistant turns on OpenAI's side.
         """
         combined_input: List[Dict[str, Any]] = []
-        if not previous_response_id:
-            combined_input.extend(context_history or [])
+        combined_input.extend(context_history or [])
         combined_input.extend(input_items or [])
 
-        has_function_outputs = any(
-            isinstance(item, dict) and item.get("type") == "function_call_output"
-            for item in combined_input
-        )
-
         normalized_items: List[Dict[str, Any]] = []
-        function_output_items: List[Dict[str, Any]] = []
 
         for item in combined_input:
             if not isinstance(item, dict):
@@ -121,13 +131,17 @@ class OpenAIAdapter:
                 if not call_id:
                     continue
 
-                normalized_output = {
+                normalized_items.append({
                     "type": "function_call_output",
                     "call_id": call_id,
                     "output": item.get("output", ""),
-                }
-                normalized_items.append(normalized_output)
-                function_output_items.append(normalized_output)
+                })
+                continue
+
+            if item_type == "reasoning":
+                reasoning_item = self._normalize_reasoning_item(item)
+                if reasoning_item:
+                    normalized_items.append(reasoning_item)
                 continue
 
             if item_type == "function_call":
@@ -139,6 +153,8 @@ class OpenAIAdapter:
                 role = "assistant"
 
             content = item.get("content")
+            if role == "assistant":
+                normalized_items.extend(self._reasoning_items_from(item.get("reasoning_details")))
             tool_calls = self._normalize_tool_call_items(item.get("tool_calls"))
             if tool_calls:
                 if role == "assistant" and content not in (None, "", []):
@@ -155,21 +171,40 @@ class OpenAIAdapter:
                     "content": content,
                 })
 
-        if previous_response_id and has_function_outputs and function_output_items:
-            # Only the outputs answering the previous response's calls. The tool loop
-            # keeps every round's outputs in its input (client-side providers need
-            # them), and they come last; earlier rounds are already in the chain
-            # `previous_response_id` points to. Sending them all again repeated every
-            # tool result in each following round, so the context grew quadratically
-            # and long tool loops hit context_length_exceeded.
-            latest_round: List[Dict[str, Any]] = []
-            for item in reversed(normalized_items):
-                if item.get("type") != "function_call_output":
-                    break
-                latest_round.append(item)
-            return list(reversed(latest_round)) or function_output_items
-
         return normalized_items
+
+    @classmethod
+    def _reasoning_items_from(cls, reasoning_details: Any) -> List[Dict[str, Any]]:
+        """The OpenAI reasoning items stored with an assistant message, ready to resend.
+
+        `reasoning_details` is shared with other adapters (OpenRouter writes
+        `reasoning.text` blocks there); only items of type `reasoning` carrying
+        encrypted content are OpenAI's and make sense to send back.
+        """
+        if not isinstance(reasoning_details, list):
+            return []
+        items = []
+        for detail in reasoning_details:
+            item = cls._normalize_reasoning_item(detail)
+            if item:
+                items.append(item)
+        return items
+
+    @staticmethod
+    def _normalize_reasoning_item(detail: Any) -> Optional[Dict[str, Any]]:
+        if not isinstance(detail, dict) or detail.get("type") != "reasoning":
+            return None
+        encrypted = detail.get("encrypted_content")
+        if not encrypted:
+            return None
+        item = {
+            "type": "reasoning",
+            "summary": detail.get("summary") if isinstance(detail.get("summary"), list) else [],
+            "encrypted_content": encrypted,
+        }
+        if detail.get("id"):
+            item["id"] = detail["id"]
+        return item
 
     @staticmethod
     def _normalize_tool_call_items(tool_calls: Any) -> List[Dict[str, Any]]:
@@ -408,8 +443,31 @@ class OpenAIAdapter:
             output=tool_calls,
             usage=usage,
             reasoning_content=reasoning_str,
+            reasoning_details=self._extract_encrypted_reasoning_items(openai_response) or None,
             content_parts=content_parts
         )
+
+    @staticmethod
+    def _extract_encrypted_reasoning_items(openai_response) -> List[Dict[str, Any]]:
+        """The response's reasoning items that can be sent back on the next call."""
+        items: List[Dict[str, Any]] = []
+        for item in getattr(openai_response, "output", None) or []:
+            if getattr(item, "type", None) != "reasoning":
+                continue
+            encrypted = getattr(item, "encrypted_content", None)
+            if not encrypted:
+                continue
+            summary = []
+            for part in getattr(item, "summary", None) or []:
+                text = getattr(part, "text", None)
+                if text:
+                    summary.append({"type": "summary_text", "text": str(text)})
+            reasoning_item = {"type": "reasoning", "summary": summary, "encrypted_content": encrypted}
+            item_id = getattr(item, "id", None)
+            if item_id:
+                reasoning_item["id"] = item_id
+            items.append(reasoning_item)
+        return items
 
     def _extract_reasoning_content(self, openai_response) -> List[str]:
         """

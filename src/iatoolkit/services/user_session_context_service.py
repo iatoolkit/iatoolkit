@@ -31,58 +31,17 @@ class UserSessionContextService:
             # 'profile_data' should not be deleted
             RedisSessionManager.hdel(session_key, "context_version")
             RedisSessionManager.hdel(session_key, "context_history")
+            # Left by the server-side history removed in BL-009; still cleared so
+            # sessions created before it do not keep them.
             RedisSessionManager.hdel(session_key, "last_response_id")
             RedisSessionManager.hdel(session_key, "initial_response_id")
             RedisSessionManager.hdel(session_key, "selected_system_prompt_keys")
 
     def clear_llm_history(self, company_short_name: str, user_identifier: str, model: str = None):
-        """Clears only LLM history fields (last_response_id and context_history)."""
+        """Clears only the LLM history (context_history, plus the legacy server-side ids)."""
         session_key = self._get_session_key(company_short_name, user_identifier, model=model)
         if session_key:
             RedisSessionManager.hdel(session_key, "last_response_id", "initial_response_id", "context_history")
-
-    def get_last_response_id(self, company_short_name: str, user_identifier: str, model: str = None) -> Optional[str]:
-        """Returns the last LLM response ID for this user/model combination."""
-        session_key = self._get_session_key(company_short_name, user_identifier, model=model)
-        if not session_key:
-            return None
-        return RedisSessionManager.hget(session_key, "last_response_id")
-
-    def save_last_response_id(self,
-        company_short_name: str,
-        user_identifier: str,
-        response_id: str,
-        model: str = None,
-    ):
-        """Persists the last LLM response ID for this user/model combination."""
-        session_key = self._get_session_key(company_short_name, user_identifier, model=model)
-        if session_key:
-            RedisSessionManager.hset(session_key, "last_response_id", response_id)
-
-    def get_initial_response_id(self,
-        company_short_name: str,
-        user_identifier: str,
-        model: str = None,
-    ) -> Optional[str]:
-        """
-        Returns the initial LLM response ID for this user/model combination.
-        This ID represents the state right after the context was set on the LLM.
-        """
-        session_key = self._get_session_key(company_short_name, user_identifier, model=model)
-        if not session_key:
-            return None
-        return RedisSessionManager.hget(session_key, "initial_response_id")
-
-    def save_initial_response_id(self,
-            company_short_name: str,
-            user_identifier: str,
-            response_id: str,
-            model: str = None,
-    ):
-        """Persists the initial LLM response ID for this user/model combination."""
-        session_key = self._get_session_key(company_short_name, user_identifier, model=model)
-        if session_key:
-            RedisSessionManager.hset(session_key, "initial_response_id", response_id)
 
     def save_context_history(
             self,

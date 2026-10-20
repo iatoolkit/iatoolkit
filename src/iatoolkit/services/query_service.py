@@ -43,10 +43,6 @@ class QueryService:
     SQL_TOOL_NAME = "iat_sql_query"
     DOCUMENT_SEARCH_TOOL_NAME = "iat_document_search"
     MEMORY_TOOL_NAMES = {"iat_memory_search", "iat_memory_get_page", "iat_memory_save"}
-    _PREVIOUS_RESPONSE_NOT_FOUND_MARKERS = (
-        "previous_response_not_found",
-        "previous response with id",
-    )
     _STAGE_LOG_THRESHOLD_MS = 250
 
     @inject
@@ -305,18 +301,6 @@ class QueryService:
             candidate,
         )
         return candidate
-
-    def _get_history_type(self, company_short_name: str, model: str) -> str:
-        provider = self._get_provider(company_short_name, model)
-        if provider in ("openai", "xai"):
-            return HistoryManagerService.TYPE_SERVER_SIDE
-        if provider == "openrouter":
-            return HistoryManagerService.TYPE_CLIENT_SIDE
-
-        history_type_str = self.model_registry.get_history_type(model)
-        if history_type_str == "server_side":
-            return HistoryManagerService.TYPE_SERVER_SIDE
-        return HistoryManagerService.TYPE_CLIENT_SIDE
 
     def _normalize_selected_system_prompt_keys(self, keys) -> list[str]:
         if not isinstance(keys, list):
@@ -687,7 +671,7 @@ class QueryService:
         }
 
         if not request_options:
-            return {}, None, None, metadata
+            return {}, None, metadata
 
         get_capabilities_fn = getattr(self.model_registry, "get_capabilities", None)
         capabilities = (
@@ -709,13 +693,8 @@ class QueryService:
         text_verbosity_provider_supported = bool(
             capabilities.get("supports_text_verbosity", provider in ("openai", "xai", "openrouter"))
         )
-        store_provider_supported = bool(
-            capabilities.get("supports_store", provider in ("openai", "xai"))
-        )
-
         text_overrides = {}
         reasoning_overrides = None
-        store_override = None
         ignored_option_keys = []
 
         reasoning_effort = str(request_options.get("reasoning_effort") or "").strip().lower()
@@ -735,11 +714,9 @@ class QueryService:
                 ignored_option_keys.append("text_verbosity")
 
         if "store" in request_options:
-            if store_provider_supported:
-                store_override = bool(request_options.get("store"))
-                metadata["applied"]["store"] = store_override
-            else:
-                ignored_option_keys.append("store")
+            # IAToolkit owns the history (BL-009): nothing is stored at the
+            # provider, so the option is accepted for old prompts and ignored.
+            ignored_option_keys.append("store")
 
         if ignored_option_keys:
             metadata["ignored_keys"] = sorted(set(ignored_option_keys))
@@ -747,7 +724,7 @@ class QueryService:
             metadata["ignored"] = True
             metadata["reason"] = "provider_unsupported"
 
-        return text_overrides, reasoning_overrides, store_override, metadata
+        return text_overrides, reasoning_overrides, metadata
 
     @staticmethod
     def _resolve_prompt_request_metadata(prompt_output_contract: dict | None) -> dict[str, str] | None:
@@ -985,13 +962,11 @@ class QueryService:
             Manages the history strategy and rebuilds context if necessary.
             Returns: (HistoryHandle, error_response)
         """
-        history_type = self._get_history_type(company.short_name, effective_model)
-
         # Initialize the handle with base context info
         handle = HistoryHandle(
             company_short_name=company.short_name,
             user_identifier=user_identifier,
-            type=history_type,
+            type=HistoryManagerService.TYPE_CLIENT_SIDE,
             model=effective_model
         )
 
@@ -1029,13 +1004,6 @@ class QueryService:
 
         return handle, None
 
-    @classmethod
-    def _is_previous_response_not_found_error(cls, error: Exception) -> bool:
-        error_text = str(error or "").strip().lower()
-        if not error_text:
-            return False
-        return any(marker in error_text for marker in cls._PREVIOUS_RESPONSE_NOT_FOUND_MARKERS)
-
     @staticmethod
     def build_execution_trace(*,
                                prompt_name: str | None,
@@ -1060,118 +1028,53 @@ class QueryService:
             trace["input_files"] = [dict(item) for item in input_files if isinstance(item, dict)]
         return trace
 
-    def _invoke_with_history_recovery(self,
-                                      *,
-                                      company,
-                                      company_short_name: str,
-                                      user_identifier: str,
-                                      effective_model: str,
-                                      task_id: Optional[int],
-                                      effective_question: str,
-                                      user_turn_prompt: str,
-                                      tools: list[dict],
-                                      tool_choice_override: str | None,
-                                      text_payload: dict,
-                                      reasoning: dict | None,
-                                      store: bool | None,
-                                      images: list,
-                                      attachment_plan: dict,
-                                      execution_metadata: dict,
-                                      request_metadata: dict | None,
-                                      telemetry_request: dict | None,
-                                      prompt_output_contract: dict,
-                                      history_handle: HistoryHandle,
-                                      ignore_history: bool,
-                                      execution_trace: dict | None = None) -> tuple[dict, HistoryHandle]:
-        previous_response_id = history_handle.request_params.get('previous_response_id')
+    def _invoke_llm_with_history(self,
+                                 *,
+                                 company,
+                                 company_short_name: str,
+                                 user_identifier: str,
+                                 effective_model: str,
+                                 task_id: Optional[int],
+                                 effective_question: str,
+                                 user_turn_prompt: str,
+                                 tools: list[dict],
+                                 tool_choice_override: str | None,
+                                 text_payload: dict,
+                                 reasoning: dict | None,
+                                 images: list,
+                                 attachment_plan: dict,
+                                 execution_metadata: dict,
+                                 request_metadata: dict | None,
+                                 telemetry_request: dict | None,
+                                 prompt_output_contract: dict,
+                                 history_handle: HistoryHandle,
+                                 ignore_history: bool,
+                                 execution_trace: dict | None = None) -> tuple[dict, HistoryHandle]:
         context_history = history_handle.request_params.get('context_history')
         max_tool_rounds = self._resolve_company_max_tool_rounds(company_short_name)
 
-        try:
-            response = self.llm_client.invoke(
-                company=company,
-                user_identifier=user_identifier,
-                model=effective_model,
-                task_id=task_id,
-                previous_response_id=previous_response_id,
-                context_history=context_history,
-                question=effective_question,
-                context=user_turn_prompt,
-                tools=tools,
-                tool_choice_override=tool_choice_override,
-                text=text_payload,
-                images=images,
-                attachments=attachment_plan.get("native_attachments", []),
-                reasoning=reasoning,
-                store=store,
-                execution_metadata=execution_metadata,
-                request_metadata=request_metadata,
-                telemetry_request=telemetry_request,
-                response_contract=prompt_output_contract if prompt_output_contract.get("schema") else None,
-                execution_trace=execution_trace,
-                max_tool_rounds=max_tool_rounds,
-            )
-            return response, history_handle
-        except Exception as invoke_error:
-            should_retry = (
-                ignore_history
-                and history_handle.type == HistoryManagerService.TYPE_SERVER_SIDE
-                and bool(previous_response_id)
-                and self._is_previous_response_not_found_error(invoke_error)
-            )
-            if not should_retry:
-                raise
-
-            logging.warning(
-                "Stale initial_response_id detected for %s/%s model=%s. Rebuilding context and retrying once.",
-                company_short_name,
-                user_identifier,
-                effective_model,
-            )
-            self.init_context(
-                company_short_name=company_short_name,
-                user_identifier=user_identifier,
-                model=effective_model,
-            )
-
-            retry_history_handle, error_response = self._ensure_valid_history(
-                company=company,
-                user_identifier=user_identifier,
-                effective_model=effective_model,
-                question=effective_question,
-                user_turn_prompt=user_turn_prompt,
-                ignore_history=ignore_history,
-            )
-            if error_response:
-                raise RuntimeError(error_response.get("error_message") or error_response)
-
-            retry_previous_response_id = retry_history_handle.request_params.get('previous_response_id')
-            retry_context_history = retry_history_handle.request_params.get('context_history')
-
-            response = self.llm_client.invoke(
-                company=company,
-                user_identifier=user_identifier,
-                model=effective_model,
-                task_id=task_id,
-                previous_response_id=retry_previous_response_id,
-                context_history=retry_context_history,
-                question=effective_question,
-                context=user_turn_prompt,
-                tools=tools,
-                tool_choice_override=tool_choice_override,
-                text=text_payload,
-                images=images,
-                attachments=attachment_plan.get("native_attachments", []),
-                reasoning=reasoning,
-                store=store,
-                execution_metadata=execution_metadata,
-                request_metadata=request_metadata,
-                telemetry_request=telemetry_request,
-                response_contract=prompt_output_contract if prompt_output_contract.get("schema") else None,
-                execution_trace=execution_trace,
-                max_tool_rounds=max_tool_rounds,
-            )
-            return response, retry_history_handle
+        response = self.llm_client.invoke(
+            company=company,
+            user_identifier=user_identifier,
+            model=effective_model,
+            task_id=task_id,
+            context_history=context_history,
+            question=effective_question,
+            context=user_turn_prompt,
+            tools=tools,
+            tool_choice_override=tool_choice_override,
+            text=text_payload,
+            images=images,
+            attachments=attachment_plan.get("native_attachments", []),
+            reasoning=reasoning,
+            execution_metadata=execution_metadata,
+            request_metadata=request_metadata,
+            telemetry_request=telemetry_request,
+            response_contract=prompt_output_contract if prompt_output_contract.get("schema") else None,
+            execution_trace=execution_trace,
+            max_tool_rounds=max_tool_rounds,
+        )
+        return response, history_handle
 
     def init_context(self, company_short_name: str,
                      user_identifier: str,
@@ -1181,7 +1084,7 @@ class QueryService:
 
         - Clears LLM-related context for the resolved model.
         - Regenerates the static company/user context.
-        - Sends the context to the LLM for that model.
+        - Starts the model's history with it (no model call).
         """
 
         # 1. Resolve the effective model for this user/company
@@ -1200,7 +1103,7 @@ class QueryService:
             user_identifier=user_identifier
         )
 
-        # 4. Communicate the new context to the specific LLM model
+        # 4. Start the model's history with the new context
         response = self.set_context_for_llm(
             company_short_name=company_short_name,
             user_identifier=user_identifier,
@@ -1345,8 +1248,9 @@ class QueryService:
                             user_identifier: str,
                             model: str = ''):
         """
-        Takes a pre-built static context and sends it to the LLM for the given model.
-        Also initializes the model-specific history through HistoryManagerService.
+        Starts the model-specific history with the pre-built static context as its
+        first message. Nothing is sent to the model: the context travels with the
+        first turn (BL-009), so a login costs no model call.
         """
         company = self.profile_repo.get_company_by_short_name(company_short_name)
         if not company:
@@ -1373,12 +1277,11 @@ class QueryService:
                 return
 
             logging.info(
-                f"sending context to LLM model {effective_model} for: {company_short_name}/{user_identifier}...")
+                f"starting the history of model {effective_model} for: {company_short_name}/{user_identifier}...")
 
-            # --- Use Strategy Pattern for History/Context Initialization ---
-            history_type = self._get_history_type(company_short_name, effective_model)
+            # The context becomes the first message of the history; no model call.
             response_data = self.history_manager.initialize_context(
-                company_short_name, user_identifier, history_type, prepared_context, company, effective_model
+                company_short_name, user_identifier, prepared_context, effective_model
             )
 
             if version_to_save:
@@ -1387,7 +1290,6 @@ class QueryService:
             logging.info(
                 f"Context for: {company_short_name}/{user_identifier} settled in {int(time.time() - start_time)} sec.")
 
-            # Return data (e.g., response_id) if the manager generated any
             return response_data
 
         except Exception as e:
@@ -1457,13 +1359,6 @@ class QueryService:
             return False
         effective_model = self._resolve_model(company_short_name, model)
         try:
-            last_response_id = self.session_context.get_last_response_id(
-                company_short_name,
-                user_identifier,
-                model=effective_model or None,
-            )
-            if last_response_id:
-                return True
             context_history = self.session_context.get_context_history(
                 company_short_name,
                 user_identifier,
@@ -1774,7 +1669,7 @@ class QueryService:
                 tool_router_metrics = dict(tool_router_metrics or {})
                 tool_router_metrics["selected_system_prompt_keys"] = selected_system_prompt_keys
 
-            text_overrides, reasoning_overrides, store_override, request_options_metadata = (
+            text_overrides, reasoning_overrides, request_options_metadata = (
                 self._resolve_prompt_request_overrides(
                     company_short_name=company_short_name,
                     effective_model=effective_model,
@@ -1844,7 +1739,7 @@ class QueryService:
             )
             log_stage("prepare_invoke")
 
-            response, history_handle = self._invoke_with_history_recovery(
+            response, history_handle = self._invoke_llm_with_history(
                 company=company,
                 company_short_name=company_short_name,
                 user_identifier=user_identifier,
@@ -1856,7 +1751,6 @@ class QueryService:
                 tool_choice_override=tool_choice_override,
                 text_payload=text_payload,
                 reasoning=reasoning_overrides,
-                store=store_override,
                 images=images,
                 attachment_plan=attachment_plan,
                 execution_metadata=execution_metadata,
@@ -2014,10 +1908,10 @@ class QueryService:
                     "### Chat Turn\n"
                     f"{user_turn_prompt}"
                 ) if runtime_context else user_turn_prompt
-                history_type = self._get_history_type(company_short_name, effective_model)
+                history_type = HistoryManagerService.TYPE_CLIENT_SIDE
                 preview_note = (
                     "This conversational preview shows the logical system context and turn. "
-                    "Providers with server-side history may persist the base context separately."
+                    "The context travels as the first message of the conversation history."
                 )
 
             token_count = 0
@@ -2083,7 +1977,7 @@ class QueryService:
 
             effective_model = self._resolve_model(company_short_name, None, {})
             provider = self._get_provider(company_short_name, effective_model)
-            history_type = self._get_history_type(company_short_name, effective_model)
+            history_type = HistoryManagerService.TYPE_CLIENT_SIDE
             tools = self.tool_service.get_tools_for_llm(company, user_identifier=user_identifier)
             runtime_context, _user_profile, selected_system_prompt_keys = self.context_builder.build_system_context(
                 company_short_name,

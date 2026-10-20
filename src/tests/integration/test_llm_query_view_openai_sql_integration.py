@@ -59,9 +59,6 @@ class FakeLLMQueryRepo:
 
 
 class FakeModelRegistry:
-    def get_history_type(self, model):
-        return "server_side"
-
     def resolve_request_params(self, model, text, reasoning=None):
         return {
             "text": text or {},
@@ -70,14 +67,13 @@ class FakeModelRegistry:
 
 
 class FakeHistoryManager:
-    def __init__(self, previous_response_id):
-        self.previous_response_id = previous_response_id
+    def __init__(self, context_history):
+        self.context_history = context_history
         self.updates = []
 
     def populate_request_params(self, handle, user_turn_prompt, ignore_history):
         handle.request_params = {
-            "previous_response_id": self.previous_response_id,
-            "context_history": None,
+            "context_history": list(self.context_history) + [{"role": "user", "content": user_turn_prompt}],
         }
         return False
 
@@ -234,7 +230,7 @@ def test_llm_query_view_openai_sql_function_call_success():
         session_context=MagicMock(),
         # No list of models: the explicit model the test sends is not restricted.
         configuration_service=MagicMock(**{"get_llm_configuration.return_value": (None, [])}),
-        history_manager=FakeHistoryManager(previous_response_id="ctx_openai_prev_1"),
+        history_manager=FakeHistoryManager(context_history=[{"role": "user", "content": "company context"}]),
         model_registry=FakeModelRegistry(),
         context_builder=FakeContextBuilder(),
     )
@@ -270,7 +266,11 @@ def test_llm_query_view_openai_sql_function_call_success():
     assert db_provider.executed == [("SELECT 42 AS total", False)]
     assert len(llm_proxy.calls) == 2
     assert llm_proxy.calls[0]["model"] == MODEL
-    assert llm_proxy.calls[1]["previous_response_id"] == "resp_openai_1"
+    # Client-side history (BL-009): every call carries the history, none points
+    # at a stored response.
+    for call in llm_proxy.calls:
+        assert "previous_response_id" not in call
+        assert call["context_history"][0] == {"role": "user", "content": "company context"}
 
     assistant_tool_call_event = llm_proxy.calls[1]["input"][1]
     assert assistant_tool_call_event["role"] == "assistant"

@@ -15,15 +15,7 @@ from injector import inject, singleton
 from typing import Literal
 
 
-HistoryType = Literal["server_side", "client_side"]
 ProviderType = Literal["openai", "gemini", "deepseek", "xai", "anthropic", "openrouter", "openai_compatible", "unknown"]
-
-
-@dataclass(frozen=True)
-class ModelMetadata:
-    """Static metadata for a logical family of models."""
-    provider: ProviderType
-    history_type: HistoryType
 
 
 #: Providers a model can actually be served by: the ones `LLMProxy._build_adapter`
@@ -118,7 +110,6 @@ class ModelRegistry:
 
     Responsibilities:
     - Map a model name to its provider (openai, gemini, deepseek, etc.).
-    - Decide which history strategy to use for a model (server_side / client_side).
     - Provide convenience helpers (is_openai, is_gemini, is_deepseek, etc.).
     """
 
@@ -192,7 +183,6 @@ class ModelRegistry:
 
         return {
             "provider": normalized_provider,
-            "history_type": self.get_history_type(model),
             "supports_reasoning_effort": supports_reasoning_effort,
             "allowed_reasoning_efforts": list(self._reasoning_effort_options) if supports_reasoning_effort else [],
             "supports_text_verbosity": supports_text_verbosity,
@@ -245,22 +235,6 @@ class ModelRegistry:
             "text": merged_text,
             "reasoning": merged_reasoning,
         }
-
-    def get_history_type(self, model: str) -> HistoryType:
-        """
-        Returns the history strategy for a given model.
-
-        Current rules:
-        - openai/xai: server_side (API manages conversation state via ids)
-        - gemini/deepseek/anthropic/unknown: client_side (we manage full message history)
-        """
-        provider = self.get_provider(model)
-
-        if provider in ("openai", "xai"):
-            return "server_side"
-
-        # Default for gemini, deepseek, anthropic and any unknown provider
-        return "client_side"
 
     # ------------------------------------------------------------------
     # Convenience helpers (used during migration)

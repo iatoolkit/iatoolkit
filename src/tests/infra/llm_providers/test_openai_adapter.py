@@ -73,6 +73,8 @@ class TestOpenAIAdapter:
         telemetry_execution.record_input.assert_called_once_with({
             'model': 'gpt-5',
             'input': input_data,
+            'store': False,
+            'include': ['reasoning.encrypted_content'],
             'text': {'verbosity': 'medium'},
         })
 
@@ -249,20 +251,20 @@ class TestOpenAIAdapter:
         self.adapter.create_response(
             model='gpt-4',
             input=input_data,
-            previous_response_id='prev_123',
             tool_choice='none',
             text={'some': 'text'},
             reasoning={'some': 'reasoning'},
-            store=False,
+            store=True,
             metadata={'prompt_name': 'sales_prompt', 'prompt_version': '2', 'prompt_variant': 'baseline'},
         )
 
         # Assert
         call_kwargs = self.mock_openai_client.responses.create.call_args.kwargs
-        assert call_kwargs['previous_response_id'] == 'prev_123'
+        assert 'previous_response_id' not in call_kwargs
         assert call_kwargs['tool_choice'] == 'none'
         assert call_kwargs['text'] == {'some': 'text'}
         assert call_kwargs['reasoning'] == {'some': 'reasoning'}
+        # Nothing is kept at OpenAI, whatever a prompt or company.yaml declares.
         assert call_kwargs['store'] is False
         assert call_kwargs['metadata'] == {
             'prompt_name': 'sales_prompt',
@@ -296,30 +298,6 @@ class TestOpenAIAdapter:
         call_kwargs = self.mock_openai_client.responses.create.call_args.kwargs
         assert call_kwargs['input'] == context_history + input_data
         assert 'previous_response_id' not in call_kwargs
-
-    def test_create_response_ignores_context_history_with_previous_response_id(self):
-        mock_response = MagicMock()
-        mock_response.id = 'resp-server-history'
-        mock_response.model = 'gpt-4.1'
-        mock_response.status = 'completed'
-        mock_response.output = []
-        mock_response.output_text = 'ok'
-        mock_response.usage = None
-        self.mock_openai_client.responses.create.return_value = mock_response
-
-        context_history = [{'role': 'user', 'content': 'Should stay local'}]
-        input_data = [{'role': 'user', 'content': 'Current question'}]
-
-        self.adapter.create_response(
-            model='gpt-4.1',
-            input=input_data,
-            previous_response_id='resp_previous',
-            context_history=context_history,
-        )
-
-        call_kwargs = self.mock_openai_client.responses.create.call_args.kwargs
-        assert call_kwargs['previous_response_id'] == 'resp_previous'
-        assert call_kwargs['input'] == input_data
 
     def test_create_response_maps_specific_function_tool_choice(self):
         mock_response = MagicMock()
@@ -423,7 +401,7 @@ class TestOpenAIAdapter:
         # output_text debe incluir texto (la imagen está en content_parts)
         assert 'Here is the image:' in result.output_text
 
-    def test_create_response_strips_chat_style_tool_history_for_openai_follow_up(self):
+    def test_a_tool_follow_up_sends_the_whole_conversation(self):
         mock_response = MagicMock()
         mock_response.id = 'resp-follow-up'
         mock_response.model = 'gpt-4.1'
@@ -461,33 +439,111 @@ class TestOpenAIAdapter:
         self.adapter.create_response(
             model='gpt-4.1',
             input=input_data,
-            previous_response_id='resp_previous',
         )
 
         call_kwargs = self.mock_openai_client.responses.create.call_args.kwargs
-        assert call_kwargs['previous_response_id'] == 'resp_previous'
+        assert 'previous_response_id' not in call_kwargs
         assert call_kwargs['input'] == [
+            {'role': 'user', 'content': 'Weather in London?'},
+            {
+                'type': 'function_call',
+                'call_id': 'call_abc',
+                'name': 'get_weather',
+                'arguments': '{"location":"London"}',
+            },
             {
                 'type': 'function_call_output',
                 'call_id': 'call_abc',
                 'output': '{"temperature":21}',
-            }
+            },
         ]
 
-    def test_create_response_with_previous_response_id_sends_only_the_latest_tool_round(self):
-        """Server-side history: each tool round continues from the previous response,
-        which already holds the earlier rounds. The tool loop keeps every round in its
-        input (client-side providers need it), so only the trailing outputs - the ones
-        answering the previous response's calls - may be sent; resending the rest
-        repeated every tool result in each following round."""
+    def _empty_response(self, response_id='resp'):
         mock_response = MagicMock()
-        mock_response.id = 'resp-round-3'
-        mock_response.model = 'gpt-4.1'
+        mock_response.id = response_id
+        mock_response.model = 'gpt-5'
         mock_response.status = 'completed'
         mock_response.output = []
         mock_response.output_text = 'done'
         mock_response.usage = None
-        self.mock_openai_client.responses.create.return_value = mock_response
+        return mock_response
+
+    def test_encrypted_reasoning_is_requested_only_from_reasoning_models(self):
+        self.mock_openai_client.responses.create.return_value = self._empty_response()
+
+        for model, expected in (
+            ('gpt-5', True), ('gpt-5-mini', True), ('o3', True),
+            ('gpt-4.1', False), ('gpt-5-chat-latest', False), ('grok-4', False),
+        ):
+            self.adapter.create_response(model=model, input=[{'role': 'user', 'content': 'x'}])
+            call_kwargs = self.mock_openai_client.responses.create.call_args.kwargs
+            assert ('include' in call_kwargs) is expected, model
+            assert call_kwargs['store'] is False
+
+    def test_reasoning_items_are_mapped_for_the_next_call(self):
+        reasoning_item = MagicMock()
+        reasoning_item.type = 'reasoning'
+        reasoning_item.id = 'rs_1'
+        reasoning_item.encrypted_content = 'ENC'
+        summary_part = MagicMock()
+        summary_part.text = 'thinking'
+        reasoning_item.summary = [summary_part]
+        reasoning_item.content = []
+        unencrypted = MagicMock()
+        unencrypted.type = 'reasoning'
+        unencrypted.encrypted_content = None
+        unencrypted.summary = []
+        unencrypted.content = []
+        response = self._empty_response()
+        response.output = [reasoning_item, unencrypted]
+        self.mock_openai_client.responses.create.return_value = response
+
+        result = self.adapter.create_response(model='gpt-5', input=[{'role': 'user', 'content': 'x'}])
+
+        assert result.reasoning_details == [{
+            'type': 'reasoning',
+            'summary': [{'type': 'summary_text', 'text': 'thinking'}],
+            'encrypted_content': 'ENC',
+            'id': 'rs_1',
+        }]
+        assert result.reasoning_content == 'thinking'
+
+    def test_reasoning_goes_back_in_front_of_the_calls_it_produced(self):
+        self.mock_openai_client.responses.create.return_value = self._empty_response()
+        input_data = [
+            {'role': 'user', 'content': 'question'},
+            {
+                'role': 'assistant',
+                'content': '',
+                'reasoning_details': [
+                    {'type': 'reasoning', 'id': 'rs_1', 'summary': [], 'encrypted_content': 'ENC'},
+                    # OpenRouter-shaped detail from another adapter: never sent to OpenAI.
+                    {'type': 'reasoning.text', 'text': 'other provider'},
+                    # Without encrypted content OpenAI cannot use it.
+                    {'type': 'reasoning', 'id': 'rs_2', 'summary': []},
+                ],
+                'tool_calls': [
+                    {'id': 'call_1', 'type': 'function',
+                     'function': {'name': 'iat_sql_query', 'arguments': '{"query":"SELECT 1"}'}},
+                ],
+            },
+            {'type': 'function_call_output', 'call_id': 'call_1', 'status': 'completed', 'output': 'rows'},
+        ]
+
+        self.adapter.create_response(model='gpt-5', input=input_data)
+
+        assert self.mock_openai_client.responses.create.call_args.kwargs['input'] == [
+            {'role': 'user', 'content': 'question'},
+            {'type': 'reasoning', 'summary': [], 'encrypted_content': 'ENC', 'id': 'rs_1'},
+            {'type': 'function_call', 'call_id': 'call_1', 'name': 'iat_sql_query',
+             'arguments': '{"query":"SELECT 1"}'},
+            {'type': 'function_call_output', 'call_id': 'call_1', 'output': 'rows'},
+        ]
+
+    def test_every_tool_round_is_sent_again(self):
+        """The tool loop keeps every round in its input and nothing is stored at
+        OpenAI, so each follow-up must carry all of them."""
+        self.mock_openai_client.responses.create.return_value = self._empty_response()
 
         def assistant_calling(*call_ids):
             return {
@@ -495,7 +551,7 @@ class TestOpenAIAdapter:
                 'content': '',
                 'tool_calls': [
                     {'id': call_id, 'type': 'function',
-                     'function': {'name': 'iat_sql_query', 'arguments': '{"query":"SELECT 1"}'}}
+                     'function': {'name': 'iat_sql_query', 'arguments': '{}'}}
                     for call_id in call_ids
                 ],
             }
@@ -504,7 +560,6 @@ class TestOpenAIAdapter:
             return {'type': 'function_call_output', 'call_id': call_id,
                     'status': 'completed', 'output': f'rows for {call_id}'}
 
-        # input_messages as the tool loop leaves it before the third follow-up.
         input_data = [
             {'role': 'user', 'content': 'the whole prompt context'},
             assistant_calling('call_1'),
@@ -512,23 +567,16 @@ class TestOpenAIAdapter:
             assistant_calling('call_2', 'call_3'),
             output('call_2'),
             output('call_3'),
-            assistant_calling('call_4'),
-            output('call_4'),
         ]
 
-        self.adapter.create_response(model='gpt-4.1', input=input_data, previous_response_id='resp-round-2')
+        self.adapter.create_response(model='gpt-4.1', input=input_data)
 
-        call_kwargs = self.mock_openai_client.responses.create.call_args.kwargs
-        assert call_kwargs['previous_response_id'] == 'resp-round-2'
-        assert call_kwargs['input'] == [
-            {'type': 'function_call_output', 'call_id': 'call_4', 'output': 'rows for call_4'},
+        sent = self.mock_openai_client.responses.create.call_args.kwargs['input']
+        assert [item.get('call_id') for item in sent if item.get('type') == 'function_call_output'] == [
+            'call_1', 'call_2', 'call_3',
         ]
-
-        # A round with several calls sends all of them.
-        self.adapter.create_response(model='gpt-4.1', input=input_data[:6], previous_response_id='resp-round-1')
-        assert self.mock_openai_client.responses.create.call_args.kwargs['input'] == [
-            {'type': 'function_call_output', 'call_id': 'call_2', 'output': 'rows for call_2'},
-            {'type': 'function_call_output', 'call_id': 'call_3', 'output': 'rows for call_3'},
+        assert [item.get('call_id') for item in sent if item.get('type') == 'function_call'] == [
+            'call_1', 'call_2', 'call_3',
         ]
 
     def test_create_response_converts_assistant_tool_calls_to_function_call_items(self):

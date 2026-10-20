@@ -24,7 +24,6 @@ class AnthropicAdapter:
     def create_response(self,
                         model: str,
                         input: List[Dict],
-                        previous_response_id: Optional[str] = None,
                         context_history: Optional[List[Dict]] = None,
                         tools: Optional[List[Dict]] = None,
                         text: Optional[Dict] = None,
@@ -39,10 +38,9 @@ class AnthropicAdapter:
         Calls Anthropic Messages API and maps the response to common LLMResponse.
 
         Notes:
-        - Anthropic is integrated as client-side history, so previous_response_id is ignored.
+        - Anthropic receives the whole client-side history on every call.
         - reasoning is currently not sent as a provider-specific parameter.
         """
-        _ = previous_response_id
         _ = reasoning
         _ = attachments
         _ = store

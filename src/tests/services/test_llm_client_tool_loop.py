@@ -68,8 +68,7 @@ class _LLMClientFixture:
 
     def _invoke(self, **kwargs):
         return self.client.invoke(
-            company=self.company, user_identifier='user1', previous_response_id='prev1',
-            model='gpt-5', question='q', context='c', tools=[{"name": "t"}], text={},
+            company=self.company, user_identifier='user1', model='gpt-5', question='q', context='c', tools=[{"name": "t"}], text={},
             images=[], **kwargs,
         )
 
@@ -362,46 +361,21 @@ class TestTokenUsageRecording(_LLMClientFixture):
         assert not error_row.stats
 
 
-class TestContextInitUsage(_LLMClientFixture):
-    def test_context_init_is_recorded_as_its_own_query_row(self):
-        self.proxy.create_response.return_value = LLMResponse(
-            'resp_ctx', 'gpt-5', 'completed', '', [], Usage(30_000, 12, 30_012)
-        )
+class TestToolLoopSendsTheWholeHistory(_LLMClientFixture):
+    def test_every_round_carries_the_history_and_no_previous_response(self):
+        self.dispatcher.dispatch.return_value = {"ok": True}
+        self.proxy.create_response.side_effect = [
+            _tool_response('r1', ('c1', 'search', '{}')),
+            _final_response(),
+        ]
+        history = [{"role": "user", "content": "company context"}]
 
-        response_id = self.client.set_company_context(
-            company=self.company, company_base_context="ctx", model="gpt-5", user_identifier="user1",
-        )
+        self._invoke(context_history=history)
 
-        assert response_id == 'resp_ctx'
-        row = self.llmquery_repo.add_query.call_args.args[0]
-        assert row.user_identifier == "user1"
-        assert row.company_id == 1
-        assert row.query == llmClient.CONTEXT_INIT_QUERY_LABEL
-        assert row.stats["request_source"] == "context_init"
-        assert row.stats["input_tokens"] == 30_000
-        assert row.stats["output_tokens"] == 12
-        assert row.stats["total_tokens"] == 30_012
-        assert row.stats["model"] == "gpt-5"
-
-    def test_a_failure_to_record_does_not_fail_the_initialization(self):
-        self.proxy.create_response.return_value = LLMResponse(
-            'resp_ctx', 'gpt-5', 'completed', '', [], Usage(10, 1, 11)
-        )
-        self.llmquery_repo.add_query.side_effect = RuntimeError("db down")
-
-        response_id = self.client.set_company_context(
-            company=self.company, company_base_context="ctx", model="gpt-5", user_identifier="user1",
-        )
-
-        assert response_id == 'resp_ctx'
-        self.llmquery_repo.rollback.assert_called_once()
-
-    def test_failed_llm_call_records_nothing(self):
-        self.proxy.create_response.side_effect = RuntimeError("down")
-
-        with pytest.raises(IAToolkitException):
-            self.client.set_company_context(
-                company=self.company, company_base_context="ctx", model="gpt-5", user_identifier="user1",
-            )
-
-        self.llmquery_repo.add_query.assert_not_called()
+        for call in self.proxy.create_response.call_args_list:
+            assert 'previous_response_id' not in call.kwargs
+            assert call.kwargs['context_history'] == history
+        follow_up = self.proxy.create_response.call_args_list[1].kwargs['input']
+        assert [m.get('role') or m.get('type') for m in follow_up] == [
+            'user', 'assistant', 'function_call_output',
+        ]

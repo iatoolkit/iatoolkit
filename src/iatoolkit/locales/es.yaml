@@ -2916,7 +2916,6 @@ errors:
     file_validation_error : "Error validando archivo"
     user_not_authorized: "Usuario no esta autorizado para esta empresa"
     account_not_verified: "Tu cuenta no ha sido verificada. Por favor, revisa tu correo."
-    missing_response_id: "No se encontró 'previous_response_id' para '{company_short_name}/{user_identifier}'. Reinicia el contexto."
     context_rebuild_failed: "No se pudo reconstruir el contexto de la empresa."
     cannot_read_excel: "No se pudo leer el archivo excel"
     cannot_read_csv: "No se pudo leer el archivo CSV"

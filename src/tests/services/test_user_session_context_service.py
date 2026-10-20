@@ -32,19 +32,6 @@ class TestUserSessionContextService(unittest.TestCase):
         """Limpia los patches después de cada test."""
         self.redis_patcher.stop()
 
-    def test_save_last_response_id(self):
-        """Prueba que se guarda el ID de la respuesta en el campo correcto del Hash."""
-        response_id = "resp_xyz"
-        self.service.save_last_response_id(self.company_short_name, self.user_identifier, response_id)
-        self.mock_redis_manager.hset.assert_called_once_with(self.session_key, 'last_response_id', response_id)
-
-    def test_get_last_response_id(self):
-        """Prueba que se obtiene el ID de la respuesta del campo correcto del Hash."""
-        self.mock_redis_manager.hget.return_value = "resp_abc"
-        result = self.service.get_last_response_id(self.company_short_name, self.user_identifier)
-        self.mock_redis_manager.hget.assert_called_once_with(self.session_key, 'last_response_id')
-        self.assertEqual(result, "resp_abc")
-
     def test_save_profile_data(self):
         """Prueba que los datos de perfil se guardan como JSON en el campo 'profile_data'."""
         data = {"role": "admin", "theme": "dark"}
@@ -177,7 +164,6 @@ class TestUserSessionContextService(unittest.TestCase):
         for user_id in invalid_identifiers:
             with self.subTest(user_id=user_id):
                 # Probar métodos de escritura
-                self.service.save_last_response_id(self.company_short_name, user_id, "id_1")
                 self.service.save_profile_data(self.company_short_name, user_id, {"data": "value"})
                 self.service.save_context_version(self.company_short_name, user_id, "v1")
                 self.service.save_context_history(self.company_short_name, user_id, [])
@@ -187,7 +173,7 @@ class TestUserSessionContextService(unittest.TestCase):
                 self.service.clear_llm_history(self.company_short_name, user_id)
 
                 # Probar métodos de lectura
-                self.assertIsNone(self.service.get_last_response_id(self.company_short_name, user_id))
+                self.assertEqual(self.service.get_context_history(self.company_short_name, user_id), [])
                 self.assertEqual(self.service.get_profile_data(self.company_short_name, user_id), {})
                 self.assertEqual(self.service.get_and_clear_prepared_context(self.company_short_name, user_id),
                                  (None, None))

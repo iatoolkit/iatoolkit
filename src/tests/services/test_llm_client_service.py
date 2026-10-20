@@ -72,8 +72,7 @@ class TestLLMClient:
         self.mock_proxy.create_response.return_value = self.mock_llm_response
 
         result = self.client.invoke(
-            company=self.company, user_identifier='user1', previous_response_id='prev1',
-            model='gpt-5',question='q', context='c', tools=[], text={}, images=[]
+            company=self.company, user_identifier='user1', model='gpt-5',question='q', context='c', tools=[], text={}, images=[]
         )
 
         self.mock_proxy.create_response.assert_called_once()
@@ -107,7 +106,6 @@ class TestLLMClient:
             self.client.invoke(
                 company=self.company,
                 user_identifier='user1',
-                previous_response_id='prev1',
                 model='deepseek/deepseek-v4.1-flash',
                 question='q',
                 context='c',
@@ -139,7 +137,6 @@ class TestLLMClient:
         result = self.client.invoke(
             company=self.company,
             user_identifier='user1',
-            previous_response_id='prev1',
             model='gpt-5',
             question='q',
             context='c',
@@ -193,7 +190,6 @@ class TestLLMClient:
         result = self.client.invoke(
             company=self.company,
             user_identifier='user1',
-            previous_response_id='prev1',
             model='qwen/qwen3.8-2.4t-a95b',
             question='q',
             context='c',
@@ -239,7 +235,6 @@ class TestLLMClient:
         result = self.client.invoke(
             company=self.company,
             user_identifier='user1',
-            previous_response_id='prev1',
             model='gpt-5',
             question='q',
             context='c',
@@ -261,7 +256,6 @@ class TestLLMClient:
         self.client.invoke(
             company=self.company,
             user_identifier='user1',
-            previous_response_id='prev1',
             model='gpt-5',
             question='q',
             context='c',
@@ -288,7 +282,6 @@ class TestLLMClient:
         self.client.invoke(
             company=self.company,
             user_identifier='user1',
-            previous_response_id='prev1',
             model='gpt-5',
             question='q',
             context='c',
@@ -309,7 +302,6 @@ class TestLLMClient:
         result = self.client.invoke(
             company=self.company,
             user_identifier='user1',
-            previous_response_id='prev1',
             model='gpt-5',
             question='q',
             context='c',
@@ -375,7 +367,6 @@ class TestLLMClient:
         result = self.client.invoke(
             company=self.company,
             user_identifier='user1',
-            previous_response_id='prev1',
             model='gpt-5',
             question='q',
             context='c',
@@ -400,7 +391,6 @@ class TestLLMClient:
         result = self.client.invoke(
             company=self.company,
             user_identifier='user1',
-            previous_response_id='prev1',
             model='gpt-5',
             question='q',
             context='c',
@@ -424,7 +414,6 @@ class TestLLMClient:
         self.client.invoke(
             company=self.company,
             user_identifier='user1',
-            previous_response_id='prev1',
             model='gpt-5',
             question='q',
             context='c',
@@ -448,7 +437,6 @@ class TestLLMClient:
         self.client.invoke(
             company=self.company,
             user_identifier='user1',
-            previous_response_id='prev1',
             model='gpt-5',
             question='q',
             context='c',
@@ -473,7 +461,6 @@ class TestLLMClient:
         self.client.invoke(
             company=self.company,
             user_identifier='user1',
-            previous_response_id='prev1',
             model='gpt-5',
             question='q',
             context='c',
@@ -494,24 +481,23 @@ class TestLLMClient:
             "prompt_variant": "control",
         }
 
-    def test_invoke_keeps_response_id_when_store_is_false(self):
+    def test_invoke_sends_neither_a_previous_response_nor_store(self):
         self.mock_proxy.create_response.return_value = self.mock_llm_response
 
         result = self.client.invoke(
             company=self.company,
             user_identifier='user1',
-            previous_response_id='prev1',
             model='gpt-5',
             question='q',
             context='c',
             tools=[],
             text={},
             images=[],
-            store=False,
         )
 
         call_kwargs = self.mock_proxy.create_response.call_args.kwargs
-        assert call_kwargs['store'] is False
+        assert 'previous_response_id' not in call_kwargs
+        assert 'store' not in call_kwargs
         assert result['response_id'] == 'response_123'
 
     def test_invoke_passes_tool_choice_override_to_initial_llm_call(self):
@@ -520,7 +506,6 @@ class TestLLMClient:
         self.client.invoke(
             company=self.company,
             user_identifier='user1',
-            previous_response_id='prev1',
             model='gpt-5',
             question='q',
             context='c',
@@ -539,7 +524,6 @@ class TestLLMClient:
         self.client.invoke(
             company=self.company,
             user_identifier='user1',
-            previous_response_id='prev1',
             model='gpt-5',
             question='q',
             context='c',
@@ -584,8 +568,7 @@ class TestLLMClient:
 
         # 3. Invocar
         result = self.client.invoke(
-            company=self.company, user_identifier='user1', previous_response_id='p1',
-            question='q', context='c', tools=[], text={}, model='gpt-5', images=[]
+            company=self.company, user_identifier='user1', question='q', context='c', tools=[], text={}, model='gpt-5', images=[]
         )
 
         # 4. Validar llamada a storage service
@@ -613,8 +596,7 @@ class TestLLMClient:
         fake_images = [{'name': 'x.png', 'base64': '...'}]
 
         result = self.client.invoke(
-            company=self.company, user_identifier='user1', previous_response_id='prev1',
-            model='gpt-5',question='q', context='c', tools=[], text={}, images=fake_images
+            company=self.company, user_identifier='user1', model='gpt-5',question='q', context='c', tools=[], text={}, images=fake_images
         )
 
         self.mock_proxy.create_response.assert_called_once()
@@ -651,8 +633,7 @@ class TestLLMClient:
 
             # 6. Invoke the client. Now, when it calls current_iatoolkit, it will get our mock.
             result = self.client.invoke(
-                company=self.company, user_identifier='user1', previous_response_id='prev1',
-                model='gpt-5', question='q', context='c', tools=[{}], text={}, images=fake_images
+                company=self.company, user_identifier='user1', model='gpt-5', question='q', context='c', tools=[{}], text={}, images=fake_images
             )
 
         # 7. Assertions
@@ -748,7 +729,6 @@ class TestLLMClient:
             self.client.invoke(
                 company=self.company,
                 user_identifier='user1',
-                previous_response_id='prev1',
                 model='gpt-5',
                 question='q',
                 context='c',
@@ -798,7 +778,6 @@ class TestLLMClient:
             self.client.invoke(
                 company=self.company,
                 user_identifier='user1',
-                previous_response_id='prev1',
                 model='gpt-5',
                 question='q',
                 context='c',
@@ -839,7 +818,6 @@ class TestLLMClient:
             self.client.invoke(
                 company=self.company,
                 user_identifier='user1',
-                previous_response_id='prev1',
                 model='gpt-5',
                 question='q',
                 context='c',
@@ -862,7 +840,6 @@ class TestLLMClient:
         self.client.invoke(
             company=self.company,
             user_identifier='user1',
-            previous_response_id='prev1',
             model='gpt-5',
             question='q',
             context='c',
@@ -898,8 +875,7 @@ class TestLLMClient:
             self.mock_proxy.create_response.side_effect = [response_with_tools, self.mock_llm_response]
 
             self.client.invoke(
-                company=self.company, user_identifier='user1', previous_response_id='prev1',
-                model='gpt-5', question='q', context='c', tools=[{}], text={}, images=[]
+                company=self.company, user_identifier='user1', model='gpt-5', question='q', context='c', tools=[{}], text={}, images=[]
             )
 
         second_call_args = self.mock_proxy.create_response.call_args_list[1].kwargs
@@ -926,8 +902,7 @@ class TestLLMClient:
             self.mock_proxy.create_response.side_effect = [response_with_tools, self.mock_llm_response]
 
             self.client.invoke(
-                company=self.company, user_identifier='user1', previous_response_id='prev1',
-                model='gpt-5', question='q', context='c', tools=[{}], text={}, images=[]
+                company=self.company, user_identifier='user1', model='gpt-5', question='q', context='c', tools=[{}], text={}, images=[]
             )
 
         second_call_args = self.mock_proxy.create_response.call_args_list[1].kwargs
@@ -941,8 +916,7 @@ class TestLLMClient:
 
         with pytest.raises(IAToolkitException, match="Error calling LLM API"):
             self.client.invoke(
-                company=self.company, user_identifier='user1', previous_response_id='prev1',
-                model='gpt-5', question='q', context='c', tools=[], text={}, images=[]
+                company=self.company, user_identifier='user1', model='gpt-5', question='q', context='c', tools=[], text={}, images=[]
             )
         # Verificar que se guarda un registro de error en la BD
         self.llmquery_repo.add_query.assert_called_once()
@@ -955,8 +929,7 @@ class TestLLMClient:
 
         with pytest.raises(IAToolkitException, match="Error calling LLM API"):
             self.client.invoke(
-                company=self.company, user_identifier='user1', previous_response_id='prev1',
-                model='gpt-5', question='q', context='c', tools=[], text={}, images=[],
+                company=self.company, user_identifier='user1', model='gpt-5', question='q', context='c', tools=[], text={}, images=[],
                 execution_trace={"prompt_name": "sales_prompt", "prompt_inputs": {"customer_id": "c-1"}},
             )
 
@@ -985,27 +958,16 @@ class TestLLMClient:
 
         with pytest.raises(IAToolkitException, match="Error calling LLM API"):
             self.client.invoke(
-                company=flaky_company, user_identifier='user1', previous_response_id='prev1',
-                model='gpt-5', question='q', context='c', tools=[], text={}, images=[]
+                company=flaky_company, user_identifier='user1', model='gpt-5', question='q', context='c', tools=[], text={}, images=[]
             )
 
         log_arg = self.llmquery_repo.add_query.call_args[0][0]
         assert log_arg.company_id == 77
 
-    def test_set_company_context_success(self):
-        """Test de la configuración exitosa del contexto de la empresa."""
-        context_response = LLMResponse('ctx1', 'gpt-4o', 'completed', 'OK', [], Usage(10, 2, 12))
-        self.mock_proxy.create_response.return_value = context_response
-
-        response_id = self.client.set_company_context(
-            company=self.company, company_base_context="System prompt", model = "gpt"
-        )
-
-        assert response_id == 'ctx1'
-        self.mock_proxy.create_response.assert_called_once()
-        call_args = self.mock_proxy.create_response.call_args.kwargs['input'][0]
-        assert call_args['role'] == 'system'
-        assert call_args['content'] == 'System prompt'
+    def test_the_client_never_initializes_context_at_the_provider(self):
+        # The context travels as the first message of the client-side history
+        # (BL-009); a separate call to send it existed only for server-side history.
+        assert not hasattr(self.client, "set_company_context")
 
     def test_decode_response_valid_json(self):
         """Test de decodificación de una respuesta JSON válida."""

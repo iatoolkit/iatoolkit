@@ -43,7 +43,6 @@ class GeminiAdapter:
     def create_response(self,
                         model: str,
                         input: List[Dict],
-                        previous_response_id: Optional[str] = None,
                         context_history: Optional[List[Dict]] = None,
                         tools: Optional[List[Dict]] = None,
                         text: Optional[Dict] = None,

@@ -701,9 +701,11 @@ class MemoryQuestionScanCursor(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
 
 
-#: request_source of the iat_queries row that records a context initialization:
-#: the company context sent once to start a server-side conversation. Its tokens
-#: are billed, but it is not a question, so conversation readers skip it.
+#: request_source of the iat_queries rows that recorded a context initialization:
+#: the company context sent once to start a server-side conversation (v2.57.0 up
+#: to BL-009). Nothing writes them any more, since the history is client-side
+#: only, but they remain in production databases: their tokens were billed and
+#: conversation readers must keep skipping them.
 CONTEXT_INIT_REQUEST_SOURCE = "context_init"
 
 
@@ -1520,6 +1522,13 @@ class ModelCatalogEntry(Base):
 
     display_name = Column(String(120), nullable=False)
     description = Column(Text, nullable=False, default="")
+
+    #: Tokens the route accepts per request, input and output together, and the
+    #: most it will write in one answer. The conversation history is sized from
+    #: them. Written by `models-sync` from the upstream catalogue on every run,
+    #: never by hand: NULL means no sync has seen this model yet.
+    context_window = Column(Integer, nullable=True)
+    max_output_tokens = Column(Integer, nullable=True)
 
     status = Column(String(16), nullable=False, default=ModelCatalogStatus.draft.value, index=True)
 

@@ -57,7 +57,7 @@ class TestInitContextApiView:
         """
         Tests the flow for a pure API call using an API Key.
         """
-        self.mock_query_service.init_context.return_value = {'response_id': 'messagge_1234'}
+        self.mock_query_service.init_context.return_value = {}
         response = self.client.post(
             f'/api/{MOCK_COMPANY_SHORT_NAME}/init-context',
             json={'external_user_id': MOCK_USER_IDENTIFIER, 'model':'gpt-5-mini'}
@@ -65,7 +65,7 @@ class TestInitContextApiView:
 
         assert response.status_code == 200
         assert response.json['status'] == 'OK'
-        assert response.json['response_id'] == 'messagge_1234'
+        assert 'response_id' not in response.json
 
         # Verify the sequence was called with the user ID from the JSON payload.
         self.mock_query_service.init_context.assert_called_once_with(company_short_name=MOCK_COMPANY_SHORT_NAME,
@@ -87,7 +87,7 @@ class TestInitContextApiView:
         self.mock_query_service.prepare_context.assert_not_called()
 
     def test_rebuild_when_exception(self):
-        self.mock_query_service.prepare_context.side_effect = Exception('Database connection failed')
+        self.mock_query_service.init_context.side_effect = Exception('Database connection failed')
 
         response = self.client.post(
             f'/api/{MOCK_COMPANY_SHORT_NAME}/init-context',

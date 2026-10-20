@@ -44,7 +44,7 @@ class InitContextApiView(MethodView):
             model = data.get('model', '')
 
             # reinit the LLM context
-            response = self.query_service.init_context(
+            self.query_service.init_context(
                 company_short_name=company_short_name,
                 user_identifier=user_identifier,
                 model=model)
@@ -52,10 +52,6 @@ class InitContextApiView(MethodView):
             # Respond with JSON, as this is an API endpoint.
             success_message = self.i18n_service.t('api_responses.context_reloaded_success')
             response_message = {'status': 'OK', 'message': success_message}
-
-            # if received a response ID with the context, return it
-            if response and response.get('response_id'):
-                response_message['response_id'] = response['response_id']
 
             return jsonify(response_message), 200
 

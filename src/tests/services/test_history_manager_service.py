@@ -44,38 +44,13 @@ class TestHistoryManager(unittest.TestCase):
 
     # --- initialize_context Tests ---
 
-    def test_initialize_context_server_side(self):
-        """Test initialization for server-side history (e.g., OpenAI)."""
-        model = "gpt-4"
-        prepared_context = "System prompt"
-        fake_response_id = "resp_123"
-
-        self.mock_llm_client.set_company_context.return_value = fake_response_id
-
-        result = self.manager.initialize_context(
-            self.company_short_name, self.user_identifier,
-            HistoryManager.TYPE_SERVER_SIDE, prepared_context, self.mock_company, model
-        )
-
-        # Assertions
-        self.mock_session_context.clear_llm_history.assert_called_once_with(self.company_short_name,
-                                                                            self.user_identifier,
-                                                                            model=model)
-        self.mock_llm_client.set_company_context.assert_called_once()
-        self.mock_session_context.save_last_response_id.assert_called_with(self.company_short_name,
-                                                                           self.user_identifier,
-                                                                           fake_response_id,
-                                                                           model=model)
-        self.assertEqual(result, {'response_id': fake_response_id})
-
     def test_initialize_context_client_side(self):
         """Test initialization for client-side history (e.g., Gemini)."""
         model = "gemini-pro"
         prepared_context = "System prompt"
 
         result = self.manager.initialize_context(
-            self.company_short_name, self.user_identifier,
-            HistoryManager.TYPE_CLIENT_SIDE, prepared_context, self.mock_company, model
+            self.company_short_name, self.user_identifier, prepared_context, model
         )
 
         # Assertions
@@ -84,38 +59,10 @@ class TestHistoryManager(unittest.TestCase):
         self.mock_session_context.save_context_history.assert_called_with(self.company_short_name, self.user_identifier,
                                                                           expected_history,model=model)
         self.assertEqual(result, {})
+        # The context travels with the first turn: no model is called (BL-009).
+        self.mock_llm_client.invoke.assert_not_called()
 
     # --- populate_request_params Tests ---
-
-    def test_populate_params_server_side_success(self):
-        """Test populating params for server-side when ID exists."""
-        handle = MockHistoryHandle(self.company_short_name, self.user_identifier, HistoryManager.TYPE_SERVER_SIDE)
-        self.mock_session_context.get_last_response_id.return_value = "prev_id_123"
-
-        rebuild_needed = self.manager.populate_request_params(handle, "User prompt")
-
-        self.assertFalse(rebuild_needed)
-        self.assertEqual(handle.request_params, {'previous_response_id': "prev_id_123"})
-
-    def test_populate_params_server_side_missing_id(self):
-        """Test populating params for server-side when ID is missing (rebuild needed)."""
-        handle = MockHistoryHandle(self.company_short_name, self.user_identifier, HistoryManager.TYPE_SERVER_SIDE)
-        self.mock_session_context.get_last_response_id.return_value = None
-
-        rebuild_needed = self.manager.populate_request_params(handle, "User prompt")
-
-        self.assertTrue(rebuild_needed)
-        self.assertEqual(handle.request_params, {})
-
-    def test_populate_params_server_side_ignore_history(self):
-        """Test populating params server-side with ignore_history=True (uses initial ID)."""
-        handle = MockHistoryHandle(self.company_short_name, self.user_identifier, HistoryManager.TYPE_SERVER_SIDE)
-        self.mock_session_context.get_initial_response_id.return_value = "init_id_123"
-
-        rebuild_needed = self.manager.populate_request_params(handle, "User prompt", ignore_history=True)
-
-        self.assertFalse(rebuild_needed)
-        self.assertEqual(handle.request_params, {'previous_response_id': "init_id_123"})
 
     def test_populate_params_client_side_success(self):
         """Test populating params for client-side: appends user turn."""
@@ -146,13 +93,8 @@ class TestHistoryManager(unittest.TestCase):
         self.assertTrue(rebuild_needed)
 
     def test_populate_params_client_side_trimming(self):
-        """Test that history is trimmed when tokens exceed limit."""
+        """The oldest whole turn is dropped when the history exceeds the budget."""
         handle = MockHistoryHandle(self.company_short_name, self.user_identifier, HistoryManagerService.TYPE_CLIENT_SIDE)
-
-        # Setup history with 3 messages
-        # Index 0: System
-        # Index 1: Oldest (This one should be evicted first)
-        # Index 2: Answer
         existing_history = [
             {"role": "user", "content": "System"},
             {"role": "user", "content": "Oldest"},
@@ -160,38 +102,81 @@ class TestHistoryManager(unittest.TestCase):
         ]
         self.mock_session_context.get_context_history.return_value = existing_history
 
-        # Choose a size that guarantees:
-        # - 4 messages exceed the limit
-        # - 3 messages fit within the limit
-        # This ensures only the oldest message gets evicted.
-        tokens_per_message = HistoryManagerService.MAX_TOKENS_CONTEXT_HISTORY // 3
+        # 4 messages exceed the default budget; 2 fit.
+        tokens_per_message = HistoryManagerService.DEFAULT_CONTEXT_BUDGET_TOKENS // 3
         self.mock_llm_client.count_tokens.return_value = tokens_per_message
 
         self.manager.populate_request_params(handle, "New User Prompt")
 
         final_history = handle.request_params['context_history']
+        self.assertEqual(
+            [m["content"] for m in final_history],
+            ["System", "New User Prompt"],
+        )
 
-        # Expected Result: [System, Answer, New User Prompt]
-        self.assertEqual(final_history[0]["content"], "System")
-        self.assertNotIn({"role": "user", "content": "Oldest"}, final_history)
-        self.assertEqual(final_history[-1]["content"], "New User Prompt")
-        self.assertEqual(len(final_history), 3)
+    def test_trimming_never_separates_a_tool_call_from_its_output(self):
+        history = [
+            {"role": "user", "content": "context"},
+            {"role": "user", "content": "q1"},
+            {"role": "assistant", "content": "", "tool_calls": [{"id": "c1"}]},
+            {"type": "function_call_output", "call_id": "c1", "output": "rows"},
+            {"role": "assistant", "content": "a1"},
+            {"role": "user", "content": "q2"},
+            {"role": "assistant", "content": "a2"},
+            {"role": "user", "content": "q3"},
+        ]
+        self.mock_llm_client.count_tokens.return_value = 10
+
+        # 8 messages = 80 tokens; a budget of 45 must drop the first turn (4 messages).
+        self.manager._trim_context_history(history, budget_tokens=45)
+
+        self.assertEqual(
+            [m.get("content") for m in history],
+            ["context", "q2", "a2", "q3"],
+        )
+        self.assertFalse(any(m.get("type") == "function_call_output" for m in history))
+
+    def test_trimming_keeps_the_context_and_the_current_turn(self):
+        history = [
+            {"role": "user", "content": "context"},
+            {"role": "user", "content": "current"},
+        ]
+        self.mock_llm_client.count_tokens.return_value = 1000
+
+        self.manager._trim_context_history(history, budget_tokens=10)
+
+        self.assertEqual([m["content"] for m in history], ["context", "current"])
+
+    def test_the_budget_is_the_model_window_minus_a_capped_output_reserve(self):
+        configuration_service = MagicMock()
+        manager = HistoryManagerService(
+            session_context=self.mock_session_context,
+            i18n=self.mock_i18n,
+            llm_query_repo=self.mock_llm_query_repo,
+            profile_repo=self.mock_profile_repo,
+            llm_client=self.mock_llm_client,
+            configuration_service=configuration_service,
+        )
+
+        configuration_service.get_llm_model_config.return_value = {
+            "id": "deepseek-chat", "context_window": 128000, "max_output_tokens": 16000,
+        }
+        self.assertEqual(manager.context_budget_tokens("acme", "deepseek-chat"), 112000)
+
+        # gpt-5 declares 128k of output: only 32k is reserved.
+        configuration_service.get_llm_model_config.return_value = {
+            "id": "gpt-5", "context_window": 400000, "max_output_tokens": 128000,
+        }
+        self.assertEqual(manager.context_budget_tokens("acme", "gpt-5"), 368000)
+
+        # A model no sync has seen keeps the previous fixed budget.
+        configuration_service.get_llm_model_config.return_value = {"id": "local-llm"}
+        self.assertEqual(
+            manager.context_budget_tokens("acme", "local-llm"),
+            HistoryManagerService.DEFAULT_CONTEXT_BUDGET_TOKENS,
+        )
 
     # --- update_history Tests ---
-
-    def test_update_history_server_side(self):
-        """Test updating history for server-side (saves new ID)."""
-        handle = MockHistoryHandle(self.company_short_name,
-                                   self.user_identifier,
-                                   HistoryManager.TYPE_SERVER_SIDE,
-                                   model="gpt-4")
-        response = {"response_id": "new_id_999"}
-
-        self.manager.update_history(handle, "Prompt", response)
-
-        self.mock_session_context.save_last_response_id.assert_called_with(
-            self.company_short_name, self.user_identifier, "new_id_999", model="gpt-4"
-        )
 
     def test_update_history_client_side(self):
         """Test updating history for client-side (appends model response)."""

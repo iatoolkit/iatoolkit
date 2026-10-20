@@ -4,7 +4,7 @@
 # IAToolkit is open source software.
 
 from iatoolkit.infra.llm_proxy import LLMProxy
-from iatoolkit.repositories.models import Company, LLMQuery, CONTEXT_INIT_REQUEST_SOURCE
+from iatoolkit.repositories.models import Company, LLMQuery
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from sqlalchemy.exc import SQLAlchemyError, OperationalError
 from iatoolkit.common.util import Utility
@@ -145,7 +145,6 @@ class llmClient:
     def invoke(self,
                company: Company,
                user_identifier: str,
-               previous_response_id: str,
                question: str,
                context: str,
                tools: list[dict],
@@ -156,7 +155,6 @@ class llmClient:
                images: list = None,
                attachments: list = None,
                reasoning: Optional[Dict[str, Any]] = None,
-               store: Optional[bool] = None,
                task_id: Optional[int] = None,
                execution_metadata: Optional[Dict[str, Any]] = None,
                request_metadata: Optional[Dict[str, str]] = None,
@@ -234,7 +232,6 @@ class llmClient:
                     company_short_name=company.short_name,
                     model=model,
                     input=input_messages,
-                    previous_response_id=previous_response_id,
                     context_history=context_history,
                     tools=tools,
                     tool_choice=initial_tool_choice,
@@ -242,7 +239,6 @@ class llmClient:
                     reasoning=reasoning_payload,
                     images=images,
                     attachments=active_attachments,
-                    store=store,
                     metadata=request_metadata,
                     telemetry_request=telemetry_request,
                     telemetry_execution=telemetry_execution,
@@ -478,7 +474,6 @@ class llmClient:
                     company_short_name=company.short_name,
                     model=model,
                     input=input_messages,
-                    previous_response_id=response.id,
                     context_history=context_history,
                     reasoning=reasoning_payload,
                     tool_choice=tool_choice_value,
@@ -486,7 +481,6 @@ class llmClient:
                     text=text_payload,
                     images=images,
                     attachments=active_attachments,
-                    store=store,
                     metadata=request_metadata,
                     telemetry_request=telemetry_request,
                     telemetry_execution=telemetry_execution,
@@ -1016,76 +1010,6 @@ class llmClient:
             })
 
         return serialized
-
-    CONTEXT_INIT_QUERY_LABEL = "[context_init]"
-
-    def set_company_context(self,
-            company: Company,
-            company_base_context: str,
-            model,
-            user_identifier: Optional[str] = None) -> str:
-
-        logging.info(f"initializing model '{model}' with company context: {self.count_tokens(company_base_context)} tokens...")
-
-        start_time = time.time()
-        try:
-            response = self.llm_proxy.create_response(
-                company_short_name=company.short_name,
-                model=model,
-                input=[{
-                    "role": "system",
-                    "content": company_base_context
-                }],
-
-            )
-
-        except Exception as e:
-            error_message = f"Error calling LLM API: {str(e)}"
-            logging.error(error_message)
-            raise IAToolkitException(IAToolkitException.ErrorType.LLM_ERROR, error_message)
-
-        self._record_context_init_usage(company, model, user_identifier, response, start_time)
-        return response.id
-
-    def _record_context_init_usage(self, company: Company, model: str, user_identifier: Optional[str],
-                                   response, start_time: float) -> None:
-        """Logs the tokens of a context initialization as its own iat_queries row.
-
-        The whole company context goes to the model on every initialization and
-        the provider bills it like any other call. It is not a question, so the
-        row is marked with `stats.request_source = context_init`; readers that
-        list a user's conversation skip it, while usage and billing count it.
-
-        A failure to record never fails the initialization: the context already
-        exists at the provider, and failing here would make the user pay for a
-        second one on retry.
-        """
-        try:
-            answer_time = int(time.time() - start_time)
-            stats = self.get_stats(response)
-            stats["model"] = model
-            stats["request_source"] = CONTEXT_INIT_REQUEST_SOURCE
-            stats["response_time"] = answer_time
-            self.llmquery_repo.add_query(LLMQuery(
-                user_identifier=str(user_identifier or "").strip() or "system",
-                company_id=getattr(company, "id", None),
-                task_id=None,
-                query=self.CONTEXT_INIT_QUERY_LABEL,
-                output="",
-                response={"response_id": getattr(response, "id", None)},
-                valid_response=True,
-                function_calls=[],
-                stats=stats,
-                answer_time=answer_time,
-            ))
-        except Exception as e:
-            if is_worker_timeout_signal(e):
-                raise
-            logging.error(f"[{company.short_name}] could not record context init usage: {e}")
-            try:
-                self.llmquery_repo.rollback()
-            except Exception:
-                pass
 
     def _process_generated_images(self, response, company_short_name: str):
         """

@@ -165,7 +165,6 @@ class SystemAgentRunner:
             return self.llm_client.invoke(
                 company=company,
                 user_identifier=user_identifier,
-                previous_response_id=None,
                 question=question or agent.name,
                 context=prompt,
                 tools=[],
