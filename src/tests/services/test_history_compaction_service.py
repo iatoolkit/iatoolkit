@@ -482,3 +482,58 @@ class TestSummaryAndStoredHistory:
         manager.update_history(_Handle(), "q", {"answer": "a"})
 
         llm_client.count_tokens.assert_not_called()
+
+
+class TestProductionFindings:
+    """What the first runs in production showed (BL-009)."""
+
+    @pytest.mark.parametrize("answer, expected", [
+        ("```summary\n# Resumen\n\n## Objetivo\nx\n```", "# Resumen\n\n## Objetivo\nx"),
+        ("```\n## Objetivo\nx\n```", "## Objetivo\nx"),
+        ("```markdown\n## Objetivo\nx", "## Objetivo\nx"),
+        ('```json\n{"summary": "## Objetivo"}\n```', "## Objetivo"),
+        ("## Objetivo\nx", "## Objetivo\nx"),
+    ])
+    def test_a_summary_inside_a_code_block_is_unwrapped(self, answer, expected):
+        assert HistoryCompactionService._summary_from({"structured_output": None, "answer": answer}) == expected
+
+    def test_the_parts_stop_as_soon_as_the_history_changes(self):
+        session = FakeSession(_history(6))
+        service, runner, _ = _service(session, budget=200)
+
+        def reset_after_the_first_part(*args, **kwargs):
+            session.history = _history(0)
+            return {"structured_output": {"summary": "part"}}
+
+        runner.run.side_effect = reset_after_the_first_part
+
+        with patch.object(HistoryCompactionService, "MAX_TRANSCRIPT_CHARS", 40):
+            result = service.compact("acme", "u1", "gpt-5")
+
+        assert result == {"status": "skipped", "reason": "history_changed", "summarized_parts": 1}
+        assert runner.run.call_count == 1
+        assert session.history == _history(0)
+
+    def test_a_turn_appended_between_parts_does_not_stop_them(self):
+        session = FakeSession(_history(6))
+        service, runner, _ = _service(session, budget=200)
+
+        def a_turn_arrives(*args, **kwargs):
+            session.history += _turn("late", "answer")
+            return {"structured_output": {"summary": "part"}}
+
+        runner.run.side_effect = a_turn_arrives
+
+        with patch.object(HistoryCompactionService, "MAX_TRANSCRIPT_CHARS", 40):
+            result = service.compact("acme", "u1", "gpt-5")
+
+        assert result["status"] == "compacted"
+        assert runner.run.call_count == result["chunks"] >= 2
+
+    def test_the_prompt_asks_for_headings_in_the_conversation_language(self):
+        from iatoolkit.services.system_agent_catalog import SystemAgentCatalog
+
+        prompt = SystemAgentCatalog.get("history_compaction").prompt_template
+
+        assert "headings in that language" in prompt
+        assert "code block" in prompt

@@ -60,7 +60,7 @@ class HistoryCompactionService:
     #: Parts per compaction: in the background, enough for a history that grew
     #: without compaction (before BL-009) without summarizing forever; in line,
     #: one, because the person is waiting.
-    MAX_CHUNKS = 6
+    MAX_CHUNKS = 4
 
     @inject
     def __init__(self,
@@ -117,7 +117,11 @@ class HistoryCompactionService:
             chunks = chunks[-limit:]
 
         summary = plan.previous_summary
-        for chunk in chunks:
+        for index, chunk in enumerate(chunks):
+            if index and not self._still_matches(company_short_name, user_identifier, model, plan):
+                # Each part costs a model call of minutes; once the history has
+                # changed under the plan, the rest would be summarized for nothing.
+                return {"status": "skipped", "reason": "history_changed", "summarized_parts": index}
             try:
                 response = self.system_agent_runner.run(
                     company,
@@ -276,6 +280,11 @@ class HistoryCompactionService:
     # Applying
     # ------------------------------------------------------------------
 
+    def _still_matches(self, company_short_name: str, user_identifier: str, model: str,
+                       plan: CompactionPlan) -> bool:
+        current = self.session_context.get_context_history(company_short_name, user_identifier, model=model) or []
+        return len(current) >= plan.cut and self._fingerprint(current[:plan.cut]) == plan.prefix_hash
+
     def _apply(self, company_short_name: str, user_identifier: str, model: str,
                plan: CompactionPlan, summary: str) -> dict:
         lock_key = self.history_manager.history_lock_key(company_short_name, user_identifier, model)
@@ -326,17 +335,34 @@ class HistoryCompactionService:
         for key in ("structured_output", "parsed_output"):
             structured = response.get(key)
             if isinstance(structured, dict) and isinstance(structured.get("summary"), str):
-                return structured["summary"].strip()
+                return HistoryCompactionService._unfence(structured["summary"])
         answer = response.get("answer")
         if isinstance(answer, str) and answer.strip():
-            text = answer.strip()
+            text = HistoryCompactionService._unfence(answer)
             try:
                 parsed = json.loads(text)
             except (TypeError, ValueError):
                 return text
             if isinstance(parsed, dict) and isinstance(parsed.get("summary"), str):
-                return parsed["summary"].strip()
+                return HistoryCompactionService._unfence(parsed["summary"])
+            return text
         return ""
+
+    @staticmethod
+    def _unfence(text: str) -> str:
+        """The text without a Markdown code block around it.
+
+        Seen in production: the summary came back as ```summary ... ```, which
+        stored as is would put the whole summary inside a code block.
+        """
+        stripped = str(text or "").strip()
+        if not stripped.startswith("```"):
+            return stripped
+        lines = stripped.split("\n")
+        body = lines[1:]
+        if body and body[-1].strip() == "```":
+            body = body[:-1]
+        return "\n".join(body).strip()
 
     def _count(self, message: Any) -> int:
         try:
