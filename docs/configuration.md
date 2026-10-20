@@ -116,6 +116,9 @@ llm:
   # Cap on the conversation history per model call (default 200000)
   max_context_tokens: 200000
 
+  # Size the history is compacted toward (default 64000, never above the cap)
+  compaction_budget_tokens: 64000
+
   # Optional provider capability overrides for attachment planner
   capabilities_overrides:
     openai:
@@ -172,13 +175,24 @@ llm:
   `context_window` minus up to 32k reserved for the answer (`context_window` comes
   from the model catalogue, written by `models-sync`). Raise it for a company that
   needs long conversations on a large-window model; lower it to spend less.
-  - When a turn leaves the history at 70% of the budget, the older turns are
+- `compaction_budget_tokens` (optional, default `64000`): the size the history is
+  kept near, never above the budget. The budget stops a call from overflowing; this
+  keeps each turn from resending far more than it needs.
+  - When a turn leaves the history at 70% of this value, the older turns are
     compacted in the background into a summary by the `history_compaction` system
     agent (model: `system_agents.history_compaction.model`, like any system agent).
-  - When a turn would reach 95% before that lands, it asks for the compaction again;
-    only an installation without workers compacts in line.
+    The most recent turns keep up to 30% of this value verbatim.
+  - When a turn would reach 95% of the budget before that lands, it asks for the
+    compaction again; only an installation without workers compacts in line.
   - Past the budget, the request drops the oldest whole turns, and the stored
     history is kept under two budgets.
+  - Tool outputs longer than 1500 characters are cut to their first 1500 once
+    two more turns have followed theirs, with a note that tells the model which
+    tool to call again. The call and its output message stay, so the history is
+    always valid for the provider.
+  - Each turn logs its context size: `Context of <company>/<user> (model=...): N
+    tokens, P% of the B budget; compaction at T`, ending in `-> requested` when it
+    asked for a compaction.
 - `api-key` (legacy optional fallback): global API key reference.
 
 ## 4.3 `embedding_provider` (default text embeddings)

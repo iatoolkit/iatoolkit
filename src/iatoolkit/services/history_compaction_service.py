@@ -93,7 +93,9 @@ class HistoryCompactionService:
     def _compact(self, company_short_name: str, user_identifier: str, model: str,
                  max_chunks: Optional[int]) -> dict:
         history = self.session_context.get_context_history(company_short_name, user_identifier, model=model) or []
-        budget = self.history_manager.context_budget_tokens(company_short_name, model)
+        # What the recent turns may keep verbatim is a share of the size the
+        # history is compacted toward, not of the whole budget.
+        budget = self.history_manager.compaction_budget_tokens(company_short_name, model)
         plan = self.plan(history, budget)
         if plan is None:
             return {"status": "skipped", "reason": "nothing_to_compact"}

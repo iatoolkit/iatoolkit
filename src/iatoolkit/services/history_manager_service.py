@@ -46,11 +46,27 @@ class HistoryManagerService:
     #: set its own with `llm.max_context_tokens`.
     DEFAULT_MAX_CONTEXT_TOKENS = 200000
 
-    #: Share of the budget at which a finished turn asks for a background
-    #: compaction, and at which the next turn compacts in line because the
-    #: background one did not land in time (BL-009, Fase E).
+    #: Share of the compaction budget at which a finished turn asks for a
+    #: background compaction, and share of the budget at which the next turn
+    #: compacts in line because the background one did not land in time
+    #: (BL-009, Fase E).
     COMPACTION_TRIGGER_SHARE = 0.70
     INLINE_COMPACTION_SHARE = 0.95
+    #: The size the history is kept near, whatever the budget: the budget stops
+    #: a request from overflowing, this keeps every turn from resending 140k
+    #: tokens (70% of the 200k default) before the first compaction. A company
+    #: may set its own with `llm.compaction_budget_tokens`.
+    DEFAULT_COMPACTION_BUDGET_TOKENS = 64000
+
+    #: Tool outputs of the turns older than this many are cut down in the
+    #: stored history: an SQL result or a schema is what the model needs on the
+    #: turn that asked for it, and resending it whole on every later turn was
+    #: most of the history's growth (4k -> 11k tokens on one SQL turn in
+    #: production). The model can call the tool again.
+    KEEP_TOOL_OUTPUT_TURNS = 2
+    #: What is kept of a cut output: its beginning, enough to remember its shape.
+    TRIMMED_TOOL_OUTPUT_CHARS = 1500
+    TRIMMED_TOOL_OUTPUT_MARKER = "[tool output trimmed"
     #: Parts an in-line compaction may summarize: one, the person is waiting.
     INLINE_COMPACTION_MAX_CHUNKS = 1
     #: How long a turn waits for a compaction that is writing the history.
@@ -201,6 +217,7 @@ class HistoryManagerService:
         elif response.get('answer'):
             context_history.append({"role": "assistant", "content": response.get('answer', '')})
 
+        self._trim_old_tool_outputs(context_history)
         self._cap_stored_history(company_short_name, model, context_history)
 
         self.session_context.save_context_history(
@@ -223,7 +240,15 @@ class HistoryManagerService:
         try:
             self.session_context.save_context_tokens(company_short_name, user_identifier, context_tokens, model=model)
             budget = self.context_budget_tokens(company_short_name, model)
-            if context_tokens >= budget * self.COMPACTION_TRIGGER_SHARE:
+            threshold = int(self.compaction_budget_tokens(company_short_name, model) * self.COMPACTION_TRIGGER_SHARE)
+            compact = context_tokens >= threshold
+            # One line per turn: how a conversation grows, and when it asked for a compaction.
+            logging.info(
+                f"Context of {company_short_name}/{user_identifier} (model={model}): {context_tokens} tokens, "
+                f"{context_tokens * 100 // max(budget, 1)}% of the {budget} budget; compaction at {threshold}"
+                f"{' -> requested' if compact else ''}."
+            )
+            if compact:
                 self.compaction_trigger.trigger(company_short_name, user_identifier, model)
         except Exception as e:
             # A compaction that is not asked for now is asked for on the next turn.
@@ -314,8 +339,18 @@ class HistoryManagerService:
         cap = self._company_context_cap(company_short_name) or self.DEFAULT_MAX_CONTEXT_TOKENS
         return min(budget, cap)
 
+    def compaction_budget_tokens(self, company_short_name: str, model: Optional[str]) -> int:
+        """The size the history is compacted toward: never above the budget."""
+        target = (self._company_llm_setting(company_short_name, "compaction_budget_tokens")
+                  or self.DEFAULT_COMPACTION_BUDGET_TOKENS)
+        return min(target, self.context_budget_tokens(company_short_name, model))
+
     def _company_context_cap(self, company_short_name: str) -> int:
         """`llm.max_context_tokens` in company.yaml; 0 when not set (the platform default applies)."""
+        return self._company_llm_setting(company_short_name, "max_context_tokens")
+
+    def _company_llm_setting(self, company_short_name: str, key: str) -> int:
+        """A positive integer under `llm` in company.yaml; 0 when not set."""
         if self.configuration_service is None:
             return 0
         try:
@@ -324,7 +359,7 @@ class HistoryManagerService:
             return 0
         if not isinstance(llm_config, dict):
             return 0
-        return self._positive_int(llm_config.get("max_context_tokens"))
+        return self._positive_int(llm_config.get(key))
 
     @staticmethod
     def _positive_int(value) -> int:
@@ -348,6 +383,40 @@ class HistoryManagerService:
             if index > 0 and isinstance(message, dict) and message.get("role") == "user"
             and not cls.is_summary_message(message)
         ]
+
+    @classmethod
+    def _trim_old_tool_outputs(cls, context_history: list):
+        """Cuts the long tool outputs of all but the last KEEP_TOOL_OUTPUT_TURNS turns, in place.
+
+        Each output keeps its message (a tool call without its output is a
+        history every provider rejects) and its beginning, plus a note naming the
+        tool so the model knows it can call it again. An output is cut once: the
+        stored history then stays the same from turn to turn, which is what a
+        provider's prompt cache reuses.
+        """
+        turn_starts = cls.turn_starts(context_history)
+        if len(turn_starts) <= cls.KEEP_TOOL_OUTPUT_TURNS:
+            return
+        boundary = turn_starts[-cls.KEEP_TOOL_OUTPUT_TURNS]
+        tool_names = {}
+        for message in context_history[:boundary]:
+            for call in (message.get("tool_calls") or []) if isinstance(message, dict) else []:
+                if isinstance(call, dict):
+                    tool_names[call.get("id")] = (call.get("function") or {}).get("name")
+        for message in context_history[:boundary]:
+            if not isinstance(message, dict) or message.get("type") != "function_call_output":
+                continue
+            output = message.get("output")
+            if not isinstance(output, str) or len(output) <= cls.TRIMMED_TOOL_OUTPUT_CHARS:
+                continue
+            if cls.TRIMMED_TOOL_OUTPUT_MARKER in output[cls.TRIMMED_TOOL_OUTPUT_CHARS:]:
+                continue
+            tool = tool_names.get(message.get("call_id")) or "the tool"
+            message["output"] = (
+                f"{output[:cls.TRIMMED_TOOL_OUTPUT_CHARS]}\n"
+                f"{cls.TRIMMED_TOOL_OUTPUT_MARKER}: {len(output)} characters, from an earlier turn. "
+                f"Call {tool} again if you need all of it.]"
+            )
 
     def _cap_stored_history(self, company_short_name: str, model: Optional[str], context_history: list):
         """Keeps the stored history under STORED_HISTORY_MAX_BUDGETS budgets, whole turns at a time."""

@@ -537,3 +537,110 @@ class TestProductionFindings:
 
         assert "headings in that language" in prompt
         assert "code block" in prompt
+
+
+class TestCostDrivenHistory:
+    """BL-009 follow-up: the history is kept near a size, not near the window."""
+
+    def _manager(self, session, budget=200000, llm_settings=None):
+        manager = _manager(session, _llm_client(), budget)
+        manager.compaction_trigger = MagicMock()
+        manager.compaction_service = MagicMock()
+        manager.configuration_service = MagicMock()
+        manager.configuration_service.get_configuration.return_value = llm_settings or {}
+        return manager
+
+    def test_compaction_is_asked_for_near_the_compaction_budget_not_the_window(self):
+        session = FakeSession(_history(1))
+        manager = self._manager(session)  # 200k budget: 70% would be 140k
+        threshold = int(HistoryManagerService.DEFAULT_COMPACTION_BUDGET_TOKENS * HistoryManagerService.COMPACTION_TRIGGER_SHARE)
+
+        manager.update_history(_Handle(), "q1", {"answer": "a1", "stats": {"context_tokens": threshold - 1}})
+        manager.compaction_trigger.trigger.assert_not_called()
+
+        manager.update_history(_Handle(), "q2", {"answer": "a2", "stats": {"context_tokens": threshold}})
+        manager.compaction_trigger.trigger.assert_called_once_with("acme", "u1", "gpt-5")
+
+    def test_a_company_sets_its_own_compaction_budget_never_above_the_budget(self):
+        manager = self._manager(FakeSession(), budget=50000, llm_settings={"compaction_budget_tokens": 20000})
+        assert manager.compaction_budget_tokens("acme", "gpt-5") == 20000
+
+        manager = self._manager(FakeSession(), budget=50000, llm_settings={"compaction_budget_tokens": 90000})
+        assert manager.compaction_budget_tokens("acme", "gpt-5") == 50000
+
+    def test_each_turn_logs_its_context_size_and_share_of_the_budget(self, caplog):
+        session = FakeSession(_history(1))
+        manager = self._manager(session)
+
+        with caplog.at_level("INFO"):
+            manager.update_history(_Handle(), "q1", {"answer": "a1", "stats": {"context_tokens": 50000}})
+
+        line = next(r.getMessage() for r in caplog.records if r.getMessage().startswith("Context of acme/u1"))
+        assert "50000 tokens, 25% of the 200000 budget" in line
+        assert "compaction at 44800 -> requested" in line
+
+    def test_the_recent_turns_keep_a_share_of_the_compaction_budget(self):
+        session = FakeSession(_history(6))
+        service, _, manager = _service(session, budget=200000, tokens_per_message=100)
+        manager.configuration_service = MagicMock()
+        manager.configuration_service.get_configuration.return_value = {"compaction_budget_tokens": 1000}
+
+        result = service.compact("acme", "u1", "gpt-5")
+
+        # 30% of 1000 keeps the two most recent turns; of the whole budget, every turn would fit.
+        assert result["status"] == "compacted"
+        assert [m["content"] for m in session.history[2:]] == ["q4", "a4", "q5", "a5"]
+
+
+def _tool_turn(index, output):
+    call_id = f"call-{index}"
+    return [
+        {"role": "user", "content": f"q{index}"},
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": call_id, "type": "function", "function": {"name": "iat_sql_query", "arguments": "{}"}}]},
+        {"type": "function_call_output", "call_id": call_id, "status": "completed", "output": output},
+        {"role": "assistant", "content": f"a{index}"},
+    ]
+
+
+class TestOldToolOutputs:
+    LONG = "row," * 2000
+
+    def test_outputs_older_than_the_last_turns_are_cut_and_name_their_tool(self):
+        history = [{"role": "user", "content": "company context"}]
+        for index in range(3):
+            history += _tool_turn(index, self.LONG)
+
+        HistoryManagerService._trim_old_tool_outputs(history)
+
+        outputs = [m for m in history if m.get("type") == "function_call_output"]
+        assert len(outputs) == 3  # every call keeps its output message
+        assert outputs[0]["output"].startswith(self.LONG[:HistoryManagerService.TRIMMED_TOOL_OUTPUT_CHARS])
+        assert "8000 characters" in outputs[0]["output"]
+        assert "Call iat_sql_query again" in outputs[0]["output"]
+        assert outputs[1]["output"] == self.LONG and outputs[2]["output"] == self.LONG
+
+    def test_a_cut_output_is_not_cut_again_and_short_ones_are_left(self):
+        history = [{"role": "user", "content": "company context"}]
+        history += _tool_turn(0, self.LONG) + _tool_turn(1, "3 rows") + _tool_turn(2, "x") + _tool_turn(3, "y")
+
+        HistoryManagerService._trim_old_tool_outputs(history)
+        once = [dict(m) for m in history]
+        HistoryManagerService._trim_old_tool_outputs(history)
+
+        assert history == once
+        assert next(m for m in history if m.get("call_id") == "call-1")["output"] == "3 rows"
+
+    def test_a_saved_turn_cuts_the_old_outputs_of_the_stored_history(self):
+        history = [{"role": "user", "content": "company context"}]
+        for index in range(2):
+            history += _tool_turn(index, self.LONG)
+        session = FakeSession(history)
+        manager = _manager(session, _llm_client())
+        manager.compaction_trigger = MagicMock()
+
+        manager.update_history(_Handle(), "q2", {"answer": "a2"})
+
+        first = next(m for m in session.history if m.get("call_id") == "call-0")
+        assert HistoryManagerService.TRIMMED_TOOL_OUTPUT_MARKER in first["output"]
+        assert next(m for m in session.history if m.get("call_id") == "call-1")["output"] == self.LONG
