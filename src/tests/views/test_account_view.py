@@ -73,6 +73,8 @@ def test_profile_renders_without_tokens(account_app):
     assert 'data-account-page="true"' in html
     assert 'id="llm-model-button"' in html
     assert 'data-chat-action="history-button"' in html
+    # The context is managed by the history itself (BL-009): nothing to reload by hand.
+    assert 'force-reload-button' not in html
     assert 'data-chat-action="logout-button"' in html
     assert 'window.defaultLlmModel = "gpt-test"' in html
 

@@ -2800,7 +2800,6 @@ ui:
   tooltips:
     history: "Historial con mis consultas"
     memory: "Memoria de la empresa"
-    reload_context: "Forzar Recarga de Contexto"
     feedback: "Tu feedback es muy importante"
     usage_guide: "Guía de Uso"
     onboarding: "Cómo preguntar mejor"
@@ -2969,7 +2968,6 @@ js_messages:
   feedback_sent_error: "No se pudo enviar el feedback, por favor intente nuevamente."
   feedback_rating_error: "Por favor, califica al asistente con las estrellas."
   feedback_comment_error: "Por favor, escribe tu comentario antes de enviar."
-  context_reloaded: "El contexto ha sido recargado."
   error_loading_history: "Ocurrió un error al cargar el historial."
   request_aborted: "La generación de la respuesta ha sido detenida."
   processing_error: "Ocurrió un error al procesar la solicitud."
@@ -2977,7 +2975,6 @@ js_messages:
   network_error: "Ocurrió un error de red. Por favor, inténtalo de nuevo en unos momentos."
   unknown_server_error: "Error desconocido del servidor."
   loading: "Cargando..."
-  reload_init: "Iniciando recarga de contexto en segundo plano..."
   no_history_found: "No existe historial de consultas."
   prompts_available: "Prompts disponibles"
   example: "Ejemplo:"

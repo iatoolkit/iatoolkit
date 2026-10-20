@@ -28,7 +28,7 @@ from iatoolkit.services.storage_service import StorageService
 from iatoolkit.services.structured_output_service import StructuredOutputService
 from iatoolkit.services.telemetry_service import NoopTelemetryService
 
-CONTEXT_ERROR_MESSAGE = 'Tu consulta supera el límite de contexto, utiliza el boton de recarga de contexto.'
+CONTEXT_ERROR_MESSAGE = 'Tu consulta supera el límite de contexto del modelo. Acota la pregunta o divídela en partes más pequeñas.'
 TELEMETRY_MAX_STRING_LENGTH = 1000
 TELEMETRY_MAX_COLLECTION_ITEMS = 20
 TELEMETRY_MAX_DEPTH = 4

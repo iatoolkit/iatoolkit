@@ -2784,7 +2784,6 @@ ui:
   tooltips:
     history: "History of my queries"
     memory: "Company memory"
-    reload_context: "Force Context Reload"
     feedback: "Your feedback is very important"
     usage_guide: "Usage Guide"
     onboarding: "How to ask better questions"
@@ -2950,7 +2949,6 @@ js_messages:
   feedback_sent_error: "Could not send feedback, please try again."
   feedback_rating_error: "Please rate the assistant using the stars."
   feedback_comment_error: "Please write your comment before sending."
-  context_reloaded: "Context has been reloaded."
   error_loading_history: "An error occurred while loading the history."
   request_aborted: "The response generation has been stopped."
   processing_error: "An error occurred while processing the request."
@@ -2958,7 +2956,6 @@ js_messages:
   network_error: "A network error occurred. Please try again in a few moments."
   unknown_server_error: "Unknown server error."
   loading: "Loading..."
-  reload_init: "init reloading context in background..."
   no_history_found: "No query history found."
   prompts_available: "Available prompts"
   example: "Example:"

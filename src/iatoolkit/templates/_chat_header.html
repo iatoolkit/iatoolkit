@@ -96,14 +96,6 @@
                     <i class="bi bi-bookmark-star"></i>
                 </a>
                 <a href="{{ url_for('chat', company_short_name=company_short_name) if account_toolbar | default(false) else 'javascript:void(0);' }}"
-                   data-chat-action="force-reload-button"
-                   id="force-reload-button"
-                   class="ms-3 action-icon-style"
-                   title="{{ t('ui.tooltips.reload_context') }}"
-                   style="color: {{ branding.header_text_color }};">
-                    <i class="bi bi-arrow-clockwise"></i>
-                </a>
-                <a href="{{ url_for('chat', company_short_name=company_short_name) if account_toolbar | default(false) else 'javascript:void(0);' }}"
                    data-chat-action="send-feedback-button"
                    id="send-feedback-button"
                    class="ms-3 action-icon-style"

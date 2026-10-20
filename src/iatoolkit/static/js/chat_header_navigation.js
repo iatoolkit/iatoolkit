@@ -1,6 +1,6 @@
 (function () {
     const actions = new Set([
-        'history-button', 'memory-button', 'force-reload-button',
+        'history-button', 'memory-button',
         'send-feedback-button', 'open-help-button', 'logout-button'
     ]);
     const storageKey = 'iatoolkit.pending_chat_action';
