@@ -1530,6 +1530,11 @@ class ModelCatalogEntry(Base):
     context_window = Column(Integer, nullable=True)
     max_output_tokens = Column(Integer, nullable=True)
 
+    #: What the upstream catalogue says the route accepts: input modalities,
+    #: supported parameters, expiration date (BL-009, Fase F). Written by
+    #: `models-sync`, never by hand; empty means no sync has seen the model yet.
+    capabilities = Column(JSON, nullable=False, default=dict)
+
     status = Column(String(16), nullable=False, default=ModelCatalogStatus.draft.value, index=True)
 
     #: Whether serving this model costs IAToolkit money per token, and so
