@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import copy
 import html
 import json
 import re
@@ -129,6 +130,7 @@ class StructuredOutputService:
         schema: dict | None,
         *,
         drop_additional_properties: bool = False,
+        drop_optional_nulls: bool = False,
     ) -> dict:
         if not schema:
             return {
@@ -151,6 +153,7 @@ class StructuredOutputService:
             candidate,
             schema,
             drop_additional_properties=drop_additional_properties,
+            drop_optional_nulls=drop_optional_nulls,
         )
         errors = cls.validate_instance(candidate, schema, path="$")
         return {
@@ -282,6 +285,7 @@ class StructuredOutputService:
         schema: dict | None,
         *,
         drop_additional_properties: bool = False,
+        drop_optional_nulls: bool = False,
     ) -> Any:
         if not isinstance(schema, dict):
             return instance
@@ -303,19 +307,32 @@ class StructuredOutputService:
             additional = schema.get("additionalProperties", True)
             normalized_object: dict[str, Any] = {}
 
+            required = set(schema.get("required") or []) if isinstance(schema.get("required"), list) else set()
             for key, value in instance.items():
                 child_schema = properties.get(key)
+                if (
+                    drop_optional_nulls
+                    and value is None
+                    and key not in required
+                    and isinstance(child_schema, dict)
+                    and not cls._schema_allows_null(child_schema)
+                ):
+                    # A strict provider schema made this optional field nullable
+                    # (see to_strict_schema); absent is what the contract means.
+                    continue
                 if isinstance(child_schema, dict):
                     normalized_object[key] = cls.normalize_instance(
                         value,
                         child_schema,
                         drop_additional_properties=drop_additional_properties,
+                        drop_optional_nulls=drop_optional_nulls,
                     )
                 elif isinstance(additional, dict):
                     normalized_object[key] = cls.normalize_instance(
                         value,
                         additional,
                         drop_additional_properties=drop_additional_properties,
+                        drop_optional_nulls=drop_optional_nulls,
                     )
                 elif additional is False and drop_additional_properties:
                     continue
@@ -333,6 +350,7 @@ class StructuredOutputService:
                     item,
                     item_schema,
                     drop_additional_properties=drop_additional_properties,
+                    drop_optional_nulls=drop_optional_nulls,
                 )
                 for item in instance
             ]
@@ -502,6 +520,77 @@ class StructuredOutputService:
                         count += cls._count_schema_nodes(option)
 
         return count
+
+    @classmethod
+    def to_strict_schema(cls, schema: dict | None) -> dict | None:
+        """The schema in the shape strict structured outputs accept (OpenAI and
+        the providers that follow it): every object closed with
+        additionalProperties false and every property required, the optional
+        ones made nullable. Same meaning: an optional field comes back null
+        instead of absent, and normalize_instance(drop_optional_nulls=True)
+        turns it back into absent before validating against the original.
+        Returns a copy; the stored schema is never changed.
+        """
+        if not isinstance(schema, dict):
+            return schema
+        return cls._strict_node(copy.deepcopy(schema))
+
+    @classmethod
+    def _strict_node(cls, node: dict) -> dict:
+        if cls._is_type(node.get("type"), "object") or isinstance(node.get("properties"), dict):
+            properties = node.get("properties") if isinstance(node.get("properties"), dict) else {}
+            required = set(node.get("required") or []) if isinstance(node.get("required"), list) else set()
+            for key, child in list(properties.items()):
+                if not isinstance(child, dict):
+                    continue
+                child = cls._strict_node(child)
+                if key not in required:
+                    child = cls._nullable(child)
+                properties[key] = child
+            node["properties"] = properties
+            node["required"] = list(properties.keys())
+            # A map (additionalProperties as a schema) cannot be expressed in
+            # strict mode; it is left as written and the provider decides.
+            if not isinstance(node.get("additionalProperties"), dict):
+                node["additionalProperties"] = False
+
+        items = node.get("items")
+        if isinstance(items, dict):
+            node["items"] = cls._strict_node(items)
+        for key in ("anyOf", "oneOf"):
+            if isinstance(node.get(key), list):
+                node[key] = [cls._strict_node(item) if isinstance(item, dict) else item for item in node[key]]
+        return node
+
+    @classmethod
+    def _nullable(cls, node: dict) -> dict:
+        if cls._schema_allows_null(node):
+            return node
+        schema_type = node.get("type")
+        if isinstance(schema_type, str):
+            node["type"] = [schema_type, "null"]
+        elif isinstance(schema_type, list):
+            node["type"] = [*schema_type, "null"]
+        else:
+            for key in ("anyOf", "oneOf"):
+                if isinstance(node.get(key), list):
+                    node[key] = [*node[key], {"type": "null"}]
+                    break
+        if isinstance(node.get("enum"), list) and None not in node["enum"]:
+            node["enum"] = [*node["enum"], None]
+        return node
+
+    @classmethod
+    def _schema_allows_null(cls, schema: dict) -> bool:
+        if bool(schema.get("nullable", False)) or cls._allows_null(schema.get("type")):
+            return True
+        for key in ("anyOf", "oneOf"):
+            options = schema.get(key)
+            if isinstance(options, list) and any(
+                isinstance(option, dict) and cls._allows_null(option.get("type")) for option in options
+            ):
+                return True
+        return False
 
     @classmethod
     def _allows_null(cls, schema_type: Any) -> bool:

@@ -2241,3 +2241,42 @@ class TestModelsTheCompanyHasEnabled:
         self.service.ensure_model_enabled("acme", "claude-5")
         self.service.ensure_model_enabled("acme", "")
         self.service.ensure_model_enabled("acme", None)
+
+
+class TestStrictOutputSchemaPayload:
+    """The schema sent to providers with strict structured outputs."""
+
+    SCHEMA = {
+        "type": "object",
+        "required": ["ok"],
+        "properties": {"ok": {"type": "boolean"}, "reason": {"type": "string"}},
+    }
+
+    def _payload(self, provider, schema_mode):
+        from iatoolkit.services.query_service import QueryService
+
+        service = QueryService.__new__(QueryService)
+        service._get_provider = lambda company, model: provider
+        return service._build_output_text_schema_payload(
+            "acme", "m", {"schema": dict(self.SCHEMA), "schema_mode": schema_mode, "prompt_name": "agent"},
+        )
+
+    def test_strict_sends_the_strict_shape_to_openai(self):
+        sent = self._payload("openai", "strict")["format"]
+
+        assert sent["strict"] is True
+        assert sent["schema"]["additionalProperties"] is False
+        assert sent["schema"]["required"] == ["ok", "reason"]
+        assert sent["schema"]["properties"]["reason"]["type"] == ["string", "null"]
+
+    def test_strict_sends_the_strict_shape_to_openrouter(self):
+        sent = self._payload("openrouter", "strict")["response_format"]["json_schema"]
+
+        assert sent["strict"] is True
+        assert sent["schema"]["required"] == ["ok", "reason"]
+
+    def test_best_effort_sends_the_schema_as_written(self):
+        sent = self._payload("openai", "best_effort")["format"]
+
+        assert sent["strict"] is False
+        assert sent["schema"] == self.SCHEMA

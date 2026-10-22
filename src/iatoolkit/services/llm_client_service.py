@@ -1327,6 +1327,9 @@ class llmClient:
         response_mode = str(response_contract.get("response_mode") or "chat_compatible").strip().lower()
         provider = str(response_contract.get("provider") or "").strip().lower()
         allow_additional_property_repair = provider in {"deepseek", "openai_compatible"}
+        # In strict mode the provider got every optional field as nullable
+        # (StructuredOutputService.to_strict_schema): a null there means absent.
+        drop_optional_nulls = schema_mode == "strict"
         candidates: list[Any] = []
         seen: set[str] = set()
 
@@ -1354,7 +1357,9 @@ class llmClient:
         _add_candidate(decoded_response.get("output_text"))
 
         evaluations = [
-            StructuredOutputService.evaluate_output(raw_output=candidate, schema=schema)
+            StructuredOutputService.evaluate_output(
+                raw_output=candidate, schema=schema, drop_optional_nulls=drop_optional_nulls,
+            )
             for candidate in candidates
         ]
         repaired_evaluations = []
@@ -1363,6 +1368,7 @@ class llmClient:
                 StructuredOutputService.evaluate_output(
                     raw_output=candidate,
                     schema=schema,
+                    drop_optional_nulls=drop_optional_nulls,
                     drop_additional_properties=True,
                 )
                 for candidate in candidates
@@ -1372,6 +1378,7 @@ class llmClient:
             StructuredOutputService.evaluate_output(
                 raw_output=decoded_response.get("output_text"),
                 schema=schema,
+                drop_optional_nulls=drop_optional_nulls,
             )
         ]
         if allow_additional_property_repair:
@@ -1379,6 +1386,7 @@ class llmClient:
                 StructuredOutputService.evaluate_output(
                     raw_output=decoded_response.get("output_text"),
                     schema=schema,
+                    drop_optional_nulls=drop_optional_nulls,
                     drop_additional_properties=True,
                 )
             )

@@ -16,6 +16,7 @@ from iatoolkit.services.attachment_policy_service import AttachmentPolicyService
 from iatoolkit.services.memory_lookup_policy_service import MemoryLookupPolicyService
 from iatoolkit.services.telemetry_service import NoopTelemetryService
 from iatoolkit.services.prompt_service import PromptService
+from iatoolkit.services.structured_output_service import StructuredOutputService
 from iatoolkit.common.model_registry import ModelRegistry
 from iatoolkit.common.exceptions import IAToolkitException
 from injector import inject
@@ -844,12 +845,17 @@ class QueryService:
 
         provider = self._get_provider(company_short_name, model)
         schema_mode = str(contract.get("schema_mode") or "best_effort").strip().lower()
+        # Strict structured outputs only accept closed objects with every property
+        # required; a schema written with optional fields would get a 400. The
+        # provider gets that shape (optional fields nullable) and the answer is
+        # mapped back to the stored schema when it is validated.
+        provider_schema = StructuredOutputService.to_strict_schema(schema) if schema_mode == "strict" else schema
         if provider in ("openai", "xai"):
             return {
                 "format": {
                     "type": "json_schema",
                     "name": self._sanitize_schema_name(contract.get("prompt_name") or "prompt_output"),
-                    "schema": schema,
+                    "schema": provider_schema,
                     "strict": schema_mode == "strict",
                 }
             }
@@ -878,7 +884,7 @@ class QueryService:
                     "json_schema": {
                         "name": self._sanitize_schema_name(contract.get("prompt_name") or "prompt_output"),
                         "strict": schema_mode == "strict",
-                        "schema": schema,
+                        "schema": provider_schema,
                     },
                 }
             }

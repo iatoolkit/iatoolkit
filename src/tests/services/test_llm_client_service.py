@@ -1111,6 +1111,33 @@ class TestLLMClient:
         assert result["answer"] == ""
         assert result["answer_format"] == "structured_only"
 
+    def test_apply_response_contract_strict_maps_optional_nulls_back_to_absent(self):
+        # A strict provider schema made "segment" nullable; the stored one did not.
+        decoded = {
+            "status": False,
+            "output_text": '{"customer_id":"c-100","segment":null}',
+            "answer": "",
+            "additional_data": {},
+            "answer_format": "plaintext",
+        }
+        contract = {
+            "schema": {
+                "type": "object",
+                "required": ["customer_id"],
+                "properties": {
+                    "customer_id": {"type": "string"},
+                    "segment": {"type": "string"},
+                },
+            },
+            "schema_mode": "strict",
+            "response_mode": "structured_only",
+        }
+
+        result = self.client._apply_response_contract(decoded, contract)
+
+        assert result["schema_valid"] is True
+        assert result["structured_output"] == {"customer_id": "c-100"}
+
     def test_apply_response_contract_accepts_answer_with_additional_data_payload(self):
         decoded = {
             "status": True,
