@@ -300,6 +300,23 @@ class TestDatabaseManager:
             assert structure['active_users']['columns'][0]['name'] == 'id'
             assert structure['active_users']['columns'][0]['pk'] is False
 
+        def test_a_table_listing_that_fails_raises_instead_of_an_empty_source(self):
+            """Wrong schema or grants: an error, not a source "without tables"."""
+            inspector_mock = self.mock_inspect.return_value
+            inspector_mock.get_table_names.side_effect = Exception("Access denied to database 'general'")
+
+            with pytest.raises(Exception, match="Access denied"):
+                self.db_manager.get_database_structure()
+
+        def test_views_that_cannot_be_listed_are_left_out(self):
+            inspector_mock = self.mock_inspect.return_value
+            inspector_mock.get_table_names.return_value = ['users']
+            inspector_mock.get_view_names.side_effect = Exception("views not supported")
+            inspector_mock.get_columns.return_value = [{'name': 'id', 'type': 'INTEGER', 'nullable': False}]
+            inspector_mock.get_pk_constraint.return_value = {'constrained_columns': ['id']}
+
+            assert list(self.db_manager.get_database_structure()) == ['users']
+
         def test_get_database_structure_handles_introspection_error(self):
             """
             GIVEN an error occurs during column introspection for a table

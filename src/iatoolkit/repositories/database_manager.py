@@ -394,11 +394,17 @@ class DatabaseManager(DatabaseProvider):
 
     # -- schema methods ----
     @staticmethod
-    def _safe_inspector_name_list(fetcher, schema: str | None) -> list[str]:
+    def _safe_inspector_name_list(fetcher, schema: str | None, *, required: bool = False) -> list[str]:
+        """The names a listing returns. `required` (the tables) raises when it fails: an
+        empty answer would read as "this source has no tables" when the connection, the
+        schema or the user's grants are wrong. Views stay optional, as some engines
+        cannot list them."""
         try:
             names = fetcher(schema=schema)
         except Exception as e:
             logging.warning("Could not list schema objects for schema %s: %s", schema, e)
+            if required:
+                raise
             return []
 
         if not isinstance(names, list):
@@ -421,7 +427,7 @@ class DatabaseManager(DatabaseProvider):
         schema_objects: list[tuple[str, str]] = []
         schema_objects.extend(
             (table_name, "table")
-            for table_name in self._safe_inspector_name_list(inspector.get_table_names, effective_schema)
+            for table_name in self._safe_inspector_name_list(inspector.get_table_names, effective_schema, required=True)
         )
         schema_objects.extend(
             (view_name, "view")
