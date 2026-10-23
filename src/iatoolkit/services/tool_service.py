@@ -1535,20 +1535,59 @@ class ToolService:
         # 2. Fallback to system tools
         return self.llm_query_repo.get_system_tool(tool_name)
     def _is_strict_compatible_schema(self, parameters: dict) -> bool:
+        """Whether OpenAI's strict mode accepts the whole schema, not only its top.
+
+        Strict mode needs a `type` on every node and every object with all its
+        properties required. A schema written elsewhere - an MCP server's tool,
+        say - may use `{}` for "any value" deep inside (estrategia_editar_jugada's
+        cambios[].anterior), and sent as strict it got a 400 that took the whole
+        request down. Such a tool goes non-strict instead, exactly as written.
+        """
         if not isinstance(parameters, dict):
             return False
-
         properties = parameters.get("properties")
         if not isinstance(properties, dict):
             return False
-
-        required = parameters.get("required")
-        if not isinstance(required, list):
+        # At the top an explicit `required` is still asked for: a tool with no
+        # parameters keeps going non-strict, as it always has.
+        if not isinstance(parameters.get("required"), list):
             return False
-        if any(not isinstance(item, str) for item in required):
-            return False
+        return self._is_strict_compatible_node(parameters)
 
-        return set(required) == set(properties.keys())
+    @classmethod
+    def _is_strict_compatible_node(cls, node) -> bool:
+        if not isinstance(node, dict):
+            return False
+        for key in ("anyOf", "oneOf"):
+            if isinstance(node.get(key), list):
+                return all(cls._is_strict_compatible_node(option) for option in node[key])
+
+        schema_type = node.get("type")
+        if not schema_type:
+            return False
+        types = schema_type if isinstance(schema_type, list) else [schema_type]
+
+        if "object" in types:
+            properties = node.get("properties")
+            if not isinstance(properties, dict):
+                return False
+            required = node.get("required", [])
+            if not isinstance(required, list) or any(not isinstance(item, str) for item in required):
+                return False
+            if set(required) != set(properties.keys()):
+                return False
+            if not all(cls._is_strict_compatible_node(child) for child in properties.values()):
+                return False
+            # A map (additionalProperties as a schema) is accepted, as
+            # iat_generate_excel's rows have always been; its values must qualify.
+            additional = node.get("additionalProperties")
+            if isinstance(additional, dict) and not cls._is_strict_compatible_node(additional):
+                return False
+
+        if "array" in types and "items" in node:
+            if not cls._is_strict_compatible_node(node.get("items")):
+                return False
+        return True
 
     def get_tools_for_llm(self, company: Company, user_identifier: str | None = None) -> list[dict]:
         """

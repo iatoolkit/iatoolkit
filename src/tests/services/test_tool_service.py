@@ -1835,3 +1835,71 @@ class TestForceIncludeCapabilities:
         service._resolve_runtime_tool_capabilities = lambda company: {"has_user_memory": True}
 
         assert service.get_always_include_tool_names("acme", [{"name": "iat_memory_search"}]) == ["iat_memory_search"]
+
+
+class TestStrictCompatibleSchema:
+    """OpenAI's strict mode checks the whole schema; so must we before asking for it."""
+
+    @staticmethod
+    def _strict(parameters):
+        return ToolService.__new__(ToolService)._is_strict_compatible_schema(parameters)
+
+    @staticmethod
+    def _changes(anterior):
+        return {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "ref": {"type": "string"},
+                "cambios": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "properties": {"campo": {"type": "string"}, "anterior": anterior},
+                        "required": ["campo", "anterior"],
+                    },
+                },
+            },
+            "required": ["ref", "cambios"],
+        }
+
+    def test_an_untyped_nested_value_is_not_strict(self):
+        # estrategia_editar_jugada as an MCP server first wrote it: OpenAI answered
+        # "schema must have a 'type' key" and the whole request failed.
+        assert self._strict(self._changes({})) is False
+
+    def test_the_same_schema_typed_is_strict(self):
+        assert self._strict(self._changes({"type": ["string", "null"]})) is True
+
+    def test_typed_options_count_as_typed(self):
+        assert self._strict(self._changes({"anyOf": [{"type": "string"}, {"type": "null"}]})) is True
+        assert self._strict(self._changes({"anyOf": [{"type": "string"}, {}]})) is False
+
+    def test_a_nested_object_with_optional_properties_is_not_strict(self):
+        schema = self._changes({"type": "string"})
+        schema["properties"]["cambios"]["items"]["required"] = ["campo"]
+
+        assert self._strict(schema) is False
+
+    def test_a_map_of_typed_values_stays_strict(self):
+        # iat_generate_excel's rows: free column names, typed values.
+        schema = {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {},
+                        "additionalProperties": {"anyOf": [{"type": "string"}, {"type": "number"}]},
+                    },
+                },
+            },
+            "required": ["data"],
+        }
+
+        assert self._strict(schema) is True
+
+    def test_a_tool_without_parameters_stays_non_strict(self):
+        assert self._strict({"type": "object", "properties": {}}) is False
