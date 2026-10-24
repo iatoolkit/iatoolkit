@@ -2859,6 +2859,7 @@ errors:
     user_already_registered: "The user with email '{email}' already exists in this company."
     password_mismatch: "The passwords do not match. Please try again."
     signup_not_allowed: "Signup is not allowed for this company. Please contact an administrator."
+    form_expired: "The form has expired. Please try again."
     invitation_required: "A valid invitation is required to join this company. Ask your administrator for a new link."
   change_password:
     token_expired: "The password change link has expired. Please request a new one."

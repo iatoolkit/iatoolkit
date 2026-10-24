@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.branding_service import BrandingService
 from iatoolkit.services.i18n_service import I18nService
+from iatoolkit.services.signup_guard_service import SignupGuardService
 from iatoolkit.views.signup_view import SignupView
 from iatoolkit.repositories.models import Company
 import os
@@ -40,6 +41,10 @@ class TestSignupView:
         self.profile_service = MagicMock(spec=ProfileService)
         self.branding_service = MagicMock(spec=BrandingService)
         self.i8n_service = MagicMock(spec=I18nService)
+        self.signup_guard_service = MagicMock(spec=SignupGuardService)
+        self.signup_guard_service.issue_form_token.return_value = 'form-token'
+        self.signup_guard_service.check.return_value = None
+        self.signup_guard_service.client_ip.return_value = '203.0.113.7'
 
         self.test_company = Company(id=1, name="Empresa de Prueba", short_name="test_company")
         self.profile_service.get_company_by_short_name.return_value = self.test_company
@@ -51,7 +56,8 @@ class TestSignupView:
         view = SignupView.as_view("signup",
                                   profile_service=self.profile_service,
                                   branding_service=self.branding_service,
-                                  i18n_service=self.i8n_service,)
+                                  i18n_service=self.i8n_service,
+                                  signup_guard_service=self.signup_guard_service,)
         self.app.add_url_rule("/<string:company_short_name>/signup", view_func=view, methods=["GET", "POST"])
 
         # --- CORRECCIÓN: Añadir rutas dummy con los endpoints correctos ---
@@ -89,7 +95,8 @@ class TestSignupView:
             'signup.html',
             company_short_name='test_company',
             branding=self.branding_service.get_company_branding.return_value,
-            lang='en'
+            lang='en',
+            form_token='form-token',
         )
 
     @patch("iatoolkit.views.signup_view.render_template")
@@ -134,6 +141,7 @@ class TestSignupView:
             company_short_name='test_company',
             branding=self.branding_service.get_company_branding.return_value,
             form_data=form_data,
+            form_token='form-token',
             lang=None
         )
 
@@ -168,3 +176,38 @@ class TestSignupView:
 
         assert response.status_code == 500
         mock_render_template.assert_called_once()
+
+    def test_post_rejected_by_bot_guard_looks_like_success(self):
+        self.signup_guard_service.check.return_value = 'honeypot'
+
+        with self.client:
+            response = self.client.post("/test_company/signup", data={
+                "first_name": "hoddjzfoabcekfbgyu", "last_name": "eyixfj",
+                "email": "victim@example.com", "password": "x", "confirm_password": "x",
+                "website": "http://spam",
+            })
+            flashed_messages = get_flashed_messages(with_categories=True)
+
+        assert response.status_code == 302
+        assert flashed_messages == [('success', 'translated:flash_messages.signup_success')]
+        self.profile_service.signup.assert_not_called()
+        args, kwargs = self.signup_guard_service.check.call_args
+        assert args[0] == 'test_company'
+        assert kwargs == {'client_ip': '203.0.113.7', 'email': 'victim@example.com'}
+
+    @patch("iatoolkit.views.signup_view.render_template")
+    def test_post_with_expired_form_asks_to_retry(self, mock_render_template):
+        mock_render_template.return_value = "<html></html>"
+        self.signup_guard_service.check.return_value = SignupGuardService.EXPIRED
+
+        with self.client:
+            response = self.client.post("/test_company/signup", data={
+                "first_name": "Juan", "last_name": "Perez", "email": "juan@email.com",
+                "password": "password123", "confirm_password": "password123",
+            })
+            flashed_messages = get_flashed_messages(with_categories=True)
+
+        assert response.status_code == 400
+        assert flashed_messages == [('error', 'translated:errors.signup.form_expired')]
+        self.profile_service.signup.assert_not_called()
+        assert mock_render_template.call_args.kwargs['form_token'] == 'form-token'

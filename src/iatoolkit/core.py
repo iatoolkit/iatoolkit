@@ -460,6 +460,7 @@ class IAToolkit:
         from iatoolkit.services.sql_source_service import SqlSourceService
         from iatoolkit.services.dispatcher_service import Dispatcher
         from iatoolkit.services.branding_service import BrandingService
+        from iatoolkit.services.signup_guard_service import SignupGuardService
         from iatoolkit.services.i18n_service import I18nService
         from iatoolkit.services.language_service import LanguageService
         from iatoolkit.services.configuration_service import ConfigurationService
@@ -506,6 +507,7 @@ class IAToolkit:
         binder.bind(SqlSourceService, to=SqlSourceService)
         binder.bind(Dispatcher, to=Dispatcher)
         binder.bind(BrandingService, to=BrandingService)
+        binder.bind(SignupGuardService, to=SignupGuardService)
         binder.bind(I18nService, to=I18nService)
         binder.bind(LanguageService, to=LanguageService)
         # this class can be setup before by iatoolkit enterprise.

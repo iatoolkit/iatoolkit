@@ -40,6 +40,12 @@
 
                         <form action="{{ url_for('signup', company_short_name=company_short_name) }}" method="post">
                             {% if invite_token %}<input type="hidden" name="invite_token" value="{{ invite_token }}">{% endif %}
+                            <input type="hidden" name="form_token" value="{{ form_token }}">
+                            <!-- honeypot: hidden from people, bots fill it in -->
+                            <div style="position: absolute; left: -10000px; top: auto; width: 1px; height: 1px; overflow: hidden;" aria-hidden="true">
+                                <label for="website">Website</label>
+                                <input type="text" id="website" name="website" tabindex="-1" autocomplete="off" value="">
+                            </div>
                             <div class="mb-3">
                                 <label for="email" class="form-label text-secondary">{{ t('ui.signup.email_label') }}</label>
                                 <input type="email" autocomplete="off" id="email" name="email"

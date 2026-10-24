@@ -8,6 +8,7 @@ from flask import render_template, request, url_for, redirect, flash, make_respo
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.branding_service import BrandingService
 from iatoolkit.services.i18n_service import I18nService
+from iatoolkit.services.signup_guard_service import SignupGuardService
 from injector import inject
 from itsdangerous import URLSafeTimedSerializer
 import os
@@ -17,10 +18,12 @@ class SignupView(MethodView):
     @inject
     def __init__(self, profile_service: ProfileService,
                  branding_service: BrandingService,
-                 i18n_service: I18nService):
+                 i18n_service: I18nService,
+                 signup_guard_service: SignupGuardService):
         self.profile_service = profile_service
         self.branding_service = branding_service # 3. Guardar la instancia
         self.i18n_service = i18n_service
+        self.signup_guard_service = signup_guard_service
 
         self.serializer = URLSafeTimedSerializer(os.getenv("IATOOLKIT_SECRET_KEY"))
 
@@ -52,6 +55,7 @@ class SignupView(MethodView):
             "company_short_name": company_short_name,
             "branding": branding_data,
             "lang": current_lang,
+            "form_token": self.signup_guard_service.issue_form_token(company_short_name),
         }
         if invitation_required or invited_email:
             template_context.update(invite_token=invite_token, invited_email=invited_email)
@@ -80,19 +84,30 @@ class SignupView(MethodView):
             current_lang = request.form.get("lang") or request.args.get("lang")
             invite_token = request.form.get("invite_token") or request.args.get("invite_token")
 
-            # create verification token and url for verification
-            token = self.serializer.dumps(email, salt='email-confirm')
-            verification_url = url_for('verify_account',
-                                       company_short_name=company_short_name,
-                                       token=token, _external=True)
+            # bots are stopped before any user is created or any email is sent
+            rejection = self.signup_guard_service.check(
+                company_short_name, request.form,
+                client_ip=self.signup_guard_service.client_ip(request), email=email)
+            if rejection == SignupGuardService.EXPIRED:
+                response = {"error": self.i18n_service.t('errors.signup.form_expired')}
+            elif rejection is not None:
+                # answer like a successful signup, so the bot can't tell what stopped it
+                flash(self.i18n_service.t('flash_messages.signup_success'), 'success')
+                return redirect(url_for('home', company_short_name=company_short_name, lang=current_lang))
+            else:
+                # create verification token and url for verification
+                token = self.serializer.dumps(email, salt='email-confirm')
+                verification_url = url_for('verify_account',
+                                           company_short_name=company_short_name,
+                                           token=token, _external=True)
 
-            response = self.profile_service.signup(
-                company_short_name=company_short_name,
-                email=email,
-                first_name=first_name, last_name=last_name,
-                password=password, confirm_password=confirm_password,
-                verification_url=verification_url,
-                invite_token=invite_token)
+                response = self.profile_service.signup(
+                    company_short_name=company_short_name,
+                    email=email,
+                    first_name=first_name, last_name=last_name,
+                    password=password, confirm_password=confirm_password,
+                    verification_url=verification_url,
+                    invite_token=invite_token)
 
             if "error" in response:
                 flash(response["error"], 'error')
@@ -100,6 +115,7 @@ class SignupView(MethodView):
                     "company_short_name": company_short_name,
                     "branding": branding_data,
                     "lang": current_lang,
+                    "form_token": self.signup_guard_service.issue_form_token(company_short_name),
                     "form_data": {
                         "first_name": first_name,
                         "last_name": last_name,
