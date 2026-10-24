@@ -141,11 +141,19 @@ class SignupGuardService:
     def client_ip(request) -> str | None:
         """The client IP as seen by our own proxy.
 
-        The app sits behind one proxy (the platform router) that appends the real
-        client to X-Forwarded-For; anything to its left was sent by the client and
-        can be forged. IATOOLKIT_TRUSTED_PROXY_HOPS covers an extra proxy in front
-        (e.g. a CDN).
+        Behind Cloudflare (Render's edge) the last X-Forwarded-For entry is a
+        Cloudflare node shared by many visitors, so CF-Connecting-IP wins: Cloudflare
+        always overwrites it with the visitor's address.
+
+        Otherwise the app sits behind one proxy (the platform router) that appends
+        the real client to X-Forwarded-For; anything to its left was sent by the
+        client and can be forged. IATOOLKIT_TRUSTED_PROXY_HOPS covers an extra
+        proxy in front.
         """
+        cf_ip = request.headers.get('CF-Connecting-IP', '').strip()
+        if cf_ip:
+            return cf_ip
+
         forwarded = [part.strip() for part in request.headers.get('X-Forwarded-For', '').split(',') if part.strip()]
         try:
             hops = max(1, int(os.getenv('IATOOLKIT_TRUSTED_PROXY_HOPS', '1')))

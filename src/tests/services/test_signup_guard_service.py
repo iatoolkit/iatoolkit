@@ -128,3 +128,11 @@ class TestSignupGuardService:
 
         request.headers = {}
         assert SignupGuardService.client_ip(request) == '10.0.0.1'
+
+    def test_client_ip_prefers_cloudflare_visitor_header(self):
+        request = MagicMock()
+        request.remote_addr = '10.0.0.1'
+        # production: the last X-Forwarded-For hop is a Cloudflare node
+        request.headers = {'X-Forwarded-For': '203.0.113.7, 162.158.116.10',
+                           'CF-Connecting-IP': '203.0.113.7'}
+        assert SignupGuardService.client_ip(request) == '203.0.113.7'
