@@ -375,3 +375,53 @@ class TestSqlService:
 
         assert result_json == json.dumps([{'id': 1}])
         mock_provider.rollback.assert_called_once()
+
+
+class TestStructureCache:
+    """BL-017: the introspected structure is reused through Redis for a few minutes."""
+
+    @pytest.fixture(autouse=True)
+    def setup_method(self):
+        util = MagicMock(spec=Utility)
+        self.service = SqlService(util=util, i18n_service=MagicMock(spec=I18nService))
+        self.provider = MagicMock(spec=DatabaseProvider)
+        self.provider.get_database_structure.return_value = {"orders": {"columns": [{"name": "id"}]}}
+        self.service._db_connections[(COMPANY_SHORT_NAME, DB_NAME_SUCCESS)] = self.provider
+        self.store, self.ttls = {}, {}
+        redis = MagicMock()
+        redis.get_json.side_effect = lambda key, default=None: self.store.get(key, default)
+        redis.set_json.side_effect = lambda key, value, ex=None: self.store.update({key: value}) or self.ttls.update({key: ex})
+        redis.remove.side_effect = lambda key: self.store.pop(key, None)
+        patcher = patch('iatoolkit.infra.redis_session_manager.RedisSessionManager', redis)
+        patcher.start()
+        self.redis = redis
+        yield
+        patcher.stop()
+
+    def test_the_second_read_comes_from_the_cache(self):
+        first = self.service.get_database_structure(COMPANY_SHORT_NAME, DB_NAME_SUCCESS)
+        second = self.service.get_database_structure(COMPANY_SHORT_NAME, DB_NAME_SUCCESS)
+
+        assert first == second == {"orders": {"columns": [{"name": "id"}]}}
+        self.provider.get_database_structure.assert_called_once()
+        assert self.ttls[f"sql_structure:{COMPANY_SHORT_NAME}:{DB_NAME_SUCCESS}"] == SqlService.STRUCTURE_CACHE_SECONDS
+
+    def test_fresh_reads_the_database_and_refreshes_the_cache(self):
+        self.service.get_database_structure(COMPANY_SHORT_NAME, DB_NAME_SUCCESS)
+        self.service.get_database_structure(COMPANY_SHORT_NAME, DB_NAME_SUCCESS, fresh=True)
+
+        assert self.provider.get_database_structure.call_count == 2
+
+    def test_an_invalidated_source_is_read_again(self):
+        self.service.get_database_structure(COMPANY_SHORT_NAME, DB_NAME_SUCCESS)
+        self.service.invalidate_structure_cache(COMPANY_SHORT_NAME)
+        self.service.get_database_structure(COMPANY_SHORT_NAME, DB_NAME_SUCCESS)
+
+        assert self.provider.get_database_structure.call_count == 2
+
+    def test_without_redis_the_structure_is_read_from_the_database(self):
+        self.redis.get_json.side_effect = ConnectionError("redis down")
+        self.redis.set_json.side_effect = ConnectionError("redis down")
+
+        assert self.service.get_database_structure(COMPANY_SHORT_NAME, DB_NAME_SUCCESS) == {
+            "orders": {"columns": [{"name": "id"}]}}

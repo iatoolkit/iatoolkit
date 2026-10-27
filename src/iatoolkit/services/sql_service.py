@@ -22,6 +22,13 @@ class SqlService:
     It maintains a cache of named DatabaseManager instances to avoid reconnecting.
     """
     MAX_QUERY_ROWS = 2000
+    #: How long a database's introspected structure is reused (BL-017). Reading
+    #: it is one query per table per source: `list_sql_sources` went from ~1s to
+    #: 6-13s in production when it began reading every source's tables on each
+    #: call. Shared through Redis by every process; a source saved or deleted,
+    #: or an explicit introspection from the admin, refreshes it at once.
+    STRUCTURE_CACHE_SECONDS = 900
+    STRUCTURE_CACHE_PREFIX = "sql_structure"
     _ALLOWED_QUERY_PREFIXES = ("SELECT", "WITH")
     _BLOCKED_SQL_PATTERN = re.compile(
         r"\b(?:INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|MERGE|CALL|COPY|GRANT|REVOKE|"
@@ -103,6 +110,41 @@ class SqlService:
         except Exception as e:
             logging.error(f"Failed to register DB '{db_name}': {e}")
             # We don't raise here to allow other DBs to load if one fails
+
+    @classmethod
+    def _structure_cache_key(cls, company_short_name: str, db_name: str) -> str:
+        return f"{cls.STRUCTURE_CACHE_PREFIX}:{company_short_name}:{db_name}"
+
+    @staticmethod
+    def _read_structure_cache(key: str) -> dict:
+        try:
+            from iatoolkit.infra.redis_session_manager import RedisSessionManager
+            cached = RedisSessionManager.get_json(key, {})
+            return cached if isinstance(cached, dict) else {}
+        except Exception as e:
+            # Without the cache the structure is read from the database, as before.
+            logging.debug(f"SQL structure cache unavailable for '{key}': {e}")
+            return {}
+
+    @classmethod
+    def _write_structure_cache(cls, key: str, structure: dict):
+        if not isinstance(structure, dict) or not structure:
+            return
+        try:
+            from iatoolkit.infra.redis_session_manager import RedisSessionManager
+            RedisSessionManager.set_json(key, structure, ex=cls.STRUCTURE_CACHE_SECONDS)
+        except Exception as e:
+            logging.debug(f"Could not cache the SQL structure '{key}': {e}")
+
+    def invalidate_structure_cache(self, company_short_name: str, db_names: list[str] | None = None):
+        """Forgets the cached structures of these sources (default: every registered one)."""
+        names = set(db_names or []) | set(self.get_db_names(company_short_name) if db_names is None else [])
+        try:
+            from iatoolkit.infra.redis_session_manager import RedisSessionManager
+            for db_name in names:
+                RedisSessionManager.remove(self._structure_cache_key(company_short_name, db_name))
+        except Exception as e:
+            logging.warning(f"Could not invalidate the SQL structure cache of '{company_short_name}': {e}")
 
     def clear_company_connections(self, company_short_name: str):
         keys_to_clear = [key for key in self._db_connections if key[0] == company_short_name]
@@ -335,14 +377,22 @@ class SqlService:
                 IAToolkitException.ErrorType.DATABASE_ERROR, str(e)
             )
 
-    def get_database_structure(self, company_short_name: str, db_name: str) -> dict:
+    def get_database_structure(self, company_short_name: str, db_name: str, *, fresh: bool = False) -> dict:
         """
-        Introspects the specified database and returns its structure (Tables & Columns).
-        Used for the Schema Editor 2.0
+        The database's structure (tables & columns), introspected at most every
+        STRUCTURE_CACHE_SECONDS. `fresh` reads it from the database and refreshes
+        the cache (the admin's introspection, a schema import).
         """
+        key = self._structure_cache_key(company_short_name, db_name)
+        if not fresh:
+            cached = self._read_structure_cache(key)
+            if cached:
+                return cached
         try:
             provider = self.get_database_provider(company_short_name, db_name)
-            return provider.get_database_structure()
+            structure = provider.get_database_structure()
+            self._write_structure_cache(key, structure)
+            return structure
         except IAToolkitException:
             raise
         except Exception as e:

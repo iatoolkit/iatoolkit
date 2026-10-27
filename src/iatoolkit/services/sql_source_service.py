@@ -171,7 +171,7 @@ class SqlSourceService:
             source.included_tables = []
 
         persisted = self.sql_source_repo.create_or_update(source)
-        self.refresh_runtime(company_short_name)
+        self._refresh_after_change(company_short_name, [persisted.database])
         return persisted.to_dict()
 
     def update_source(self, company_short_name: str, source_id: int, payload: dict) -> dict:
@@ -237,7 +237,7 @@ class SqlSourceService:
         )
 
         persisted = self.sql_source_repo.create_or_update(source)
-        self.refresh_runtime(company_short_name)
+        self._refresh_after_change(company_short_name, [persisted.database])
         return persisted.to_dict()
 
     def delete_source(self, company_short_name: str, source_id: int) -> None:
@@ -247,7 +247,7 @@ class SqlSourceService:
             raise IAToolkitException(IAToolkitException.ErrorType.NOT_FOUND, "SQL source not found")
 
         self.sql_source_repo.delete(source)
-        self.refresh_runtime(company_short_name)
+        self._refresh_after_change(company_short_name, [source.database])
 
     def sync_from_yaml(self, company_short_name: str, sql_sources: list[dict] | None) -> dict:
         company = self._get_company(company_short_name)
@@ -399,6 +399,14 @@ class SqlSourceService:
 
         self.sql_service.register_database(company_short_name, normalized_db_name, db_config)
         return normalized_db_name in self.sql_service.get_db_names(company_short_name)
+
+    def _refresh_after_change(self, company_short_name: str, db_names: list[str]):
+        """A source saved or deleted: its cached structure (and every registered one,
+        a rename included) is read again on next use, then the runtime is rebuilt."""
+        registered = self.sql_service.get_db_names(company_short_name)
+        names = list(registered) + [self._normalize_database(name) for name in db_names if name]
+        self.sql_service.invalidate_structure_cache(company_short_name, names)
+        self.refresh_runtime(company_short_name)
 
     def refresh_runtime(self, company_short_name: str) -> dict:
         company = self._get_company(company_short_name)

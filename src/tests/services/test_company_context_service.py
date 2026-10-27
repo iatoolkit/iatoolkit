@@ -300,7 +300,7 @@ class TestCompanyContextService:
         assert "users" in result
         # No description injected because there is no YAML
         assert "description" not in result["users"]
-        self.mock_sql_service.get_database_structure.assert_called_once_with(self.COMPANY_NAME, 'main_db')
+        self.mock_sql_service.get_database_structure.assert_called_once_with(self.COMPANY_NAME, 'main_db', fresh=False)
 
     def test_get_enriched_schema_merge_standard_dict_format(self):
         """
@@ -615,7 +615,7 @@ class TestCompanyContextService:
 
         # Assert
         assert full_context == ""
-        self.mock_sql_service.get_database_structure.assert_called_once_with(self.COMPANY_NAME, 'down_db')
+        self.mock_sql_service.get_database_structure.assert_called_once_with(self.COMPANY_NAME, 'down_db', fresh=False)
 
     def test_generate_llm_context(self):
         """Test generación de contexto LLM con schema que incluye listas y subcampos."""
@@ -693,7 +693,7 @@ class TestCompanyContextService:
             assert "users" in result
             # No description injected because there is no YAML
             assert "description" not in result["users"]
-            self.mock_sql_service.get_database_structure.assert_called_once_with(self.COMPANY_NAME, 'main_db')
+            self.mock_sql_service.get_database_structure.assert_called_once_with(self.COMPANY_NAME, 'main_db', fresh=False)
 
         def test_get_enriched_schema_merge_standard_dict_format(self):
             """

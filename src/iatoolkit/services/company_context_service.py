@@ -446,14 +446,15 @@ class CompanyContextService:
 
         return None
 
-    def get_enriched_database_schema(self, company_short_name: str, db_name: str) -> dict:
+    def get_enriched_database_schema(self, company_short_name: str, db_name: str, *, fresh: bool = False) -> dict:
         """
         Retrieves the physical database structure and enriches it with metadata
-        found in the AssetRepository (YAML files).
+        found in the AssetRepository (YAML files). The structure is cached for a
+        few minutes (SqlService); `fresh` reads it from the database.
         """
         try:
             # 1. Physical Structure (Real Source)
-            structure = self.sql_service.get_database_structure(company_short_name, db_name)
+            structure = self.sql_service.get_database_structure(company_short_name, db_name, fresh=fresh)
 
             # 2. YAML files
             available_files = self.asset_repo.list_files(company_short_name, AssetType.SCHEMA)

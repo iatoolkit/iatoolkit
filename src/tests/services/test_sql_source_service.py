@@ -108,6 +108,28 @@ class TestSqlSourceService:
         assert result["source"] == SqlSource.SOURCE_USER
         self.sql_service.clear_company_connections.assert_called_once_with(self.company_short_name)
 
+    def test_a_renamed_source_forgets_the_cached_structure_of_both_names(self):
+        existing = SqlSource(
+            id=34,
+            company_id=self.company.id,
+            database="wealth",
+            connection_type=SqlSource.CONNECTION_DIRECT,
+            connection_string_env="WEALTH_DATABASE_URI",
+            source=SqlSource.SOURCE_USER,
+            is_active=True,
+        )
+        self.sql_source_repo.get_by_id.return_value = existing
+        self.sql_source_repo.get_by_database.return_value = None
+        self.sql_source_repo.create_or_update.side_effect = lambda source: source
+        self.sql_source_repo.list_by_company.return_value = []
+        self.sql_service.get_db_names.return_value = ["wealth"]
+
+        self.service.update_source(self.company_short_name, existing.id, {"database": "wealth_v2"})
+
+        company, names = self.sql_service.invalidate_structure_cache.call_args.args
+        assert company == self.company_short_name
+        assert set(names) == {"wealth", "wealth_v2"}
+
     def test_update_source_clears_included_tables_when_switching_back_to_all_tables(self):
         existing = SqlSource(
             id=34,
