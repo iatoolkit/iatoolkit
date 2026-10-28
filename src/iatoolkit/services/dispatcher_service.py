@@ -101,6 +101,27 @@ class Dispatcher:
             for parameter in signature.parameters.values()
         )
 
+    @staticmethod
+    def _assert_required_arguments(tool_def, function_name: str, arguments: dict) -> None:
+        """Rejects a call that omits a field its declared schema requires.
+
+        Native methods usually take **kwargs and forward them, so a missing
+        argument only surfaces as a TypeError deep in the company code, which
+        reads as a tool failure. The declared schema is the contract the caller
+        saw, so a missing field is the caller's error and is reported as such.
+        """
+        schema = getattr(tool_def, "parameters", None)
+        required = schema.get("required") if isinstance(schema, dict) else None
+        if not isinstance(required, list):
+            return
+        for field_name in required:
+            value = (arguments or {}).get(field_name)
+            if value is None or (isinstance(value, str) and not value.strip()):
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.MISSING_PARAMETER,
+                    f"{function_name} requires '{field_name}'.",
+                )
+
     @classmethod
     def register_tool_execution_hook(cls, hook):
         cls._tool_execution_hook = hook
@@ -368,6 +389,7 @@ class Dispatcher:
 
             company_instance = self.company_instances[company_key]
             method_name = function_name
+            self._assert_required_arguments(tool_def, method_name, kwargs)
 
             try:
                 # Check if the method exists and is callable

@@ -214,6 +214,35 @@ class TestDispatcher:
         assert "Error executing native tool 'handle_request': boom" in str(excinfo.value)
         self.mock_llm_query_repo.rollback.assert_called_once()
 
+    def test_dispatch_native_tool_missing_required_argument_is_a_parameter_error(self):
+        """A field the schema requires and the call omits is the caller's error, not a tool failure."""
+        mock_tool_def = MagicMock(spec=Tool)
+        mock_tool_def.tool_type = Tool.TYPE_NATIVE
+        mock_tool_def.parameters = {
+            "type": "object",
+            "properties": {"key": {"type": "string"}, "count": {"type": "integer"}},
+            "required": ["key", "count"],
+        }
+        self.mock_tool_service.get_tool_definition.return_value = mock_tool_def
+
+        with pytest.raises(IAToolkitException) as excinfo:
+            self.dispatcher.dispatch("sample", "handle_request", key="  ")
+
+        assert excinfo.value.error_type == IAToolkitException.ErrorType.MISSING_PARAMETER
+        assert "handle_request requires 'key'." in str(excinfo.value)
+        self.mock_sample_company_instance.handle_request.assert_not_called()
+
+    def test_dispatch_native_tool_accepts_falsy_required_values(self):
+        """Zero and False are real values: only absent, None or blank strings count as missing."""
+        mock_tool_def = MagicMock(spec=Tool)
+        mock_tool_def.tool_type = Tool.TYPE_NATIVE
+        mock_tool_def.parameters = {"type": "object", "required": ["count", "flag"]}
+        self.mock_tool_service.get_tool_definition.return_value = mock_tool_def
+
+        self.dispatcher.dispatch("sample", "handle_request", count=0, flag=False)
+
+        self.mock_sample_company_instance.handle_request.assert_called_once_with(count=0, flag=False)
+
     def test_dispatch_system_function(self):
         """Tests that dispatch correctly handles system functions via ToolService."""
         # Arrange
