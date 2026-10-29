@@ -4,6 +4,7 @@ from iatoolkit.common.decision_types import (
     DecisionResult,
     DecisionSpecError,
     chat_models,
+    decision_output_schema,
     is_decision_model,
     normalize_decision_spec,
     parse_decision_spec,
@@ -80,6 +81,18 @@ class TestDecisionSpec:
         with pytest.raises(DecisionSpecError) as exc:
             parse_decision_spec(spec)
         assert fragment in str(exc.value)
+
+
+def test_decision_output_schema_describes_the_answers():
+    import jsonschema
+
+    schema = decision_output_schema(SPEC)
+    result = DecisionResult.from_response(RESPONSE, requested_model="m", latency_ms=1)
+
+    jsonschema.validate(result.answers_dict(), schema)
+    assert schema["required"] == ["es_cobranza", "area", "urgencia"]
+    assert schema["properties"]["area"]["description"] == "¿Qué área debe atenderlo?"
+    assert decision_output_schema({"questions": {}}) == {"type": "object", "properties": {}, "required": []}
 
 
 def test_chat_models_leaves_decision_models_out():

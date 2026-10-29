@@ -180,6 +180,69 @@ def normalize_decision_spec(spec: Any, *, allow_empty: bool = False) -> dict[str
     return {"questions": {name: question.to_wire() for name, question in questions.items()}}
 
 
+def decision_output_schema(spec: Any) -> dict[str, Any]:
+    """The JSON Schema of a decision agent's answers, derived from its questions.
+
+    Describes `DecisionResult.answers_dict()`: one property per question, whose
+    `value` is the answer itself (a boolean for noul, one of the options for
+    choice, the 0-based weighted average for score). Published as the agent's
+    MCP `outputSchema`, so a client knows the shape before calling. Questions
+    that do not validate are left out rather than failing the whole catalogue.
+    """
+    try:
+        questions = parse_decision_spec(spec)
+    except DecisionSpecError:
+        questions = {}
+    probability = {"type": "number", "minimum": 0, "maximum": 1}
+    properties: dict[str, Any] = {}
+    for name, question in questions.items():
+        if question.type == QUESTION_NOUL:
+            value = {"type": ["boolean", "null"], "description": "true = sí, false = no."}
+            probabilities = {
+                "type": "object",
+                "properties": {"true": probability, "false": probability},
+            }
+            extra: dict[str, Any] = {}
+        elif question.type == QUESTION_CHOICE:
+            options = list(question.criteria or {})
+            value = {"type": ["string", "null"], "enum": options + [None]}
+            probabilities = {
+                "type": "object",
+                "properties": {option: probability for option in options},
+            }
+            extra = {}
+        else:
+            levels = list(question.criteria or [])
+            value = {
+                "type": ["number", "null"],
+                "minimum": 0,
+                "maximum": max(len(levels) - 1, 0),
+                "description": "Weighted average of the levels; 0 is the first one.",
+            }
+            probabilities = {
+                "type": "object",
+                "properties": {str(index): probability for index in range(len(levels))},
+            }
+            extra = {"legend": {"type": "object", "additionalProperties": {"type": "string"}}}
+        properties[name] = {
+            "type": "object",
+            "description": question.instructions,
+            "properties": {
+                "type": {"type": "string", "const": question.type},
+                "value": value,
+                "confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+                "probabilities": probabilities,
+                **extra,
+            },
+            "required": ["type", "value", "confidence", "probabilities"],
+        }
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": list(properties),
+    }
+
+
 @dataclass(frozen=True)
 class DecisionAnswer:
     name: str
