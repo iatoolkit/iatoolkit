@@ -1075,7 +1075,9 @@ class Prompt(Base):
     #: agent as a decision agent: its template renders the case a decision model
     #: answers these questions about. Set when the agent is created; NULL for
     #: every conversational agent.
-    decision_spec = Column(JSON, nullable=True, default=None)
+    #: `none_as_null`: a conversational agent stores SQL NULL, not JSON `null`,
+    #: so `decision_spec IS NULL` reads the type from SQL too.
+    decision_spec = Column(JSON(none_as_null=True), nullable=True, default=None)
     created_at = Column(DateTime, default=datetime.now)
 
     def to_dict(self):
