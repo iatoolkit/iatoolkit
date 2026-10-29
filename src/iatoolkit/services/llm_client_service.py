@@ -125,6 +125,147 @@ class llmClient:
         return self._telemetry_service
 
 
+    @property
+    def decision_service(self):
+        """Resolved on first use, like the dispatcher: most calls never need it."""
+        if getattr(self, "_decision_service", None) is None:
+            from iatoolkit import current_iatoolkit
+            from iatoolkit.services.decision_service import DecisionService
+
+            self._decision_service = current_iatoolkit().get_injector().get(DecisionService)
+        return self._decision_service
+
+    def invoke_decision(self,
+                        company: Company,
+                        user_identifier: str,
+                        *,
+                        model: str,
+                        state: str,
+                        decision_spec: dict,
+                        question: str,
+                        task_id: Optional[int] = None,
+                        execution_metadata: Optional[Dict[str, Any]] = None,
+                        telemetry_request: Optional[Dict[str, Any]] = None,
+                        execution_trace: Optional[Dict[str, Any]] = None) -> dict:
+        """Runs a decision agent's model (BL-008) and records it like any agent execution.
+
+        Same table, same `stats` keys as a chat turn — `model`, tokens, response
+        time — so history, billing, evaluations and reviews read it unchanged;
+        `stats.kind = "decision"` tells them apart. The answers go to `response`
+        and, for callers, to `structured_output`.
+        """
+        self._assert_runtime_not_suspended(company)
+        company_id = getattr(company, "id", None)
+        telemetry_execution = self.telemetry_service.start_execution(telemetry_request)
+        telemetry_execution.record_input({"state": state, "questions": (decision_spec or {}).get("questions")})
+        base_stats: dict = {"model": model, "kind": "decision"}
+        for key, value in (execution_metadata or {}).items():
+            if value is not None:
+                base_stats[key] = value
+        start_time = time.time()
+        try:
+            result = self.decision_service.decide(
+                company.short_name,
+                model=model,
+                state=state,
+                decision_spec=decision_spec,
+                user_identifier=user_identifier,
+                telemetry_execution=telemetry_execution,
+            )
+        except Exception as e:
+            error_message = getattr(e, "message", None) or str(e)
+            query = LLMQuery(user_identifier=user_identifier,
+                             company_id=company_id,
+                             task_id=task_id,
+                             query=question,
+                             output=error_message,
+                             response={},
+                             valid_response=False,
+                             function_calls=[],
+                             stats={**base_stats, "error": True, "response_time": int(time.time() - start_time)},
+                             **self._execution_trace_columns(execution_trace))
+            self.llmquery_repo.add_query(query)
+            telemetry_execution.finalize(query_id=query.id, success=False, error_message=error_message)
+            raise
+
+        summary = result.summary_text()
+        stats = {
+            **base_stats,
+            "resolved_model": result.model,
+            "input_tokens": result.input_tokens,
+            "output_tokens": result.output_tokens,
+            "total_tokens": result.input_tokens + result.output_tokens,
+            "cost_usd": result.cost_usd,
+            "latency_ms": result.latency_ms,
+            "response_time": int(time.time() - start_time),
+        }
+        if result.provider:
+            stats["provider_name"] = result.provider
+        answers = result.answers_dict()
+        query = LLMQuery(user_identifier=user_identifier,
+                         company_id=company_id,
+                         task_id=task_id,
+                         query=question,
+                         output=summary,
+                         valid_response=True,
+                         # The keys of `serialize_response`, so every reader of a
+                         # recorded execution finds the answers where it looks.
+                         response={
+                             "format": "decision",
+                             "error_message": "",
+                             "output": summary,
+                             "id": result.response_id,
+                             "model": result.model,
+                             "status": "completed",
+                             "additional_data": {},
+                             "structured_output": answers,
+                             "schema_valid": True,
+                             "schema_errors": [],
+                             "schema_mode": None,
+                             "schema_applied": False,
+                             "decision": result.to_dict(),
+                             "state": state,
+                             "decision_spec": decision_spec,
+                         },
+                         function_calls=[],
+                         stats=stats,
+                         answer_time=stats["response_time"],
+                         **self._execution_trace_columns(execution_trace))
+        self.llmquery_repo.add_query(query)
+        telemetry_execution.finalize(
+            query_id=query.id,
+            success=True,
+            output_payload={"success": True, "result": {"answers": answers}},
+            metrics={"total_tokens": stats["total_tokens"], "response_time": stats["response_time"]},
+        )
+        telemetry_stats = telemetry_execution.build_stats()
+        if telemetry_stats:
+            query.stats = {**stats, "telemetry": telemetry_stats}
+            self.llmquery_repo.commit()
+
+        return {
+            'valid_response': True,
+            'answer': self.format_answer(summary.replace("\n", "  \n"), execution_metadata=execution_metadata),
+            'stats': stats,
+            'answer_format': 'decision',
+            'error_message': '',
+            'additional_data': {},
+            'query_id': query.id,
+            'model': model,
+            'reasoning_content': '',
+            'content_parts': [],
+            'structured_output': answers,
+            'parsed_output': answers,
+            'output_text': summary,
+            'schema_valid': True,
+            'schema_errors': [],
+            'schema_mode': None,
+            'schema_applied': False,
+            'history_messages': [],
+            'decision': result.to_dict(),
+            'response_id': result.response_id,
+        }
+
     @staticmethod
     def _assert_runtime_not_suspended(company: Company) -> None:
         """Refuse execution when a company's runtime spend guard is tripped.

@@ -26,6 +26,8 @@ import logging
 import re
 import unicodedata
 from iatoolkit.common import access
+from iatoolkit.common.decision_types import DecisionSpecError, is_decision_model, normalize_decision_spec
+import yaml
 
 class PromptService:
     PROMPT_NAME_MAX_LENGTH = 255
@@ -488,6 +490,94 @@ class PromptService:
             "attachment_fallback": self._normalize_attachment_fallback(llm_config.get("default_attachment_fallback")),
         }
 
+    AGENT_TYPE_CONVERSATIONAL = "conversational"
+    AGENT_TYPE_DECISION = "decision"
+
+    @staticmethod
+    def _parse_decision_spec_payload(raw) -> dict:
+        """A decision spec from the editor (object, or YAML/JSON text), normalized."""
+        if isinstance(raw, str):
+            text = raw.strip()
+            try:
+                raw = yaml.safe_load(text) if text else {}
+            except yaml.YAMLError as e:
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    f"Invalid decision_spec: {e}",
+                )
+        if raw is None:
+            raw = {}
+        try:
+            return normalize_decision_spec(raw, allow_empty=True)
+        except DecisionSpecError as e:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                f"Invalid decision_spec: {e}",
+            )
+
+    @staticmethod
+    def dump_decision_spec_yaml(decision_spec: dict | None) -> str:
+        """The questions as the editor's YAML view shows them, in their order."""
+        if not decision_spec or not (decision_spec.get("questions") or {}):
+            return ""
+        return yaml.safe_dump(decision_spec, allow_unicode=True, sort_keys=False, width=100)
+
+    def _resolve_decision_spec(self, data: dict, existing_prompt) -> dict | None:
+        """The decision spec to store, or None for a conversational agent (BL-008).
+
+        The type of an agent is chosen when it is created and never changes: a
+        decision agent keeps its spec (an empty one until its questions are
+        written), and a conversational one can never get one. A save that does
+        not mention the spec keeps the stored one, so every path that rewrites
+        an agent field by field (versions, model changes) leaves it alone.
+        """
+        if existing_prompt is not None:
+            existing_spec = getattr(existing_prompt, "decision_spec", None)
+            if not isinstance(existing_spec, dict):
+                existing_spec = None
+            if "decision_spec" not in data:
+                return existing_spec
+            if existing_spec is None:
+                if data.get("decision_spec") is None:
+                    return None
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_OPERATION,
+                    "A conversational agent cannot become a decision agent: create a new agent.",
+                )
+            if data.get("decision_spec") is None:
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_OPERATION,
+                    "A decision agent cannot become a conversational agent: create a new agent.",
+                )
+            return self._parse_decision_spec_payload(data.get("decision_spec"))
+
+        agent_type = str(data.get("agent_type") or "").strip().lower()
+        if agent_type and agent_type not in {self.AGENT_TYPE_CONVERSATIONAL, self.AGENT_TYPE_DECISION}:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                f"Unknown agent_type '{agent_type}'.",
+            )
+        if data.get("decision_spec") is not None or agent_type == self.AGENT_TYPE_DECISION:
+            return self._parse_decision_spec_payload(data.get("decision_spec"))
+        return None
+
+    def _check_model_fits_agent_type(self, company_short_name: str, llm_model: str | None,
+                                     is_decision_agent: bool) -> None:
+        """A decision agent runs only on a decision model, and a chat agent never does."""
+        if not llm_model:
+            return
+        model_config = self.configuration_service.get_llm_model_config(company_short_name, llm_model)
+        if is_decision_agent and not is_decision_model(model_config):
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                f"Model '{llm_model}' is not a decision model; a decision agent needs one.",
+            )
+        if not is_decision_agent and is_decision_model(model_config):
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                f"Model '{llm_model}' is a decision model; it only runs decision agents.",
+            )
+
     def _normalize_llm_model(self, company_short_name: str, llm_model: str | None) -> str | None:
         candidate = str(llm_model or "").strip()
         if not candidate:
@@ -675,6 +765,9 @@ class PromptService:
                     and self.is_workspace_chat_role(
                         self.get_runtime_policy_role(getattr(prompt, 'runtime_policy', None))
                     )
+                    # Decision agents (BL-008) run by API, MCP and the playground,
+                    # never from the chat's list.
+                    and not isinstance(getattr(prompt, 'decision_spec', None), dict)
                 ]
                 if user_identifier:
                     # A person sees the agents they may use (BL-010, Fase 1).
@@ -726,6 +819,11 @@ class PromptService:
                         'context_policy': runtime_policy["context"],
                         'runtime_provider': runtime_policy["runtime_provider"],
                         'runtime_config': runtime_policy["runtime_config"],
+                        'agent_type': (
+                            self.AGENT_TYPE_DECISION
+                            if isinstance(getattr(p, 'decision_spec', None), dict)
+                            else self.AGENT_TYPE_CONVERSATIONAL
+                        ),
                     })
 
                 categorized_prompts.append({
@@ -862,6 +960,13 @@ class PromptService:
             runtime_policy_explicit or "agent_role" in data
         ) and self.should_force_free_text_output(agent_role)
 
+        # A decision agent answers its questions instead of an output schema.
+        decision_spec = self._resolve_decision_spec(data, existing_prompt)
+        if decision_spec is not None:
+            output_schema, output_schema_yaml = None, None
+        llm_model = self._normalize_llm_model(company_short_name, data.get("llm_model"))
+        self._check_model_fits_agent_type(company_short_name, llm_model, decision_spec is not None)
+
         new_prompt = Prompt(
             company_id=company.id,
             name=prompt_name,
@@ -892,10 +997,11 @@ class PromptService:
             attachment_fallback=self._normalize_attachment_fallback(
                 data.get("attachment_fallback", company_default_policy["attachment_fallback"])
             ),
-            llm_model=self._normalize_llm_model(company_short_name, data.get("llm_model")),
+            llm_model=llm_model,
             llm_request_options=llm_request_options,
             tool_policy=tool_policy,
             runtime_policy=runtime_policy,
+            decision_spec=decision_spec,
         )
         self.llm_query_repo.create_or_update_prompt(new_prompt)
 
@@ -1130,6 +1236,12 @@ class PromptService:
                 runtime_policy = self.normalize_runtime_policy(prompt_data.get("runtime_policy"))
                 agent_role = runtime_policy["role"]
                 force_free_text_output = self.should_force_free_text_output(agent_role)
+                decision_spec = (
+                    self._parse_decision_spec_payload(prompt_data.get("decision_spec"))
+                    if prompt_data.get("decision_spec") is not None else None
+                )
+                if decision_spec is not None:
+                    normalized_schema = None
                 new_prompt = Prompt(
                     company_id=company.id,
                     name=prompt_name,
@@ -1170,6 +1282,7 @@ class PromptService:
                     ),
                     tool_policy=self._normalize_tool_policy(prompt_data.get("tool_policy")),
                     runtime_policy=runtime_policy,
+                    decision_spec=decision_spec,
                 )
 
                 self.llm_query_repo.create_or_update_prompt(new_prompt)

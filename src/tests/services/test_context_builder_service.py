@@ -410,6 +410,22 @@ class TestContextBuilderService:
         assert render_kwargs["client_data"]["company"] == "Acme Consumer"
         assert render_kwargs["client_data"]["company_short_name"] == MOCK_COMPANY_SHORT_NAME
 
+    def test_render_decision_case_is_only_the_rendered_template(self):
+        # A decision model reads its input literally (BL-008): nothing is appended.
+        self.mock_profile_service.get_profile_by_identifier.return_value = {"user_fullname": "Ana"}
+        self.mock_prompt_service.get_prompt_content.return_value = "Asunto: {{ asunto }}"
+        self.mock_util.render_prompt_from_string.return_value = "  Asunto: factura vencida\n"
+
+        state = self.service.render_decision_case(
+            self.mock_company, MOCK_USER_ID, {"asunto": "factura vencida"}, "clasificar"
+        )
+
+        assert state == "Asunto: factura vencida"
+        render_kwargs = self.mock_util.render_prompt_from_string.call_args.kwargs
+        assert render_kwargs["client_data"]["asunto"] == "factura vencida"
+        assert render_kwargs["client_data"]["user_fullname"] == "Ana"
+        assert render_kwargs["client_data"]["company_short_name"] == MOCK_COMPANY_SHORT_NAME
+
     def test_process_attachments_separates_images_and_text(self):
         """Should separate image files from text files and decode text."""
         # Arrange

@@ -139,6 +139,7 @@ class TestPromptService:
                     },
                     'runtime_provider': 'query_service',
                     'runtime_config': {},
+                    'agent_type': 'conversational',
                 }],
             }]
         }
@@ -653,6 +654,138 @@ properties:
 
         saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
         assert saved_prompt.llm_model == 'gpt-4.1-mini'
+
+    # --- Decision agents (BL-008) ---
+
+    DECISION_SPEC_YAML = """questions:
+  area:
+    type: choice
+    instructions: ¿Qué área debe atenderlo?
+    criteria:
+      cobranza: Pagos y facturas.
+      legal: Reclamos formales.
+"""
+
+    def _decision_models(self):
+        self.mock_configuration_service.get_llm_configuration.return_value = (
+            'gpt-4.1-mini', [{'id': 'gpt-4.1-mini'}, {'id': 'typesafe/jev-1.14'}],
+        )
+        self.mock_configuration_service.get_llm_model_config.side_effect = (
+            lambda company, model: {'capabilities': {'kind': 'decision'}} if model == 'typesafe/jev-1.14' else {}
+        )
+
+    def test_a_new_decision_agent_starts_with_no_questions(self):
+        self.llm_query_repo.get_prompt_by_name.return_value = None  # a new agent
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_category_by_name.return_value = None
+
+        self.prompt_service.save_prompt('test_co', 'clasificar', {'content': 'Caso', 'agent_type': 'decision'})
+
+        saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
+        assert saved_prompt.decision_spec == {'questions': {}}
+
+    def test_a_decision_agent_stores_its_questions_and_no_output_schema(self):
+        self.llm_query_repo.get_prompt_by_name.return_value = None  # a new agent
+        self._decision_models()
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_category_by_name.return_value = None
+
+        self.prompt_service.save_prompt('test_co', 'clasificar', {
+            'content': 'Caso: {{ asunto }}',
+            'agent_type': 'decision',
+            'decision_spec': self.DECISION_SPEC_YAML,
+            'output_schema_yaml': 'type: object',
+            'llm_model': 'typesafe/jev-1.14',
+        })
+
+        saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
+        assert saved_prompt.decision_spec['questions']['area']['criteria']['legal'] == 'Reclamos formales.'
+        assert saved_prompt.output_schema is None and saved_prompt.output_schema_yaml is None
+        assert saved_prompt.llm_model == 'typesafe/jev-1.14'
+
+    def test_a_decision_agent_rejects_a_chat_model(self):
+        self.llm_query_repo.get_prompt_by_name.return_value = None  # a new agent
+        self._decision_models()
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.prompt_service.save_prompt('test_co', 'clasificar', {
+                'agent_type': 'decision', 'llm_model': 'gpt-4.1-mini',
+            })
+        assert 'not a decision model' in str(exc.value)
+
+    def test_a_conversational_agent_rejects_a_decision_model(self):
+        self.llm_query_repo.get_prompt_by_name.return_value = None  # a new agent
+        self._decision_models()
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.prompt_service.save_prompt('test_co', 'chat', {'llm_model': 'typesafe/jev-1.14'})
+        assert 'is a decision model' in str(exc.value)
+
+    def test_an_invalid_question_is_rejected_on_save(self):
+        self.llm_query_repo.get_prompt_by_name.return_value = None  # a new agent
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.prompt_service.save_prompt('test_co', 'clasificar', {
+                'agent_type': 'decision',
+                'decision_spec': {'questions': {'area': {'type': 'choice', 'instructions': '?'}}},
+            })
+        assert 'two options' in str(exc.value)
+
+    def test_the_agent_type_cannot_change(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        conversational = MagicMock(spec=Prompt)
+        conversational.decision_spec = None
+        self.prompt_service.get_prompt_definition = MagicMock(return_value=conversational)
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.prompt_service.save_prompt('test_co', 'chat', {'decision_spec': self.DECISION_SPEC_YAML})
+        assert 'cannot become a decision agent' in str(exc.value)
+
+        decision = MagicMock(spec=Prompt)
+        decision.decision_spec = {'questions': {}}
+        self.prompt_service.get_prompt_definition = MagicMock(return_value=decision)
+
+        with pytest.raises(IAToolkitException) as exc:
+            self.prompt_service.save_prompt('test_co', 'clasificar', {'decision_spec': None})
+        assert 'cannot become a conversational agent' in str(exc.value)
+
+    def test_a_save_that_omits_the_questions_keeps_them(self):
+        # Restoring a version or changing the model rewrites the agent field by field.
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        existing = MagicMock(spec=Prompt)
+        existing.decision_spec = {'questions': {'q': {'type': 'noul', 'instructions': '?'}}}
+        self.prompt_service.get_prompt_definition = MagicMock(return_value=existing)
+
+        self.prompt_service.save_prompt('test_co', 'clasificar', {'content': 'Otro caso'})
+
+        saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
+        assert saved_prompt.decision_spec == existing.decision_spec
+
+    def test_decision_agents_are_not_in_the_chat_list(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        chat = self._build_prompt_mock(1, 'chat', True)
+        chat.decision_spec = None
+        decision = self._build_prompt_mock(2, 'clasificar', True)
+        decision.decision_spec = {'questions': {}}
+        self.llm_query_repo.get_prompts.return_value = [chat, decision]
+
+        for_chat = self.prompt_service.get_prompts(company_short_name='test_company')
+        for_admin = self.prompt_service.get_prompts(company_short_name='test_company', include_all=True)
+
+        assert [p['prompt'] for c in for_chat['message'] for p in c['prompts']] == ['chat']
+        assert {p['prompt']: p['agent_type'] for c in for_admin['message'] for p in c['prompts']} == {
+            'chat': 'conversational', 'clasificar': 'decision',
+        }
+
+    def test_dump_decision_spec_yaml_keeps_the_order(self):
+        spec = {'questions': {'b': {'type': 'noul', 'instructions': '¿B?'}, 'a': {'type': 'noul', 'instructions': '¿A?'}}}
+        dumped = PromptService.dump_decision_spec_yaml(spec)
+        assert dumped.index('b:') < dumped.index('a:')
+        assert '¿B?' in dumped
+        assert PromptService.dump_decision_spec_yaml(None) == ''
 
     def test_save_prompt_persists_queue_tier(self):
         self.profile_repo.get_company_by_short_name.return_value = self.mock_company

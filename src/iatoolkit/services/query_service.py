@@ -27,6 +27,7 @@ import json
 import re
 from dataclasses import dataclass
 from iatoolkit.common import access
+from iatoolkit.common.decision_types import is_decision_model
 
 
 @dataclass
@@ -1374,6 +1375,68 @@ class QueryService:
         except Exception:
             return False
 
+    def _run_decision_agent(self,
+                            *,
+                            company,
+                            user_identifier: str,
+                            model: Optional[str],
+                            prompt_name: str,
+                            client_data: dict,
+                            task_id: Optional[int],
+                            files: list,
+                            prompt_output_contract: dict,
+                            execution_trace: dict | None) -> dict:
+        company_short_name = company.short_name
+        if files:
+            return {"error": True,
+                    "error_message": "Decision agents do not take attachments yet: send the case in the agent's fields."}
+        if not str(model or "").strip() and not str(prompt_output_contract.get("llm_model") or "").strip():
+            return {"error": True,
+                    "error_message": f"Agent '{prompt_name}' has no decision model: choose one in its settings."}
+
+        effective_model = self._resolve_model(company_short_name, model, prompt_output_contract)
+        if effective_model and not access.can(company_short_name, user_identifier, access.USE, "model",
+                                              effective_model):
+            return {"error": True, "status_code": 403,
+                    "error_message": self.i18n_service.t('errors.access.model_denied', model=effective_model)}
+
+        safe_client_data = client_data if isinstance(client_data, dict) else {}
+        state = self.context_builder.render_decision_case(
+            company=company,
+            user_identifier=user_identifier,
+            client_data=safe_client_data,
+            prompt_name=prompt_name,
+        )
+        question = json.dumps({'prompt': prompt_name, 'data': safe_client_data}, default=str)
+
+        execution_metadata: dict = {}
+        request_source = str(safe_client_data.get("source") or "").strip().lower() or None
+        if request_source:
+            execution_metadata["request_source"] = request_source
+        request_metadata = self._resolve_prompt_request_metadata(prompt_output_contract)
+        telemetry_request = self._resolve_telemetry_request(
+            company_short_name=company_short_name,
+            user_identifier=user_identifier,
+            effective_model=effective_model,
+            provider="openrouter",
+            task_id=task_id,
+            prompt_output_contract=prompt_output_contract,
+            execution_metadata=execution_metadata,
+            request_metadata=request_metadata,
+        )
+        return self.llm_client.invoke_decision(
+            company,
+            user_identifier,
+            model=effective_model,
+            state=state,
+            decision_spec=prompt_output_contract.get("decision_spec") or {},
+            question=question,
+            task_id=task_id,
+            execution_metadata=execution_metadata,
+            telemetry_request=telemetry_request,
+            execution_trace=execution_trace,
+        )
+
     def llm_query(self,
                   company_short_name: str,
                   user_identifier: str,
@@ -1442,6 +1505,23 @@ class QueryService:
             # output contract
             prompt_output_contract = self._resolve_prompt_output_contract(company, prompt_name)
             log_stage("prompt_output_contract")
+
+            # A decision agent (BL-008) does not talk to an LLM: its template renders
+            # the case and a decision model answers its questions. Every entry point
+            # (chat, API, MCP, invocations, tasks) arrives here, so this is the one
+            # place it is diverted.
+            if prompt_output_contract.get("decision_spec") is not None:
+                return self._run_decision_agent(
+                    company=company,
+                    user_identifier=user_identifier,
+                    model=model,
+                    prompt_name=prompt_name,
+                    client_data=client_data,
+                    task_id=task_id,
+                    files=files,
+                    prompt_output_contract=prompt_output_contract,
+                    execution_trace=execution_trace,
+                )
             is_agent_session_execution = self._is_agent_session_execution(
                 prompt_name=prompt_name,
                 client_data=client_data,
@@ -1453,6 +1533,11 @@ class QueryService:
                                                   effective_model):
                 return {"error": True, "status_code": 403,
                         "error_message": self.i18n_service.t('errors.access.model_denied', model=effective_model)}
+            if effective_model and is_decision_model(
+                self.configuration_service.get_llm_model_config(company_short_name, effective_model)
+            ):
+                return {"error": True,
+                        "error_message": f"Model '{effective_model}' is a decision model: it only runs decision agents."}
             output_schema = self._build_output_text_schema_payload(
                 company_short_name,
                 effective_model,

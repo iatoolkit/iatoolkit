@@ -232,6 +232,7 @@ class LLMQueryRepo:
                 dict(getattr(new_prompt, "runtime_policy", None) or {})
                 or dict(getattr(prompt, "runtime_policy", None) or {})
             )
+            prompt.decision_spec = getattr(new_prompt, "decision_spec", None)
         else:
             if new_prompt.active is None:
                 new_prompt.active = True

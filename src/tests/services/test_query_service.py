@@ -290,6 +290,95 @@ class TestQueryService:
         assert "gpt-4o" in result["error_message"]
         self.mock_llm_client.invoke.assert_not_called()
 
+    # --- Decision agents (BL-008) ---
+
+    def _decision_agent_setup(self, llm_model="typesafe/jev-1.14"):
+        self.decision_spec = {"questions": {"area": {"type": "noul", "instructions": "¿Es cobranza?"}}}
+        self.mock_context_builder.get_prompt_output_contract.return_value = {
+            "prompt_name": "clasificar_correo",
+            "decision_spec": self.decision_spec,
+            "llm_model": llm_model,
+        }
+        self.mock_configuration_service.get_llm_configuration.side_effect = None
+        self.mock_configuration_service.get_llm_configuration.return_value = (
+            "gpt-5-mini", [{"id": "gpt-5-mini"}, {"id": "typesafe/jev-1.14"}],
+        )
+        self.mock_context_builder.render_decision_case.return_value = "Asunto: factura vencida"
+        self.mock_llm_client.invoke_decision.return_value = {"valid_response": True, "structured_output": {}}
+
+    def test_a_decision_agent_runs_its_decision_model_instead_of_the_llm(self):
+        self._decision_agent_setup()
+
+        result = self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="clasificar_correo",
+            client_data={"asunto": "factura vencida", "source": "api"},
+        )
+
+        assert result == {"valid_response": True, "structured_output": {}}
+        self.mock_llm_client.invoke.assert_not_called()
+        self.mock_context_builder.build_user_turn_prompt.assert_not_called()
+        self.mock_history_manager.update_history.assert_not_called()
+        self.mock_context_builder.render_decision_case.assert_called_once_with(
+            company=self.mock_company,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            client_data={"asunto": "factura vencida", "source": "api"},
+            prompt_name="clasificar_correo",
+        )
+        kwargs = self.mock_llm_client.invoke_decision.call_args.kwargs
+        assert kwargs["model"] == "typesafe/jev-1.14"
+        assert kwargs["state"] == "Asunto: factura vencida"
+        assert kwargs["decision_spec"] == self.decision_spec
+        assert kwargs["execution_metadata"] == {"request_source": "api"}
+        assert kwargs["execution_trace"]["prompt_name"] == "clasificar_correo"
+
+    def test_a_decision_agent_without_a_model_says_so(self):
+        self._decision_agent_setup(llm_model=None)
+
+        result = self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="clasificar_correo",
+        )
+
+        assert result["error"] is True
+        assert "no decision model" in result["error_message"]
+        self.mock_llm_client.invoke_decision.assert_not_called()
+
+    def test_a_decision_agent_refuses_attachments(self):
+        self._decision_agent_setup()
+
+        result = self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            prompt_name="clasificar_correo",
+            files=[{"filename": "a.pdf", "content": "x"}],
+        )
+
+        assert result["error"] is True
+        self.mock_llm_client.invoke_decision.assert_not_called()
+
+    def test_a_chat_cannot_run_on_a_decision_model(self):
+        self.mock_configuration_service.get_llm_configuration.side_effect = None
+        self.mock_configuration_service.get_llm_configuration.return_value = (
+            "gpt-5-mini", [{"id": "gpt-5-mini"}, {"id": "typesafe/jev-1.14"}],
+        )
+        self.mock_configuration_service.get_llm_model_config.side_effect = (
+            lambda company, model: {"capabilities": {"kind": "decision"}} if model == "typesafe/jev-1.14" else None
+        )
+
+        result = self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            question="Hola",
+            model="typesafe/jev-1.14",
+        )
+
+        assert result["error"] is True
+        assert "decision model" in result["error_message"]
+        self.mock_llm_client.invoke.assert_not_called()
+
     def test_llm_query_passes_delivery_channel_for_whatsapp_runtime(self):
         user_prompt = "User prompt with context"
         effective_q = "Hi"

@@ -15,6 +15,77 @@ import json
 
 
 class TestLLMClient:
+
+    # --- Decision agents (BL-008) ---
+
+    def _decision_result(self):
+        from iatoolkit.common.decision_types import DecisionResult
+        return DecisionResult.from_response(
+            {
+                "model": "typesafe/jev-1.14-20261014",
+                "answers": {"es_cobranza": {"type": "noul", "noul": 0.9}},
+                "usage": {"input_tokens": 300, "output_tokens": 2, "cost": 0.00002},
+                "id": "gen-dec-1",
+                "provider": "TypeSafe",
+            },
+            requested_model="typesafe/jev-1.14",
+            latency_ms=480,
+        )
+
+    def test_invoke_decision_records_the_execution_like_any_agent(self):
+        decision_service = MagicMock()
+        decision_service.decide.return_value = self._decision_result()
+        self.client._decision_service = decision_service
+        spec = {"questions": {"es_cobranza": {"type": "noul", "instructions": "?"}}}
+
+        result = self.client.invoke_decision(
+            self.company, "ana@acme.cl",
+            model="typesafe/jev-1.14", state="Asunto: factura", decision_spec=spec,
+            question='{"prompt": "clasificar"}', task_id=7,
+            execution_metadata={"request_source": "api"},
+            execution_trace={"prompt_name": "clasificar", "prompt_inputs": {"asunto": "factura"}},
+        )
+
+        decision_service.decide.assert_called_once()
+        assert decision_service.decide.call_args.kwargs["state"] == "Asunto: factura"
+        query = self.llmquery_repo.add_query.call_args.args[0]
+        assert query.valid_response is True
+        assert query.task_id == 7
+        assert query.prompt_name == "clasificar"
+        assert query.output == "es_cobranza: sí (confianza 0.80)"
+        assert query.stats["kind"] == "decision"
+        # Billing reads the catalogue key, not the dated model that answered.
+        assert query.stats["model"] == "typesafe/jev-1.14"
+        assert query.stats["resolved_model"] == "typesafe/jev-1.14-20261014"
+        assert query.stats["input_tokens"] == 300 and query.stats["total_tokens"] == 302
+        assert query.stats["request_source"] == "api"
+        assert query.response["decision"]["answers"]["es_cobranza"]["value"] is True
+        assert query.response["structured_output"]["es_cobranza"]["value"] is True
+        assert query.response["format"] == "decision"
+        assert query.response["state"] == "Asunto: factura"
+
+        assert result["valid_response"] is True
+        assert result["structured_output"]["es_cobranza"]["confidence"] == pytest.approx(0.8)
+        assert result["decision"]["provider"] == "TypeSafe"
+        assert result["answer_format"] == "decision"
+
+    def test_invoke_decision_records_a_failure_and_raises(self):
+        decision_service = MagicMock()
+        decision_service.decide.side_effect = IAToolkitException(
+            IAToolkitException.ErrorType.MODEL, "Model 'x' is not a decision model enabled for this company."
+        )
+        self.client._decision_service = decision_service
+
+        with pytest.raises(IAToolkitException):
+            self.client.invoke_decision(
+                self.company, "ana@acme.cl", model="x", state="s",
+                decision_spec={"questions": {}}, question="q",
+            )
+
+        query = self.llmquery_repo.add_query.call_args.args[0]
+        assert query.valid_response is False
+        assert query.stats["kind"] == "decision" and query.stats["error"] is True
+        assert "not a decision model" in query.output
     def setup_method(self):
         """Setup común para todos los tests"""
         # Mocks de dependencias inyectadas

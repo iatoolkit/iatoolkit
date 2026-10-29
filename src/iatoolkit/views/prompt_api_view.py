@@ -60,6 +60,14 @@ class PromptApiView(MethodView):
                 meta["context_policy"] = runtime_policy["context"]
                 meta["runtime_provider"] = runtime_policy["runtime_provider"]
                 meta["runtime_config"] = runtime_policy["runtime_config"]
+                meta["agent_type"] = (
+                    PromptService.AGENT_TYPE_DECISION
+                    if isinstance(prompt_obj.decision_spec, dict)
+                    else PromptService.AGENT_TYPE_CONVERSATIONAL
+                )
+                meta["decision_spec_yaml"] = PromptService.dump_decision_spec_yaml(
+                    prompt_obj.decision_spec if isinstance(prompt_obj.decision_spec, dict) else None
+                )
 
                 return jsonify({
                     "meta": meta,

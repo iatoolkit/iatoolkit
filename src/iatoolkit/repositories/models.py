@@ -1070,10 +1070,20 @@ class Prompt(Base):
     llm_request_options = Column(JSON_NATIVE, nullable=False, default=dict)
     tool_policy = Column(JSON_NATIVE, nullable=False, default=dict)
     runtime_policy = Column(JSON_NATIVE, nullable=False, default=dict)
+    #: The questions of a decision agent (BL-008), as
+    #: {"questions": {name: {type, instructions, criteria}}}. Non-null marks the
+    #: agent as a decision agent: its template renders the case a decision model
+    #: answers these questions about. Set when the agent is created; NULL for
+    #: every conversational agent.
+    decision_spec = Column(JSON, nullable=True, default=None)
     created_at = Column(DateTime, default=datetime.now)
 
     def to_dict(self):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
+
+    @property
+    def is_decision_agent(self) -> bool:
+        return isinstance(self.decision_spec, dict)
 
     company = relationship("Company", back_populates="prompts")
     category = relationship("PromptCategory", back_populates="prompts")

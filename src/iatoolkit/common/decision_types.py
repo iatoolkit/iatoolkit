@@ -167,8 +167,15 @@ def parse_decision_spec(spec: Any) -> dict[str, DecisionQuestion]:
     return {name: parse_question(name, raw) for name, raw in raw_questions.items()}
 
 
-def normalize_decision_spec(spec: Any) -> dict[str, Any]:
-    """The spec as it is stored: validated questions, in their order."""
+def normalize_decision_spec(spec: Any, *, allow_empty: bool = False) -> dict[str, Any]:
+    """The spec as it is stored: validated questions, in their order.
+
+    `allow_empty` is for saving: a decision agent exists from the moment it is
+    created, before anyone has written its questions. Running one still needs
+    at least one (`parse_decision_spec`).
+    """
+    if allow_empty and isinstance(spec, dict) and not spec.get("questions"):
+        return {"questions": {}}
     questions = parse_decision_spec(spec)
     return {"questions": {name: question.to_wire() for name, question in questions.items()}}
 

@@ -170,6 +170,10 @@ class ContextBuilderService:
             "context_policy": runtime_policy["context"],
             "schema": schema,
             "schema_yaml": prompt_obj.output_schema_yaml,
+            # Non-null for a decision agent (BL-008): its questions, which replace the schema.
+            "decision_spec": (
+                prompt_obj.decision_spec if isinstance(getattr(prompt_obj, "decision_spec", None), dict) else None
+            ),
             "schema_mode": prompt_obj.output_schema_mode or "best_effort",
             "response_mode": prompt_obj.output_response_mode or "chat_compatible",
             "attachment_mode": getattr(prompt_obj, "attachment_mode", None),
@@ -536,6 +540,43 @@ class ContextBuilderService:
         )
         return "\n".join(lines)
 
+    def _template_client_data(self, company: Company, user_identifier: str, client_data: dict) -> dict:
+        """The variables a prompt template sees: the user's profile, the request's data and the company."""
+        # We fetch the profile again to ensure we have the latest data for Jinja rendering context
+        user_profile = self.profile_service.get_profile_by_identifier(company.short_name, user_identifier)
+
+        final_client_data = (user_profile or {}).copy()
+        final_client_data.update(client_data or {})
+        if company is not None:
+            company_name = str(getattr(company, "name", "") or "").strip()
+            company_short_name = str(getattr(company, "short_name", "") or "").strip()
+            if company_name and not str(final_client_data.get("company_name") or "").strip():
+                final_client_data["company_name"] = company_name
+            if company_name and not str(final_client_data.get("company") or "").strip():
+                final_client_data["company"] = company_name
+            if company_short_name and not str(final_client_data.get("company_short_name") or "").strip():
+                final_client_data["company_short_name"] = company_short_name
+        return final_client_data
+
+    def render_decision_case(self, company: Company, user_identifier: str, client_data: dict,
+                             prompt_name: str) -> str:
+        """The case a decision agent asks its model about: its template, rendered, and nothing else.
+
+        Unlike a chat turn, nothing is appended: a decision model reads its input
+        literally, and every added line is noise it weighs (BL-008).
+        """
+        final_client_data = self._template_client_data(company, user_identifier, client_data)
+        question = json.dumps({'prompt': prompt_name, 'data': final_client_data}, default=str)
+        prompt_content = self.prompt_service.get_prompt_content(company, prompt_name)
+        return str(self.util.render_prompt_from_string(
+            template_string=prompt_content,
+            question=question,
+            client_data=final_client_data,
+            user_identifier=user_identifier,
+            company=company,
+            images=[],
+        ) or "").strip()
+
     def build_user_turn_prompt(self,
                                company: Company,
                                user_identifier: str,
@@ -550,20 +591,7 @@ class ContextBuilderService:
         Returns:
             Tuple(user_turn_prompt_string, effective_question_string, list_of_images)
         """
-        # We fetch the profile again to ensure we have the latest data for Jinja rendering context
-        user_profile = self.profile_service.get_profile_by_identifier(company.short_name, user_identifier)
-
-        final_client_data = (user_profile or {}).copy()
-        final_client_data.update(client_data)
-        if company is not None:
-            company_name = str(getattr(company, "name", "") or "").strip()
-            company_short_name = str(getattr(company, "short_name", "") or "").strip()
-            if company_name and not str(final_client_data.get("company_name") or "").strip():
-                final_client_data["company_name"] = company_name
-            if company_name and not str(final_client_data.get("company") or "").strip():
-                final_client_data["company"] = company_name
-            if company_short_name and not str(final_client_data.get("company_short_name") or "").strip():
-                final_client_data["company_short_name"] = company_short_name
+        final_client_data = self._template_client_data(company, user_identifier, client_data)
 
         # Process attached files: extract text content and separate images
         files_context, images = self._process_attachments(files)
