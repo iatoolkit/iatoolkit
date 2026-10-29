@@ -2555,6 +2555,8 @@ ui:
     label_default: "Default"
     label_enabled: "Enabled"
     label_disabled: "Not enabled"
+    label_decision: "Decision"
+    upstream_missing: "OpenRouter returned no data for this model, so its capabilities were not loaded. A decision model will not be recognised as one."
     action_configure: "Configure"
     action_enable: "Enable"
     modal_title: "Model settings"

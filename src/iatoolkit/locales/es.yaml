@@ -2573,6 +2573,8 @@ ui:
     label_default: "Por defecto"
     label_enabled: "Habilitado"
     label_disabled: "No habilitado"
+    label_decision: "Decisión"
+    upstream_missing: "OpenRouter no devolvió datos de este modelo, así que no se cargaron sus capacidades. Un modelo de decisión no quedará reconocido como tal."
     action_configure: "Configurar"
     action_enable: "Habilitar"
     modal_title: "Configuración del modelo"
