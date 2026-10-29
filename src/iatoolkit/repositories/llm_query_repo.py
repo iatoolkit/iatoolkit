@@ -14,6 +14,7 @@ from iatoolkit.repositories.models import (
 from injector import inject
 from iatoolkit.repositories.database_manager import DatabaseManager
 from sqlalchemy import or_, and_
+from sqlalchemy.orm.attributes import flag_modified
 from iatoolkit.repositories.models import CONTEXT_INIT_REQUEST_SOURCE
 from typing import List
 
@@ -233,6 +234,9 @@ class LLMQueryRepo:
                 or dict(getattr(prompt, "runtime_policy", None) or {})
             )
             prompt.decision_spec = getattr(new_prompt, "decision_spec", None)
+            # The order of the questions is part of the agent, and dicts compare
+            # equal regardless of it: without this a reorder is never written.
+            flag_modified(prompt, "decision_spec")
         else:
             if new_prompt.active is None:
                 new_prompt.active = True

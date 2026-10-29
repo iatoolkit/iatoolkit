@@ -307,6 +307,23 @@ class TestLLMQueryRepo:
         assert result.custom_fields == [{'key': 'val'}]
         assert result.queue_tier == "low"
 
+    def test_create_or_update_prompt_writes_a_reorder_of_the_questions(self):
+        # Dicts compare equal in any order, so a reorder alone used to be dropped.
+        spec = {"questions": {"a": {"type": "noul", "instructions": "A?"},
+                              "b": {"type": "noul", "instructions": "B?"}}}
+        prompt = Prompt(name="decide", company_id=self.company.id, description="d", filename="d.prompt",
+                        decision_spec=spec)
+        self.session.add(prompt)
+        self.session.commit()
+
+        reordered = {"questions": {"b": spec["questions"]["b"], "a": spec["questions"]["a"]}}
+        self.repo.create_or_update_prompt(Prompt(name="decide", company_id=self.company.id, description="d",
+                                                 filename="d.prompt", decision_spec=reordered))
+        self.session.expire_all()
+
+        stored = self.session.query(Prompt).filter_by(name="decide").one().decision_spec
+        assert list(stored["questions"]) == ["b", "a"]
+
     def test_create_or_update_prompt_updates_existing_active_flag(self):
         prompt = Prompt(
             name="p_update_active",
