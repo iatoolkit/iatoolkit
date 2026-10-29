@@ -180,6 +180,25 @@ class LLMProxy:
             **request_kwargs,
         )
 
+    def resolve_client_config(
+        self,
+        company_short_name: str,
+        provider: str,
+        model_config: Dict[str, Any] | None = None,
+    ) -> dict:
+        """The credentials, endpoint, headers and timeouts a call to `provider` uses.
+
+        Public for the callers that reach a provider outside the chat adapters —
+        the decision models (BL-008) are served by OpenRouter on an endpoint the
+        OpenAI SDK does not speak — so they pay with the same key, through the
+        same gateway and with the same timeouts as every other call.
+        """
+        return self._get_client_config(company_short_name, provider, model_config=model_config)
+
+    @staticmethod
+    def wire_model(model: str, model_config: Dict[str, Any] | None) -> str:
+        return LLMProxy._wire_model(model, model_config)
+
     def describe_transport(self, company_short_name: str, model: str) -> str:
         provider = self._resolve_provider_for_company_model(
             company_short_name=company_short_name,
