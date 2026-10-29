@@ -12,6 +12,7 @@ endpoint but none of its adapters.
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 from typing import Any
@@ -25,6 +26,7 @@ from iatoolkit.common.decision_types import (
     parse_decision_spec,
 )
 from iatoolkit.common.exceptions import IAToolkitException
+from iatoolkit.services.decision_attachments import DecisionImage
 from iatoolkit.infra.llm_proxy import LLMProxy
 from iatoolkit.infra.openrouter_decision_client import OpenRouterDecisionClient
 from iatoolkit.services.configuration_service import ConfigurationService
@@ -98,6 +100,7 @@ class DecisionService:
         decision_spec: dict,
         user_identifier: str | None = None,
         telemetry_execution: Any = None,
+        images: list[DecisionImage] | None = None,
     ) -> DecisionResult:
         try:
             questions = parse_decision_spec(decision_spec)
@@ -116,6 +119,10 @@ class DecisionService:
                 "The case to decide on is empty: the agent template rendered no text.",
             )
         self._warn_if_too_long(company_short_name, model_key, model_config, state_text)
+        images = list(images or [])
+        if images:
+            self._check_takes_images(model_key, model_config)
+        wire_state, assets = self.build_state(model_key, state_text, images)
 
         client_config = self.llm_proxy.resolve_client_config(
             company_short_name, DECISION_PROVIDER, model_config=model_config
@@ -131,7 +138,11 @@ class DecisionService:
                 name="iatoolkit.decision",
                 span_type="llm",
                 event={
-                    "input": {"state": state_text, "questions": {n: q.to_wire() for n, q in questions.items()}},
+                    "input": {
+                        "state": state_text,
+                        "questions": {n: q.to_wire() for n, q in questions.items()},
+                        "images": [{"name": i.name, "source": i.source, "page": i.page} for i in images],
+                    },
                     "metadata": {"model": wire_model, "company": company_short_name},
                 },
             )
@@ -143,8 +154,9 @@ class DecisionService:
                 api_key=client_config.get("api_key") or "",
                 url=url,
                 model=wire_model,
-                state=state_text,
+                state=wire_state,
                 questions=questions,
+                assets=assets,
                 provider_policy=provider_policy if isinstance(provider_policy, dict) else None,
                 default_headers=client_config.get("default_headers") or {},
                 connect_timeout_seconds=client_config.get("connect_timeout_seconds") or 10.0,
@@ -175,6 +187,45 @@ class DecisionService:
             result.latency_ms, result.cost_usd,
         )
         return result
+
+    @staticmethod
+    def _check_takes_images(model: str, model_config: dict) -> None:
+        capabilities = model_config.get("capabilities") if isinstance(model_config.get("capabilities"), dict) else {}
+        modalities = {str(item).strip().lower() for item in capabilities.get("input_modalities") or []}
+        if "image" not in modalities:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.INVALID_PARAMETER,
+                f"Decision model '{model}' does not read images; choose one that does, "
+                "or set the agent's attachment mode to extracted text.",
+            )
+
+    @staticmethod
+    def build_state(model: str, state_text: str, images: list[DecisionImage]) -> tuple[Any, dict | None]:
+        """The `state` and `assets` for a case with images (measured on 9 models).
+
+        Every model that reads images takes them as whole top-level items of an
+        array state, referenced by their asset key: `[case, "img_1", ...]`. Only
+        Jev also reads a reference inside text or a nested object. ScaleDown
+        takes no assets at all and reads one image as a document instead.
+        """
+        if not images:
+            return state_text, None
+        if model.startswith("scaledown/"):
+            if len(images) > 1:
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_PARAMETER,
+                    f"Decision model '{model}' reads one image per case; {len(images)} were sent.",
+                )
+            return {
+                "text": state_text,
+                "document": base64.b64encode(images[0].data).decode("ascii"),
+                "document_mime_type": "image/jpeg",
+            }, None
+        assets = {
+            image.name: {"data_base64": base64.b64encode(image.data).decode("ascii"), "format": "jpg"}
+            for image in images
+        }
+        return [state_text, *[image.name for image in images]], assets
 
     @staticmethod
     def _warn_if_too_long(company_short_name: str, model: str, model_config: dict, state_text: str) -> None:

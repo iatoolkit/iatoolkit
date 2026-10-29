@@ -4,6 +4,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 from iatoolkit.services.query_service import QueryService, HistoryHandle
+from iatoolkit.services.decision_attachments import DecisionImage, PreparedAttachments
 from iatoolkit.services.user_session_context_service import UserSessionContextService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.services.configuration_service import ConfigurationService
@@ -304,6 +305,7 @@ class TestQueryService:
             "gpt-5-mini", [{"id": "gpt-5-mini"}, {"id": "typesafe/jev-1.14"}],
         )
         self.mock_context_builder.render_decision_case.return_value = "Asunto: factura vencida"
+        self.mock_context_builder.prepare_decision_attachments.return_value = PreparedAttachments()
         self.mock_llm_client.invoke_decision.return_value = {"valid_response": True, "structured_output": {}}
 
     def test_a_decision_agent_runs_its_decision_model_instead_of_the_llm(self):
@@ -346,18 +348,32 @@ class TestQueryService:
         assert "no decision model" in result["error_message"]
         self.mock_llm_client.invoke_decision.assert_not_called()
 
-    def test_a_decision_agent_refuses_attachments(self):
+    def test_a_decision_agent_sends_its_attachments_by_the_agent_mode(self):
         self._decision_agent_setup()
+        self.mock_context_builder.get_prompt_output_contract.return_value["attachment_mode"] = "native_plus_extracted"
+        self.mock_configuration_service.get_configuration.return_value = {"decisions": {"max_images": 3}}
+        image = DecisionImage(name="img_1", data=b"jpeg", source="factura.pdf", page=1)
+        self.mock_context_builder.prepare_decision_attachments.return_value = PreparedAttachments(
+            images=[image],
+            text="Documento adjunto 'factura.pdf':\nTotal $ 1.250.000",
+            manifest=[{"name": "factura.pdf", "sent_as": "text+pages"}],
+        )
+        files = [{"filename": "factura.pdf", "content": "eA=="}]
 
-        result = self.service.llm_query(
+        self.service.llm_query(
             company_short_name=MOCK_COMPANY_SHORT_NAME,
             user_identifier=MOCK_LOCAL_USER_ID,
             prompt_name="clasificar_correo",
-            files=[{"filename": "a.pdf", "content": "x"}],
+            files=files,
         )
 
-        assert result["error"] is True
-        self.mock_llm_client.invoke_decision.assert_not_called()
+        prepare_kwargs = self.mock_context_builder.prepare_decision_attachments.call_args
+        assert prepare_kwargs.args[1] == files
+        assert prepare_kwargs.kwargs == {"mode": "native_plus_extracted", "max_images": 3}
+        kwargs = self.mock_llm_client.invoke_decision.call_args.kwargs
+        assert kwargs["state"] == "Asunto: factura vencida\n\nDocumento adjunto 'factura.pdf':\nTotal $ 1.250.000"
+        assert kwargs["images"] == [image]
+        assert kwargs["attachments"] == [{"name": "factura.pdf", "sent_as": "text+pages"}]
 
     def test_a_chat_cannot_run_on_a_decision_model(self):
         self.mock_configuration_service.get_llm_configuration.side_effect = None

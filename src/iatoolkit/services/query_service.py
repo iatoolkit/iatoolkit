@@ -1387,9 +1387,6 @@ class QueryService:
                             prompt_output_contract: dict,
                             execution_trace: dict | None) -> dict:
         company_short_name = company.short_name
-        if files:
-            return {"error": True,
-                    "error_message": "Decision agents do not take attachments yet: send the case in the agent's fields."}
         if not str(model or "").strip() and not str(prompt_output_contract.get("llm_model") or "").strip():
             return {"error": True,
                     "error_message": f"Agent '{prompt_name}' has no decision model: choose one in its settings."}
@@ -1408,6 +1405,17 @@ class QueryService:
             prompt_name=prompt_name,
         )
         question = json.dumps({'prompt': prompt_name, 'data': safe_client_data}, default=str)
+
+        # Attachments follow the agent's attachment mode: extracted text joins the
+        # case, images (and PDF pages, in native mode) travel as images.
+        prepared = self.context_builder.prepare_decision_attachments(
+            company,
+            files or [],
+            mode=prompt_output_contract.get("attachment_mode"),
+            max_images=self._decision_max_images(company_short_name),
+        )
+        if prepared.text:
+            state = f"{state}\n\n{prepared.text}" if state else prepared.text
 
         execution_metadata: dict = {}
         request_source = str(safe_client_data.get("source") or "").strip().lower() or None
@@ -1435,7 +1443,20 @@ class QueryService:
             execution_metadata=execution_metadata,
             telemetry_request=telemetry_request,
             execution_trace=execution_trace,
+            images=prepared.images,
+            attachments=prepared.manifest,
         )
+
+    def _decision_max_images(self, company_short_name: str) -> int:
+        from iatoolkit.services.decision_attachments import DEFAULT_MAX_IMAGES
+
+        llm_config = self.configuration_service.get_configuration(company_short_name, "llm") or {}
+        decisions = llm_config.get("decisions") if isinstance(llm_config, dict) else None
+        raw = decisions.get("max_images") if isinstance(decisions, dict) else None
+        try:
+            return int(raw) if raw is not None else DEFAULT_MAX_IMAGES
+        except (TypeError, ValueError):
+            return DEFAULT_MAX_IMAGES
 
     def llm_query(self,
                   company_short_name: str,

@@ -100,3 +100,15 @@ class TestDecide:
             _decide(client)
         assert len(calls) == 3
         assert exc.value.error_type == IAToolkitException.ErrorType.LLM_ERROR
+
+    def test_with_images_a_server_error_is_not_retried_but_a_rate_limit_is(self):
+        assets = {"img_1": {"data_base64": "eA==", "format": "jpg"}}
+        calls = []
+        with pytest.raises(IAToolkitException):
+            _decide(_client([(500, {}), (200, RESPONSE)], calls), state=["caso", "img_1"], assets=assets)
+        assert len(calls) == 1
+        calls = []
+        _decide(_client([(429, {}), (200, RESPONSE)], calls), state=["caso", "img_1"], assets=assets)
+        assert len(calls) == 2
+        sent = json.loads(calls[1].content)
+        assert sent["assets"] == assets and sent["state"] == ["caso", "img_1"]

@@ -66,12 +66,15 @@ class OpenRouterDecisionClient:
         read_timeout_seconds: float = 60.0,
         retry_attempts: int = DEFAULT_RETRY_ATTEMPTS,
         user: str | None = None,
+        assets: dict[str, dict[str, str]] | None = None,
     ) -> DecisionResult:
         payload: dict[str, Any] = {
             "model": model,
             "state": state,
             "questions": {name: question.to_wire() for name, question in questions.items()},
         }
+        if assets:
+            payload["assets"] = assets
         if provider_policy:
             payload["provider"] = dict(provider_policy)
         if user:
@@ -109,7 +112,12 @@ class OpenRouterDecisionClient:
                 return DecisionResult.from_response(body, requested_model=model, latency_ms=latency_ms)
 
             message = self._error_message(response)
-            if response.status_code in RETRYABLE_STATUS and attempt < attempts:
+            # With images, a 5xx is how an oversized request answers (measured: a
+            # bare 500); sending it again only repeats it. Rate limits still retry.
+            retryable = response.status_code in RETRYABLE_STATUS and (
+                not assets or response.status_code == 429
+            )
+            if retryable and attempt < attempts:
                 logging.warning(
                     "Decision model '%s' answered %s (attempt %s/%s): %s",
                     model, response.status_code, attempt, attempts, message,

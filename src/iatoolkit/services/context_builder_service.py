@@ -577,6 +577,22 @@ class ContextBuilderService:
             images=[],
         ) or "").strip()
 
+    def prepare_decision_attachments(self, company: Company, files: list, *, mode: str | None,
+                                     max_images: int):
+        """A decision agent's attachments (BL-008, Etapa 2): images to send and text for the case."""
+        from iatoolkit.services.decision_attachments import prepare_decision_attachments
+
+        company_short_name = str(getattr(company, "short_name", "") or "default")
+        return prepare_decision_attachments(
+            files,
+            mode=mode,
+            max_images=max_images,
+            decode=self.util.normalize_base64_payload,
+            extract_text=lambda filename, content: self.parsing_service.extract_text_for_context(
+                filename=filename, content=content, company_short_name=company_short_name,
+            ),
+        )
+
     def build_user_turn_prompt(self,
                                company: Company,
                                user_identifier: str,

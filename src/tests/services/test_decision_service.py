@@ -7,6 +7,7 @@ from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.infra.llm_proxy import LLMProxy
 from iatoolkit.infra.openrouter_decision_client import OpenRouterDecisionClient
 from iatoolkit.services.configuration_service import ConfigurationService
+from iatoolkit.services.decision_attachments import DecisionImage
 from iatoolkit.services.decision_service import DecisionService, is_decision_model
 from tests.common.test_decision_types import RESPONSE, SPEC
 
@@ -115,6 +116,45 @@ class TestDecisionService:
         telemetry.start_child_span.assert_called_once()
         assert telemetry.log_child_span.call_args.args[1]["metrics"]["prompt_tokens"] == 567
         telemetry.end_child_span.assert_called_once()
+
+    # --- Images (Etapa 2) ---
+
+    IMAGES = [DecisionImage(name="img_1", data=b"jpeg-1", source="a.png"),
+              DecisionImage(name="img_2", data=b"jpeg-2", source="b.pdf", page=1)]
+
+    def test_images_go_as_assets_referenced_from_an_array_state(self):
+        self.config.get_llm_model_config.return_value = {
+            **DECISION_CONFIG, "capabilities": {"kind": "decision", "input_modalities": ["text", "image"]},
+        }
+        self._decide(images=self.IMAGES)
+        kwargs = self.client.decide.call_args.kwargs
+        assert kwargs["state"] == ["Asunto: factura vencida", "img_1", "img_2"]
+        assert kwargs["assets"]["img_2"] == {"data_base64": "anBlZy0y", "format": "jpg"}
+
+    def test_scaledown_reads_one_image_as_a_document(self):
+        model = "scaledown/classify-1"
+        self.config.get_llm_configuration.return_value = (None, [{"id": model}])
+        self.config.get_llm_model_config.return_value = {
+            **DECISION_CONFIG, "id": model, "capabilities": {"kind": "decision", "input_modalities": ["image"]},
+        }
+        self._decide(model=model, images=self.IMAGES[:1])
+        kwargs = self.client.decide.call_args.kwargs
+        assert kwargs["state"] == {"text": "Asunto: factura vencida", "document": "anBlZy0x",
+                                   "document_mime_type": "image/jpeg"}
+        assert kwargs["assets"] is None
+        with pytest.raises(IAToolkitException):
+            self._decide(model=model, images=self.IMAGES)
+
+    def test_a_model_that_does_not_read_images_is_refused_before_calling(self):
+        with pytest.raises(IAToolkitException) as exc:
+            self._decide(images=self.IMAGES)
+        assert "does not read images" in str(exc.value)
+        self.client.decide.assert_not_called()
+
+    def test_without_images_the_state_stays_text(self):
+        self._decide()
+        kwargs = self.client.decide.call_args.kwargs
+        assert kwargs["state"] == "Asunto: factura vencida" and kwargs["assets"] is None
 
 
 def test_is_decision_model_reads_the_catalogue_kind():

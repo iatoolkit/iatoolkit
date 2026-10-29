@@ -64,10 +64,33 @@ class TestLLMClient:
         assert query.response["format"] == "decision"
         assert query.response["state"] == "Asunto: factura"
 
+        assert "attachments" not in query.stats
+        assert query.response["attachments"] == []
+
         assert result["valid_response"] is True
         assert result["structured_output"]["es_cobranza"]["confidence"] == pytest.approx(0.8)
         assert result["decision"]["provider"] == "TypeSafe"
         assert result["answer_format"] == "decision"
+
+    def test_invoke_decision_records_what_was_attached_but_never_the_bytes(self):
+        from iatoolkit.services.decision_attachments import DecisionImage
+        decision_service = MagicMock()
+        decision_service.decide.return_value = self._decision_result()
+        self.client._decision_service = decision_service
+        image = DecisionImage(name="img_1", data=b"jpeg-bytes", source="factura.pdf", page=1)
+        manifest = [{"name": "factura.pdf", "bytes": 1200, "sha256": "ab" * 32, "pages": 1, "sent_as": "pages"}]
+
+        self.client.invoke_decision(
+            self.company, "ana@acme.cl", model="typesafe/jev-1.14", state="caso",
+            decision_spec={"questions": {"es_cobranza": {"type": "noul", "instructions": "?"}}},
+            question="q", images=[image], attachments=manifest,
+        )
+
+        assert decision_service.decide.call_args.kwargs["images"] == [image]
+        query = self.llmquery_repo.add_query.call_args.args[0]
+        assert query.stats["attachments"] == {"count": 1, "images_sent": 1}
+        assert query.response["attachments"] == manifest
+        assert "jpeg-bytes" not in json.dumps(query.response, default=str)
 
     def test_invoke_decision_records_a_failure_and_raises(self):
         decision_service = MagicMock()

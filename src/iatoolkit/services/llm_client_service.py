@@ -146,7 +146,9 @@ class llmClient:
                         task_id: Optional[int] = None,
                         execution_metadata: Optional[Dict[str, Any]] = None,
                         telemetry_request: Optional[Dict[str, Any]] = None,
-                        execution_trace: Optional[Dict[str, Any]] = None) -> dict:
+                        execution_trace: Optional[Dict[str, Any]] = None,
+                        images: Optional[list] = None,
+                        attachments: Optional[List[Dict[str, Any]]] = None) -> dict:
         """Runs a decision agent's model (BL-008) and records it like any agent execution.
 
         Same table, same `stats` keys as a chat turn — `model`, tokens, response
@@ -159,6 +161,12 @@ class llmClient:
         telemetry_execution = self.telemetry_service.start_execution(telemetry_request)
         telemetry_execution.record_input({"state": state, "questions": (decision_spec or {}).get("questions")})
         base_stats: dict = {"model": model, "kind": "decision"}
+        if attachments:
+            # What was attached and how it was sent; never the bytes.
+            base_stats["attachments"] = {
+                "count": len(attachments),
+                "images_sent": len(images or []),
+            }
         for key, value in (execution_metadata or {}).items():
             if value is not None:
                 base_stats[key] = value
@@ -171,6 +179,7 @@ class llmClient:
                 decision_spec=decision_spec,
                 user_identifier=user_identifier,
                 telemetry_execution=telemetry_execution,
+                images=images,
             )
         except Exception as e:
             error_message = getattr(e, "message", None) or str(e)
@@ -226,6 +235,7 @@ class llmClient:
                              "decision": result.to_dict(),
                              "state": state,
                              "decision_spec": decision_spec,
+                             "attachments": list(attachments or []),
                          },
                          function_calls=[],
                          stats=stats,

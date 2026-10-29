@@ -658,6 +658,12 @@ class ConfigurationService:
                 else:
                     if decisions_cfg.get("provider") is not None and not isinstance(decisions_cfg.get("provider"), dict):
                         add_error("llm.decisions.provider", "Must be a dictionary (e.g. {zdr: true}).")
+                    raw_max_images = decisions_cfg.get("max_images")
+                    if raw_max_images is not None and (
+                        isinstance(raw_max_images, bool) or not isinstance(raw_max_images, int)
+                        or not 1 <= raw_max_images <= 20
+                    ):
+                        add_error("llm.decisions.max_images", "Must be an integer between 1 and 20.")
                     raw_path = decisions_cfg.get("path")
                     if raw_path is not None and (not isinstance(raw_path, str) or not raw_path.strip().startswith("/")):
                         add_error("llm.decisions.path", "Must be a path starting with '/'.")
