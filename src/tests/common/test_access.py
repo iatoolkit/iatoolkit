@@ -111,6 +111,15 @@ class TestModels:
         models = [{"id": "gpt-big"}]
         assert access.filter_llm_models("acme", "ana@acme.cl", "gpt-big", models) == ("gpt-big", models)
 
+    def test_decision_models_never_reach_the_chat(self):
+        decision = {"id": "typesafe/jev-1.14", "capabilities": {"kind": "decision"}}
+        models = [decision, {"id": "gpt-big"}]
+
+        default, allowed = access.filter_llm_models("acme", "ana@acme.cl", "typesafe/jev-1.14", models)
+
+        assert allowed == [{"id": "gpt-big"}]
+        assert default == "gpt-big"
+
 
 class TestStampAndTables:
     def test_stamp_and_table_filter_come_from_the_decider(self):

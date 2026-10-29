@@ -33,6 +33,36 @@ _QUESTION_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 MAX_QUESTIONS = 20
 
 
+DECISION_MODEL_KIND = "decision"
+
+
+def model_kind(model_config: dict | None) -> str:
+    """The kind of model a configuration describes: "decision", or "" for chat.
+
+    Comes from the catalogue (`capabilities.kind`, written by `models-sync`); a
+    company.yaml entry outside the catalogue may state it at the top level.
+    """
+    if not isinstance(model_config, dict):
+        return ""
+    capabilities = model_config.get("capabilities")
+    kind = capabilities.get("kind") if isinstance(capabilities, dict) else None
+    return str(kind or model_config.get("kind") or "").strip().lower()
+
+
+def is_decision_model(model_config: dict | None) -> bool:
+    return model_kind(model_config) == DECISION_MODEL_KIND
+
+
+def chat_models(models: list | None) -> list:
+    """The models that write text: everything but decision models.
+
+    A company enables decision models like any other, so they are in its list
+    of models; but they cannot hold a conversation, so every place that picks a
+    model to chat with (the chat selector, the default, system agents) skips them.
+    """
+    return [model for model in models or [] if not (isinstance(model, dict) and is_decision_model(model))]
+
+
 class DecisionSpecError(ValueError):
     """A decision spec that cannot be sent: the message names the field."""
 

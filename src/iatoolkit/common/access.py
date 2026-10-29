@@ -29,6 +29,8 @@ from __future__ import annotations
 import logging
 from typing import Callable, Protocol
 
+from iatoolkit.common.decision_types import chat_models, is_decision_model
+
 USE = 1
 EDIT = 2
 ADMIN = 3
@@ -181,11 +183,16 @@ def filter_llm_models(company_short_name: str, user_identifier: str | None, defa
     """The chat's model choice limited to the models this person may use (BL-010, Fase 2).
 
     When the company's default is not among them, the first one they may use becomes
-    their default."""
+    their default. Decision models (BL-008) never reach the chat: they answer
+    questions about a case, not messages."""
+    decision_ids = {str(m.get("id") or "") for m in models or [] if isinstance(m, dict) and is_decision_model(m)}
+    models = chat_models(models)
+    if default_model in decision_ids:
+        default_model = str((models[0] or {}).get("id") or "") or None if models else None
     if not user_identifier or not Access.registered():
         return default_model, models
-    allowed = [m for m in models or [] if can(company_short_name, user_identifier, USE, "model",
-                                              str((m or {}).get("id") or ""))]
+    allowed = [m for m in models if can(company_short_name, user_identifier, USE, "model",
+                                        str((m or {}).get("id") or ""))]
     allowed_ids = [str(m.get("id")) for m in allowed]
     if default_model and default_model not in allowed_ids:
         default_model = allowed_ids[0] if allowed_ids else None

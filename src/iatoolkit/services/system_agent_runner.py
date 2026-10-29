@@ -14,6 +14,7 @@ from injector import inject
 from jinja2 import StrictUndefined
 from jinja2.sandbox import ImmutableSandboxedEnvironment
 
+from iatoolkit.common.decision_types import chat_models
 from iatoolkit.common.model_registry import ModelRegistry
 from iatoolkit.common.util import Utility
 from iatoolkit.repositories.models import Company
@@ -213,7 +214,8 @@ class SystemAgentRunner:
         them: resolving many agents then costs one read of each.
         """
         default_model, available = llm_configuration or self.configuration_service.get_llm_configuration(company_short_name)
-        enabled = self._model_ids(available)
+        # A decision model (BL-008) answers questions, not prompts: never a system agent's model.
+        enabled = self._model_ids(chat_models(available))
         needs_vision = bool(getattr(agent, "requires_vision", False))
 
         def usable(model: str | None) -> bool:
@@ -290,7 +292,7 @@ class SystemAgentRunner:
         model = str(model or "").strip() or None
         if model:
             _, available = self.configuration_service.get_llm_configuration(company_short_name)
-            if model not in self._model_ids(available):
+            if model not in self._model_ids(chat_models(available)):
                 return {"status": "error", "error_code": "model_not_enabled",
                         "error_message": f"model '{model}' is not enabled for this company"}
             if agent.requires_vision and not self.supports_images(company_short_name, model):

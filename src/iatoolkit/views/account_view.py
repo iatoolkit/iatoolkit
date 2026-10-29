@@ -6,6 +6,7 @@ from flask import abort, flash, redirect, render_template, request, session, url
 from flask.views import MethodView
 from injector import inject
 
+from iatoolkit.common import access
 from iatoolkit.services.branding_service import BrandingService
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.i18n_service import I18nService
@@ -74,6 +75,8 @@ class AccountView(MethodView):
         if "account_csrf_token" not in session:
             session["account_csrf_token"] = secrets.token_urlsafe(32)
         default_model, models = self.config_service.get_llm_configuration(company_short_name)
+        default_model, models = access.filter_llm_models(
+            company_short_name, session_info.get("user_identifier"), default_model, models)
         defaults = self.config_service.get_llm_request_defaults(company_short_name) or {}
         return render_template(
             template_name, **(extra_context or {}), company=company,

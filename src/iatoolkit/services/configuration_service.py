@@ -648,6 +648,20 @@ class ConfigurationService:
                             "Unsupported key. Use 'config.routing' instead.",
                         )
 
+            # Decision models (BL-008): an optional data policy sent as OpenRouter's
+            # `provider` routing object, and the endpoint path. Absent means no
+            # restriction and the default path.
+            decisions_cfg = config.get("llm", {}).get("decisions")
+            if decisions_cfg is not None:
+                if not isinstance(decisions_cfg, dict):
+                    add_error("llm.decisions", "Must be a dictionary.")
+                else:
+                    if decisions_cfg.get("provider") is not None and not isinstance(decisions_cfg.get("provider"), dict):
+                        add_error("llm.decisions.provider", "Must be a dictionary (e.g. {zdr: true}).")
+                    raw_path = decisions_cfg.get("path")
+                    if raw_path is not None and (not isinstance(raw_path, str) or not raw_path.strip().startswith("/")):
+                        add_error("llm.decisions.path", "Must be a path starting with '/'.")
+
             providers_cfg = config.get("llm", {}).get("providers")
             if providers_cfg is not None and not isinstance(providers_cfg, dict):
                 add_error("llm.providers", "Must be a dictionary.")

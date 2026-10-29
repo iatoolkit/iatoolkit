@@ -510,6 +510,28 @@ class TestConfigurationService:
         errors = self.service.validate_configuration(self.COMPANY_NAME)
         assert any("llm.model" in e and "single model name" in e for e in errors)
 
+    def test_validate_configuration_checks_the_decisions_section(self):
+        invalid_config = copy.deepcopy(MOCK_VALID_CONFIG)
+        invalid_config["llm"]["decisions"] = {"provider": "zdr", "path": "api/alpha/decisions"}
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = invalid_config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert any("llm.decisions.provider" in e for e in errors)
+        assert any("llm.decisions.path" in e for e in errors)
+
+    def test_validate_configuration_accepts_a_decisions_policy(self):
+        config = copy.deepcopy(MOCK_VALID_CONFIG)
+        config["llm"]["decisions"] = {"provider": {"zdr": True}, "path": "/api/alpha/decisions"}
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = config
+
+        assert self.service.validate_configuration(self.COMPANY_NAME) == []
+
     def test_remove_configuration_key_drops_the_key_and_saves(self):
         config = copy.deepcopy(MOCK_VALID_CONFIG)
         config["system_agents"] = {"memory_compiler": {"model": "gpt-5.5"}}

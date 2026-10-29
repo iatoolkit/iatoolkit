@@ -21,6 +21,7 @@ from injector import inject
 from iatoolkit.common.decision_types import (
     DecisionResult,
     DecisionSpecError,
+    is_decision_model,
     parse_decision_spec,
 )
 from iatoolkit.common.exceptions import IAToolkitException
@@ -28,28 +29,10 @@ from iatoolkit.infra.llm_proxy import LLMProxy
 from iatoolkit.infra.openrouter_decision_client import OpenRouterDecisionClient
 from iatoolkit.services.configuration_service import ConfigurationService
 
-DECISION_MODEL_KIND = "decision"
 DECISION_PROVIDER = "openrouter"
 #: Characters per token, to warn about a state that will not fit. A rough
 #: estimate on purpose: the model counts, this only says when to look.
 _CHARS_PER_TOKEN = 4
-
-
-def model_kind(model_config: dict | None) -> str:
-    """The kind of model a configuration describes: "decision" or "" for chat.
-
-    Comes from the catalogue (`capabilities.kind`, written by `models-sync`); a
-    company.yaml entry outside the catalogue may state it at the top level.
-    """
-    if not isinstance(model_config, dict):
-        return ""
-    capabilities = model_config.get("capabilities")
-    kind = capabilities.get("kind") if isinstance(capabilities, dict) else None
-    return str(kind or model_config.get("kind") or "").strip().lower()
-
-
-def is_decision_model(model_config: dict | None) -> bool:
-    return model_kind(model_config) == DECISION_MODEL_KIND
 
 
 class DecisionService:

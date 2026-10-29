@@ -3,6 +3,8 @@ import pytest
 from iatoolkit.common.decision_types import (
     DecisionResult,
     DecisionSpecError,
+    chat_models,
+    is_decision_model,
     normalize_decision_spec,
     parse_decision_spec,
 )
@@ -78,6 +80,12 @@ class TestDecisionSpec:
         with pytest.raises(DecisionSpecError) as exc:
             parse_decision_spec(spec)
         assert fragment in str(exc.value)
+
+
+def test_chat_models_leaves_decision_models_out():
+    models = [{"id": "gpt", "capabilities": {"kind": ""}}, {"id": "jev", "capabilities": {"kind": "decision"}}, "yaml-id"]
+    assert chat_models(models) == [{"id": "gpt", "capabilities": {"kind": ""}}, "yaml-id"]
+    assert is_decision_model({"kind": "decision"})
 
 
 class TestDecisionResult:
