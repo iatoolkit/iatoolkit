@@ -66,11 +66,13 @@ class llmClient:
     # a wiki page withheld).
     TOOL_CALL_RESULT_KEY = "result"
     TOOL_CALL_EXCERPT_MAX_LENGTH = 300
-    # The most of one tool output the model reads (~10k tokens). Every round of
+    # The most of one tool output the model reads (~30k tokens). Every round of
     # the loop resends every output, so a few results of hundreds of rows took
     # one turn from 54k to 133k tokens in production (BL-009). Past this, the
-    # model is told to narrow the query instead.
-    MAX_TOOL_OUTPUT_CHARS = 40000
+    # model is told to narrow the query instead. It was 40k, which cut the
+    # signature section off ~40% of the guarantee contracts maxxa's agents read
+    # whole (p50 40k, longest 99k characters); a document has no "narrower query".
+    MAX_TOOL_OUTPUT_CHARS = 120000
     TOOL_OUTPUT_CUT_NOTICE = (
         "[Resultado cortado: se muestran {shown} de {total} caracteres. No lo completes ni "
         "lo inventes: si necesitas el resto, vuelve a llamar la herramienta pidiendo menos "

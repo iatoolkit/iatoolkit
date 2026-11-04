@@ -194,7 +194,7 @@ llm:
     messages stay, so the history is always valid for the provider. The last turn
     is cut the same way as soon as it ends if what it carries for its tools
     (outputs, arguments and reasoning) passes 40000 characters; its answer stays.
-  - Within a turn, a tool output over 40000 characters is cut before the model
+  - Within a turn, a tool output over 120000 characters is cut before the model
     reads it, with a notice to narrow the query (filters, aggregates, LIMIT); the
     cut is logged as a warning.
   - Each turn logs its context size: `Context of <company>/<user> (model=...): N
