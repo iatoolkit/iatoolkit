@@ -330,6 +330,24 @@ ui:
     login_link: "Log In"
     disclaimer: "🔒We value your privacy. Your data will be used exclusively for the operation of the platform."
 
+  invitation_invalid:
+    page_title: "Invitation unavailable"
+    company_label: "Company"
+    expired_title: "This invitation has expired"
+    expired_message: "Invitation links are valid for 7 days. Ask your administrator to send you a new one."
+    used_title: "This invitation was already used"
+    used_message: "An account was already created with this invitation. If it is yours, just sign in."
+    superseded_title: "This link was replaced by a newer invitation"
+    superseded_message: "Your administrator sent you a more recent invitation. Open the link in the latest invitation email."
+    revoked_title: "This invitation was cancelled"
+    revoked_message: "Your administrator cancelled this invitation. Ask them for a new one if you still need access."
+    invalid_title: "We couldn't recognize this invitation link"
+    invalid_message: "The link may be incomplete or mistyped. Open it again from the invitation email, or ask your administrator for a new one."
+    missing_title: "You need an invitation to join"
+    missing_message: "{company_name} only accepts new members by invitation. Ask your administrator to send you one."
+    login_button: "Go to sign in"
+    help_text: "Need help? Contact the administrator of {company_name}."
+
   forgot_password:
     title: "Recover Password"
     subtitle: "Enter your email address and we will send you a link to reset your password."

@@ -43,9 +43,19 @@ class SignupView(MethodView):
             invitation_context if isinstance(invitation_context, tuple) else (False, None)
         )
         if invitation_required and not invited_email:
+            # An unusable invitation is an expected outcome, not a server error:
+            # say which case it is and point the person to sign in or to their admin.
+            status = self.profile_service.signup_invitation_status(company_short_name, invite_token)
+            if status == "pending":
+                status = "invalid"
+            company_name = (branding_data or {}).get("name") or company.name or company_short_name
             response = make_response(render_template(
-                'error.html',
-                message=self.i18n_service.t('errors.signup.invitation_required'),
+                'invitation_invalid.html',
+                company_short_name=company_short_name,
+                branding=branding_data,
+                lang=current_lang,
+                status=status,
+                company_name=company_name,
             ), 403)
             response.headers['Referrer-Policy'] = 'no-referrer'
             response.headers['Cache-Control'] = 'no-store'

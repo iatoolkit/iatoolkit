@@ -100,16 +100,49 @@ class TestSignupView:
         )
 
     @patch("iatoolkit.views.signup_view.render_template")
-    def test_invitation_only_signup_requires_valid_link(self, mock_render_template):
+    def test_invitation_only_signup_without_token_shows_invitation_page(self, mock_render_template):
         mock_render_template.return_value = "<html></html>"
         self.profile_service.signup_invitation_context.return_value = (True, None)
+        self.profile_service.signup_invitation_status.return_value = "missing"
 
-        response = self.client.get("/test_company/signup")
+        response = self.client.get("/test_company/signup?lang=es")
 
         assert response.status_code == 403
+        assert response.headers['Cache-Control'] == 'no-store'
+        assert response.headers['Referrer-Policy'] == 'no-referrer'
+        self.profile_service.signup_invitation_status.assert_called_once_with('test_company', None)
         mock_render_template.assert_called_once_with(
-            'error.html', message='translated:errors.signup.invitation_required',
+            'invitation_invalid.html',
+            company_short_name='test_company',
+            branding=self.branding_service.get_company_branding.return_value,
+            lang='es',
+            status='missing',
+            company_name='Empresa de Prueba',
         )
+
+    @pytest.mark.parametrize("status", ["expired", "used", "superseded", "revoked", "invalid"])
+    @patch("iatoolkit.views.signup_view.render_template")
+    def test_unusable_invitation_link_names_the_reason(self, mock_render_template, status):
+        mock_render_template.return_value = "<html></html>"
+        self.profile_service.signup_invitation_context.return_value = (True, None)
+        self.profile_service.signup_invitation_status.return_value = status
+
+        response = self.client.get("/test_company/signup?invite_token=old")
+
+        assert response.status_code == 403
+        self.profile_service.signup_invitation_status.assert_called_once_with('test_company', 'old')
+        assert mock_render_template.call_args.args == ('invitation_invalid.html',)
+        assert mock_render_template.call_args.kwargs['status'] == status
+
+    @patch("iatoolkit.views.signup_view.render_template")
+    def test_pending_status_without_email_is_treated_as_invalid(self, mock_render_template):
+        mock_render_template.return_value = "<html></html>"
+        self.profile_service.signup_invitation_context.return_value = (True, None)
+        self.profile_service.signup_invitation_status.return_value = "pending"
+
+        self.client.get("/test_company/signup?invite_token=race")
+
+        assert mock_render_template.call_args.kwargs['status'] == 'invalid'
 
     @patch("iatoolkit.views.signup_view.render_template")
     def test_invitation_link_prefills_invited_email(self, mock_render_template):

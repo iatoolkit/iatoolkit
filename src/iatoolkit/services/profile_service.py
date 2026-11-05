@@ -79,6 +79,19 @@ class ProfileService:
         )
         return required, email
 
+    INVITATION_STATUSES = ("pending", "expired", "used", "superseded", "revoked", "invalid")
+
+    def signup_invitation_status(self, company_short_name: str, invite_token: str | None) -> str:
+        """Why a signup link cannot be used, so the page can say it plainly.
+
+        ``missing`` when the link has no token at all; otherwise the resolver's
+        reading of the token, ``invalid`` when it cannot tell.
+        """
+        if not invite_token:
+            return "missing"
+        status = self.signup_policy_resolver.invitation_status(company_short_name, invite_token)
+        return status if status in self.INVITATION_STATUSES else "invalid"
+
     @staticmethod
     def _normalize_name_value(value: str | None, fallback: str) -> str:
         text = str(value or "").strip()

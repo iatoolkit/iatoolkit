@@ -38,6 +38,14 @@ class SignupPolicyResolver(ABC):
     def invitation_email(self, company_short_name: str, invite_token: str | None) -> str | None:
         return None
 
+    def invitation_status(self, company_short_name: str, invite_token: str | None) -> str | None:
+        """Why an invitation link does or does not work.
+
+        One of ``pending``, ``expired``, ``used``, ``superseded``, ``revoked`` or
+        ``invalid``; ``None`` when the resolver does not track invitations.
+        """
+        return None
+
     def claim_signup(
         self,
         company_short_name: str,

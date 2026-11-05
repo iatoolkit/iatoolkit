@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+
+{% block title %}{{ t('ui.invitation_invalid.page_title') }} - {{ company_name }}{% endblock %}
+
+{% block styles %}
+{% if branding %}
+    <style>
+        {{ branding.css_variables | safe }}
+    </style>
+{% endif %}
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+{% endblock %}
+
+{% block content %}
+{# Shown when a signup link cannot be used: expired, already used, replaced,
+   cancelled, unrecognized or missing. It is an expected outcome, so it reads
+   as guidance (what happened, what to do next), never as a server error. #}
+{% set icons = {
+    'expired': 'bi-hourglass-bottom',
+    'used': 'bi-person-check',
+    'superseded': 'bi-envelope-arrow-up',
+    'revoked': 'bi-envelope-slash',
+    'invalid': 'bi-link-45deg',
+    'missing': 'bi-envelope-paper',
+} %}
+{% set login_lang = lang or 'en' %}
+<div class="container mt-4">
+
+{% include '_company_header.html' %}
+
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <div class="card shadow-sm text-center" data-invitation-status="{{ status }}">
+                <div class="card-body p-4 p-md-5">
+
+                    <i class="bi {{ icons.get(status, 'bi-envelope-paper') }}"
+                       style="font-size: 3.5rem; color: var(--brand-primary-color, #6c757d);"
+                       aria-hidden="true"></i>
+
+                    <h4 class="card-title mt-4">{{ t('ui.invitation_invalid.' ~ status ~ '_title') }}</h4>
+
+                    <p class="text-muted mt-3 mb-4" style="text-align: center;">
+                        {{ t('ui.invitation_invalid.' ~ status ~ '_message', company_name=company_name) }}
+                    </p>
+
+                    <a href="{{ url_for('home', company_short_name=company_short_name, lang=login_lang) }}"
+                       class="btn btn-branded-primary px-4">
+                        {{ t('ui.invitation_invalid.login_button') }}
+                    </a>
+
+                    <p class="text-muted small mt-4 mb-0" style="text-align: center;">
+                        {{ t('ui.invitation_invalid.help_text', company_name=company_name) }}
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+{% endblock %}

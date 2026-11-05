@@ -344,6 +344,24 @@ ui:
     login_link: "Inicia Sesión"
     disclaimer: "🔒 Valoramos tu privacidad. Tus datos se usarán exclusivamente para el funcionamiento de la plataforma."
 
+  invitation_invalid:
+    page_title: "Invitación no disponible"
+    company_label: "Empresa"
+    expired_title: "Esta invitación expiró"
+    expired_message: "Los enlaces de invitación duran 7 días. Pide a tu administrador que te envíe uno nuevo."
+    used_title: "Esta invitación ya fue utilizada"
+    used_message: "Ya se creó una cuenta con esta invitación. Si es tuya, solo inicia sesión."
+    superseded_title: "Este enlace fue reemplazado por una invitación más reciente"
+    superseded_message: "Tu administrador te envió una invitación más nueva. Abre el enlace del último correo de invitación."
+    revoked_title: "Esta invitación fue cancelada"
+    revoked_message: "Tu administrador canceló esta invitación. Si todavía necesitas acceso, pídele una nueva."
+    invalid_title: "No reconocemos este enlace de invitación"
+    invalid_message: "Puede que el enlace esté incompleto o mal copiado. Ábrelo de nuevo desde el correo de invitación, o pide uno nuevo a tu administrador."
+    missing_title: "Necesitas una invitación para unirte"
+    missing_message: "{company_name} solo acepta nuevos miembros por invitación. Pide a tu administrador que te envíe una."
+    login_button: "Ir a iniciar sesión"
+    help_text: "¿Necesitas ayuda? Contacta al administrador de {company_name}."
+
   forgot_password:
     title: "Recuperar Contraseña"
     subtitle: "Ingresa tu correo electrónico y te enviaremos un enlace para restablecer tu contraseña."

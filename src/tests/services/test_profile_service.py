@@ -787,3 +787,22 @@ class TestProfileService:
 
         result = self.service.update_user_language(user_email, new_lang)
         assert result['success'] is False
+
+    def test_signup_invitation_status_without_token_is_missing(self, mock_session_manager):
+        self.service.signup_policy_resolver = MagicMock()
+
+        assert self.service.signup_invitation_status("acme", None) == "missing"
+        self.service.signup_policy_resolver.invitation_status.assert_not_called()
+
+    def test_signup_invitation_status_passes_through_known_statuses(self, mock_session_manager):
+        self.service.signup_policy_resolver = MagicMock()
+        self.service.signup_policy_resolver.invitation_status.return_value = "expired"
+
+        assert self.service.signup_invitation_status("acme", "tok") == "expired"
+        self.service.signup_policy_resolver.invitation_status.assert_called_once_with("acme", "tok")
+
+    def test_signup_invitation_status_unknown_answer_is_invalid(self, mock_session_manager):
+        self.service.signup_policy_resolver = MagicMock()
+        self.service.signup_policy_resolver.invitation_status.return_value = None
+
+        assert self.service.signup_invitation_status("acme", "tok") == "invalid"
