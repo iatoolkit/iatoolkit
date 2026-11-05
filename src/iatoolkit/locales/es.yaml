@@ -2680,7 +2680,7 @@ ui:
     short_name: "Nombre corto"
     runtime_mode: "Modo runtime"
     default_reasoning: "Razonamiento por defecto"
-    default_reasoning_auto: "Automático"
+    default_reasoning_auto: "Por defecto del proveedor"
     reasoning_card_helper: "Se aplica cuando el modelo y el provider seleccionados soportan este nivel de razonamiento. Los prompts igual pueden sobreescribirlo."
     reasoning_unavailable: "No disponible para este modelo"
     reasoning_unavailable_help: "Este modelo o provider no soporta un valor por defecto de razonamiento a nivel company."

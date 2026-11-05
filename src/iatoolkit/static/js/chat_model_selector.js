@@ -265,7 +265,7 @@ window.currentLlmReasoningEffort = window.currentLlmReasoningEffort || null;
             medium: t('ui.prompts.thinking_level_medium', 'Medium'),
             high: t('ui.prompts.thinking_level_high', 'High'),
             xhigh: t('ui.prompts.thinking_level_xhigh', 'XHigh'),
-            auto: t('ui.config.default_reasoning_auto', 'Automatic'),
+            auto: t('ui.config.default_reasoning_auto', 'Provider default'),
         };
 
         if (effort === 'minimal') return { icon: 'bi-dot', label: labels.minimal };
