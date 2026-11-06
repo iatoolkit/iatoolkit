@@ -188,6 +188,45 @@ class TestOpenAIAdapter:
         assert user_msg['content'][1]['filename'] == 'sales.csv'
         assert user_msg['content'][1]['file_data'] == 'data:text/csv;base64,U0FNUExF'
 
+    def test_create_response_sends_image_attachments_as_input_image(self):
+        # A tool can return images in __native_attachments__; OpenAI rejects
+        # them as input_file, so they must travel as input_image.
+        mock_response = MagicMock()
+        mock_response.id = 'chatcmpl-mm-image-attachment'
+        mock_response.model = 'gpt-4.1'
+        mock_response.status = 'completed'
+        mock_response.output = []
+        mock_response.usage = None
+        mock_response.output_text = ""
+        self.mock_openai_client.responses.create.return_value = mock_response
+
+        input_data = [{'role': 'user', 'content': 'Revisa los documentos'}]
+        attachments = [
+            {'name': 'contrato.pdf', 'mime_type': 'application/pdf', 'base64': 'UERG'},
+            {'name': 'cedula.jpg', 'mime_type': 'image/jpeg', 'base64': 'AAAA'},
+            {'name': 'scan.png', 'base64': 'BBBB'},
+            {'name': 'foto.heic', 'mime_type': 'image/heic', 'base64': 'CCCC'},
+        ]
+
+        self.adapter.create_response(
+            model='gpt-4.1',
+            input=input_data,
+            attachments=attachments,
+        )
+
+        call_kwargs = self.mock_openai_client.responses.create.call_args.kwargs
+        content = call_kwargs['input'][0]['content']
+        assert content[0] == {'type': 'input_text', 'text': 'Revisa los documentos'}
+        assert content[1] == {
+            'type': 'input_file',
+            'filename': 'contrato.pdf',
+            'file_data': 'data:application/pdf;base64,UERG',
+        }
+        assert content[2] == {'type': 'input_image', 'image_url': 'data:image/jpeg;base64,AAAA'}
+        assert content[3] == {'type': 'input_image', 'image_url': 'data:image/png;base64,BBBB'}
+        # Unsupported image formats are dropped instead of failing the call.
+        assert len(content) == 4
+
     def test_create_response_multimodal_accepts_image_data_urls(self):
         mock_response = MagicMock()
         mock_response.id = 'chatcmpl-mm-image-data-url'

@@ -14,6 +14,11 @@ from typing import Any, Dict, List, Optional
 import openai
 
 from iatoolkit.common.exceptions import IAToolkitException
+from iatoolkit.infra.llm_providers.attachment_mime import (
+    is_image_mime,
+    is_inline_image_mime,
+    resolve_attachment_mime,
+)
 from iatoolkit.infra.llm_response import LLMResponse, ToolCall, Usage
 
 
@@ -482,9 +487,21 @@ class OpenAICompatibleChatAdapter:
                 content_parts.append(image_part)
 
         for attachment in attachments:
-            file_part = self._build_file_part(attachment)
-            if file_part is not None:
-                content_parts.append(file_part)
+            # Images are rejected as file parts: send them as image parts.
+            mime_type = resolve_attachment_mime(attachment) if isinstance(attachment, dict) else ""
+            if is_image_mime(mime_type):
+                if not is_inline_image_mime(mime_type):
+                    logging.warning(
+                        "Skipping image attachment '%s': %s is not supported as image input.",
+                        attachment.get("name") or attachment.get("filename") or "attachment",
+                        mime_type,
+                    )
+                    continue
+                part = self._build_image_part({**attachment, "mime_type": mime_type})
+            else:
+                part = self._build_file_part(attachment)
+            if part is not None:
+                content_parts.append(part)
 
         target_message["content"] = content_parts
         updated_messages = list(messages)

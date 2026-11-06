@@ -200,3 +200,22 @@ class TestOpenAICompatibleChatAdapter:
         assert "timed out" in str(excinfo.value).lower()
         assert self.mock_client.chat.completions.create.call_count == 1
         mock_sleep.assert_not_called()
+
+    def test_prepare_multimodal_messages_sends_image_attachments_as_image_parts(self):
+        messages = [{"role": "user", "content": "Revisa los documentos"}]
+        attachments = [
+            {"name": "contrato.pdf", "mime_type": "application/pdf", "base64": "UERG"},
+            {"name": "cedula.jpg", "mime_type": "image/jpeg", "base64": "AAAA"},
+            {"name": "foto.tiff", "mime_type": "image/tiff", "base64": "CCCC"},
+        ]
+
+        result = self.adapter._prepare_multimodal_messages(messages, [], attachments)
+
+        content = result[0]["content"]
+        assert content[0] == {"type": "text", "text": "Revisa los documentos"}
+        assert content[1] == {
+            "type": "file",
+            "file": {"filename": "contrato.pdf", "file_data": "data:application/pdf;base64,UERG"},
+        }
+        assert content[2] == {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,AAAA"}}
+        assert len(content) == 3

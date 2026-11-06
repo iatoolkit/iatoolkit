@@ -7,6 +7,11 @@ import logging
 from typing import Any, Dict, List, Optional
 from iatoolkit.infra.llm_response import LLMResponse, ToolCall, Usage
 from iatoolkit.common.exceptions import IAToolkitException
+from iatoolkit.infra.llm_providers.attachment_mime import (
+    is_image_mime,
+    is_inline_image_mime,
+    resolve_attachment_mime,
+)
 import mimetypes
 import re
 import base64
@@ -331,14 +336,24 @@ class OpenAIAdapter:
         # Agregar archivos nativos (Responses API)
         for attachment in attachments:
             filename = attachment.get("name") or attachment.get("filename") or "attachment"
-            mime_type = str(
-                attachment.get("mime_type")
-                or attachment.get("type")
-                or mimetypes.guess_type(filename)[0]
-                or "application/octet-stream"
-            ).strip().lower()
+            mime_type = resolve_attachment_mime(attachment)
             base64_data = str(attachment.get("base64") or attachment.get("content") or "").strip()
             if not base64_data:
+                continue
+
+            # OpenAI rejects images as input_file: send them as input_image.
+            if is_image_mime(mime_type):
+                if not is_inline_image_mime(mime_type):
+                    logging.warning(
+                        "Skipping image attachment '%s': %s is not supported by OpenAI image input.",
+                        filename,
+                        mime_type,
+                    )
+                    continue
+                content_parts.append({
+                    "type": "input_image",
+                    "image_url": self._to_data_url(base64_data, mime_type),
+                })
                 continue
 
             file_data = self._to_data_url(base64_data, mime_type)
