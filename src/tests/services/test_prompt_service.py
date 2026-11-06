@@ -127,6 +127,7 @@ class TestPromptService:
                     'attachment_fallback': 'extract',
                     'llm_model': None,
                     'queue_tier': 'default',
+                    'timeout_seconds': None,
                     'llm_request_options': {},
                     'tool_policy': {},
                     'context_policy': {
@@ -552,6 +553,56 @@ class TestPromptService:
 
         saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
         assert saved_prompt.queue_tier == 'low'
+
+    def test_normalize_execution_timeout_value(self):
+        assert PromptService.normalize_execution_timeout_value(None) is None
+        assert PromptService.normalize_execution_timeout_value("") is None
+        assert PromptService.normalize_execution_timeout_value("abc") is None
+        assert PromptService.normalize_execution_timeout_value(0) is None
+        assert PromptService.normalize_execution_timeout_value(True) is None
+        assert PromptService.normalize_execution_timeout_value("600") == 600
+        assert PromptService.normalize_execution_timeout_value(5) == 30
+        assert PromptService.normalize_execution_timeout_value(99999) == 3600
+
+    def test_runtime_policy_carries_timeout_seconds(self):
+        policy = PromptService.normalize_runtime_policy({"timeout_seconds": "900"})
+        assert policy["timeout_seconds"] == 900
+        assert PromptService.normalize_runtime_policy({})["timeout_seconds"] is None
+        assert PromptService.get_runtime_policy_timeout_seconds({"timeout_seconds": 120}) == 120
+
+    def test_save_prompt_persists_timeout_seconds(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_category_by_name.return_value = None
+
+        self.prompt_service.save_prompt(
+            'test_co',
+            'background_agent',
+            {'content': 'Prompt text', 'timeout_seconds': 600},
+        )
+
+        saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
+        assert saved_prompt.runtime_policy["timeout_seconds"] == 600
+
+    def test_save_prompt_preserves_existing_timeout_when_payload_omits_it(self):
+        self.profile_repo.get_company_by_short_name.return_value = self.mock_company
+        self.llm_query_repo.get_category_by_name.return_value = None
+        existing = Prompt(
+            name='background_agent',
+            company_id=self.mock_company.id,
+            description='existing',
+            filename='background_agent.prompt',
+        )
+        existing.runtime_policy = {"timeout_seconds": 900}
+        self.llm_query_repo.get_prompt_by_name.return_value = existing
+
+        self.prompt_service.save_prompt(
+            'test_co',
+            'background_agent',
+            {'content': 'Prompt text'},
+        )
+
+        saved_prompt = self.llm_query_repo.create_or_update_prompt.call_args[0][0]
+        assert saved_prompt.runtime_policy["timeout_seconds"] == 900
 
     def test_save_prompt_persists_workspace_agent_as_agentic(self):
         self.profile_repo.get_company_by_short_name.return_value = self.mock_company

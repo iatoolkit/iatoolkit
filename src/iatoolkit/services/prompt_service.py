@@ -55,6 +55,9 @@ class PromptService:
     TOOL_POLICY_MODE_EXPLICIT = "explicit"
     QUEUE_TIER_DEFAULT = "default"
     QUEUE_TIER_LOW = "low"
+    # Bounds for a per-agent execution timeout (runtime_policy.timeout_seconds).
+    EXECUTION_TIMEOUT_MIN_SECONDS = 30
+    EXECUTION_TIMEOUT_MAX_SECONDS = 3600
     RUNTIME_PROVIDER_QUERY_SERVICE = PromptRuntimeProvider.QUERY_SERVICE.value
     RUNTIME_PROVIDER_OPENAI_AGENTS = PromptRuntimeProvider.OPENAI_AGENTS.value
     EXECUTION_MODE_CONVERSATIONAL = "conversational"
@@ -268,10 +271,31 @@ class PromptService:
         return dict(runtime_config or {}) if isinstance(runtime_config, dict) else {}
 
     @classmethod
+    def normalize_execution_timeout_value(cls, timeout_seconds) -> int | None:
+        """A per-agent execution timeout in seconds, or None to inherit the default.
+
+        Empty or invalid values inherit; numbers are clamped to the allowed range.
+        """
+        if timeout_seconds is None or isinstance(timeout_seconds, bool):
+            return None
+        if isinstance(timeout_seconds, str):
+            timeout_seconds = timeout_seconds.strip()
+            if not timeout_seconds:
+                return None
+        try:
+            value = int(float(timeout_seconds))
+        except (TypeError, ValueError):
+            return None
+        if value <= 0:
+            return None
+        return max(cls.EXECUTION_TIMEOUT_MIN_SECONDS, min(value, cls.EXECUTION_TIMEOUT_MAX_SECONDS))
+
+    @classmethod
     def normalize_runtime_policy(cls, runtime_policy: dict | None) -> dict:
         policy = runtime_policy if isinstance(runtime_policy, dict) else {}
         role = cls.normalize_agent_role_value(policy.get("role"))
         queue_tier = cls.normalize_queue_tier_value(policy.get("queue_tier"))
+        timeout_seconds = cls.normalize_execution_timeout_value(policy.get("timeout_seconds"))
         runtime_provider = cls.normalize_runtime_provider_value(policy.get("runtime_provider"))
         runtime_config = cls.normalize_runtime_config(policy.get("runtime_config"))
         raw_context = policy.get("context")
@@ -283,10 +307,15 @@ class PromptService:
             "version": 1,
             "role": role,
             "queue_tier": queue_tier,
+            "timeout_seconds": timeout_seconds,
             "context": context,
             "runtime_provider": runtime_provider,
             "runtime_config": runtime_config,
         }
+
+    @classmethod
+    def get_runtime_policy_timeout_seconds(cls, runtime_policy: dict | None) -> int | None:
+        return cls.normalize_runtime_policy(runtime_policy).get("timeout_seconds")
 
     @classmethod
     def get_runtime_policy_role(cls, runtime_policy: dict | None) -> str:
@@ -814,6 +843,7 @@ class PromptService:
                         'attachment_fallback': p.attachment_fallback,
                         'llm_model': getattr(p, 'llm_model', None),
                         'queue_tier': runtime_policy["queue_tier"],
+                        'timeout_seconds': runtime_policy["timeout_seconds"],
                         'llm_request_options': dict(getattr(p, 'llm_request_options', None) or {}),
                         'tool_policy': dict(getattr(p, 'tool_policy', None) or {}),
                         'context_policy': runtime_policy["context"],
@@ -943,6 +973,7 @@ class PromptService:
             runtime_policy = self.normalize_runtime_policy({
                 "role": role_value,
                 "queue_tier": queue_tier_value,
+                "timeout_seconds": data.get("timeout_seconds", existing_runtime_policy["timeout_seconds"]),
                 "context": context_value,
                 "runtime_provider": data.get(
                     "runtime_provider",

@@ -57,6 +57,7 @@ class PromptApiView(MethodView):
                 meta["agent_role"] = agent_role
                 meta["execution_mode"] = PromptService.execution_mode_for_agent_role(agent_role)
                 meta["queue_tier"] = runtime_policy["queue_tier"]
+                meta["timeout_seconds"] = runtime_policy["timeout_seconds"]
                 meta["context_policy"] = runtime_policy["context"]
                 meta["runtime_provider"] = runtime_policy["runtime_provider"]
                 meta["runtime_config"] = runtime_policy["runtime_config"]
