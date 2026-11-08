@@ -908,7 +908,7 @@ class TestLLMClient:
         assert "error en dispatch para tool 'test_func'" in finish_event["metadata"]["error_message"]
         telemetry_execution.end_child_span.assert_called_once_with(tool_span)
 
-    def test_invoke_records_tool_child_span_for_sql_retry_generation(self):
+    def test_invoke_records_tool_child_span_for_sql_retry_generation(self, caplog):
         dispatcher_mock = MagicMock()
         dispatcher_mock.dispatch.side_effect = IAToolkitException(
             IAToolkitException.ErrorType.DATABASE_ERROR,
@@ -927,7 +927,8 @@ class TestLLMClient:
         telemetry_execution.build_stats.return_value = None
         self.telemetry_service_mock.start_execution.return_value = telemetry_execution
 
-        with patch('iatoolkit.current_iatoolkit', return_value=toolkit_mock):
+        with patch('iatoolkit.current_iatoolkit', return_value=toolkit_mock), \
+                caplog.at_level(logging.INFO):
             tool_call = ToolCall('call1', 'function_call', 'run_sql', '{"query": "select * from sales"}')
             response_with_tools = LLMResponse('r1', 'gpt-4o', 'completed', '', [tool_call], Usage(10, 5, 15))
             self.mock_proxy.create_response.side_effect = [response_with_tools, self.mock_llm_response]
@@ -947,6 +948,14 @@ class TestLLMClient:
         assert finish_event["metadata"]["status"] == "retry_generated"
         assert "ERROR DE EJECUCIÓN DE HERRAMIENTA" in finish_event["output"]["preview"]
         telemetry_execution.end_child_span.assert_called_once_with(tool_span)
+
+        # A correction is an expected path: logged at INFO, with the tool and the
+        # error, under a fixed template so APM groups every correction together.
+        retry_records = [r for r in caplog.records if str(r.msg).startswith("[%s] Error de SQL en '%s'")]
+        assert len(retry_records) == 1
+        assert retry_records[0].levelno == logging.INFO
+        assert "'run_sql'" in retry_records[0].getMessage()
+        assert "syntax error near FROM" in retry_records[0].getMessage()
 
     def test_invoke_passes_native_attachments_to_llm_proxy(self):
         self.mock_proxy.create_response.return_value = self.mock_llm_response

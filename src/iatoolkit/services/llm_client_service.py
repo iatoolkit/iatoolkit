@@ -541,8 +541,19 @@ class llmClient:
                                         sql_query_with_error = args.get('query', 'No se pudo extraer la consulta.')
                                         original_db_error = str(e.__cause__) if e.__cause__ else str(e)
 
-                                        logging.warning(
-                                                f"Error de SQL capturado, intentando corregir con el LLM (Intento {sql_retry_count}/{self.MAX_SQL_RETRIES}).")
+                                        # The model wrote SQL that failed and gets a chance to fix
+                                        # it: an expected path, so INFO, with the error that caused
+                                        # it. If the corrected query fails too, that failure goes
+                                        # through the dispatch-error branch below, as a WARNING.
+                                        logging.info(
+                                            "[%s] Error de SQL en '%s', se pide al LLM que lo corrija "
+                                            "(intento %s/%s): %s",
+                                            company.short_name,
+                                            function_name,
+                                            sql_retry_count,
+                                            self.MAX_SQL_RETRIES,
+                                            " ".join(original_db_error.split())[:500],
+                                        )
                                         result = self._create_sql_retry_prompt(function_name, sql_query_with_error, original_db_error)
 
                                         # force the next call to be this function
