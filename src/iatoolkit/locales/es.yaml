@@ -1334,6 +1334,7 @@ ui:
     target_type_tool: "Tool"
     target_type_native_job: "Job nativo"
     target_type_pipeline: "Pipeline"
+    target_type_loop: "Loop"
     timing: "Horario"
     cron_expression: "Expresión cron"
     cron_help_format: "Formato: minuto, hora, día del mes, mes, día de la semana."
@@ -1344,6 +1345,7 @@ ui:
     parameters: "Parámetros"
     arguments_help: "Se envía al destino en cada ejecución."
     arguments_help_pipeline: 'Filtros del pipeline: {"filters": {...}}'
+    arguments_help_loop: 'Parámetros del Loop: {"params": {...}}'
     execution: "Ejecución"
     queue: "Cola"
     timeout_seconds: "Timeout (segundos)"
@@ -1371,6 +1373,7 @@ ui:
     select_tool: "Selecciona una tool"
     select_native_job: "Selecciona un job nativo"
     select_pipeline: "Selecciona un pipeline"
+    select_loop: "Selecciona un Loop"
     invalid_arguments_json: "Los argumentos deben ser un objeto JSON válido."
     request_failed: "La solicitud falló"
     saved: "Programación guardada."
