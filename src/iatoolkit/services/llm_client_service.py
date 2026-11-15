@@ -1335,7 +1335,9 @@ class llmClient:
 
                 # fallback
                 decoded_response['status'] = True
-                decoded_response['answer'] = str(response_dict)
+                # JSON, not str(): the Python repr ({'a': True}) is not JSON and
+                # nobody downstream (a person, a Loop) can read it back.
+                decoded_response['answer'] = json.dumps(response_dict, ensure_ascii=False, default=str)
                 decoded_response['answer_format'] = "json_fallback"
             else:
                 # El diccionario JSON es perfecto.

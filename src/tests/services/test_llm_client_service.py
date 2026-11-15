@@ -1112,6 +1112,19 @@ class TestLLMClient:
             assert decoded['answer_format'] == 'json_string'
             assert decoded["additional_data"] == {}
 
+    def test_json_fallback_keeps_the_answer_as_json(self):
+        """A JSON answer without the chat envelope (a structured agent run with a
+        chat role, so no schema is applied) is kept as JSON, not as a Python repr."""
+        payload = {"filas": 3, "total": 5202.75, "ok": True, "nota": None, "resumen": "Tres filas, ñandú"}
+        response = LLMResponse('r1', 'm1', 'completed', '```json\n' + json.dumps(payload) + '\n```', [], Usage(1, 1, 2))
+
+        decoded = self.client.decode_response(response)
+
+        assert decoded['answer_format'] == 'json_fallback' and decoded['status'] is True
+        assert json.loads(decoded['answer']) == payload
+        assert "ñandú" in decoded['answer'] and "True" not in decoded['answer']
+        assert decoded['parsed_json'] == payload
+
     def test_decode_response_accepts_canonical_additional_data(self):
         response = LLMResponse(
             'r1',
