@@ -273,6 +273,28 @@ class TestQueryService:
 
         # Verificar actualización de historia
         self.mock_history_manager.update_history.assert_called_once()
+        # Without an event sink, invoke is called as it always was (BL-023).
+        assert 'event_sink' not in kwargs
+
+    def test_llm_query_hands_the_event_sink_to_invoke(self):
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "Hi", [])
+
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'context_history': []}
+            return False
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'Hello'}
+        sink = MagicMock()
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            question="Hi",
+            model='gpt-test',
+            event_sink=sink,
+        )
+
+        assert self.mock_llm_client.invoke.call_args.kwargs['event_sink'] is sink
 
     def test_llm_query_rejects_a_model_the_company_has_not_enabled(self):
         self.mock_configuration_service.get_llm_configuration.side_effect = None

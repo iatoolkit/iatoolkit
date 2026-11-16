@@ -27,6 +27,7 @@ from iatoolkit.services.dispatcher_service import Dispatcher
 from iatoolkit.services.storage_service import StorageService
 from iatoolkit.services.structured_output_service import StructuredOutputService
 from iatoolkit.services.telemetry_service import NoopTelemetryService
+from iatoolkit.services.chat_stream import ChatEventSink, emit_safely
 
 CONTEXT_ERROR_MESSAGE = 'Tu consulta supera el límite de contexto del modelo. Acota la pregunta o divídela en partes más pequeñas.'
 TELEMETRY_MAX_STRING_LENGTH = 1000
@@ -332,6 +333,7 @@ class llmClient:
                response_contract: Optional[Dict[str, Any]] = None,
                execution_trace: Optional[Dict[str, Any]] = None,
                max_tool_rounds: Optional[int] = None,
+               event_sink: Optional[ChatEventSink] = None,
                ) -> dict:
 
         self._assert_runtime_not_suspended(company)
@@ -356,6 +358,7 @@ class llmClient:
         consecutive_failed_rounds = 0
         tool_loop_stop_reason = None
         company_id = getattr(company, "id", None)
+        model_round = 0
 
         # Resolve per-model defaults and apply overrides (without mutating inputs).
         request_params = self.model_registry.resolve_request_params(
@@ -398,7 +401,10 @@ class llmClient:
                 if not tools:
                     initial_tool_choice = None
 
-                response = self.llm_proxy.create_response(
+                model_round += 1
+                response = self._create_round_response(
+                    event_sink,
+                    model_round,
                     company_short_name=company.short_name,
                     model=model,
                     input=input_messages,
@@ -492,6 +498,7 @@ class llmClient:
                         tool_attachments_count = 0
                         tool_elapsed_seconds = 0.0
                         tool_native_attachments = []
+                        emit_safely(event_sink, "tool_start", {"call_id": tool_call_id, "name": function_name})
 
                         try:
                             args = json.loads(tool_call.arguments)
@@ -615,6 +622,12 @@ class llmClient:
                                 ),
                             )
                             telemetry_execution.end_child_span(tool_span)
+                            emit_safely(event_sink, "tool_end", {
+                                "call_id": tool_call_id,
+                                "name": function_name,
+                                "ok": tool_status not in (None, "error"),
+                                "ms": int(round(tool_elapsed_seconds * 1000)),
+                            })
 
                         # log the function call parameters and execution time in secs
                         elapsed = tool_elapsed_seconds
@@ -652,7 +665,10 @@ class llmClient:
                 elif force_tool_name:
                     tool_choice_value = "required"
 
-                response = self.llm_proxy.create_response(
+                model_round += 1
+                response = self._create_round_response(
+                    event_sink,
+                    model_round,
                     company_short_name=company.short_name,
                     model=model,
                     input=input_messages,
@@ -840,6 +856,21 @@ class llmClient:
                 error_message = 'La respuesta es muy extensa, trata de filtrar/restringuir tu consulta'
 
             raise IAToolkitException(IAToolkitException.ErrorType.LLM_ERROR, error_message)
+
+    def _create_round_response(self, event_sink: Optional[ChatEventSink], model_round: int, **kwargs):
+        """One call to the model. With an event sink, the call is announced and its
+        outcome reported (BL-023); without one it is the plain proxy call."""
+        if event_sink is None:
+            return self.llm_proxy.create_response(**kwargs)
+
+        emit_safely(event_sink, "round_start", {"round": model_round})
+        response = self.llm_proxy.create_response(event_sink=event_sink, **kwargs)
+        has_tool_calls = any(
+            getattr(tool_call, "type", None) == "function_call"
+            for tool_call in (getattr(response, "output", None) or [])
+        )
+        emit_safely(event_sink, "round_end", {"round": model_round, "has_tool_calls": has_tool_calls})
+        return response
 
     @staticmethod
     def _build_root_telemetry_output(decoded_response: dict[str, Any] | None) -> dict[str, Any]:

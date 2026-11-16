@@ -123,6 +123,10 @@ class LLMProxy:
 
         telemetry_request = kwargs.pop("telemetry_request", None)
         telemetry_execution = kwargs.pop("telemetry_execution", None)
+        # Live events of a chat turn (BL-023). Taken out before the request
+        # overrides so it never reaches a provider as a request parameter.
+        event_sink = kwargs.pop("event_sink", None)
+        _ = event_sink
 
         # Determine the provider based on the model name
         provider = self._resolve_provider_for_company_model(

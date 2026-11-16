@@ -4,6 +4,7 @@
 # IAToolkit is open source software.
 
 from iatoolkit.services.llm_client_service import llmClient
+from iatoolkit.services.chat_stream import ChatEventSink
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.tool_service import ToolService
 from iatoolkit.services.i18n_service import I18nService
@@ -1056,7 +1057,8 @@ class QueryService:
                                  prompt_output_contract: dict,
                                  history_handle: HistoryHandle,
                                  ignore_history: bool,
-                                 execution_trace: dict | None = None) -> tuple[dict, HistoryHandle]:
+                                 execution_trace: dict | None = None,
+                                 event_sink: ChatEventSink | None = None) -> tuple[dict, HistoryHandle]:
         context_history = history_handle.request_params.get('context_history')
         max_tool_rounds = self._resolve_company_max_tool_rounds(company_short_name)
 
@@ -1080,6 +1082,7 @@ class QueryService:
             response_contract=prompt_output_contract if prompt_output_contract.get("schema") else None,
             execution_trace=execution_trace,
             max_tool_rounds=max_tool_rounds,
+            **({"event_sink": event_sink} if event_sink is not None else {}),
         )
         return response, history_handle
 
@@ -1469,7 +1472,8 @@ class QueryService:
                   task_id: Optional[int] = None,
                   ignore_history: bool = False,
                   files: list = [],
-                  input_files: list | None = None
+                  input_files: list | None = None,
+                  event_sink: ChatEventSink | None = None,
                   ) -> dict:
         try:
             stage_started_at = time.time()
@@ -1872,6 +1876,7 @@ class QueryService:
                 history_handle=history_handle,
                 ignore_history=ignore_history,
                 execution_trace=execution_trace,
+                **({"event_sink": event_sink} if event_sink is not None else {}),
             )
             log_stage("invoke_with_history_recovery")
 

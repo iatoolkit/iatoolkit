@@ -379,3 +379,83 @@ class TestToolLoopSendsTheWholeHistory(_LLMClientFixture):
         assert [m.get('role') or m.get('type') for m in follow_up] == [
             'user', 'assistant', 'function_call_output',
         ]
+
+
+class _RecordingSink:
+    """An event sink that keeps what the turn reported (BL-023)."""
+
+    def __init__(self):
+        self.events = []
+
+    def emit(self, event, payload=None):
+        self.events.append((event, payload or {}))
+
+    def is_cancelled(self):
+        return False
+
+
+class TestChatEventSink(_LLMClientFixture):
+    def test_without_sink_the_proxy_never_sees_one(self):
+        self.proxy.create_response.side_effect = [
+            _tool_response('r1', ('c1', 't', '{}')),
+            _final_response(),
+        ]
+        self.dispatcher.dispatch.return_value = {"ok": True}
+
+        self._invoke()
+
+        for call in self.proxy.create_response.call_args_list:
+            assert "event_sink" not in call.kwargs
+
+    def test_reports_rounds_and_tools_in_order(self):
+        sink = _RecordingSink()
+        self.proxy.create_response.side_effect = [
+            _tool_response('r1', ('c1', 't', '{"a": 1}'), ('c2', 'other', 'not json')),
+            _final_response(),
+        ]
+        self.dispatcher.dispatch.return_value = {"ok": True}
+
+        result = self._invoke(event_sink=sink)
+
+        assert [event for event, _ in sink.events] == [
+            "round_start", "round_end",
+            "tool_start", "tool_end",
+            "tool_start", "tool_end",
+            "round_start", "round_end",
+        ]
+        payloads = [payload for _, payload in sink.events]
+        assert payloads[0] == {"round": 1}
+        assert payloads[1] == {"round": 1, "has_tool_calls": True}
+        assert payloads[2] == {"call_id": "c1", "name": "t"}
+        assert payloads[3]["ok"] is True and payloads[3]["name"] == "t"
+        assert isinstance(payloads[3]["ms"], int)
+        # The second call had arguments that are not JSON: the tool failed.
+        assert payloads[5]["ok"] is False and payloads[5]["call_id"] == "c2"
+        assert payloads[7] == {"round": 2, "has_tool_calls": False}
+        assert result["answer"]
+        # The proxy got the sink, so a streaming adapter can report deltas.
+        for call in self.proxy.create_response.call_args_list:
+            assert call.kwargs["event_sink"] is sink
+
+    def test_tool_start_never_carries_arguments(self):
+        sink = _RecordingSink()
+        self.proxy.create_response.side_effect = [
+            _tool_response('r1', ('c1', 't', '{"query": "select secret from t"}')),
+            _final_response(),
+        ]
+        self.dispatcher.dispatch.return_value = {"ok": True}
+
+        self._invoke(event_sink=sink)
+
+        for event, payload in sink.events:
+            assert "select secret" not in json.dumps(payload)
+
+    def test_a_failing_sink_does_not_break_the_turn(self):
+        sink = MagicMock()
+        sink.emit.side_effect = RuntimeError("socket closed")
+        sink.is_cancelled.return_value = False
+        self.proxy.create_response.side_effect = [_final_response()]
+
+        result = self._invoke(event_sink=sink)
+
+        assert result["valid_response"] is True
