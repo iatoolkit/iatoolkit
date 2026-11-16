@@ -167,15 +167,23 @@
   text-align: left;
 }
 
+/* Reads as clickable text, never as a form control: no box when clicked. */
+.turn-activity-header:focus,
+.turn-activity-header:active {
+  outline: none;
+  box-shadow: none;
+  border: 0;
+}
+
 .turn-activity-header:hover .turn-activity-title,
 .turn-activity-header:focus-visible .turn-activity-title {
   color: #343a40;
 }
 
-.turn-activity-header:focus-visible {
-  outline: 2px solid #adb5bd;
-  outline-offset: 2px;
-  border-radius: 4px;
+/* Keyboard focus: the title underlined, not a box around the line. */
+.turn-activity-header:focus-visible .turn-activity-title {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .turn-activity-indicator {
@@ -224,6 +232,7 @@
 }
 
 .turn-activity-step {
+  max-width: 72ch;
   margin: 2px 0 0 16px;
   font-size: 13px;
   color: #868e96;
@@ -239,6 +248,8 @@
 }
 
 .turn-activity-timeline {
+  /* A comfortable line length: the chat can be very wide. */
+  max-width: 72ch;
   list-style: none;
   margin: 8px 0 4px 3px;
   padding: 0 0 0 14px;
@@ -286,7 +297,7 @@
   color: #e03131;
 }
 
-.turn-activity-tool-time {
+.turn-activity-tool-detail {
   color: #adb5bd;
   font-variant-numeric: tabular-nums;
 }

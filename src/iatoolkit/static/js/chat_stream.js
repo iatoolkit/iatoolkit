@@ -371,29 +371,62 @@
             if (current && current.title && !this.writing) this._setStep(current.title);
         }
 
+        /**
+         * A tool starts. Consecutive calls to the same tool share one line
+         * ("Consultando la base de datos ×3"), with their time added up.
+         */
         toolStart(callId, name) {
             this.start();
             this.reasoningItem = null;
             const label = toolLabel(name);
-            const item = this._addItem('tool');
-            item.startedAt = Date.now();
-            item.element.append(
-                $('<span>').addClass('turn-activity-tool-status').attr('aria-hidden', 'true'),
-                $('<span>').addClass('turn-activity-tool-label').text(label),
-                $('<span>').addClass('turn-activity-tool-time'),
-            );
-            this.tools[callId || `tool-${this.items.length}`] = item;
+            const last = this.items[this.items.length - 1];
+            let item;
+            if (last && last.kind === 'tool' && last.name === name) {
+                item = last;
+                item.calls += 1;
+                item.running += 1;
+            } else {
+                item = this._addItem('tool');
+                Object.assign(item, { name, label, calls: 1, running: 1, failed: 0, totalMs: 0 });
+                item.element.append(
+                    $('<span>').addClass('turn-activity-tool-status').attr('aria-hidden', 'true'),
+                    $('<span>').addClass('turn-activity-tool-label'),
+                    $('<span>').addClass('turn-activity-tool-detail'),
+                );
+            }
+            this.tools[callId || `tool-${this.toolCount}`] = { item, startedAt: Date.now() };
             this.toolCount += 1;
+            this._renderTool(item);
             this._setStep(fill(translate('chat_stream_running_tool', '{tool}…'), { tool: label }));
         }
 
         toolEnd(callId, ok, ms) {
-            const item = this.tools[callId];
-            if (!item) return;
-            const elapsed = typeof ms === 'number' ? ms : Date.now() - item.startedAt;
-            item.element.addClass(ok ? 'is-ok' : 'is-error');
-            item.element.find('.turn-activity-tool-time').text(formatDuration(elapsed));
+            const call = this.tools[callId];
+            if (!call) return;
+            delete this.tools[callId];
+            const item = call.item;
+            item.running = Math.max(0, item.running - 1);
+            item.totalMs += typeof ms === 'number' ? ms : Date.now() - call.startedAt;
+            if (!ok) item.failed += 1;
+            // The line shows how the last call went: a failed SQL that the
+            // model then fixed reads as done, with the failure noted.
+            item.lastOk = ok;
+            this._renderTool(item);
             this._setStep('');
+        }
+
+        _renderTool(item) {
+            const element = item.element;
+            element.toggleClass('is-ok', item.running === 0 && item.lastOk === true);
+            element.toggleClass('is-error', item.running === 0 && item.lastOk === false);
+            element.find('.turn-activity-tool-label').text(item.calls > 1 ? `${item.label} ×${item.calls}` : item.label);
+            const detail = [];
+            if (item.failed > 0 && !(item.calls === 1 && item.lastOk === false)) {
+                detail.push(fill(translate('chat_activity_tool_failed', '{count} con error'), { count: item.failed }));
+            }
+            // Under a second is noise ("0 s"): only longer calls show their time.
+            if (item.running === 0 && item.totalMs >= 1000) detail.push(formatDuration(item.totalMs));
+            element.find('.turn-activity-tool-detail').text(detail.join(' · '));
         }
 
         appendText(text) {

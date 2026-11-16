@@ -2993,6 +2993,7 @@ js_messages:
   chat_activity_failed: "Interrupted after {duration}"
   chat_activity_one_tool: "1 tool"
   chat_activity_tools: "{count} tools"
+  chat_activity_tool_failed: "{count} failed"
   chat_stream_writing: "Writing the answer…"
   chat_stream_running_tool: "{tool}…"
   chat_stream_interrupted: "The answer was interrupted before it finished. Please try again."
