@@ -370,6 +370,12 @@ def test_a_streamed_turn_with_a_tool_end_to_end(env):
     assert final["stats"]["input_tokens"] == 230
     assert final["stats"]["output_tokens"] == 30
     assert "schema_valid" not in final
+    # What the person saw live is recorded with the query.
+    stream_stats = final["stats"]["stream"]
+    assert stream_stats["mode"] == "text"
+    assert stream_stats["text_deltas"] == 5
+    assert isinstance(stream_stats["first_text_ms"], int)
+    assert stack.llmquery_repo.saved_queries[0].stats["stream"] == stream_stats
 
     # Both rounds were streamed and closed; the second carried the tool output.
     assert len(stack.openai_client.calls) == 2
@@ -414,6 +420,7 @@ def test_a_browser_that_leaves_stops_the_turn_end_to_end(env):
     # The tool round completed and kept its real usage; the cut round was estimated on top.
     assert query.stats["input_tokens"] > 100
     assert len(query.function_calls) == 1
+    assert query.stats["stream"]["mode"] == "text"
     # A stopped turn never reaches the history.
     assert stack.history_manager.updates == []
 
@@ -440,4 +447,5 @@ def test_a_provider_that_does_not_stream_still_shows_the_activity(env):
     ]
     assert events[-1][1]["valid_response"] is True
     assert "<strong>42</strong>" in events[-1][1]["answer"]
+    assert events[-1][1]["stats"]["stream"]["mode"] == "activity"
     assert len(stack.history_manager.updates) == 1

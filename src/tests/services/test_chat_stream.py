@@ -5,7 +5,7 @@
 
 import pytest
 
-from iatoolkit.services.chat_stream import QueueEventSink, RoundStream, TurnCancelled
+from iatoolkit.services.chat_stream import QueueEventSink, RoundStream, StreamMetrics, TurnCancelled
 
 
 class _Sink:
@@ -82,3 +82,22 @@ class TestQueueEventSink:
         assert not sink.is_cancelled()
         sink.cancel()
         assert sink.is_cancelled()
+
+
+class TestStreamMetrics:
+    def test_counts_only_what_the_person_saw(self):
+        sink, metrics = _Sink(), StreamMetrics()
+        held_back = RoundStream(sink, metrics=metrics)
+        held_back.on_text_delta('{"answer": "x"}')   # JSON: never shown
+        assert metrics.as_stats() == {"mode": "activity", "text_deltas": 0, "reasoning_deltas": 0}
+
+        shown = RoundStream(sink, metrics=metrics)
+        shown.on_reasoning_delta("pienso")
+        shown.on_text_delta("Hola")
+        shown.on_text_delta(" mundo")
+
+        stats = metrics.as_stats()
+        assert stats["mode"] == "text"
+        assert stats["text_deltas"] == 2 and stats["reasoning_deltas"] == 1
+        assert isinstance(stats["first_text_ms"], int) and isinstance(stats["first_reasoning_ms"], int)
+        assert stats["first_reasoning_ms"] <= stats["first_text_ms"]

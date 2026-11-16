@@ -31,6 +31,7 @@ document queries are not something every viewer of the chat may see.
 import logging
 import queue
 import threading
+import time
 from typing import Any, Dict, Iterator, Optional, Tuple
 
 
@@ -71,6 +72,48 @@ def emit_safely(event_sink: Optional[ChatEventSink], event: str, payload: Option
         logging.exception("chat stream: could not emit event %s", event)
 
 
+class StreamMetrics:
+    """What a live turn looked like to the person (BL-023), for `LLMQuery.stats`.
+
+    Times are milliseconds from the start of the turn to the first piece the
+    chat actually showed: text held back (JSON answers) does not count.
+    """
+
+    def __init__(self):
+        self._started = time.monotonic()
+        self.first_text_ms: Optional[int] = None
+        self.first_reasoning_ms: Optional[int] = None
+        self.text_deltas = 0
+        self.reasoning_deltas = 0
+
+    def _elapsed_ms(self) -> int:
+        return int(round((time.monotonic() - self._started) * 1000))
+
+    def text_shown(self) -> None:
+        self.text_deltas += 1
+        if self.first_text_ms is None:
+            self.first_text_ms = self._elapsed_ms()
+
+    def reasoning_shown(self) -> None:
+        self.reasoning_deltas += 1
+        if self.first_reasoning_ms is None:
+            self.first_reasoning_ms = self._elapsed_ms()
+
+    def as_stats(self) -> Dict[str, Any]:
+        """`mode` says what the person saw live: the answer's text, or only the
+        activity (a provider that does not stream, or a JSON answer)."""
+        stats: Dict[str, Any] = {
+            "mode": "text" if self.text_deltas else "activity",
+            "text_deltas": self.text_deltas,
+            "reasoning_deltas": self.reasoning_deltas,
+        }
+        if self.first_text_ms is not None:
+            stats["first_text_ms"] = self.first_text_ms
+        if self.first_reasoning_ms is not None:
+            stats["first_reasoning_ms"] = self.first_reasoning_ms
+        return stats
+
+
 class RoundStream:
     """What a streaming adapter reports during one model call.
 
@@ -84,9 +127,11 @@ class RoundStream:
 
     _JSON_FENCE = "```"
 
-    def __init__(self, event_sink: ChatEventSink, stream_text: bool = True):
+    def __init__(self, event_sink: ChatEventSink, stream_text: bool = True,
+                 metrics: Optional[StreamMetrics] = None):
         self._sink = event_sink
         self._stream_text = stream_text
+        self._metrics = metrics
         self._pending = ""
         self._text_decision: Optional[bool] = None if stream_text else False
         #: Everything the model wrote in this call, shown or not: what a call
@@ -104,6 +149,8 @@ class RoundStream:
         if text:
             self.received_text += text
             emit_safely(self._sink, "reasoning_delta", {"text": text})
+            if self._metrics is not None:
+                self._metrics.reasoning_shown()
 
     def on_text_delta(self, text: str) -> None:
         if text:
@@ -111,7 +158,7 @@ class RoundStream:
         if not text or self._text_decision is False:
             return
         if self._text_decision is True:
-            emit_safely(self._sink, "text_delta", {"text": text})
+            self._emit_text(text)
             return
 
         self._pending += text
@@ -128,8 +175,13 @@ class RoundStream:
             self._text_decision = True
 
         if self._text_decision:
-            emit_safely(self._sink, "text_delta", {"text": self._pending})
+            self._emit_text(self._pending)
         self._pending = ""
+
+    def _emit_text(self, text: str) -> None:
+        emit_safely(self._sink, "text_delta", {"text": text})
+        if self._metrics is not None:
+            self._metrics.text_shown()
 
 
 class QueueEventSink(ChatEventSink):

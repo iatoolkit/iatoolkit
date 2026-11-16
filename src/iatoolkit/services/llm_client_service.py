@@ -27,7 +27,9 @@ from iatoolkit.services.dispatcher_service import Dispatcher
 from iatoolkit.services.storage_service import StorageService
 from iatoolkit.services.structured_output_service import StructuredOutputService
 from iatoolkit.services.telemetry_service import NoopTelemetryService
-from iatoolkit.services.chat_stream import ChatEventSink, RoundStream, TurnCancelled, emit_safely, raise_if_cancelled
+from iatoolkit.services.chat_stream import (
+    ChatEventSink, RoundStream, StreamMetrics, TurnCancelled, emit_safely, raise_if_cancelled,
+)
 
 CONTEXT_ERROR_MESSAGE = 'Tu consulta supera el límite de contexto del modelo. Acota la pregunta o divídela en partes más pequeñas.'
 TELEMETRY_MAX_STRING_LENGTH = 1000
@@ -363,6 +365,8 @@ class llmClient:
         model_round = 0
         # The model call in flight, for the usage of a turn stopped halfway (BL-023).
         round_state: Dict[str, Any] = {}
+        # What a live turn looked like to the person, recorded in stats["stream"].
+        stream_metrics = StreamMetrics() if event_sink is not None else None
         # A turn with an output schema answers in JSON: only its progress is
         # streamed, the final event renders the answer (BL-023).
         stream_answer_text = not (isinstance(response_contract, dict) and response_contract.get("schema"))
@@ -414,6 +418,7 @@ class llmClient:
                     model_round,
                     stream_text=stream_answer_text,
                     round_state=round_state,
+                    stream_metrics=stream_metrics,
                     company_short_name=company.short_name,
                     model=model,
                     input=input_messages,
@@ -684,6 +689,7 @@ class llmClient:
                     model_round,
                     stream_text=stream_answer_text,
                     round_state=round_state,
+                    stream_metrics=stream_metrics,
                     company_short_name=company.short_name,
                     model=model,
                     input=input_messages,
@@ -721,6 +727,8 @@ class llmClient:
             combined_stats["context_tokens"] = self._context_tokens(response)
             if tool_loop_stop_reason:
                 combined_stats["tool_loop_stop_reason"] = tool_loop_stop_reason
+            if stream_metrics is not None:
+                combined_stats["stream"] = stream_metrics.as_stats()
             if isinstance(execution_metadata, dict):
                 combined_stats = dict(combined_stats or {})
                 request_source = str(execution_metadata.get("request_source") or "").strip().lower()
@@ -820,6 +828,8 @@ class llmClient:
                 tool_round_count=tool_round_count,
                 tool_error_count=tool_error_count,
             )
+            if stream_metrics is not None:
+                cancelled_stats["stream"] = stream_metrics.as_stats()
             query = LLMQuery(user_identifier=user_identifier,
                              company_id=company_id,
                              task_id=task_id,
@@ -909,7 +919,7 @@ class llmClient:
 
     def _create_round_response(self, event_sink: Optional[ChatEventSink], model_round: int,
                                stream_text: bool = True, round_state: Optional[Dict[str, Any]] = None,
-                               **kwargs):
+                               stream_metrics: Optional[StreamMetrics] = None, **kwargs):
         """One call to the model. With an event sink, the call is announced and its
         outcome reported (BL-023); without one it is the plain proxy call."""
         if event_sink is None:
@@ -919,6 +929,7 @@ class llmClient:
         round_stream = RoundStream(
             event_sink,
             stream_text=stream_text and self._streams_answer_text(kwargs),
+            metrics=stream_metrics,
         )
         if round_state is not None:
             round_state.clear()
