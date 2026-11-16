@@ -227,10 +227,13 @@ function processBotResponse(responseData) {
                         <i class="bi bi-lightbulb me-1"></i> ${t_js('show_reasoning')}
                     </button>
                     <div class="collapse mt-2" id="${uniqueId}">
-                        <div class="reasoning-card">${responseData.reasoning_content}</div>
+                        <div class="reasoning-card"></div>
                     </div>
                 </div>
             `);
+        // The reasoning echoes tenant data (SQL rows, documents, tool results):
+        // it goes in as text, never parsed as HTML.
+        reasoningBlock.find('.reasoning-card').text(responseData.reasoning_content);
         botMessageContainer.append(reasoningBlock);
     }
 
