@@ -3,7 +3,10 @@
 import pytest
 from unittest.mock import MagicMock, patch
 import json
+import logging
 from datetime import datetime
+
+from sqlalchemy import exc as sa_exc
 
 from oauthlib.uri_validate import query
 
@@ -303,7 +306,7 @@ class TestSqlService:
                 query="UP/* hidden */DATE users SET name = 'Mallory'",
             )
 
-        assert exc_info.value.error_type == IAToolkitException.ErrorType.DATABASE_ERROR
+        assert exc_info.value.error_type == IAToolkitException.ErrorType.INVALID_SQL
         assert "Blocked SQL keyword detected: UPDATE." in str(exc_info.value)
         mock_provider.execute_query.assert_not_called()
 
@@ -360,6 +363,91 @@ class TestSqlService:
             query="WITH recent AS (SELECT 1 AS id) SELECT id FROM recent",
             commit=False,
         )
+
+    @patch('iatoolkit.services.sql_service.DatabaseManager')
+    def test_exec_sql_allows_use_as_identifier(self, MockDatabaseManager):
+        # USE is not a write: inside a SELECT it can only be a column or alias.
+        mock_provider = MockDatabaseManager.return_value
+        mock_provider.execute_query.return_value = [{'use': 'venta'}]
+        config = {'DATABASE_URI': DUMMY_URI}
+        self.service.register_database(COMPANY_SHORT_NAME, DB_NAME_SUCCESS, config)
+
+        result = self.service.exec_sql(
+            company_short_name=COMPANY_SHORT_NAME,
+            database_key=DB_NAME_SUCCESS,
+            query="SELECT d.kind AS use FROM documents d",
+            format='dict',
+        )
+
+        assert result == [{'use': 'venta'}]
+        mock_provider.execute_query.assert_called_once()
+
+    @patch('iatoolkit.services.sql_service.DatabaseManager')
+    def test_exec_sql_rejected_sql_is_invalid_sql_and_logged(self, MockDatabaseManager, caplog):
+        mock_provider = MockDatabaseManager.return_value
+        config = {'DATABASE_URI': DUMMY_URI}
+        self.service.register_database(COMPANY_SHORT_NAME, DB_NAME_SUCCESS, config)
+
+        with caplog.at_level(logging.INFO), pytest.raises(IAToolkitException) as exc_info:
+            self.service.exec_sql(
+                company_short_name=COMPANY_SHORT_NAME,
+                database_key=DB_NAME_SUCCESS,
+                query="SELECT *\n  FROM users WHERE rut = '12345678-9' AND id > 42; DELETE FROM users",
+            )
+
+        assert exc_info.value.error_type == IAToolkitException.ErrorType.INVALID_SQL
+        rejected = [r for r in caplog.records if r.getMessage().startswith("SQL rejected")]
+        assert len(rejected) == 1
+        assert rejected[0].levelno == logging.INFO
+        message = rejected[0].getMessage()
+        assert f"company={COMPANY_SHORT_NAME} database={DB_NAME_SUCCESS}" in message
+        # Literals and numbers are redacted: the structure explains the rejection.
+        assert "sql=SELECT * FROM users WHERE rut = '?' AND id > ?; DELETE FROM users" in message
+        assert "12345678" not in message
+
+    @pytest.mark.parametrize("db_error_class", [sa_exc.ProgrammingError, sa_exc.DataError])
+    @patch('iatoolkit.services.sql_service.DatabaseManager')
+    def test_exec_sql_sql_rejected_by_database_is_invalid_sql(self, MockDatabaseManager, db_error_class, caplog):
+        mock_provider = MockDatabaseManager.return_value
+        mock_provider.execute_query.side_effect = db_error_class(
+            "SELECT neto FROM docs", {}, Exception('column "neto" does not exist')
+        )
+        config = {'DATABASE_URI': DUMMY_URI}
+        self.service.register_database(COMPANY_SHORT_NAME, DB_NAME_SUCCESS, config)
+
+        with caplog.at_level(logging.INFO), pytest.raises(IAToolkitException) as exc_info:
+            self.service.exec_sql(
+                company_short_name=COMPANY_SHORT_NAME,
+                database_key=DB_NAME_SUCCESS,
+                query="SELECT neto FROM docs",
+            )
+
+        assert exc_info.value.error_type == IAToolkitException.ErrorType.INVALID_SQL
+        assert 'column "neto" does not exist' in str(exc_info.value)
+        rejected = [r.getMessage() for r in caplog.records if r.getMessage().startswith("SQL rejected")]
+        assert len(rejected) == 1
+        # The driver's message carries the statement after "[SQL:"; it is not logged twice.
+        assert rejected[0].count("SELECT neto FROM docs") == 1
+        assert not any(r.levelno >= logging.ERROR for r in caplog.records)
+        mock_provider.remove_session.assert_called_once()
+
+    @patch('iatoolkit.services.sql_service.DatabaseManager')
+    def test_exec_sql_database_failure_stays_database_error(self, MockDatabaseManager):
+        mock_provider = MockDatabaseManager.return_value
+        mock_provider.execute_query.side_effect = sa_exc.OperationalError(
+            "SELECT 1", {}, Exception("server closed the connection unexpectedly")
+        )
+        config = {'DATABASE_URI': DUMMY_URI}
+        self.service.register_database(COMPANY_SHORT_NAME, DB_NAME_SUCCESS, config)
+
+        with pytest.raises(IAToolkitException) as exc_info:
+            self.service.exec_sql(
+                company_short_name=COMPANY_SHORT_NAME,
+                database_key=DB_NAME_SUCCESS,
+                query="SELECT 1",
+            )
+
+        assert exc_info.value.error_type == IAToolkitException.ErrorType.DATABASE_ERROR
 
     def test_exec_sql_falls_back_to_rollback_when_provider_has_no_remove_session(self):
         mock_provider = MagicMock(spec=DatabaseProvider)

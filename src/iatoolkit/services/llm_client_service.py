@@ -38,6 +38,13 @@ class llmClient:
     _llm_clients_cache = {}      # class attribute, for the clients cache
     _clients_cache_lock = threading.Lock()  # secure lock cache access
 
+    # SQL errors the model gets a chance to correct: SQL it wrote that was
+    # rejected (INVALID_SQL) and, as before, a database error on it.
+    SQL_RETRY_ERROR_TYPES = frozenset({
+        IAToolkitException.ErrorType.DATABASE_ERROR,
+        IAToolkitException.ErrorType.INVALID_SQL,
+    })
+
     # A tool round is one model response that asks for tools, however many it
     # asks for in parallel. The budget bounds rounds, not calls: a round is what
     # costs a full model call with the whole context, and what a looping model
@@ -535,7 +542,7 @@ class llmClient:
                                     if is_worker_timeout_signal(e):
                                         raise
                                     if (isinstance(e, IAToolkitException) and
-                                            e.error_type == IAToolkitException.ErrorType.DATABASE_ERROR and
+                                            e.error_type in self.SQL_RETRY_ERROR_TYPES and
                                             sql_retry_count < self.MAX_SQL_RETRIES):
                                         sql_retry_count += 1
                                         sql_query_with_error = args.get('query', 'No se pudo extraer la consulta.')

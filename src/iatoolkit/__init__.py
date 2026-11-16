@@ -3,7 +3,7 @@
 #
 # IAToolkit is open source software.
 
-__version__ = "2.78.18"
+__version__ = "2.78.19"
 
 # Expose main classes and functions at the top level of the package
 

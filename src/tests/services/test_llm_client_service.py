@@ -908,10 +908,14 @@ class TestLLMClient:
         assert "error en dispatch para tool 'test_func'" in finish_event["metadata"]["error_message"]
         telemetry_execution.end_child_span.assert_called_once_with(tool_span)
 
-    def test_invoke_records_tool_child_span_for_sql_retry_generation(self, caplog):
+    @pytest.mark.parametrize(
+        "error_type",
+        [IAToolkitException.ErrorType.DATABASE_ERROR, IAToolkitException.ErrorType.INVALID_SQL],
+    )
+    def test_invoke_records_tool_child_span_for_sql_retry_generation(self, caplog, error_type):
         dispatcher_mock = MagicMock()
         dispatcher_mock.dispatch.side_effect = IAToolkitException(
-            IAToolkitException.ErrorType.DATABASE_ERROR,
+            error_type,
             "syntax error near FROM",
         )
 

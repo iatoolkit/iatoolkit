@@ -9,6 +9,7 @@ from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.common.util import Utility
 from injector import inject, singleton
+from sqlalchemy import exc as sa_exc
 from typing import Callable
 import json
 import logging
@@ -30,10 +31,14 @@ class SqlService:
     STRUCTURE_CACHE_SECONDS = 900
     STRUCTURE_CACHE_PREFIX = "sql_structure"
     _ALLOWED_QUERY_PREFIXES = ("SELECT", "WITH")
+    # Keywords that can turn a single SELECT/WITH statement into a write. USE is
+    # not one: a bare `USE db` is already stopped by the SELECT/WITH prefix and the
+    # single-statement check, and inside a SELECT the word can only be a column or
+    # alias (or MySQL's `USE INDEX` hint), so blocking it only rejected valid reads.
     _BLOCKED_SQL_PATTERN = re.compile(
         r"\b(?:INSERT|UPDATE|DELETE|DROP|ALTER|CREATE|TRUNCATE|MERGE|CALL|COPY|GRANT|REVOKE|"
         r"BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE|VACUUM|ANALYZE|CLUSTER|REFRESH|"
-        r"EXEC(?:UTE)?|DO|SET|RESET|USE|PRAGMA|ATTACH|DETACH|REINDEX|LOCK|UNLOCK|INTO)\b",
+        r"EXEC(?:UTE)?|DO|SET|RESET|PRAGMA|ATTACH|DETACH|REINDEX|LOCK|UNLOCK|INTO)\b",
         re.IGNORECASE,
     )
     _SINGLE_QUOTED_LITERAL_RE = re.compile(r"'(?:''|[^'])*'")
@@ -42,6 +47,12 @@ class SqlService:
     _BRACKET_LITERAL_RE = re.compile(r"\[[^\]]*\]")
     _BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
     _LINE_COMMENT_RE = re.compile(r"--[^\r\n]*")
+    _NUMERIC_LITERAL_RE = re.compile(r"(?<![\w.])\d+(?:\.\d+)?\b")
+    # The database rejected the SQL itself: syntax, an unknown table or column, an
+    # unsupported construct (ProgrammingError), or a value it cannot use, such as
+    # an invalid date or a division by zero (DataError). A database that is down
+    # or timed out raises OperationalError and stays a DATABASE_ERROR.
+    _SQL_REJECTED_BY_DATABASE = (sa_exc.ProgrammingError, sa_exc.DataError)
 
     @inject
     def __init__(self,
@@ -235,25 +246,25 @@ class SqlService:
         normalized_query = str(query or "").strip()
         if not normalized_query:
             raise IAToolkitException(
-                IAToolkitException.ErrorType.DATABASE_ERROR,
+                IAToolkitException.ErrorType.INVALID_SQL,
                 "SQL query is required.",
             )
 
         sanitized = self._sanitize_sql_for_validation(normalized_query)
         if not sanitized:
             raise IAToolkitException(
-                IAToolkitException.ErrorType.DATABASE_ERROR,
+                IAToolkitException.ErrorType.INVALID_SQL,
                 "SQL query is required.",
             )
         sanitized_without_trailing_semicolon = re.sub(r";+\s*$", "", sanitized).strip()
         if not sanitized_without_trailing_semicolon:
             raise IAToolkitException(
-                IAToolkitException.ErrorType.DATABASE_ERROR,
+                IAToolkitException.ErrorType.INVALID_SQL,
                 "SQL query is required.",
             )
         if ";" in sanitized_without_trailing_semicolon:
             raise IAToolkitException(
-                IAToolkitException.ErrorType.DATABASE_ERROR,
+                IAToolkitException.ErrorType.INVALID_SQL,
                 "Only a single read-only SQL statement is allowed.",
             )
 
@@ -262,27 +273,57 @@ class SqlService:
         if blocked_match:
             blocked_keyword = blocked_match.group(0).upper()
             raise IAToolkitException(
-                IAToolkitException.ErrorType.DATABASE_ERROR,
+                IAToolkitException.ErrorType.INVALID_SQL,
                 f"Blocked SQL keyword detected: {blocked_keyword}.",
             )
 
         if not upper_sanitized.startswith(self._ALLOWED_QUERY_PREFIXES):
             raise IAToolkitException(
-                IAToolkitException.ErrorType.DATABASE_ERROR,
+                IAToolkitException.ErrorType.INVALID_SQL,
                 "Only read-only SELECT statements are allowed.",
             )
         if upper_sanitized.startswith("WITH") and not re.search(r"\bSELECT\b", upper_sanitized):
             raise IAToolkitException(
-                IAToolkitException.ErrorType.DATABASE_ERROR,
+                IAToolkitException.ErrorType.INVALID_SQL,
                 "WITH queries must resolve to a read-only SELECT statement.",
             )
 
         return normalized_query
 
+    #: Longest SQL text written to the log when a query is rejected.
+    REJECTED_SQL_LOG_CHARS = 500
+
+    @classmethod
+    def _redact_sql_for_log(cls, text) -> str:
+        redacted = cls._SINGLE_QUOTED_LITERAL_RE.sub("'?'", str(text or ""))
+        redacted = cls._NUMERIC_LITERAL_RE.sub("?", redacted)
+        return " ".join(redacted.split())[: cls.REJECTED_SQL_LOG_CHARS]
+
+    @classmethod
+    def _log_rejected_sql(cls, company_short_name: str, database_name: str, query, reason) -> None:
+        """Log the SQL that was rejected, on one line and truncated.
+
+        The caller (an LLM, usually) gets the reason and can correct the query, so
+        this is INFO, not an error. Without the SQL itself a rejection cannot be
+        diagnosed: which keyword, alias or column tripped it. String literals and
+        numbers are written as `?`: the structure is what explains a rejection,
+        and the values may be a customer's data.
+        """
+        sql_text = cls._redact_sql_for_log(query)
+        # SQLAlchemy appends the statement to the driver's message ("[SQL: ...]").
+        reason_text = cls._redact_sql_for_log(str(reason or "").split("[SQL:", 1)[0])
+        logging.info(
+            "SQL rejected company=%s database=%s reason=%s sql=%s",
+            company_short_name,
+            database_name,
+            reason_text,
+            sql_text,
+        )
+
     def _enforce_result_row_limit(self, result_data):
         if isinstance(result_data, list) and len(result_data) > self.MAX_QUERY_ROWS:
             raise IAToolkitException(
-                IAToolkitException.ErrorType.DATABASE_ERROR,
+                IAToolkitException.ErrorType.INVALID_SQL,
                 f"Query returned more than {self.MAX_QUERY_ROWS} rows. Refine the query with filters or LIMIT.",
             )
 
@@ -345,12 +386,19 @@ class SqlService:
             # Serialize the result
             return json.dumps(result_data, default=self.util.serialize)
 
-        except IAToolkitException:
+        except IAToolkitException as e:
+            if e.error_type == IAToolkitException.ErrorType.INVALID_SQL:
+                self._log_rejected_sql(company_short_name, database_name, query, e.message)
             raise
         except Exception as e:
             error_message = str(e)
             if 'timed out' in str(e):
                 error_message = self.i18n_service.t('errors.timeout')
+
+            if isinstance(e, self._SQL_REJECTED_BY_DATABASE):
+                self._log_rejected_sql(company_short_name, database_name, query, error_message)
+                raise IAToolkitException(IAToolkitException.ErrorType.INVALID_SQL,
+                                         error_message) from e
 
             logging.error(f"Error executing SQL statement: {error_message}")
             raise IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR,

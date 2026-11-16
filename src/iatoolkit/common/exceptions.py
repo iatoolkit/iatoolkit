@@ -42,6 +42,11 @@ class IAToolkitException(Exception):
         DUPLICATE_ENTRY = 30
         INVALID_OPERATION = 31
         NOT_FOUND = 32
+        # The SQL the caller wrote was rejected: by the read-only check, the row
+        # limit, or the database itself (syntax, unknown table or column, bad
+        # value). The caller can correct it; DATABASE_ERROR stays for a database
+        # that failed (down, timed out, not registered).
+        INVALID_SQL = 33
 
 
 

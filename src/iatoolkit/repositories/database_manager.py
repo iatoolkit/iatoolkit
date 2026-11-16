@@ -13,7 +13,7 @@ from iatoolkit.repositories.models import Base, ORM_SCHEMA
 from injector import inject
 from pgvector.psycopg2 import register_vector
 from iatoolkit.common.interfaces.database_provider import DatabaseProvider
-from iatoolkit.common.exceptions import is_worker_timeout_signal
+from iatoolkit.common.exceptions import IAToolkitException, is_worker_timeout_signal
 import logging
 
 
@@ -379,8 +379,9 @@ class DatabaseManager(DatabaseProvider):
             cols = result.keys()
             rows = result.fetchmany(self.MAX_RESULT_ROWS + 1)
             if len(rows) > self.MAX_RESULT_ROWS:
-                raise ValueError(
-                    f"Query returned more than {self.MAX_RESULT_ROWS} rows. Refine the query with filters or LIMIT."
+                raise IAToolkitException(
+                    IAToolkitException.ErrorType.INVALID_SQL,
+                    f"Query returned more than {self.MAX_RESULT_ROWS} rows. Refine the query with filters or LIMIT.",
                 )
             return [dict(zip(cols, row)) for row in rows]
 

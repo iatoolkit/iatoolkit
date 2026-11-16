@@ -6,6 +6,7 @@
 from unittest.mock import patch, MagicMock
 from iatoolkit.repositories.database_manager import DatabaseManager
 from iatoolkit.common.interfaces.database_provider import DatabaseProvider
+from iatoolkit.common.exceptions import IAToolkitException
 import pytest
 
 class TestDatabaseManager:
@@ -178,9 +179,10 @@ class TestDatabaseManager:
         self.db_manager.MAX_RESULT_ROWS = 2
         mock_result.fetchmany.return_value = [(1,), (2,), (3,)]
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(IAToolkitException) as exc_info:
             self.db_manager.execute_query(query="SELECT * FROM t")
 
+        assert exc_info.value.error_type == IAToolkitException.ErrorType.INVALID_SQL
         assert "Query returned more than 2 rows" in str(exc_info.value)
 
     def test_postgres_applies_statement_timeout_when_explicit(self):
