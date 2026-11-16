@@ -69,6 +69,7 @@ class ChatView(MethodView):
                 llm_default_model=default_llm_model,
                 llm_available_models=available_llm_models,
                 llm_default_reasoning_effort=llm_default_reasoning_effort,
+                chat_streaming=self.config_service.is_chat_streaming_enabled(company_short_name),
                 # redeem_token is None for direct access
                 redeem_token=None
             )

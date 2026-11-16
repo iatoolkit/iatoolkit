@@ -163,6 +163,8 @@
     window.defaultLlmModel = {{ llm_default_model | tojson }};
     window.availableLlmModels = {{ llm_available_models | tojson }};
     window.defaultLlmReasoningEffort = {{ llm_default_reasoning_effort | tojson }};
+    // Live turn over SSE (BL-023): only for the providers that stream.
+    window.chatStreamingEnabled = {{ (chat_streaming or false) | tojson }};
 
 
     // JS translations helper
@@ -184,6 +186,7 @@
     <script src="{{ url_for('static', filename='js/chat_filepond.js', _external=True) }}"></script>
     <script src="{{ url_for('static', filename='js/chat_model_selector.js', _external=True) }}"></script>
     <script src="{{ url_for('static', filename='js/chat_memory_button.js', _external=True) }}"></script>
+    <script src="{{ url_for('static', filename='js/chat_stream.js', _external=True) }}"></script>
     <script src="{{ url_for('static', filename='js/chat_main.js', _external=True) }}"></script>
 
     <script>

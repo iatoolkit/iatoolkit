@@ -177,13 +177,34 @@ const handleChatMessage = async function () {
             reasoning_effort: (window.currentLlmReasoningEffort || '')
         };
 
-        const responseData = await callToolkit("/api/llm_query", data, "POST");
+        let responseData = undefined;
+        const chatStream = window.IATChatStream;
+        if (chatStream && chatStream.shouldStream(data.model)) {
+            // Live turn (BL-023): progress while it runs, then the same final JSON.
+            abortController = new AbortController();
+            responseData = await chatStream.run({
+                apiPath: "/api/llm_query/stream",
+                data: data,
+                signal: abortController.signal,
+                handlers: { onEvent: handleChatStreamEvent },
+            });
+            if (responseData === chatStream.FALLBACK) {
+                responseData = undefined;
+            }
+        }
+        if (responseData === undefined) {
+            responseData = await callToolkit("/api/llm_query", data, "POST");
+        }
 
         // Delegamos el procesamiento de la respuesta a la nueva función
         processBotResponse(responseData);
 
     } catch (error) {
-        if (error.name === 'AbortError') {
+        if (error.name === 'ChatStreamError' || error.name === 'ChatStreamInterrupted') {
+            const errorIcon = $('<i>').addClass('bi bi-exclamation-triangle');
+            const errorText = $('<p>').text(error.message);
+            displayBotMessage($('<div>').addClass('error-section').append(errorIcon).append(errorText));
+        } else if (error.name === 'AbortError') {
             const icon = $('<i>').addClass('bi bi-stop-circle me-2');
             const textSpan = $('<span>').text('La generación de la respuesta ha sido detenida.');
             const abortMessage = $('<div>').addClass('system-message').append(icon).append(textSpan);
@@ -581,11 +602,31 @@ const showSpinner = function () {
             <div class="spinner-border" role="status" style="width: 1.5rem; height: 1.5rem; margin-right: 15px;">
                 <span class="${accessibilityClass}">Loading...</span>
             </div>
-            <span style="font-weight: bold; font-size: 15px;">${spinnerText}</span>
+            <span id="spinner-text" style="font-weight: bold; font-size: 15px;">${spinnerText}</span>
         </div>
     `);
     $('#chat-container').append(spinner).scrollTop($('#chat-container')[0].scrollHeight);
 };
+
+/**
+ * Changes what the spinner says (the step a live turn is on).
+ */
+function setSpinnerText(text) {
+    $('#spinner-text').text(text);
+}
+
+/**
+ * Progress of a live turn (BL-023): every event but `final` and `error`.
+ */
+function handleChatStreamEvent(event, payload) {
+    const chatStream = window.IATChatStream;
+    if (event === 'tool_start') {
+        const label = chatStream.toolLabel(payload.name);
+        setSpinnerText(t_js('chat_stream_running_tool').replace('{tool}', label));
+    } else if (event === 'round_start' && payload.round > 1) {
+        setSpinnerText(t_js('chat_stream_thinking'));
+    }
+}
 
 /**
  * Hides the loading spinner.

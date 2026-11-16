@@ -16,6 +16,7 @@ def register_views(app):
 
     from iatoolkit.views.init_context_api_view import InitContextApiView
     from iatoolkit.views.llmquery_api_view import LLMQueryApiView
+    from iatoolkit.views.llmquery_stream_api_view import LLMQueryStreamApiView
     from iatoolkit.views.signup_view import SignupView
     from iatoolkit.views.verify_user_view import VerifyAccountView
     from iatoolkit.views.forgot_password_view import ForgotPasswordView
@@ -150,6 +151,7 @@ def register_views(app):
     # main chat query, used by the JS in the browser (with credentials)
     # can be used also for executing iatoolkit prompts
     app.add_url_rule('/<company_short_name>/api/llm_query', view_func=LLMQueryApiView.as_view('llm_query_api'))
+    app.add_url_rule('/<company_short_name>/api/llm_query/stream', view_func=LLMQueryStreamApiView.as_view('llm_query_stream_api'))
 
     # Categories Endpoint
     app.add_url_rule('/<company_short_name>/api/categories',

@@ -101,6 +101,7 @@ class BaseLoginView(MethodView):
             llm_default_model=default_llm_model,
             llm_available_models = available_llm_models,
             llm_default_reasoning_effort=llm_default_reasoning_effort,
+            chat_streaming=self.config_service.is_chat_streaming_enabled(company_short_name),
         )
 
     def _trigger_warmup(self, company_short_name: str, trigger: str):

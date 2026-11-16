@@ -7,6 +7,36 @@ from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.i18n_service import I18nService
 import logging
 
+def build_llm_query_kwargs(data: dict) -> dict:
+    """The arguments of `QueryService.llm_query` a chat/API request body carries."""
+    client_data = data.get('client_data') or {}
+    if not isinstance(client_data, dict):
+        client_data = {}
+    else:
+        client_data = dict(client_data)
+    client_data.setdefault("source", "chat_ui")
+    return {
+        "model": data.get('model', ''),
+        "llm_request_options": {
+            "reasoning_effort": data.get('reasoning_effort', '')
+        },
+        "question": data.get('question', ''),
+        "prompt_name": data.get('prompt_name'),
+        "client_data": client_data,
+        "ignore_history": data.get('ignore_history', False),
+        "files": data.get('files', []),
+    }
+
+
+def compact_llm_query_result(result: dict) -> dict:
+    """Keep the response compact: expose structured_output but hide schema diagnostics."""
+    result.pop('schema_valid', None)
+    result.pop('schema_errors', None)
+    result.pop('schema_mode', None)
+    result.pop('schema_applied', None)
+    return result
+
+
 class LLMQueryApiView(MethodView):
     """
     API-only endpoint for submitting queries. Authenticates via API Key.
@@ -37,35 +67,16 @@ class LLMQueryApiView(MethodView):
             if not data:
                 return jsonify({"error": "Invalid JSON body"}), 400
 
-            client_data = data.get('client_data') or {}
-            if not isinstance(client_data, dict):
-                client_data = {}
-            else:
-                client_data = dict(client_data)
-            client_data.setdefault("source", "chat_ui")
-
             # 4. Call the unified query service method.
             result = self.query_service.llm_query(
                 company_short_name=company_short_name,
                 user_identifier=user_identifier,
-                model=data.get('model', ''),
-                llm_request_options={
-                    "reasoning_effort": data.get('reasoning_effort', '')
-                },
-                question=data.get('question', ''),
-                prompt_name=data.get('prompt_name'),
-                client_data=client_data,
-                ignore_history=data.get('ignore_history', False),
-                files=data.get('files', [])
+                **build_llm_query_kwargs(data),
             )
             if 'error' in result:
                 return jsonify(result), 409
 
-            # keep API response compact: expose structured_output but hide schema diagnostics
-            result.pop('schema_valid', None)
-            result.pop('schema_errors', None)
-            result.pop('schema_mode', None)
-            result.pop('schema_applied', None)
+            compact_llm_query_result(result)
 
             return jsonify(result), 200
 
