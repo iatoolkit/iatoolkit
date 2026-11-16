@@ -120,7 +120,7 @@ class TestLLMQueryStreamApiView:
         assert response.status_code == 403
         self.query.llm_query.assert_not_called()
 
-    def test_rejects_when_the_company_has_not_enabled_it(self):
+    def test_rejects_when_the_company_turned_it_off(self):
         self.config.is_chat_streaming_enabled.return_value = False
 
         response = self.client.post(self.url, json={"question": "x"})
@@ -150,10 +150,11 @@ class TestChatStreamingFlag:
         service.get_configuration = MagicMock(return_value=parameters)
         return service
 
-    def test_off_by_default(self):
-        assert self._service({}).is_chat_streaming_enabled(COMPANY) is False
-        assert self._service(None).is_chat_streaming_enabled(COMPANY) is False
-
-    def test_on_only_when_true(self):
+    def test_on_by_default(self):
+        assert self._service({}).is_chat_streaming_enabled(COMPANY) is True
+        assert self._service(None).is_chat_streaming_enabled(COMPANY) is True
         assert self._service({"chat_streaming": True}).is_chat_streaming_enabled(COMPANY) is True
-        assert self._service({"chat_streaming": "yes"}).is_chat_streaming_enabled(COMPANY) is False
+
+    def test_off_only_when_set_to_false(self):
+        assert self._service({"chat_streaming": False}).is_chat_streaming_enabled(COMPANY) is False
+        assert self._service({"chat_streaming": "no"}).is_chat_streaming_enabled(COMPANY) is True

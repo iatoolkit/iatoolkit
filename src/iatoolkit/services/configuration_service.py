@@ -1423,13 +1423,15 @@ class ConfigurationService:
             raise ValueError(f"Cannot assign value to non-container type {type(current)} at '{key}'")
 
     def is_chat_streaming_enabled(self, company_short_name: str) -> bool:
-        """Whether the chat web shows the turn live (BL-023): `parameters.chat_streaming`
-        in company.yaml. Off unless the company turns it on."""
+        """Whether the chat web shows the turn live (BL-023). The IAToolkit standard:
+        on unless company.yaml sets `parameters.chat_streaming: false`."""
         try:
             parameters = self.get_configuration(company_short_name, "parameters") or {}
         except Exception:
-            return False
-        return isinstance(parameters, dict) and parameters.get("chat_streaming") is True
+            return True
+        if not isinstance(parameters, dict):
+            return True
+        return parameters.get("chat_streaming") is not False
 
     def get_llm_configuration(self, company_short_name: str):
         """

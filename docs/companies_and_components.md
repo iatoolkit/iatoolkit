@@ -185,6 +185,7 @@ company.yaml
 │   ├── cors_origin[]             # Allowed origins for browser-based access (CORS)
 │   ├── user_feedback{}           # Configuration for collecting user feedback (channel, target)
 │   ├── verify_account            # Enable or disable the account verification flow when signup
+│   ├── chat_streaming            # Live chat turn (default true; false waits for the whole answer)
 │   └── external_urls{}           # External URLs (e.g., logout redirects, portals)
 │
 ├── mail_provider                 # email configuration
@@ -488,6 +489,10 @@ requiring framework modifications.
 parameters:
   # Enable or disable the account verification flow when signup
   verify_account: false      # IMPORTANT! in production recommend to set to true
+
+  # The chat shows the turn live: tools, reasoning, the answer as it is written
+  # (OpenAI and OpenRouter models). On by default; false waits for the whole answer.
+  # chat_streaming: false
 
   # This configuration is for receiving the user feedback from the chat modal window
   user_feedback:

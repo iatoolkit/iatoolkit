@@ -3,9 +3,9 @@
 // The chat posts the same body it sends to /api/llm_query to
 // /api/llm_query/stream and reads the events as they arrive: which tool is
 // running, and the `final` event carrying the very JSON /api/llm_query
-// returns, which the chat renders exactly as before. Only for the companies
-// that turned it on (parameters.chat_streaming) and the providers whose
-// adapters stream; every other turn goes through callToolkit as always.
+// returns, which the chat renders exactly as before. On for every company
+// unless it sets parameters.chat_streaming: false, and only for the providers
+// whose adapters stream; every other turn goes through callToolkit as always.
 
 (function () {
     const STREAMING_PROVIDERS = new Set(['openai', 'openrouter']);
