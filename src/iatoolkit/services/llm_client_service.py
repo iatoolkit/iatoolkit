@@ -27,7 +27,7 @@ from iatoolkit.services.dispatcher_service import Dispatcher
 from iatoolkit.services.storage_service import StorageService
 from iatoolkit.services.structured_output_service import StructuredOutputService
 from iatoolkit.services.telemetry_service import NoopTelemetryService
-from iatoolkit.services.chat_stream import ChatEventSink, emit_safely
+from iatoolkit.services.chat_stream import ChatEventSink, RoundStream, emit_safely
 
 CONTEXT_ERROR_MESSAGE = 'Tu consulta supera el límite de contexto del modelo. Acota la pregunta o divídela en partes más pequeñas.'
 TELEMETRY_MAX_STRING_LENGTH = 1000
@@ -359,6 +359,9 @@ class llmClient:
         tool_loop_stop_reason = None
         company_id = getattr(company, "id", None)
         model_round = 0
+        # A turn with an output schema answers in JSON: only its progress is
+        # streamed, the final event renders the answer (BL-023).
+        stream_answer_text = not (isinstance(response_contract, dict) and response_contract.get("schema"))
 
         # Resolve per-model defaults and apply overrides (without mutating inputs).
         request_params = self.model_registry.resolve_request_params(
@@ -405,6 +408,7 @@ class llmClient:
                 response = self._create_round_response(
                     event_sink,
                     model_round,
+                    stream_text=stream_answer_text,
                     company_short_name=company.short_name,
                     model=model,
                     input=input_messages,
@@ -669,6 +673,7 @@ class llmClient:
                 response = self._create_round_response(
                     event_sink,
                     model_round,
+                    stream_text=stream_answer_text,
                     company_short_name=company.short_name,
                     model=model,
                     input=input_messages,
@@ -857,20 +862,36 @@ class llmClient:
 
             raise IAToolkitException(IAToolkitException.ErrorType.LLM_ERROR, error_message)
 
-    def _create_round_response(self, event_sink: Optional[ChatEventSink], model_round: int, **kwargs):
+    def _create_round_response(self, event_sink: Optional[ChatEventSink], model_round: int,
+                               stream_text: bool = True, **kwargs):
         """One call to the model. With an event sink, the call is announced and its
         outcome reported (BL-023); without one it is the plain proxy call."""
         if event_sink is None:
             return self.llm_proxy.create_response(**kwargs)
 
         emit_safely(event_sink, "round_start", {"round": model_round})
-        response = self.llm_proxy.create_response(event_sink=event_sink, **kwargs)
+        response = self.llm_proxy.create_response(
+            stream_callbacks=RoundStream(
+                event_sink,
+                stream_text=stream_text and self._streams_answer_text(kwargs),
+            ),
+            **kwargs,
+        )
         has_tool_calls = any(
             getattr(tool_call, "type", None) == "function_call"
             for tool_call in (getattr(response, "output", None) or [])
         )
         emit_safely(event_sink, "round_end", {"round": model_round, "has_tool_calls": has_tool_calls})
         return response
+
+    @staticmethod
+    def _streams_answer_text(call_kwargs: Dict[str, Any]) -> bool:
+        """Whether the answer's text is worth showing as it arrives: not when
+        the model is asked for JSON (an output schema); the final event renders it."""
+        text = call_kwargs.get("text") or {}
+        response_format = text.get("format") if isinstance(text, dict) else None
+        format_type = str((response_format or {}).get("type") or "").strip().lower() if isinstance(response_format, dict) else ""
+        return format_type not in ("json_schema", "json_object")
 
     @staticmethod
     def _build_root_telemetry_output(decoded_response: dict[str, Any] | None) -> dict[str, Any]:

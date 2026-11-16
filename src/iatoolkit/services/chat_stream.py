@@ -62,6 +62,61 @@ def emit_safely(event_sink: Optional[ChatEventSink], event: str, payload: Option
         logging.exception("chat stream: could not emit event %s", event)
 
 
+class RoundStream:
+    """What a streaming adapter reports during one model call.
+
+    The adapter hands over text and reasoning as they arrive; this decides
+    what reaches the sink. Text is held back for turns whose answer is JSON
+    (an output schema, or a model that answers in the legacy
+    `{"answer": ...}` format): it would mean nothing to the person and the
+    final event renders it properly. The decision is made on the first
+    visible characters of each call.
+    """
+
+    _JSON_FENCE = "```"
+
+    def __init__(self, event_sink: ChatEventSink, stream_text: bool = True):
+        self._sink = event_sink
+        self._stream_text = stream_text
+        self._pending = ""
+        self._text_decision: Optional[bool] = None if stream_text else False
+
+    def is_cancelled(self) -> bool:
+        return bool(self._sink.is_cancelled())
+
+    def raise_if_cancelled(self) -> None:
+        if self.is_cancelled():
+            raise TurnCancelled("The turn was cancelled.")
+
+    def on_reasoning_delta(self, text: str) -> None:
+        if text:
+            emit_safely(self._sink, "reasoning_delta", {"text": text})
+
+    def on_text_delta(self, text: str) -> None:
+        if not text or self._text_decision is False:
+            return
+        if self._text_decision is True:
+            emit_safely(self._sink, "text_delta", {"text": text})
+            return
+
+        self._pending += text
+        visible = self._pending.lstrip()
+        if not visible:
+            return
+        if visible.startswith("{"):
+            self._text_decision = False
+        elif visible.startswith("`"):
+            if len(visible) < len(self._JSON_FENCE) and self._JSON_FENCE.startswith(visible):
+                return  # one or two backticks: not enough to tell yet
+            self._text_decision = not visible.startswith(self._JSON_FENCE)
+        else:
+            self._text_decision = True
+
+        if self._text_decision:
+            emit_safely(self._sink, "text_delta", {"text": self._pending})
+        self._pending = ""
+
+
 class QueueEventSink(ChatEventSink):
     """A sink a web response reads from: the turn runs in its own thread and
     writes here; the streaming response drains the queue.

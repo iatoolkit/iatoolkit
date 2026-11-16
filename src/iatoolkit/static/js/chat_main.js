@@ -131,6 +131,7 @@ const handleChatMessage = async function () {
 
     isRequestInProgress = true;
     toggleSendStopButtons(true);
+    let liveTurn = null;
 
     try {
         const question = $('#question').val().trim();
@@ -182,15 +183,20 @@ const handleChatMessage = async function () {
         if (chatStream && chatStream.shouldStream(data.model)) {
             // Live turn (BL-023): progress while it runs, then the same final JSON.
             abortController = new AbortController();
+            liveTurn = chatStream.createLiveTurn();
+            const turn = liveTurn;
             responseData = await chatStream.run({
                 apiPath: "/api/llm_query/stream",
                 data: data,
                 signal: abortController.signal,
-                handlers: { onEvent: handleChatStreamEvent },
+                handlers: { onEvent: (event, payload) => handleChatStreamEvent(event, payload, turn) },
             });
             if (responseData === chatStream.FALLBACK) {
                 responseData = undefined;
             }
+            // The final answer replaces what was shown while it was written.
+            liveTurn.remove();
+            liveTurn = null;
         }
         if (responseData === undefined) {
             responseData = await callToolkit("/api/llm_query", data, "POST");
@@ -200,6 +206,9 @@ const handleChatMessage = async function () {
         processBotResponse(responseData);
 
     } catch (error) {
+        if (liveTurn) {
+            liveTurn.markIncomplete();
+        }
         if (error.name === 'ChatStreamError' || error.name === 'ChatStreamInterrupted') {
             const errorIcon = $('<i>').addClass('bi bi-exclamation-triangle');
             const errorText = $('<p>').text(error.message);
@@ -618,13 +627,20 @@ function setSpinnerText(text) {
 /**
  * Progress of a live turn (BL-023): every event but `final` and `error`.
  */
-function handleChatStreamEvent(event, payload) {
+function handleChatStreamEvent(event, payload, liveTurn) {
     const chatStream = window.IATChatStream;
     if (event === 'tool_start') {
         const label = chatStream.toolLabel(payload.name);
         setSpinnerText(t_js('chat_stream_running_tool').replace('{tool}', label));
     } else if (event === 'round_start' && payload.round > 1) {
         setSpinnerText(t_js('chat_stream_thinking'));
+    } else if (event === 'reasoning_delta' && liveTurn) {
+        liveTurn.appendReasoning(payload.text);
+    } else if (event === 'text_delta' && liveTurn) {
+        if (!liveTurn.text) setSpinnerText(t_js('chat_stream_writing'));
+        liveTurn.appendText(payload.text);
+    } else if (event === 'round_end' && liveTurn) {
+        liveTurn.endRound(payload.has_tool_calls === true);
     }
 }
 

@@ -334,6 +334,38 @@ class TestLLMProxy:
         adapter_kwargs = self.mock_openai_adapter_instance.create_response.call_args.kwargs
         assert adapter_kwargs["telemetry_execution"] is telemetry_execution
 
+    def _call_openai(self, **kwargs):
+        self.model_registry_mock.get_provider.return_value = "openai"
+        self.config_service_mock.get_configuration.return_value = {"api-key": "LLM_KEY"}
+        with patch.dict(os.environ, {"LLM_KEY": "dummy"}, clear=True):
+            self.proxy.create_response(
+                company_short_name=self.company_short_name, model="gpt-5", input=[], **kwargs,
+            )
+        return self.mock_openai_adapter_instance.create_response.call_args.kwargs
+
+    def test_stream_callbacks_reach_an_adapter_that_streams(self):
+        self.mock_openai_adapter_instance.supports_streaming = True
+        callbacks = MagicMock(name="stream_callbacks")
+
+        adapter_kwargs = self._call_openai(stream_callbacks=callbacks)
+
+        assert adapter_kwargs["stream_callbacks"] is callbacks
+
+    def test_stream_callbacks_never_reach_an_adapter_that_does_not_stream(self):
+        self.mock_openai_adapter_instance.supports_streaming = False
+
+        adapter_kwargs = self._call_openai(stream_callbacks=MagicMock())
+
+        assert "stream_callbacks" not in adapter_kwargs
+
+    def test_a_request_override_never_turns_streaming_on(self):
+        self.mock_openai_adapter_instance.supports_streaming = True
+
+        adapter_kwargs = self._call_openai(stream=True, stream_options={"include_usage": True})
+
+        assert "stream" not in adapter_kwargs
+        assert "stream_options" not in adapter_kwargs
+
     def test_create_response_releases_the_database_transaction_before_the_provider_call(self):
         # The model can take minutes; the request's connection must not wait
         # "idle in transaction" with it.

@@ -123,10 +123,10 @@ class LLMProxy:
 
         telemetry_request = kwargs.pop("telemetry_request", None)
         telemetry_execution = kwargs.pop("telemetry_execution", None)
-        # Live events of a chat turn (BL-023). Taken out before the request
-        # overrides so it never reaches a provider as a request parameter.
-        event_sink = kwargs.pop("event_sink", None)
-        _ = event_sink
+        # Live text of a chat turn (BL-023). Taken out before the request
+        # overrides so it never reaches a provider as a request parameter, and
+        # handed only to adapters that stream; the rest answer as always.
+        stream_callbacks = kwargs.pop("stream_callbacks", None)
 
         # Determine the provider based on the model name
         provider = self._resolve_provider_for_company_model(
@@ -172,6 +172,12 @@ class LLMProxy:
         )
         if telemetry_execution is not None:
             request_kwargs["telemetry_execution"] = telemetry_execution
+        # Never a provider-level `stream` from a company or model override: the
+        # adapters read whole responses unless they stream on purpose.
+        request_kwargs.pop("stream", None)
+        request_kwargs.pop("stream_options", None)
+        if stream_callbacks is not None and getattr(adapter, "supports_streaming", False):
+            request_kwargs["stream_callbacks"] = stream_callbacks
 
         # Everything the call needs from the database is resolved by now; the
         # model can take minutes, and the connection should not wait with it.

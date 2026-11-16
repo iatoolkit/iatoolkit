@@ -7,6 +7,7 @@ import logging
 from typing import Any, Dict, List, Optional
 from iatoolkit.infra.llm_response import LLMResponse, ToolCall, Usage
 from iatoolkit.common.exceptions import IAToolkitException
+from iatoolkit.services.chat_stream import TurnCancelled
 from iatoolkit.infra.llm_providers.attachment_mime import (
     is_image_mime,
     is_inline_image_mime,
@@ -19,6 +20,9 @@ import base64
 
 class OpenAIAdapter:
     """Adaptador para la API de OpenAI"""
+
+    #: Can report text and reasoning as they arrive (BL-023).
+    supports_streaming = True
 
     def __init__(self, openai_client):
         self.client = openai_client
@@ -42,7 +46,8 @@ class OpenAIAdapter:
                         store: Optional[bool] = None,
                         metadata: Optional[Dict[str, str]] = None,
                         telemetry_execution: Any = None,
-                        carries_reasoning: Optional[bool] = None) -> LLMResponse:
+                        carries_reasoning: Optional[bool] = None,
+                        stream_callbacks: Any = None) -> LLMResponse:
         """Llamada a la API de OpenAI y mapeo a estructura común.
 
         IAToolkit owns the history (BL-009): every call carries the whole
@@ -88,16 +93,68 @@ class OpenAIAdapter:
             self._record_telemetry_input(telemetry_execution, params)
 
             # Llamar a la API de OpenAI
-            openai_response = self.client.responses.create(**params)
+            if stream_callbacks is not None:
+                openai_response = self._create_streamed_response(params, stream_callbacks)
+            else:
+                openai_response = self.client.responses.create(**params)
 
             # Mapear la respuesta a estructura común
             return self._map_openai_response(openai_response)
 
+        except TurnCancelled:
+            raise
         except Exception as e:
             error_message = f"Error calling OpenAI API: {str(e)}"
             logging.error(error_message)
 
             raise IAToolkitException(IAToolkitException.ErrorType.LLM_ERROR, error_message)
+
+    def _create_streamed_response(self, params: Dict[str, Any], stream_callbacks: Any):
+        """The same `Response` as `responses.create`, read as a stream (BL-023).
+
+        Text and reasoning-summary deltas go to `stream_callbacks` as they
+        arrive; the `response.completed` event carries the whole response, so
+        mapping, usage, tool calls and encrypted reasoning are exactly those of
+        a call without streaming.
+        """
+        final_response = None
+        failure = None
+        summary_parts_seen = set()
+        stream = self.client.responses.create(**params, stream=True)
+        try:
+            for event in stream:
+                stream_callbacks.raise_if_cancelled()
+                event_type = getattr(event, "type", "") or ""
+                if event_type == "response.output_text.delta":
+                    stream_callbacks.on_text_delta(getattr(event, "delta", "") or "")
+                elif event_type == "response.reasoning_summary_part.added":
+                    # Summary parts read as paragraphs, like the final reasoning_content.
+                    part_key = (getattr(event, "item_id", None), getattr(event, "summary_index", None))
+                    if summary_parts_seen:
+                        stream_callbacks.on_reasoning_delta("\n")
+                    summary_parts_seen.add(part_key)
+                elif event_type == "response.reasoning_summary_text.delta":
+                    stream_callbacks.on_reasoning_delta(getattr(event, "delta", "") or "")
+                elif event_type in ("response.completed", "response.incomplete"):
+                    final_response = getattr(event, "response", None)
+                elif event_type == "response.failed":
+                    failed = getattr(event, "response", None)
+                    failure = getattr(getattr(failed, "error", None), "message", None) or "response failed"
+                elif event_type == "error":
+                    failure = getattr(event, "message", None) or "stream error"
+        finally:
+            close = getattr(stream, "close", None)
+            if callable(close):
+                close()
+
+        if failure:
+            raise IAToolkitException(IAToolkitException.ErrorType.LLM_ERROR, f"Error calling OpenAI API: {failure}")
+        if final_response is None:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.LLM_ERROR,
+                "Error calling OpenAI API: the stream ended without a response.",
+            )
+        return final_response
 
     @classmethod
     def _carries_encrypted_reasoning(cls, model: str, carries_reasoning: Optional[bool] = None) -> bool:

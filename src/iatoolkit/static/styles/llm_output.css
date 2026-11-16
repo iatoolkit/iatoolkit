@@ -146,3 +146,16 @@
   font-family: inherit;                 /* 👈 clave: usa la misma fuente base */
 }
 
+
+/* Live answer while it is written (BL-023) */
+.live-preamble {
+  color: #6c757d;
+  font-size: 13px;
+  font-style: italic;
+  margin: 0 0 6px 0;
+}
+
+.live-turn-incomplete .answer-section {
+  border-left: 3px solid #ffc107;
+  padding-left: 10px;
+}

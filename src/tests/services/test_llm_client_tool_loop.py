@@ -11,6 +11,7 @@ from iatoolkit.common.model_registry import ModelRegistry
 from iatoolkit.infra.llm_response import LLMResponse, ToolCall, Usage
 from iatoolkit.repositories.models import Company
 from iatoolkit.services.llm_client_service import llmClient
+from iatoolkit.services.chat_stream import RoundStream
 from iatoolkit.services.storage_service import StorageService
 from iatoolkit.services.telemetry_service import TelemetryExecution
 
@@ -406,6 +407,7 @@ class TestChatEventSink(_LLMClientFixture):
 
         for call in self.proxy.create_response.call_args_list:
             assert "event_sink" not in call.kwargs
+            assert "stream_callbacks" not in call.kwargs
 
     def test_reports_rounds_and_tools_in_order(self):
         sink = _RecordingSink()
@@ -433,9 +435,10 @@ class TestChatEventSink(_LLMClientFixture):
         assert payloads[5]["ok"] is False and payloads[5]["call_id"] == "c2"
         assert payloads[7] == {"round": 2, "has_tool_calls": False}
         assert result["answer"]
-        # The proxy got the sink, so a streaming adapter can report deltas.
+        # The proxy got the round's stream, so a streaming adapter can report deltas.
         for call in self.proxy.create_response.call_args_list:
-            assert call.kwargs["event_sink"] is sink
+            assert isinstance(call.kwargs["stream_callbacks"], RoundStream)
+            assert "event_sink" not in call.kwargs
 
     def test_tool_start_never_carries_arguments(self):
         sink = _RecordingSink()
@@ -459,3 +462,23 @@ class TestChatEventSink(_LLMClientFixture):
         result = self._invoke(event_sink=sink)
 
         assert result["valid_response"] is True
+
+    def test_a_turn_with_an_output_schema_streams_no_text(self):
+        sink = _RecordingSink()
+        self.proxy.create_response.side_effect = [_final_response()]
+
+        self._invoke(event_sink=sink, response_contract={"schema": {"type": "object"}})
+
+        stream = self.proxy.create_response.call_args.kwargs["stream_callbacks"]
+        stream.on_text_delta("Hola")
+        assert not [event for event, _ in sink.events if event == "text_delta"]
+
+    def test_a_chat_turn_streams_text(self):
+        sink = _RecordingSink()
+        self.proxy.create_response.side_effect = [_final_response()]
+
+        self._invoke(event_sink=sink)
+
+        stream = self.proxy.create_response.call_args.kwargs["stream_callbacks"]
+        stream.on_text_delta("Hola")
+        assert ("text_delta", {"text": "Hola"}) in sink.events

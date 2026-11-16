@@ -177,6 +177,136 @@
         return finalResult;
     }
 
+    /**
+     * The answer as it is being written: reasoning, then the markdown of the
+     * text so far, re-rendered at most every RENDER_INTERVAL_MS. Text a model
+     * writes before asking for a tool becomes a grey line once the round ends
+     * with tool calls. The final event replaces all of it (removeLiveTurn).
+     */
+    const RENDER_INTERVAL_MS = 80;
+
+    class LiveTurn {
+        constructor() {
+            this.container = null;
+            this.answer = null;
+            this.reasoningCard = null;
+            this.text = '';
+            this.reasoning = '';
+            this.renderTimer = null;
+        }
+
+        _chat() {
+            return $('#chat-container');
+        }
+
+        _keepBottom(update) {
+            const chat = this._chat()[0];
+            const nearBottom = !chat || (chat.scrollHeight - chat.scrollTop - chat.clientHeight) < 120;
+            update();
+            if (chat && nearBottom) chat.scrollTop = chat.scrollHeight;
+        }
+
+        _ensure() {
+            if (this.container) return;
+            const uniqueId = 'live-reasoning-' + Date.now();
+            this.container = $('<div>').addClass('bot-message-container live-turn');
+            const reasoningBlock = $(`
+                <div class="reasoning-block d-none">
+                    <button class="reasoning-toggle btn btn-sm btn-link text-decoration-none p-0"
+                        type="button" data-bs-toggle="collapse" data-bs-target="#${uniqueId}"
+                        aria-expanded="true" aria-controls="${uniqueId}">
+                        <i class="bi bi-lightbulb me-1"></i> <span class="reasoning-toggle-label"></span>
+                    </button>
+                    <div class="collapse show mt-2" id="${uniqueId}">
+                        <div class="reasoning-card"></div>
+                    </div>
+                </div>
+            `);
+            reasoningBlock.find('.reasoning-toggle-label').text(translate('show_reasoning', 'Ver razonamiento'));
+            this.reasoningCard = reasoningBlock.find('.reasoning-card');
+            this.preambles = $('<div>').addClass('live-preambles');
+            this.answer = $('<div>').addClass('answer-section llm-output');
+            this.container.append(reasoningBlock).append(this.preambles).append(this.answer);
+
+            const spinner = $('#spinner');
+            this._keepBottom(() => {
+                if (spinner.length) spinner.before(this.container);
+                else this._chat().append(this.container);
+            });
+        }
+
+        appendReasoning(text) {
+            if (!text) return;
+            this._ensure();
+            this.reasoning += text;
+            this._keepBottom(() => {
+                // Text, never HTML: the reasoning echoes tenant data.
+                this.reasoningCard.text(this.reasoning);
+                this.reasoningCard.closest('.reasoning-block').removeClass('d-none');
+            });
+        }
+
+        appendText(text) {
+            if (!text) return;
+            this._ensure();
+            this.text += text;
+            if (this.renderTimer === null) {
+                this.renderTimer = setTimeout(() => this.render(), RENDER_INTERVAL_MS);
+            }
+        }
+
+        render() {
+            if (this.renderTimer !== null) {
+                clearTimeout(this.renderTimer);
+                this.renderTimer = null;
+            }
+            if (!this.answer) return;
+            let html;
+            if (window.marked && typeof window.marked.parse === 'function') {
+                html = window.marked.parse(this.text, { gfm: true, breaks: false });
+            } else {
+                html = $('<div>').text(this.text).html().replace(/\n/g, '<br>');
+            }
+            const safe = typeof window.sanitizeHtmlFragment === 'function'
+                ? window.sanitizeHtmlFragment(html)
+                : $('<div>').text(this.text).html();
+            this._keepBottom(() => this.answer.html(safe));
+        }
+
+        /** A round ended. Its text, if it asked for tools, was a preamble. */
+        endRound(hasToolCalls) {
+            if (!hasToolCalls || !this.container) return;
+            const preamble = this.text.trim();
+            this.text = '';
+            this.render();
+            if (preamble) {
+                this._keepBottom(() => this.preambles.append($('<p>').addClass('live-preamble').text(preamble)));
+            }
+        }
+
+        hasContent() {
+            return !!this.container && (this.text.trim() !== '' || this.reasoning.trim() !== '');
+        }
+
+        /** Stopped or failed before the final event: keep what was written. */
+        markIncomplete() {
+            if (!this.container) return;
+            this.render();
+            if (!this.hasContent()) {
+                this.remove();
+                return;
+            }
+            this.container.removeClass('live-turn').addClass('live-turn-incomplete');
+        }
+
+        remove() {
+            if (this.renderTimer !== null) clearTimeout(this.renderTimer);
+            this.renderTimer = null;
+            if (this.container) this.container.remove();
+            this.container = null;
+        }
+    }
+
     class ChatStreamError extends Error {
         constructor(message) {
             super(message);
@@ -197,6 +327,7 @@
         toolLabel,
         run,
         createSseParser,
+        createLiveTurn: () => new LiveTurn(),
         ChatStreamError,
         ChatStreamInterrupted,
     };
