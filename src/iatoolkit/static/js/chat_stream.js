@@ -40,7 +40,7 @@
         const translated = translate('tool_' + raw, null);
         if (translated) return translated;
         const readable = raw.replace(/^iat_/, '').replace(/[_\-.]+/g, ' ').replace(/\s+/g, ' ').trim();
-        if (!readable) return translate('chat_stream_thinking', 'Pensando…');
+        if (!readable) return translate('chat_activity_thinking', 'Pensando…');
         return readable.charAt(0).toUpperCase() + readable.slice(1);
     }
 
@@ -197,21 +197,76 @@
     }
 
     /**
-     * The answer as it is being written: reasoning, then the markdown of the
-     * text so far, re-rendered at most every RENDER_INTERVAL_MS. Text a model
-     * writes before asking for a tool becomes a grey line once the round ends
-     * with tool calls. The final event replaces all of it (removeLiveTurn).
+     * A live turn (BL-023): the turn's activity above the answer, ChatGPT style.
+     *
+     * While it runs, one line ("Pensando… 8 s") and the step it is on (the title
+     * of the reasoning summary, or the tool running); a click unfolds the
+     * timeline of reasoning steps, tools and preambles. The answer is written
+     * below, its markdown re-rendered at most every RENDER_INTERVAL_MS. When
+     * the final event arrives the chat renders the final answer and keeps the
+     * activity, collapsed ("Pensó durante 14 s · 2 herramientas"), above it.
      */
     const RENDER_INTERVAL_MS = 80;
+    const REASONING_TITLE = /^\*\*(.+?)\*\*[ \t]*$/gm;
+
+    function renderMarkdown(text) {
+        let html;
+        if (window.marked && typeof window.marked.parse === 'function') {
+            html = window.marked.parse(normalizeHtmlBlocks(text), { gfm: true, breaks: false });
+        } else {
+            html = $('<div>').text(text).html().replace(/\n/g, '<br>');
+        }
+        return typeof window.sanitizeHtmlFragment === 'function'
+            ? window.sanitizeHtmlFragment(html)
+            : $('<div>').text(text).html();
+    }
+
+    function formatDuration(ms) {
+        const seconds = Math.max(0, Math.round(ms / 1000));
+        if (seconds < 60) return `${seconds} s`;
+        const minutes = Math.floor(seconds / 60);
+        return `${minutes} min ${String(seconds % 60).padStart(2, '0')} s`;
+    }
+
+    function fill(template, values) {
+        return Object.keys(values).reduce((text, key) => text.split(`{${key}}`).join(values[key]), template);
+    }
+
+    /** Reasoning summaries come as "**Title**\n\ntext" sections. */
+    function splitReasoning(text) {
+        const steps = [];
+        let lastIndex = 0;
+        let current = { title: '', body: '' };
+        REASONING_TITLE.lastIndex = 0;
+        let match;
+        while ((match = REASONING_TITLE.exec(text)) !== null) {
+            current.body += text.slice(lastIndex, match.index);
+            if (current.title || current.body.trim()) steps.push(current);
+            current = { title: match[1].trim(), body: '' };
+            lastIndex = match.index + match[0].length;
+        }
+        current.body += text.slice(lastIndex);
+        if (current.title || current.body.trim()) steps.push(current);
+        return steps;
+    }
+
+    let activitySequence = 0;
 
     class LiveTurn {
         constructor() {
             this.container = null;
+            this.activity = null;
             this.answer = null;
-            this.reasoningCard = null;
             this.text = '';
-            this.reasoning = '';
             this.renderTimer = null;
+            this.clock = null;
+            this.startedAt = Date.now();
+            this.finishedAt = null;
+            this.items = [];          // timeline entries, in order
+            this.reasoningItem = null; // the reasoning entry being written
+            this.tools = {};          // call_id -> entry
+            this.toolCount = 0;
+            this.writing = false;
         }
 
         _chat() {
@@ -225,52 +280,130 @@
             if (chat && nearBottom) chat.scrollTop = chat.scrollHeight;
         }
 
-        _ensure() {
+        /** Shows the activity at once, in place of the spinner. */
+        start() {
             if (this.container) return;
-            const uniqueId = 'live-reasoning-' + Date.now();
+            const timelineId = 'turn-activity-' + (++activitySequence);
             this.container = $('<div>').addClass('bot-message-container live-turn');
-            const reasoningBlock = $(`
-                <div class="reasoning-block d-none">
-                    <button class="reasoning-toggle btn btn-sm btn-link text-decoration-none p-0"
-                        type="button" data-bs-toggle="collapse" data-bs-target="#${uniqueId}"
-                        aria-expanded="true" aria-controls="${uniqueId}">
-                        <i class="bi bi-lightbulb me-1"></i> <span class="reasoning-toggle-label"></span>
+            this.activity = $(`
+                <div class="turn-activity is-running">
+                    <button type="button" class="turn-activity-header" aria-expanded="false" aria-controls="${timelineId}">
+                        <span class="turn-activity-indicator" aria-hidden="true"></span>
+                        <span class="turn-activity-title"></span>
+                        <span class="turn-activity-elapsed"></span>
+                        <i class="bi bi-chevron-right turn-activity-chevron" aria-hidden="true"></i>
                     </button>
-                    <div class="collapse show mt-2" id="${uniqueId}">
-                        <div class="reasoning-card"></div>
-                    </div>
+                    <div class="turn-activity-step" role="status" aria-live="polite"></div>
+                    <ol class="turn-activity-timeline" id="${timelineId}" hidden></ol>
                 </div>
             `);
-            reasoningBlock.find('.reasoning-toggle-label').text(translate('show_reasoning', 'Ver razonamiento'));
-            // While it is written, the reasoning shows its last lines only: no
-            // scroll box of its own inside the chat's.
-            this.reasoningCard = reasoningBlock.find('.reasoning-card').addClass('reasoning-live');
-            this.preambles = $('<div>').addClass('live-preambles');
+            this.activity.find('.turn-activity-header').on('click', () => this.toggle());
             this.answer = $('<div>').addClass('answer-section llm-output');
-            this.container.append(reasoningBlock).append(this.preambles).append(this.answer);
+            this.container.append(this.activity).append(this.answer);
 
-            const spinner = $('#spinner');
+            this._setTitle(translate('chat_activity_thinking', 'Pensando…'));
+            this._tick();
+            this.clock = setInterval(() => this._tick(), 1000);
+
             this._keepBottom(() => {
-                if (spinner.length) spinner.before(this.container);
-                else this._chat().append(this.container);
+                const spinner = $('#spinner');
+                if (spinner.length) {
+                    spinner.before(this.container);
+                    spinner.remove();
+                } else {
+                    this._chat().append(this.container);
+                }
             });
+        }
+
+        toggle(open) {
+            if (!this.activity) return;
+            const header = this.activity.find('.turn-activity-header');
+            const timeline = this.activity.find('.turn-activity-timeline');
+            const expand = typeof open === 'boolean' ? open : header.attr('aria-expanded') !== 'true';
+            header.attr('aria-expanded', expand ? 'true' : 'false');
+            timeline.prop('hidden', !expand);
+            this.activity.toggleClass('is-open', expand);
+        }
+
+        _setTitle(text) {
+            this.activity.find('.turn-activity-title').text(text);
+        }
+
+        _setStep(text) {
+            this.activity.find('.turn-activity-step').text(text || '');
+        }
+
+        _tick() {
+            const end = this.finishedAt || Date.now();
+            this.activity.find('.turn-activity-elapsed').text(formatDuration(end - this.startedAt));
+        }
+
+        _addItem(kind) {
+            const item = { kind, element: $('<li>').addClass(`turn-activity-item is-${kind}`) };
+            this.items.push(item);
+            this.activity.find('.turn-activity-timeline').append(item.element);
+            return item;
+        }
+
+        roundStart(round) {
+            this.start();
+            this.reasoningItem = null;
+            if (round > 1 && !this.writing) this._setTitle(translate('chat_activity_thinking', 'Pensando…'));
         }
 
         appendReasoning(text) {
             if (!text) return;
-            this._ensure();
-            this.reasoning += text;
-            this._keepBottom(() => {
-                // Text, never HTML: the reasoning echoes tenant data.
-                this.reasoningCard.text(this.reasoning);
-                this.reasoningCard.closest('.reasoning-block').removeClass('d-none');
-                this.reasoningCard[0].scrollTop = this.reasoningCard[0].scrollHeight;
+            this.start();
+            if (!this.reasoningItem) {
+                this.reasoningItem = this._addItem('reasoning');
+                this.reasoningItem.text = '';
+            }
+            const item = this.reasoningItem;
+            item.text += text;
+            const steps = splitReasoning(item.text);
+            const element = item.element.empty();
+            steps.forEach(step => {
+                if (step.title) element.append($('<div>').addClass('turn-activity-item-title').text(step.title));
+                if (step.body.trim()) element.append($('<div>').addClass('turn-activity-item-body').html(renderMarkdown(step.body.trim())));
             });
+            const current = steps.length ? steps[steps.length - 1] : null;
+            if (current && current.title && !this.writing) this._setStep(current.title);
+        }
+
+        toolStart(callId, name) {
+            this.start();
+            this.reasoningItem = null;
+            const label = toolLabel(name);
+            const item = this._addItem('tool');
+            item.startedAt = Date.now();
+            item.element.append(
+                $('<span>').addClass('turn-activity-tool-status').attr('aria-hidden', 'true'),
+                $('<span>').addClass('turn-activity-tool-label').text(label),
+                $('<span>').addClass('turn-activity-tool-time'),
+            );
+            this.tools[callId || `tool-${this.items.length}`] = item;
+            this.toolCount += 1;
+            this._setStep(fill(translate('chat_stream_running_tool', '{tool}…'), { tool: label }));
+        }
+
+        toolEnd(callId, ok, ms) {
+            const item = this.tools[callId];
+            if (!item) return;
+            const elapsed = typeof ms === 'number' ? ms : Date.now() - item.startedAt;
+            item.element.addClass(ok ? 'is-ok' : 'is-error');
+            item.element.find('.turn-activity-tool-time').text(formatDuration(elapsed));
+            this._setStep('');
         }
 
         appendText(text) {
             if (!text) return;
-            this._ensure();
+            this.start();
+            if (!this.writing) {
+                this.writing = true;
+                this._setTitle(translate('chat_stream_writing', 'Escribiendo la respuesta…'));
+                this._setStep('');
+            }
             this.text += text;
             if (this.renderTimer === null) {
                 this.renderTimer = setTimeout(() => this.render(), RENDER_INTERVAL_MS);
@@ -283,47 +416,87 @@
                 this.renderTimer = null;
             }
             if (!this.answer) return;
-            let html;
-            if (window.marked && typeof window.marked.parse === 'function') {
-                html = window.marked.parse(normalizeHtmlBlocks(this.text), { gfm: true, breaks: false });
-            } else {
-                html = $('<div>').text(this.text).html().replace(/\n/g, '<br>');
-            }
-            const safe = typeof window.sanitizeHtmlFragment === 'function'
-                ? window.sanitizeHtmlFragment(html)
-                : $('<div>').text(this.text).html();
+            const safe = renderMarkdown(this.text);
             this._keepBottom(() => this.answer.html(safe));
         }
 
         /** A round ended. Its text, if it asked for tools, was a preamble. */
         endRound(hasToolCalls) {
+            this.reasoningItem = null;
             if (!hasToolCalls || !this.container) return;
             const preamble = this.text.trim();
             this.text = '';
+            this.writing = false;
             this.render();
+            this._setTitle(translate('chat_activity_thinking', 'Pensando…'));
             if (preamble) {
-                this._keepBottom(() => this.preambles.append($('<p>').addClass('live-preamble').text(preamble)));
+                const item = this._addItem('note');
+                item.element.text(preamble);
+                this._setStep(preamble);
             }
         }
 
-        hasContent() {
-            return !!this.container && (this.text.trim() !== '' || this.reasoning.trim() !== '');
+        hasActivity() {
+            return this.toolCount > 0 || this.items.some(item => item.kind === 'reasoning');
+        }
+
+        _finish(titleKey, fallback) {
+            if (this.clock !== null) clearInterval(this.clock);
+            this.clock = null;
+            this.finishedAt = this.finishedAt || Date.now();
+            this._tick();
+            const seconds = formatDuration(this.finishedAt - this.startedAt);
+            let title = fill(translate(titleKey, fallback), { duration: seconds });
+            if (this.toolCount > 0) {
+                const tools = this.toolCount === 1
+                    ? translate('chat_activity_one_tool', '1 herramienta')
+                    : fill(translate('chat_activity_tools', '{count} herramientas'), { count: this.toolCount });
+                title += ' · ' + tools;
+            }
+            this.activity.removeClass('is-running').addClass('is-done');
+            this.activity.find('.turn-activity-elapsed').text('');
+            this._setTitle(title);
+            this._setStep('');
+            this.toggle(false);
+        }
+
+        /**
+         * The final answer arrived: returns the activity, collapsed, for the
+         * chat to keep above it (null when there was nothing to show), and
+         * removes the live answer the final one replaces.
+         */
+        finish(finalReasoning) {
+            if (!this.container) return null;
+            if (!this.items.some(item => item.kind === 'reasoning') && finalReasoning) {
+                this.appendReasoning(String(finalReasoning));
+            }
+            this._finish('chat_activity_done', 'Pensó durante {duration}');
+            const activity = this.hasActivity() ? this.activity.detach() : null;
+            this.remove();
+            return activity;
         }
 
         /** Stopped or failed before the final event: keep what was written. */
-        markIncomplete() {
+        markIncomplete(stopped) {
             if (!this.container) return;
             this.render();
-            if (!this.hasContent()) {
+            this._finish(
+                stopped ? 'chat_activity_stopped' : 'chat_activity_failed',
+                stopped ? 'Detenido a los {duration}' : 'Se interrumpió a los {duration}',
+            );
+            if (!this.text.trim() && !this.hasActivity()) {
                 this.remove();
                 return;
             }
+            if (!this.text.trim()) this.answer.remove();
             this.container.removeClass('live-turn').addClass('live-turn-incomplete');
         }
 
         remove() {
             if (this.renderTimer !== null) clearTimeout(this.renderTimer);
+            if (this.clock !== null) clearInterval(this.clock);
             this.renderTimer = null;
+            this.clock = null;
             if (this.container) this.container.remove();
             this.container = null;
         }

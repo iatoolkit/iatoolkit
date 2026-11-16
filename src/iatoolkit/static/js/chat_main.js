@@ -132,6 +132,7 @@ const handleChatMessage = async function () {
     isRequestInProgress = true;
     toggleSendStopButtons(true);
     let liveTurn = null;
+    let turnActivity = null;
 
     try {
         const question = $('#question').val().trim();
@@ -193,9 +194,12 @@ const handleChatMessage = async function () {
             });
             if (responseData === chatStream.FALLBACK) {
                 responseData = undefined;
+                liveTurn.remove();
+            } else {
+                // The final answer replaces the live one; the turn's activity
+                // stays above it, collapsed.
+                turnActivity = liveTurn.finish(responseData && responseData.reasoning_content);
             }
-            // The final answer replaces what was shown while it was written.
-            liveTurn.remove();
             liveTurn = null;
         }
         if (responseData === undefined) {
@@ -203,11 +207,11 @@ const handleChatMessage = async function () {
         }
 
         // Delegamos el procesamiento de la respuesta a la nueva función
-        processBotResponse(responseData);
+        processBotResponse(responseData, { activity: turnActivity });
 
     } catch (error) {
         if (liveTurn) {
-            liveTurn.markIncomplete();
+            liveTurn.markIncomplete(error.name === 'AbortError');
         }
         if (error.name === 'ChatStreamError' || error.name === 'ChatStreamInterrupted') {
             const errorIcon = $('<i>').addClass('bi bi-exclamation-triangle');
@@ -239,15 +243,18 @@ const handleChatMessage = async function () {
  * Handles multimodal content: uses 'answer' for text (HTML) and 'content_parts' for images.
  * @param {object} responseData - The JSON response from the server.
  */
-function processBotResponse(responseData) {
+function processBotResponse(responseData, options = {}) {
     if (!responseData || (!responseData.answer && !responseData.content_parts)) {
         return;
     }
 
     const botMessageContainer = $('<div>').addClass('bot-message-container');
 
-    // 1. Si hay reasoning_content, agregar el acordeón colapsable
-    if (responseData.reasoning_content) {
+    // 1. A live turn keeps its activity (reasoning, tools) above the answer
+    //    (BL-023); otherwise the reasoning goes in the collapsible block.
+    if (options.activity) {
+        botMessageContainer.append(options.activity);
+    } else if (responseData.reasoning_content) {
         const uniqueId = 'reasoning-' + Date.now();
         const reasoningBlock = $(`
                 <div class="reasoning-block">
@@ -618,28 +625,21 @@ const showSpinner = function () {
 };
 
 /**
- * Changes what the spinner says (the step a live turn is on).
- */
-function setSpinnerText(text) {
-    $('#spinner-text').text(text);
-}
-
-/**
  * Progress of a live turn (BL-023): every event but `final` and `error`.
  */
 function handleChatStreamEvent(event, payload, liveTurn) {
-    const chatStream = window.IATChatStream;
-    if (event === 'tool_start') {
-        const label = chatStream.toolLabel(payload.name);
-        setSpinnerText(t_js('chat_stream_running_tool').replace('{tool}', label));
-    } else if (event === 'round_start' && payload.round > 1) {
-        setSpinnerText(t_js('chat_stream_thinking'));
-    } else if (event === 'reasoning_delta' && liveTurn) {
+    if (!liveTurn) return;
+    if (event === 'round_start') {
+        liveTurn.roundStart(payload.round);
+    } else if (event === 'tool_start') {
+        liveTurn.toolStart(payload.call_id, payload.name);
+    } else if (event === 'tool_end') {
+        liveTurn.toolEnd(payload.call_id, payload.ok === true, payload.ms);
+    } else if (event === 'reasoning_delta') {
         liveTurn.appendReasoning(payload.text);
-    } else if (event === 'text_delta' && liveTurn) {
-        if (!liveTurn.text) setSpinnerText(t_js('chat_stream_writing'));
+    } else if (event === 'text_delta') {
         liveTurn.appendText(payload.text);
-    } else if (event === 'round_end' && liveTurn) {
+    } else if (event === 'round_end') {
         liveTurn.endRound(payload.has_tool_calls === true);
     }
 }

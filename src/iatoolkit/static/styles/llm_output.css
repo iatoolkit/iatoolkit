@@ -144,22 +144,172 @@
   font-family: inherit;                 /* 👈 clave: usa la misma fuente base */
 }
 
-/* While the reasoning is written (BL-023): its last lines, fading at the top,
-   no scroll box of its own inside the chat's. Opened afterwards it shows whole. */
-.reasoning-card.reasoning-live {
-  max-height: 7.5em;
-  overflow: hidden;
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 2.5em);
-  mask-image: linear-gradient(to bottom, transparent 0, #000 2.5em);
+/* Activity of a live turn (BL-023): one line while it runs, a timeline on click,
+   collapsed above the final answer. */
+.turn-activity {
+  /* Lined up with the answer's text (.answer-section pads 14px) */
+  margin: 10px 0 6px 0;
+  padding-left: 14px;
+  font-size: 14px;
+  color: #6c757d;
 }
 
+.turn-activity-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
 
-/* Live answer while it is written (BL-023) */
-.live-preamble {
-  color: #6c757d;
+.turn-activity-header:hover .turn-activity-title,
+.turn-activity-header:focus-visible .turn-activity-title {
+  color: #343a40;
+}
+
+.turn-activity-header:focus-visible {
+  outline: 2px solid #adb5bd;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.turn-activity-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #adb5bd;
+  flex: 0 0 auto;
+}
+
+.turn-activity.is-running .turn-activity-indicator {
+  background: #6c757d;
+  animation: turn-activity-pulse 1.2s ease-in-out infinite;
+}
+
+.turn-activity.is-done .turn-activity-indicator {
+  display: none;
+}
+
+.turn-activity-title {
+  font-weight: 500;
+}
+
+/* The shimmer of a turn still working */
+.turn-activity.is-running .turn-activity-title {
+  background: linear-gradient(90deg, #6c757d 0%, #6c757d 40%, #ced4da 50%, #6c757d 60%, #6c757d 100%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: turn-activity-shimmer 2s linear infinite;
+}
+
+.turn-activity-elapsed {
+  font-variant-numeric: tabular-nums;
+  color: #adb5bd;
+}
+
+.turn-activity-chevron {
+  font-size: 11px;
+  transition: transform 0.15s ease;
+}
+
+.turn-activity.is-open .turn-activity-chevron {
+  transform: rotate(90deg);
+}
+
+.turn-activity-step {
+  margin: 2px 0 0 16px;
   font-size: 13px;
-  font-style: italic;
+  color: #868e96;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.turn-activity-step:empty,
+.turn-activity.is-open .turn-activity-step,
+.turn-activity.is-done .turn-activity-step {
+  display: none;
+}
+
+.turn-activity-timeline {
+  list-style: none;
+  margin: 8px 0 4px 3px;
+  padding: 0 0 0 14px;
+  border-left: 2px solid #e9ecef;
+}
+
+.turn-activity-item {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #6c757d;
+}
+
+.turn-activity-item-title {
+  font-weight: 600;
+  color: #495057;
+}
+
+.turn-activity-item-body p {
   margin: 0 0 6px 0;
+}
+
+.turn-activity-item.is-note {
+  font-style: italic;
+}
+
+.turn-activity-item.is-tool {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.turn-activity-tool-status::before {
+  content: "\25CB"; /* ○ running */
+  color: #adb5bd;
+}
+
+.turn-activity-item.is-ok .turn-activity-tool-status::before {
+  content: "\2713"; /* ✓ */
+  color: #2f9e44;
+}
+
+.turn-activity-item.is-error .turn-activity-tool-status::before {
+  content: "\2715"; /* ✕ */
+  color: #e03131;
+}
+
+.turn-activity-tool-time {
+  color: #adb5bd;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes turn-activity-shimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+@keyframes turn-activity-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turn-activity.is-running .turn-activity-title,
+  .turn-activity.is-running .turn-activity-indicator {
+    animation: none;
+  }
+  .turn-activity.is-running .turn-activity-title {
+    color: #6c757d;
+    background: none;
+  }
 }
 
 .live-turn-incomplete .answer-section {
