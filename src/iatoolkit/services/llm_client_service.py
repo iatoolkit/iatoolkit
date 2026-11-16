@@ -27,7 +27,7 @@ from iatoolkit.services.dispatcher_service import Dispatcher
 from iatoolkit.services.storage_service import StorageService
 from iatoolkit.services.structured_output_service import StructuredOutputService
 from iatoolkit.services.telemetry_service import NoopTelemetryService
-from iatoolkit.services.chat_stream import ChatEventSink, RoundStream, emit_safely
+from iatoolkit.services.chat_stream import ChatEventSink, RoundStream, TurnCancelled, emit_safely, raise_if_cancelled
 
 CONTEXT_ERROR_MESSAGE = 'Tu consulta supera el límite de contexto del modelo. Acota la pregunta o divídela en partes más pequeñas.'
 TELEMETRY_MAX_STRING_LENGTH = 1000
@@ -62,6 +62,8 @@ class llmClient:
         "Si el error lo permite, corrige los argumentos y reintenta; si no, usa otra "
         "herramienta o explica al usuario qué información no se pudo obtener."
     )
+    #: What a turn the person stopped records as its output (BL-023).
+    TURN_CANCELLED_OUTPUT = "turn cancelled by the user"
     TOOL_LOOP_FAILURES_NOTICE = (
         "AVISO: varias llamadas seguidas a herramientas fallaron. Las herramientas quedan "
         "deshabilitadas para esta respuesta: responde ahora con la información que ya "
@@ -359,6 +361,8 @@ class llmClient:
         tool_loop_stop_reason = None
         company_id = getattr(company, "id", None)
         model_round = 0
+        # The model call in flight, for the usage of a turn stopped halfway (BL-023).
+        round_state: Dict[str, Any] = {}
         # A turn with an output schema answers in JSON: only its progress is
         # streamed, the final event renders the answer (BL-023).
         stream_answer_text = not (isinstance(response_contract, dict) and response_contract.get("schema"))
@@ -409,6 +413,7 @@ class llmClient:
                     event_sink,
                     model_round,
                     stream_text=stream_answer_text,
+                    round_state=round_state,
                     company_short_name=company.short_name,
                     model=model,
                     input=input_messages,
@@ -426,6 +431,8 @@ class llmClient:
                 history_messages.extend(self._build_history_messages_from_response(response))
                 stats = self.get_stats(response)
 
+            except TurnCancelled:
+                raise
             except Exception as e:
                 # if the llm api fails: context, api-key, etc
                 # log the error and envolve in our own exception
@@ -490,6 +497,7 @@ class llmClient:
                     last_tool_output_message = None
 
                     for tool_call in pending_tool_calls:
+                        raise_if_cancelled(event_sink)
                         # execute the function call through the dispatcher
                         fcall_time = time.time()
                         function_name = tool_call.name
@@ -669,11 +677,13 @@ class llmClient:
                 elif force_tool_name:
                     tool_choice_value = "required"
 
+                raise_if_cancelled(event_sink)
                 model_round += 1
                 response = self._create_round_response(
                     event_sink,
                     model_round,
                     stream_text=stream_answer_text,
+                    round_state=round_state,
                     company_short_name=company.short_name,
                     model=model,
                     input=input_messages,
@@ -797,6 +807,41 @@ class llmClient:
             if getattr(response, 'id', None):
                 result['response_id'] = response.id
             return result
+        except TurnCancelled:
+            # The person stopped the turn (BL-023): what was consumed is
+            # recorded, and the caller keeps the turn out of the history.
+            cancelled_stats = self._build_cancelled_usage_stats(
+                stats=stats,
+                stats_fcall=stats_fcall,
+                round_state=round_state,
+                model=model,
+                execution_metadata=execution_metadata,
+                tool_call_count=len(f_calls),
+                tool_round_count=tool_round_count,
+                tool_error_count=tool_error_count,
+            )
+            query = LLMQuery(user_identifier=user_identifier,
+                             company_id=company_id,
+                             task_id=task_id,
+                             query=question,
+                             output=self.TURN_CANCELLED_OUTPUT,
+                             response={},
+                             valid_response=False,
+                             function_calls=f_calls,
+                             stats=cancelled_stats,
+                             **self._execution_trace_columns(execution_trace)
+                             )
+            self.llmquery_repo.add_query(query)
+            telemetry_execution.finalize(
+                query_id=query.id,
+                success=False,
+                error_message=self.TURN_CANCELLED_OUTPUT,
+            )
+            logging.info(
+                "[%s] turn cancelled by the user after %s model call(s) and %s tool call(s).",
+                company.short_name, model_round, len(f_calls),
+            )
+            raise
         except SQLAlchemyError as db_error:
             # rollback
             self.llmquery_repo.session.rollback()
@@ -863,20 +908,29 @@ class llmClient:
             raise IAToolkitException(IAToolkitException.ErrorType.LLM_ERROR, error_message)
 
     def _create_round_response(self, event_sink: Optional[ChatEventSink], model_round: int,
-                               stream_text: bool = True, **kwargs):
+                               stream_text: bool = True, round_state: Optional[Dict[str, Any]] = None,
+                               **kwargs):
         """One call to the model. With an event sink, the call is announced and its
         outcome reported (BL-023); without one it is the plain proxy call."""
         if event_sink is None:
             return self.llm_proxy.create_response(**kwargs)
 
         emit_safely(event_sink, "round_start", {"round": model_round})
-        response = self.llm_proxy.create_response(
-            stream_callbacks=RoundStream(
-                event_sink,
-                stream_text=stream_text and self._streams_answer_text(kwargs),
-            ),
-            **kwargs,
+        round_stream = RoundStream(
+            event_sink,
+            stream_text=stream_text and self._streams_answer_text(kwargs),
         )
+        if round_state is not None:
+            round_state.clear()
+            round_state.update({
+                "stream": round_stream,
+                "input": kwargs.get("input"),
+                "context_history": kwargs.get("context_history"),
+                "completed": False,
+            })
+        response = self.llm_proxy.create_response(stream_callbacks=round_stream, **kwargs)
+        if round_state is not None:
+            round_state["completed"] = True
         has_tool_calls = any(
             getattr(tool_call, "type", None) == "function_call"
             for tool_call in (getattr(response, "output", None) or [])
@@ -918,6 +972,47 @@ class llmClient:
         if usage is None:
             return 0
         return int(getattr(usage, "input_tokens", 0) or 0) + int(getattr(usage, "output_tokens", 0) or 0)
+
+    def _build_cancelled_usage_stats(self,
+                                     stats: dict,
+                                     stats_fcall: dict,
+                                     round_state: Dict[str, Any],
+                                     model: str,
+                                     execution_metadata: Optional[Dict[str, Any]],
+                                     tool_call_count: int,
+                                     tool_round_count: int,
+                                     tool_error_count: int) -> dict:
+        """Usage of a turn the person stopped (BL-023).
+
+        Completed model calls report their own usage. A call cut short reports
+        none: its input is counted from what was sent and its output from what
+        arrived, and the row says the figure is an estimate.
+        """
+        usage = self.add_stats(stats, stats_fcall)
+        usage_estimated = False
+        if round_state and not round_state.get("completed"):
+            sent = list(round_state.get("context_history") or []) + list(round_state.get("input") or [])
+            estimated = {
+                "input_tokens": self._count_text_tokens(json.dumps(sent, ensure_ascii=False, default=str)),
+                "output_tokens": self._count_text_tokens(
+                    getattr(round_state.get("stream"), "received_text", "") or ""
+                ),
+            }
+            estimated["total_tokens"] = estimated["input_tokens"] + estimated["output_tokens"]
+            usage = self.add_stats(usage, estimated)
+            usage_estimated = True
+
+        usage["model"] = model
+        usage["cancelled"] = True
+        if usage_estimated:
+            usage["usage_estimated"] = True
+        usage["tool_call_count"] = tool_call_count
+        usage["tool_round_count"] = tool_round_count
+        usage["tool_error_count"] = tool_error_count
+        request_source = str((execution_metadata or {}).get("request_source") or "").strip().lower()
+        if request_source:
+            usage["request_source"] = request_source
+        return usage
 
     def _build_partial_usage_stats(self,
                                    stats: dict,

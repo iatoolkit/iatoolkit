@@ -11,7 +11,7 @@ from iatoolkit.common.model_registry import ModelRegistry
 from iatoolkit.infra.llm_response import LLMResponse, ToolCall, Usage
 from iatoolkit.repositories.models import Company
 from iatoolkit.services.llm_client_service import llmClient
-from iatoolkit.services.chat_stream import RoundStream
+from iatoolkit.services.chat_stream import RoundStream, TurnCancelled
 from iatoolkit.services.storage_service import StorageService
 from iatoolkit.services.telemetry_service import TelemetryExecution
 
@@ -482,3 +482,84 @@ class TestChatEventSink(_LLMClientFixture):
         stream = self.proxy.create_response.call_args.kwargs["stream_callbacks"]
         stream.on_text_delta("Hola")
         assert ("text_delta", {"text": "Hola"}) in sink.events
+
+
+class _CancellingSink(_RecordingSink):
+    """Cancels once a given event has been reported."""
+
+    def __init__(self, cancel_on):
+        super().__init__()
+        self._cancel_on = cancel_on
+        self.cancelled = False
+
+    def emit(self, event, payload=None):
+        super().emit(event, payload)
+        if event == self._cancel_on:
+            self.cancelled = True
+
+    def is_cancelled(self):
+        return self.cancelled
+
+
+class TestTurnCancellation(_LLMClientFixture):
+    def _saved_query(self):
+        return self.llmquery_repo.add_query.call_args.args[0]
+
+    def test_cancelled_between_rounds_stops_before_the_next_model_call(self):
+        sink = _CancellingSink(cancel_on="tool_end")
+        self.proxy.create_response.side_effect = [
+            _tool_response('r1', ('c1', 't', '{}')),
+            _final_response(),
+        ]
+        self.dispatcher.dispatch.return_value = {"ok": True}
+
+        with pytest.raises(TurnCancelled):
+            self._invoke(event_sink=sink)
+
+        assert self.proxy.create_response.call_count == 1
+        query = self._saved_query()
+        assert query.valid_response is False
+        assert query.output == llmClient.TURN_CANCELLED_OUTPUT
+        assert query.stats["cancelled"] is True
+        # The first call completed: its usage is real, nothing is estimated.
+        assert query.stats["input_tokens"] == 10 and query.stats["output_tokens"] == 5
+        assert "usage_estimated" not in query.stats
+        assert len(query.function_calls) == 1
+
+    def test_cancelled_before_a_tool_runs_skips_it(self):
+        sink = _CancellingSink(cancel_on="round_end")
+        self.proxy.create_response.side_effect = [_tool_response('r1', ('c1', 't', '{}'))]
+
+        with pytest.raises(TurnCancelled):
+            self._invoke(event_sink=sink)
+
+        self.dispatcher.dispatch.assert_not_called()
+        assert self._saved_query().stats["cancelled"] is True
+
+    def test_a_call_cut_short_records_an_estimated_usage(self):
+        sink = _CancellingSink(cancel_on="never")
+
+        def cut_short(**kwargs):
+            stream = kwargs["stream_callbacks"]
+            stream.on_text_delta("Las ventas de marzo fueron")
+            raise TurnCancelled()
+
+        self.proxy.create_response.side_effect = cut_short
+        self.client._count_text_tokens = MagicMock(side_effect=lambda text: len(text.split()))
+
+        with pytest.raises(TurnCancelled):
+            self._invoke(event_sink=sink)
+
+        stats = self._saved_query().stats
+        assert stats["cancelled"] is True
+        assert stats["usage_estimated"] is True
+        assert stats["output_tokens"] == 5
+        assert stats["input_tokens"] > 0
+        assert stats["total_tokens"] == stats["input_tokens"] + stats["output_tokens"]
+
+    def test_a_turn_nobody_cancels_records_no_cancellation(self):
+        self.proxy.create_response.side_effect = [_final_response()]
+
+        self._invoke(event_sink=_CancellingSink(cancel_on="never"))
+
+        assert "cancelled" not in self._saved_query().stats

@@ -81,7 +81,9 @@ class LLMQueryStreamApiView(MethodView):
                     event_sink=sink,
                     **query_kwargs,
                 )
-                if 'error' in result:
+                if result.get('cancelled'):
+                    pass  # the browser that stopped it is no longer listening
+                elif 'error' in result:
                     sink.emit("error", {
                         "error_message": result.get("error_message") or unexpected_error_message,
                     })

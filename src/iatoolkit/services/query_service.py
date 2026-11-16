@@ -4,7 +4,7 @@
 # IAToolkit is open source software.
 
 from iatoolkit.services.llm_client_service import llmClient
-from iatoolkit.services.chat_stream import ChatEventSink
+from iatoolkit.services.chat_stream import ChatEventSink, TurnCancelled
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.services.tool_service import ToolService
 from iatoolkit.services.i18n_service import I18nService
@@ -1883,13 +1883,18 @@ class QueryService:
             if not response.get('valid_response'):
                 response['error'] = True
 
-            # save history using the manager passing the handle
-            if not is_agent_execution:
+            # save history using the manager passing the handle. A turn the
+            # person stopped, even right as it finished, never reached them:
+            # it stays out of the history (BL-023).
+            turn_cancelled = event_sink is not None and event_sink.is_cancelled() is True
+            if not is_agent_execution and not turn_cancelled:
                 self.history_manager.update_history(
                     history_handle, user_turn_prompt, response
                 )
 
             return response
+        except TurnCancelled:
+            return {'error': True, 'cancelled': True, "error_message": "cancelled"}
         except Exception as e:
             logging.exception(e)
             return {'error': True, "error_message": f"{str(e)}"}

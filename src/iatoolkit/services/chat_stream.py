@@ -52,6 +52,15 @@ class ChatEventSink:
             raise TurnCancelled("The turn was cancelled.")
 
 
+def raise_if_cancelled(event_sink: Optional[ChatEventSink]) -> None:
+    """Stop the turn when the person stopped it. No sink, nothing to stop."""
+    if event_sink is None:
+        return
+    is_cancelled = getattr(event_sink, "is_cancelled", None)
+    if callable(is_cancelled) and is_cancelled() is True:
+        raise TurnCancelled("The turn was cancelled.")
+
+
 def emit_safely(event_sink: Optional[ChatEventSink], event: str, payload: Optional[Dict[str, Any]] = None) -> None:
     """Report an event without ever letting the report break the turn."""
     if event_sink is None:
@@ -80,6 +89,9 @@ class RoundStream:
         self._stream_text = stream_text
         self._pending = ""
         self._text_decision: Optional[bool] = None if stream_text else False
+        #: Everything the model wrote in this call, shown or not: what a call
+        #: cut short is estimated to have cost.
+        self.received_text = ""
 
     def is_cancelled(self) -> bool:
         return bool(self._sink.is_cancelled())
@@ -90,9 +102,12 @@ class RoundStream:
 
     def on_reasoning_delta(self, text: str) -> None:
         if text:
+            self.received_text += text
             emit_safely(self._sink, "reasoning_delta", {"text": text})
 
     def on_text_delta(self, text: str) -> None:
+        if text:
+            self.received_text += text
         if not text or self._text_decision is False:
             return
         if self._text_decision is True:

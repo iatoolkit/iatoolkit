@@ -296,6 +296,40 @@ class TestQueryService:
 
         assert self.mock_llm_client.invoke.call_args.kwargs['event_sink'] is sink
 
+    def _populate_history(self):
+        def populate_side_effect(handle, prompt, ignore):
+            handle.request_params = {'context_history': []}
+            return False
+        self.mock_history_manager.populate_request_params.side_effect = populate_side_effect
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "Hi", [])
+
+    def test_a_cancelled_turn_stays_out_of_the_history(self):
+        from iatoolkit.services.chat_stream import TurnCancelled
+        self._populate_history()
+        self.mock_llm_client.invoke.side_effect = TurnCancelled()
+
+        result = self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME, user_identifier=MOCK_LOCAL_USER_ID,
+            question="Hi", model='gpt-test', event_sink=MagicMock(),
+        )
+
+        assert result == {'error': True, 'cancelled': True, 'error_message': 'cancelled'}
+        self.mock_history_manager.update_history.assert_not_called()
+
+    def test_a_turn_stopped_as_it_finished_stays_out_of_the_history(self):
+        self._populate_history()
+        self.mock_llm_client.invoke.return_value = {'valid_response': True, 'answer': 'Hello'}
+        sink = MagicMock()
+        sink.is_cancelled.return_value = True
+
+        result = self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME, user_identifier=MOCK_LOCAL_USER_ID,
+            question="Hi", model='gpt-test', event_sink=sink,
+        )
+
+        assert result['answer'] == 'Hello'
+        self.mock_history_manager.update_history.assert_not_called()
+
     def test_llm_query_rejects_a_model_the_company_has_not_enabled(self):
         self.mock_configuration_service.get_llm_configuration.side_effect = None
         self.mock_configuration_service.get_llm_configuration.return_value = (

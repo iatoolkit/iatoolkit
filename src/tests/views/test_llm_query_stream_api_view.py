@@ -90,6 +90,26 @@ class TestLLMQueryStreamApiView:
 
         assert events == [("error", {"error_message": "translated:errors.general.unexpected_error"})]
 
+    def test_a_cancelled_turn_sends_nothing_more(self):
+        self.query.llm_query.return_value = {"error": True, "cancelled": True, "error_message": "cancelled"}
+
+        events = _parse_sse(self.client.post(self.url, json={"question": "x"}).get_data(as_text=True))
+
+        assert events == []
+
+    def test_a_browser_that_leaves_cancels_the_turn(self):
+        from iatoolkit.services.chat_stream import QueueEventSink
+        view = LLMQueryStreamApiView(self.auth, self.query, self.config, self.i18n)
+        sink = QueueEventSink()
+        sink.emit("round_start", {"round": 1})
+        relay = view._relay(sink)
+
+        assert next(relay).startswith(": stream open")
+        assert next(relay).startswith("event: round_start")
+        relay.close()  # what the server does when the client disconnects
+
+        assert sink.is_cancelled()
+
     def test_rejects_an_api_key(self):
         self.auth.verify_for_company.return_value = {
             "success": True, "user_identifier": USER, "auth_type": "api_key",
