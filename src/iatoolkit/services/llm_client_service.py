@@ -2017,10 +2017,7 @@ class llmClient:
         # bullets). Rendering everything as markdown lets HTML blocks through
         # untouched and still renders the markdown around them; deciding "it has
         # a tag, so it is HTML" left that markdown raw and glued its lines.
-        html_answer = markdown2.markdown(
-            self.normalize_html_blocks(str(answer)),
-            extras=self._MARKDOWN_EXTRAS,
-        ).strip()
+        html_answer = self._render_markdown(answer)
 
         # The result is injected into the chat DOM as HTML (and stored, then shown
         # again in the admin monitoring inspector). The model echoes whatever it
@@ -2030,13 +2027,47 @@ class llmClient:
         # sanitizer: it keeps the formatting markdown2 produces (headings, lists,
         # tables, code, links, images) and strips scripts, event handlers,
         # iframes/objects and javascript:/data: URLs.
-        return nh3.clean(html_answer)
+        return nh3.clean(html_answer, attributes=self._SANITIZER_ATTRIBUTES)
+
+    #: nh3's default allowlist plus `align` on table cells: a markdown table's
+    #: column alignment (`---:`), which markdown2 writes as a style nh3 drops.
+    _SANITIZER_ATTRIBUTES = {
+        **{tag: set(attrs) for tag, attrs in nh3.ALLOWED_ATTRIBUTES.items()},
+        "th": set(nh3.ALLOWED_ATTRIBUTES.get("th", set())) | {"align"},
+        "td": set(nh3.ALLOWED_ATTRIBUTES.get("td", set())) | {"align"},
+    }
+    _CELL_ALIGN_STYLE = re.compile(r'\sstyle="text-align:\s*(left|right|center);?"', re.IGNORECASE)
+
+    def _render_markdown(self, answer: str) -> str:
+        html_answer = markdown2.markdown(
+            self.normalize_html_blocks(str(answer)),
+            extras=self._MARKDOWN_EXTRAS,
+        ).strip()
+        # Same attribute the live answer gets from marked, so both look the same.
+        return self._CELL_ALIGN_STYLE.sub(r' align="\1"', html_answer)
 
     def format_plaintext(self, answer: str):
+        """The answer for a channel without HTML (WhatsApp): its markdown read as
+        text, bold and italics in WhatsApp's own marks, links with their URL."""
         if not answer:
             return ""
 
-        normalized = str(answer)
+        normalized = self._render_markdown(answer)
+        # A table reads row by row: drop the layout whitespace between its tags.
+        normalized = re.sub(r"<table\b.*?</table>", lambda m: re.sub(r">\s+<", "><", m.group(0)),
+                            normalized, flags=re.IGNORECASE | re.DOTALL)
+        normalized = re.sub(r"</\s*li\s*>\s*", "</li>", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r'<a\s[^>]*href="([^"]+)"[^>]*>(.*?)</a>',
+                            lambda m: m.group(2) if m.group(1) in m.group(2) else f"{m.group(2)}: {m.group(1)}",
+                            normalized, flags=re.IGNORECASE | re.DOTALL)
+        normalized = re.sub(r"<\s*(strong|b)\s*>(.*?)<\s*/\s*\1\s*>", r"*\2*", normalized,
+                            flags=re.IGNORECASE | re.DOTALL)
+        normalized = re.sub(r"<\s*(em|i)\s*>(.*?)<\s*/\s*\1\s*>", r"_\2_", normalized,
+                            flags=re.IGNORECASE | re.DOTALL)
+        normalized = re.sub(r"<\s*h[1-6][^>]*>(.*?)<\s*/\s*h[1-6]\s*>", r"*\1*\n", normalized,
+                            flags=re.IGNORECASE | re.DOTALL)
+        normalized = re.sub(r"</\s*t[hd]\s*>", " | ", normalized, flags=re.IGNORECASE)
+        normalized = re.sub(r"\s*\|\s*</\s*tr\s*>", "\n", normalized, flags=re.IGNORECASE)
         normalized = re.sub(r"<\s*br\s*/?\s*>", "\n", normalized, flags=re.IGNORECASE)
         normalized = re.sub(r"</\s*p\s*>", "\n\n", normalized, flags=re.IGNORECASE)
         normalized = re.sub(r"</\s*div\s*>", "\n", normalized, flags=re.IGNORECASE)

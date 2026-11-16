@@ -14,12 +14,10 @@
   para abrir `access_url` ni digas que "solo tienes un enlace temporal", salvo
   que el usuario pida explicitamente un link de descarga.
 - Siempre que entregues cualquier URL o link en la respuesta final, presentalo
-  como enlace HTML clickable usando
-  `<a href="URL" target="_blank" rel="noopener noreferrer">texto descriptivo</a>`.
+  como link Markdown con un texto descriptivo: `[texto descriptivo](URL)`.
 - No entregues links en texto plano.
-- No uses Markdown para links si puedes usar HTML.
 - Cuando entregues un link temporal o presigned, usa un texto corto y descriptivo
-  en el enlace HTML.
+  en el link.
 - Nunca pegues una URL presigned completa en texto plano si puedes presentarla
   como enlace etiquetado.
 - Nunca llames "link al documento" a un `access_url` temporal de storage, salvo

@@ -6,11 +6,9 @@ Parámetros:
 	•	Fecha inicio → {{init_date}}
 	•	Fecha fin → {{end_date}}
 
-### **Estructura HTML de Salida OBLIGATORIA**
-- **Contenedor de Secciones:** envuelve TODAS las secciones en
-un `<div class="ficha-categorias">`.
-- **Secciones Individuales:** CADA sección (título + contenido) debe estar
-envuelta en su propio `<div class="categoria">`.
+### **Estructura de Salida OBLIGATORIA**
+- Cada sección empieza con su título como encabezado Markdown (`### Título`),
+seguido de su contenido (tablas Markdown, listas o párrafos).
 
 ### **Sección : shippers mas importantes**
 dame una tabla con los 5 shippers mas importantes por volumen de compra.

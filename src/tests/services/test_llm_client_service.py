@@ -1563,3 +1563,48 @@ class TestFormatHtmlMixedMarkdownAndHtml:
         html = self.client.format_html("Ejemplo:\n\n```sql\nSELECT a,\n       b\nFROM t;\n```")
 
         assert "SELECT a,\n       b\nFROM t;" in html
+
+
+class TestMarkdownAsTheAnswerFormat:
+    """Models answer in markdown (BL-023, PR-6): column alignment survives the
+    sanitizer, and channels without HTML get readable text."""
+
+    def setup_method(self):
+        self.client = llmClient.__new__(llmClient)
+
+    def test_column_alignment_survives_sanitizing(self):
+        html = self.client.format_html("| Año | Monto |\n|:---:|---:|\n| 2024 | $1.000 |")
+
+        assert '<th align="center">Año</th>' in html
+        assert '<td align="right">$1.000</td>' in html
+        assert "style=" not in html
+
+    def test_other_attributes_are_still_stripped_from_cells(self):
+        html = self.client.format_html('<table><tr><td onclick="x()" style="color:red" align="right">1</td></tr></table>')
+
+        assert 'align="right"' in html
+        assert "onclick" not in html and "style" not in html
+
+    def test_plaintext_reads_markdown_for_whatsapp(self):
+        text = self.client.format_plaintext(
+            "### Ventas USA\n\n"
+            "| Año | Monto |\n|---|---:|\n| 2024 | $1.000 |\n| 2025 | $800 |\n\n"
+            "- **Caída:** fuerte en Q3.\n"
+            "- Ver [el reporte](https://example.com/r).\n\n"
+            "Cierre."
+        )
+
+        assert text == (
+            "*Ventas USA*\n\n"
+            "Año | Monto\n2024 | $1.000\n2025 | $800\n\n"
+            "- *Caída:* fuerte en Q3.\n"
+            "- Ver el reporte: https://example.com/r.\n\n"
+            "Cierre."
+        )
+
+    def test_plaintext_still_reads_html(self):
+        text = self.client.format_plaintext(
+            '<p>Hola <a href="https://a.cl">https://a.cl</a></p><ul><li>uno</li><li>dos</li></ul>'
+        )
+
+        assert text == "Hola https://a.cl\n\n- uno\n- dos"

@@ -1,6 +1,8 @@
 ### Salida general
 
 - Responde de forma directa y util para el usuario.
+- Escribe en Markdown (negritas, listas, tablas, titulos con `###`); no uses HTML
+  para dar formato.
 - Usa secciones y titulos solo cuando la respuesta sea compleja y realmente tenga
   multiples puntos distintos que necesiten agruparse.
 - Si la respuesta es una frase o un parrafo corto, no generes una seccion.

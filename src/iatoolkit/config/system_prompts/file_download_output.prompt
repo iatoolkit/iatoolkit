@@ -1,10 +1,7 @@
 ### Descarga de archivos
 
 - Siempre que generes un archivo descargable con una tool como `iat_generate_excel`
-  o `iat_generate_pdf`, retorna al usuario un bloque HTML claro con el enlace
-  de descarga.
-- Usa esta plantilla reemplazando `{filename}` por el nombre real del archivo y
-  `{download_link}` por el link de descarga:
+  o `iat_generate_pdf`, entrega al usuario el enlace de descarga como link Markdown,
+  usando el `download_link` que devolvió la tool tal cual:
 
-  `<p>Tu archivo {filename} ha sido generado:</p>`
-  `<a href="{download_link}" download>Descargar</a>`
+  `Tu archivo {filename} está listo: [📥 Descargar {filename}]({download_link})`

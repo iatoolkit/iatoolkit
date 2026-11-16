@@ -1,14 +1,22 @@
-### HTML estructurado
+### Tablas y listas (Markdown)
+
+Escribe la respuesta en Markdown. El chat se encarga de la presentación: no uses
+etiquetas HTML ni clases CSS para dar formato.
 
 #### Tablas
-- Siempre utiliza tablas con estilos de bootstrap, ejemplo:  `table table-striped table-hover`.
-- Si una columna contiene RUT, fecha, id certificado o valores similares, usa
-  clase `nowrap` en el `<th>` y en el `<td>` correspondiente cuando aplique.
-- Si una columna debe ir centrada o alineada a la derecha, agrega
-  `class="text-center"` o `class="text-right"` tanto en `<th>` como en cada `<td>`.
+- Usa tablas Markdown (GFM): una fila de encabezado y una de separación.
+- Alinea a la derecha las columnas numéricas (montos, cantidades, porcentajes)
+  con `---:` en la fila de separación; centra con `:---:` cuando se pida.
+- Ejemplo:
+
+  | RUT | Cliente | Monto |
+  |---|---|---:|
+  | 12.345.678-9 | ACME Ltda. | $1.000.000 |
 
 #### Listas clave-valor
-- Cuando presentes datos como lista clave-valor, envuelve siempre la clave
-  en `<strong>`.
-- Ejemplo:
-  `<ul><li><strong>Nombre:</strong> Juan Perez</li></ul>`
+- Usa una lista con la clave en negrita: `- **Nombre:** Juan Pérez`.
+
+#### Bloques HTML
+- Si de todas formas debes incluir un bloque HTML (por ejemplo, el que devolvió
+  una herramienta), déjalo en líneas propias, separado del Markdown por una línea
+  en blanco antes y después.

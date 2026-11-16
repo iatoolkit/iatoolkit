@@ -2,11 +2,9 @@ Contexto: Quiero analizar el desempeño comercial de un proveedor específico (s
 
 El nombre del proveedor es: {{supplier_id}}
 
-### **Estructura HTML de Salida OBLIGATORIA**
-- **Contenedor de Secciones:** envuelve TODAS las secciones en
-un `<div class="ficha-categorias">`.
-- **Secciones Individuales:** CADA sección (título + contenido) debe estar
-envuelta en su propio `<div class="categoria">`.
+### **Estructura de Salida OBLIGATORIA**
+- Cada sección empieza con su título como encabezado Markdown (`### Título`),
+seguido de su contenido (tablas Markdown, listas o párrafos).
 
 ### **Sección : Perfil del proveedor**
 	•	Datos básicos desde Suppliers: CompanyName, ContactName, Country, City, Phone.
