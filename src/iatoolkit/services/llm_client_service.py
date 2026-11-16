@@ -1972,7 +1972,10 @@ class llmClient:
     #: list, a download paragraph). Only top-level blocks: rows and items live
     #: inside them.
     _HTML_BLOCK_TAGS = r"(?:table|ul|ol|dl|div|pre|blockquote|p|h[1-6]|hr|section|details)"
-    _MARKDOWN_EXTRAS = ["tables", "fenced-code-blocks", "cuddled-lists", "strike", "code-friendly"]
+    #: highlightjs-lang keeps fenced code as plain <pre><code>: without it markdown2
+    #: highlights with pygments when it happens to be installed, so the same
+    #: answer rendered differently per environment (nh3 then drops its classes).
+    _MARKDOWN_EXTRAS = ["tables", "fenced-code-blocks", "highlightjs-lang", "cuddled-lists", "strike", "code-friendly"]
 
     @classmethod
     def normalize_html_blocks(cls, text: str) -> str:
