@@ -1504,3 +1504,62 @@ class TestFormatHtmlSanitization:
         assert "<h2>" in html
         assert "<code>" in html
         assert 'href="https://example.com/x"' in html
+
+
+class TestFormatHtmlMixedMarkdownAndHtml:
+    """Models mix an HTML table with markdown around it (BL-023 testing on
+    Render): both must render, the markdown included."""
+
+    def setup_method(self):
+        self.client = llmClient.__new__(llmClient)
+
+    def test_markdown_after_an_html_table_is_rendered(self):
+        html = self.client.format_html(
+            "Comparé los meses.\n"
+            "<table><thead><tr><th>Mes</th></tr></thead>\n"
+            "<tbody><tr><td>Enero</td></tr></tbody></table>\n"
+            "Lo que muestran los números:\n"
+            "- **La caída fue estructural.** Sin excepción.\n"
+            "- **El mejor mes** fue febrero.\n\n"
+            "Una corrección: son **65 líneas**."
+        )
+
+        assert "<table>" in html and "<td>Enero</td>" in html
+        assert "<li><strong>La caída fue estructural.</strong> Sin excepción.</li>" in html
+        assert "<strong>65 líneas</strong>" in html
+        assert "**" not in html
+        assert "números:-" not in html
+
+    def test_indented_html_is_not_turned_into_code(self):
+        html = self.client.format_html(
+            "<p>Resumen:</p>\n    <table class=\"table\">\n  <tbody>\n    <tr><td>1</td></tr>\n  </tbody>\n</table>"
+        )
+
+        assert "<pre>" not in html and "<code>" not in html
+        assert "<td>1</td>" in html
+
+    def test_a_pure_html_answer_keeps_its_markup(self):
+        html = self.client.format_html(
+            '<p>✅ Tu archivo ventas.xlsx ha sido generado:</p>\n'
+            '<a href="https://example.com/ventas.xlsx" download>\n    📥 Descargar\n</a>'
+        )
+
+        assert "<p>✅ Tu archivo ventas.xlsx ha sido generado:</p>" in html
+        assert 'href="https://example.com/ventas.xlsx"' in html
+        assert "<pre>" not in html
+
+    def test_markdown_tables_render(self):
+        html = self.client.format_html("| Mes | 2024 |\n|---|---|\n| Enero | 1 |")
+
+        assert "<table>" in html and "<td>Enero</td>" in html
+
+    def test_underscores_inside_words_are_not_emphasis(self):
+        html = self.client.format_html("La columna fecha_venta y NO_LO_SE.")
+
+        assert "fecha_venta" in html and "NO_LO_SE" in html
+        assert "<em>" not in html
+
+    def test_fenced_code_is_left_as_written(self):
+        html = self.client.format_html("Ejemplo:\n\n```sql\nSELECT a,\n       b\nFROM t;\n```")
+
+        assert "SELECT a,\n       b\nFROM t;" in html

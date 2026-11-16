@@ -141,9 +141,16 @@
   line-height: 1.5;
   color: #555;
   white-space: pre-wrap;
-  max-height: 300px;
-  overflow-y: auto;
   font-family: inherit;                 /* 👈 clave: usa la misma fuente base */
+}
+
+/* While the reasoning is written (BL-023): its last lines, fading at the top,
+   no scroll box of its own inside the chat's. Opened afterwards it shows whole. */
+.reasoning-card.reasoning-live {
+  max-height: 7.5em;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 2.5em);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 2.5em);
 }
 
 

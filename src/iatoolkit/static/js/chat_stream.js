@@ -177,6 +177,25 @@
         return finalResult;
     }
 
+    // Same rule as LLMClientService.normalize_html_blocks on the server: models
+    // put an HTML block (a table) and markdown on consecutive lines, and indent
+    // HTML; markdown then reads the markdown as HTML or the HTML as code.
+    const HTML_BLOCK_TAGS = '(?:table|ul|ol|dl|div|pre|blockquote|p|h[1-6]|hr|section|details)';
+    const BLOCK_INDENT = new RegExp(`^[ \\t]+(?=</?${HTML_BLOCK_TAGS}\\b)`, 'gim');
+    const AFTER_CLOSING_BLOCK = new RegExp(`(</${HTML_BLOCK_TAGS}>)[ \\t]*\\n(?![ \\t]*\\n)`, 'gi');
+    const BEFORE_OPENING_BLOCK = new RegExp(`([^\\n])\\n(?=<${HTML_BLOCK_TAGS}\\b)`, 'gim');
+
+    function normalizeHtmlBlocks(text) {
+        const parts = String(text || '').split(/(^```[\s\S]*?^```[ \t]*$)/m);
+        for (let i = 0; i < parts.length; i += 2) {  // even parts are outside code fences
+            parts[i] = parts[i]
+                .replace(BLOCK_INDENT, '')
+                .replace(AFTER_CLOSING_BLOCK, '$1\n\n')
+                .replace(BEFORE_OPENING_BLOCK, '$1\n\n');
+        }
+        return parts.join('');
+    }
+
     /**
      * The answer as it is being written: reasoning, then the markdown of the
      * text so far, re-rendered at most every RENDER_INTERVAL_MS. Text a model
@@ -223,7 +242,9 @@
                 </div>
             `);
             reasoningBlock.find('.reasoning-toggle-label').text(translate('show_reasoning', 'Ver razonamiento'));
-            this.reasoningCard = reasoningBlock.find('.reasoning-card');
+            // While it is written, the reasoning shows its last lines only: no
+            // scroll box of its own inside the chat's.
+            this.reasoningCard = reasoningBlock.find('.reasoning-card').addClass('reasoning-live');
             this.preambles = $('<div>').addClass('live-preambles');
             this.answer = $('<div>').addClass('answer-section llm-output');
             this.container.append(reasoningBlock).append(this.preambles).append(this.answer);
@@ -243,6 +264,7 @@
                 // Text, never HTML: the reasoning echoes tenant data.
                 this.reasoningCard.text(this.reasoning);
                 this.reasoningCard.closest('.reasoning-block').removeClass('d-none');
+                this.reasoningCard[0].scrollTop = this.reasoningCard[0].scrollHeight;
             });
         }
 
@@ -263,7 +285,7 @@
             if (!this.answer) return;
             let html;
             if (window.marked && typeof window.marked.parse === 'function') {
-                html = window.marked.parse(this.text, { gfm: true, breaks: false });
+                html = window.marked.parse(normalizeHtmlBlocks(this.text), { gfm: true, breaks: false });
             } else {
                 html = $('<div>').text(this.text).html().replace(/\n/g, '<br>');
             }
@@ -328,6 +350,7 @@
         run,
         createSseParser,
         createLiveTurn: () => new LiveTurn(),
+        normalizeHtmlBlocks,
         ChatStreamError,
         ChatStreamInterrupted,
     };

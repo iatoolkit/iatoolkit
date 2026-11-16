@@ -1968,15 +1968,45 @@ class llmClient:
             return self.format_plaintext(answer)
         return self.format_html(answer)
 
+    #: Block-level HTML a model writes between markdown paragraphs (a table, a
+    #: list, a download paragraph). Only top-level blocks: rows and items live
+    #: inside them.
+    _HTML_BLOCK_TAGS = r"(?:table|ul|ol|dl|div|pre|blockquote|p|h[1-6]|hr|section|details)"
+    _MARKDOWN_EXTRAS = ["tables", "fenced-code-blocks", "cuddled-lists", "strike", "code-friendly"]
+
+    @classmethod
+    def normalize_html_blocks(cls, text: str) -> str:
+        """Makes markdown with HTML blocks in it render as both (BL-023).
+
+        Markdown only treats a line of HTML as a block when it starts the line
+        and is set apart by blank lines; models write `</table>` and the next
+        paragraph on consecutive lines, and indent HTML (which markdown reads
+        as code). Outside fenced code, block tags at the start of a line lose
+        their indentation, and get a blank line before an opening tag and after
+        a closing one. The chat applies the same rule to the live answer.
+        """
+        tags = cls._HTML_BLOCK_TAGS
+        parts = re.split(r"(^```.*?^```[ \t]*$)", text, flags=re.MULTILINE | re.DOTALL)
+        for index in range(0, len(parts), 2):  # even parts are outside code fences
+            part = parts[index]
+            part = re.sub(rf"(?im)^[ \t]+(?=</?{tags}\b)", "", part)
+            part = re.sub(rf"(?i)(</{tags}>)[ \t]*\n(?![ \t]*\n)", r"\1\n\n", part)
+            part = re.sub(rf"(?im)([^\n])\n(?=<{tags}\b)", r"\1\n\n", part)
+            parts[index] = part
+        return "".join(parts)
+
     def format_html(self, answer: str):
         if not answer:
             return ""
 
-        # Heurística simple: si contiene tags, lo tratamos como HTML ya renderizable
-        if re.search(r"</?[a-zA-Z][\s\S]*>", answer):
-            html_answer = answer.replace("\n", "")
-        else:
-            html_answer = markdown2.markdown(answer).replace("\n", "")
+        # Markdown, HTML, or both: models mix them (an HTML table, then markdown
+        # bullets). Rendering everything as markdown lets HTML blocks through
+        # untouched and still renders the markdown around them; deciding "it has
+        # a tag, so it is HTML" left that markdown raw and glued its lines.
+        html_answer = markdown2.markdown(
+            self.normalize_html_blocks(str(answer)),
+            extras=self._MARKDOWN_EXTRAS,
+        ).strip()
 
         # The result is injected into the chat DOM as HTML (and stored, then shown
         # again in the admin monitoring inspector). The model echoes whatever it
