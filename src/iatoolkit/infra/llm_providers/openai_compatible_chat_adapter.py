@@ -9,6 +9,7 @@ import logging
 import mimetypes
 import threading
 import time
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
 import openai
@@ -20,6 +21,7 @@ from iatoolkit.infra.llm_providers.attachment_mime import (
     resolve_attachment_mime,
 )
 from iatoolkit.infra.llm_response import LLMResponse, ToolCall, Usage
+from iatoolkit.services.chat_stream import TurnCancelled
 
 
 class OpenAICompatibleChatAdapter:
@@ -54,6 +56,9 @@ class OpenAICompatibleChatAdapter:
     supports_parallel_tool_calls = False
     supports_thinking = False
     allow_follow_up_tool_calls = True
+    #: Can report text and reasoning as they arrive (BL-023). Off here; turned
+    #: on by the providers whose stream has been checked against a plain call.
+    supports_streaming = False
 
     #: `LLMProxy` builds every client with `max_retries=0` by default (see
     #: `LLMProxy.DEFAULT_MAX_RETRIES`), so a bare transport failure - DNS,
@@ -157,6 +162,10 @@ class OpenAICompatibleChatAdapter:
                 call_kwargs["parallel_tool_calls"] = bool(kwargs.get("parallel_tool_calls"))
 
             self._extend_call_kwargs(call_kwargs, kwargs)
+            stream_callbacks = kwargs.get("stream_callbacks") if self.supports_streaming else None
+            if stream_callbacks is not None:
+                call_kwargs["stream"] = True
+                call_kwargs["stream_options"] = {"include_usage": True}
             self._record_telemetry_input(telemetry_execution, call_kwargs)
 
             logging.debug(
@@ -165,10 +174,12 @@ class OpenAICompatibleChatAdapter:
                 len(messages),
             )
             response = self._create_chat_completion(call_kwargs)
+            if stream_callbacks is not None:
+                response = self._consume_chat_stream(response, stream_callbacks)
 
             return self._map_chat_completion_response(response)
 
-        except IAToolkitException:
+        except (IAToolkitException, TurnCancelled):
             raise
         except Exception as ex:
             logging.exception("Unexpected error calling %s provider", self.provider_label)
@@ -176,6 +187,151 @@ class OpenAICompatibleChatAdapter:
                 IAToolkitException.ErrorType.LLM_ERROR,
                 f"{self.provider_label} error: {ex}"
             ) from ex
+
+    # ------------------------------------------------------------------
+    # Streaming (BL-023)
+    # ------------------------------------------------------------------
+
+    #: Pieces of a reasoning detail that arrive split across chunks.
+    _REASONING_DETAIL_TEXT_KEYS = ("text", "summary", "data")
+
+    def _consume_chat_stream(self, stream: Any, stream_callbacks: Any) -> Any:
+        """Reads a `chat.completions` stream into the shape of a whole response.
+
+        Content and reasoning go to `stream_callbacks` as they arrive. Tool
+        calls are put together from their per-index fragments, reasoning
+        details from theirs, and usage comes from the last chunk. The result
+        is what `chat.completions.create` would have returned, so
+        `_map_chat_completion_response` maps it unchanged.
+        """
+        response_id = ""
+        model = ""
+        finish_reason = None
+        content_parts: List[str] = []
+        reasoning_parts: List[str] = []
+        reasoning_details: Dict[Any, Dict[str, Any]] = {}
+        tool_calls: Dict[int, Dict[str, Any]] = {}
+        usage = None
+        extras: Dict[str, Any] = {}
+
+        try:
+            for chunk in stream:
+                stream_callbacks.raise_if_cancelled()
+
+                error = self._get_message_value(chunk, "error")
+                if error:
+                    reason = self._extract_error_reason(error) or str(error)
+                    raise IAToolkitException(
+                        IAToolkitException.ErrorType.LLM_ERROR,
+                        f"{self.provider_label} stream error: {reason}",
+                    )
+
+                response_id = response_id or str(self._get_message_value(chunk, "id") or "")
+                model = model or str(self._get_message_value(chunk, "model") or "")
+                for key in ("openrouter_metadata", "provider_name", "provider"):
+                    value = self._get_message_value(chunk, key)
+                    if value is not None:
+                        extras[key] = value
+                chunk_usage = self._get_message_value(chunk, "usage")
+                if chunk_usage is not None:
+                    usage = chunk_usage
+
+                for choice in self._get_message_value(chunk, "choices") or []:
+                    if (self._get_message_value(choice, "index") or 0) != 0:
+                        continue
+                    finish_reason = self._get_message_value(choice, "finish_reason") or finish_reason
+                    if finish_reason == "error":
+                        raise IAToolkitException(
+                            IAToolkitException.ErrorType.LLM_ERROR,
+                            f"{self.provider_label} stream ended with an error.",
+                        )
+                    delta = self._get_message_value(choice, "delta")
+                    if delta is None:
+                        continue
+
+                    # Raw, never stripped: a delta's leading space is part of the text.
+                    reasoning_text = (
+                        self._get_message_value(delta, "reasoning_content")
+                        or self._get_message_value(delta, "reasoning")
+                    )
+                    if isinstance(reasoning_text, str) and reasoning_text:
+                        reasoning_parts.append(reasoning_text)
+                        stream_callbacks.on_reasoning_delta(reasoning_text)
+                    self._merge_reasoning_details(
+                        reasoning_details, self._get_message_value(delta, "reasoning_details")
+                    )
+
+                    text = self._get_message_value(delta, "content")
+                    if isinstance(text, str) and text:
+                        content_parts.append(text)
+                        stream_callbacks.on_text_delta(text)
+
+                    self._merge_tool_call_deltas(tool_calls, self._get_message_value(delta, "tool_calls"))
+        finally:
+            close = getattr(stream, "close", None)
+            if callable(close):
+                close()
+
+        if isinstance(usage, dict):
+            usage = SimpleNamespace(**usage)
+        message = SimpleNamespace(
+            role="assistant",
+            content="".join(content_parts) or None,
+            tool_calls=[
+                SimpleNamespace(
+                    id=call["id"],
+                    type=call["type"] or "function",
+                    function=SimpleNamespace(name=call["name"], arguments=call["arguments"] or "{}"),
+                )
+                for _, call in sorted(tool_calls.items())
+            ] or None,
+            reasoning="".join(reasoning_parts) or None,
+            reasoning_details=[
+                detail for _, detail in sorted(
+                    reasoning_details.items(),
+                    key=lambda item: (0, item[0], "") if isinstance(item[0], int) else (1, 0, str(item[0])),
+                )
+            ] or None,
+        )
+        return SimpleNamespace(
+            id=response_id,
+            model=model,
+            choices=[SimpleNamespace(index=0, finish_reason=finish_reason, message=message)],
+            usage=usage,
+            error=None,
+            **extras,
+        )
+
+    def _merge_tool_call_deltas(self, tool_calls: Dict[int, Dict[str, Any]], deltas: Any) -> None:
+        for position, delta in enumerate(deltas or []):
+            index = self._get_message_value(delta, "index")
+            index = position if index is None else int(index)
+            call = tool_calls.setdefault(index, {"id": "", "type": "", "name": "", "arguments": ""})
+            call["id"] = call["id"] or str(self._get_message_value(delta, "id") or "")
+            call["type"] = call["type"] or str(self._get_message_value(delta, "type") or "")
+            function = self._get_message_value(delta, "function")
+            if function is not None:
+                call["name"] += str(self._get_message_value(function, "name") or "")
+                call["arguments"] += str(self._get_message_value(function, "arguments") or "")
+
+    def _merge_reasoning_details(self, details: Dict[Any, Dict[str, Any]], deltas: Any) -> None:
+        if not isinstance(deltas, list):
+            return
+        for position, delta in enumerate(deltas):
+            if not isinstance(delta, dict):
+                model_dump = getattr(delta, "model_dump", None)
+                delta = model_dump() if callable(model_dump) else dict(getattr(delta, "__dict__", {}) or {})
+            if not isinstance(delta, dict):
+                continue
+            key = delta.get("index", position)
+            detail = details.setdefault(key, {})
+            for field, value in delta.items():
+                if value is None:
+                    continue
+                if field in self._REASONING_DETAIL_TEXT_KEYS and isinstance(value, str):
+                    detail[field] = str(detail.get(field) or "") + value
+                else:
+                    detail[field] = value
 
     @staticmethod
     def _record_telemetry_input(telemetry_execution: Any, payload: Dict[str, Any]) -> None:

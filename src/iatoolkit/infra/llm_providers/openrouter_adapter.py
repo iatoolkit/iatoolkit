@@ -18,6 +18,7 @@ class OpenRouterAdapter(OpenAICompatibleChatAdapter):
     reasoning_content_message_field = "reasoning"
     supports_metadata = True
     supports_parallel_tool_calls = True
+    supports_streaming = True
 
     def __init__(self, openrouter_client):
         super().__init__(openai_compatible_client=openrouter_client, provider_label="OpenRouter")
