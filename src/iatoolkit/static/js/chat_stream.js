@@ -264,6 +264,9 @@
             this.clock = null;
             this.startedAt = Date.now();
             this.finishedAt = null;
+            // When the answer started being written: "Pensó durante" counts up
+            // to here, like ChatGPT, not the time spent writing.
+            this.answerStartedAt = null;
             this.items = [];          // timeline entries, in order
             this.reasoningItem = null; // the reasoning entry being written
             this.tools = {};          // call_id -> entry
@@ -337,7 +340,7 @@
         }
 
         _tick() {
-            const end = this.finishedAt || Date.now();
+            const end = this.answerStartedAt || this.finishedAt || Date.now();
             this.activity.find('.turn-activity-elapsed').text(formatDuration(end - this.startedAt));
         }
 
@@ -436,6 +439,8 @@
             this.start();
             if (!this.writing) {
                 this.writing = true;
+                this.answerStartedAt = Date.now();
+                this._tick();
                 this._setTitle(translate('chat_stream_writing', 'Escribiendo la respuesta…'));
                 this._setStep('');
             }
@@ -462,6 +467,7 @@
             const preamble = this.text.trim();
             this.text = '';
             this.writing = false;
+            this.answerStartedAt = null;  // that text was a preamble: still thinking
             this.render();
             this._setTitle(translate('chat_activity_thinking', 'Pensando…'));
             if (preamble) {
@@ -475,12 +481,15 @@
             return this.toolCount > 0 || this.items.some(item => item.kind === 'reasoning');
         }
 
-        _finish(titleKey, fallback) {
+        _finish(titleKey, fallback, untilAnswer) {
             if (this.clock !== null) clearInterval(this.clock);
             this.clock = null;
             this.finishedAt = this.finishedAt || Date.now();
             this._tick();
-            const seconds = formatDuration(this.finishedAt - this.startedAt);
+            // A finished turn counts its thinking (up to the answer); a stopped
+            // or failed one, all the time it ran.
+            const end = untilAnswer && this.answerStartedAt ? this.answerStartedAt : this.finishedAt;
+            const seconds = formatDuration(end - this.startedAt);
             let title = fill(translate(titleKey, fallback), { duration: seconds });
             if (this.toolCount > 0) {
                 const tools = this.toolCount === 1
@@ -505,7 +514,7 @@
             if (!this.items.some(item => item.kind === 'reasoning') && finalReasoning) {
                 this.appendReasoning(String(finalReasoning));
             }
-            this._finish('chat_activity_done', 'Pensó durante {duration}');
+            this._finish('chat_activity_done', 'Pensó durante {duration}', true);
             const activity = this.hasActivity() ? this.activity.detach() : null;
             this.remove();
             return activity;
