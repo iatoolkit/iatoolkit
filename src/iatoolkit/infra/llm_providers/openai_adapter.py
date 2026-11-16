@@ -4,6 +4,7 @@
 # IAToolkit is open source software.
 
 import logging
+import openai
 from typing import Any, Dict, List, Optional
 from iatoolkit.infra.llm_response import LLMResponse, ToolCall, Usage
 from iatoolkit.common.exceptions import IAToolkitException
@@ -94,6 +95,7 @@ class OpenAIAdapter:
 
             # Llamar a la API de OpenAI
             if stream_callbacks is not None:
+                self._request_reasoning_summary(params, model, carries_reasoning)
                 openai_response = self._create_streamed_response(params, stream_callbacks)
             else:
                 openai_response = self.client.responses.create(**params)
@@ -109,7 +111,46 @@ class OpenAIAdapter:
 
             raise IAToolkitException(IAToolkitException.ErrorType.LLM_ERROR, error_message)
 
+    #: Clients whose organization OpenAI refused reasoning summaries to (it
+    #: requires a verified organization): not asked again in this process.
+    _summary_refused_clients: set = set()
+
+    def _request_reasoning_summary(self, params: Dict[str, Any], model: str,
+                                   carries_reasoning: Optional[bool]) -> None:
+        """Asks a reasoning model for its reasoning summary, for the chat to show (BL-023).
+
+        Without `reasoning.summary` the Responses API reasons but returns no
+        summary, so `reasoning_content` stays empty. Only for streamed chat
+        turns; a summary the caller already set is kept.
+        """
+        if id(self.client) in self._summary_refused_clients:
+            return
+        if not self._carries_encrypted_reasoning(model, carries_reasoning):
+            return
+        reasoning = dict(params.get("reasoning") or {})
+        if str(reasoning.get("effort") or "").strip().lower() == "none" or reasoning.get("summary"):
+            return
+        reasoning["summary"] = "auto"
+        params["reasoning"] = reasoning
+
+    @staticmethod
+    def _is_summary_refusal(error: Exception) -> bool:
+        message = str(error).lower()
+        return "summar" in message and ("verif" in message or "organization" in message or "not supported" in message)
+
     def _create_streamed_response(self, params: Dict[str, Any], stream_callbacks: Any):
+        try:
+            return self._read_stream(params, stream_callbacks)
+        except openai.BadRequestError as e:
+            if not (params.get("reasoning") or {}).get("summary") or not self._is_summary_refusal(e):
+                raise
+            # The organization cannot get summaries: answer without them.
+            logging.warning("OpenAI refused reasoning summaries; streaming without them: %s", e)
+            self._summary_refused_clients.add(id(self.client))
+            params["reasoning"] = {k: v for k, v in params["reasoning"].items() if k != "summary"}
+            return self._read_stream(params, stream_callbacks)
+
+    def _read_stream(self, params: Dict[str, Any], stream_callbacks: Any):
         """The same `Response` as `responses.create`, read as a stream (BL-023).
 
         Text and reasoning-summary deltas go to `stream_callbacks` as they

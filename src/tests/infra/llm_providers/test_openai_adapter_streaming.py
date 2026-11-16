@@ -143,3 +143,82 @@ class TestOpenAIAdapterStreaming:
 
         assert stream.closed
         assert callbacks.text == []
+
+
+class TestReasoningSummary:
+    """Streamed chat turns ask reasoning models for their summary, which the
+    Responses API only returns when asked."""
+
+    def setup_method(self):
+        OpenAIAdapter._summary_refused_clients.clear()
+        self.client = MagicMock()
+        self.adapter = OpenAIAdapter(openai_client=self.client)
+
+    def _streamed_params(self, **kwargs):
+        self.client.responses.create.return_value = _Stream(_events(_response()))
+        self.adapter.create_response(input=[], stream_callbacks=_Callbacks(), **kwargs)
+        return self.client.responses.create.call_args.kwargs
+
+    def test_a_streamed_reasoning_model_asks_for_the_summary(self):
+        params = self._streamed_params(model="gpt-5.2", reasoning={"effort": "medium"})
+        assert params["reasoning"] == {"effort": "medium", "summary": "auto"}
+
+    def test_a_streamed_reasoning_model_without_effort_asks_for_it_too(self):
+        params = self._streamed_params(model="gpt-5.2")
+        assert params["reasoning"] == {"summary": "auto"}
+
+    @pytest.mark.parametrize("kwargs", [
+        {"model": "gpt-4o", "reasoning": {"effort": "medium"}},            # not a reasoning model
+        {"model": "gpt-5-chat-latest", "reasoning": {"effort": "medium"}},
+        {"model": "gpt-5.2", "reasoning": {"effort": "none"}},             # not reasoning this time
+    ])
+    def test_no_summary_when_there_is_no_reasoning(self, kwargs):
+        params = self._streamed_params(**kwargs)
+        assert "summary" not in (params.get("reasoning") or {})
+
+    def test_a_summary_the_caller_set_is_kept(self):
+        params = self._streamed_params(model="gpt-5.2", reasoning={"effort": "high", "summary": "detailed"})
+        assert params["reasoning"]["summary"] == "detailed"
+
+    def test_a_plain_call_is_unchanged(self):
+        self.client.responses.create.return_value = _response()
+        self.adapter.create_response(model="gpt-5.2", input=[], reasoning={"effort": "medium"})
+        assert self.client.responses.create.call_args.kwargs["reasoning"] == {"effort": "medium"}
+
+    def test_an_organization_refused_summaries_streams_without_them(self):
+        import httpx
+        import openai
+
+        refusal = openai.BadRequestError(
+            "Your organization must be verified to generate reasoning summaries.",
+            response=httpx.Response(400, request=httpx.Request("POST", "https://api.openai.com/v1/responses")),
+            body=None,
+        )
+        self.client.responses.create.side_effect = [refusal, _Stream(_events(_response())),
+                                                    _Stream(_events(_response()))]
+
+        first = self.adapter.create_response(model="gpt-5.2", input=[], reasoning={"effort": "medium"},
+                                             stream_callbacks=_Callbacks())
+        retried = self.client.responses.create.call_args_list[1].kwargs
+        assert retried["reasoning"] == {"effort": "medium"}
+        assert first.id == "resp_1"
+
+        # Not asked again for the same client.
+        self.adapter.create_response(model="gpt-5.2", input=[], reasoning={"effort": "medium"},
+                                     stream_callbacks=_Callbacks())
+        assert self.client.responses.create.call_args.kwargs["reasoning"] == {"effort": "medium"}
+
+    def test_another_bad_request_is_not_retried(self):
+        import httpx
+        import openai
+
+        self.client.responses.create.side_effect = openai.BadRequestError(
+            "Unsupported value: 'minimal'",
+            response=httpx.Response(400, request=httpx.Request("POST", "https://api.openai.com/v1/responses")),
+            body=None,
+        )
+
+        with pytest.raises(IAToolkitException, match="minimal"):
+            self.adapter.create_response(model="gpt-5.2", input=[], reasoning={"effort": "minimal"},
+                                         stream_callbacks=_Callbacks())
+        assert self.client.responses.create.call_count == 1
