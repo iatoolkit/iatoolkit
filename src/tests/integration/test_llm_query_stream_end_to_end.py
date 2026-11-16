@@ -211,7 +211,10 @@ class FakeOpenAIClient:
         self.responses = SimpleNamespace(create=self._create)
 
     def _create(self, **params):
-        assert params.get("stream") is True, "the chat turn must be streamed"
+        if isinstance(self._rounds[0], FakeOpenAIStream):
+            assert params.get("stream") is True, "the chat turn must be streamed"
+        else:
+            assert "stream" not in params, "a provider that does not stream gets a plain call"
         self.calls.append(params)
         stream = self._rounds.pop(0)
         self.streams.append(stream)
@@ -413,3 +416,28 @@ def test_a_browser_that_leaves_stops_the_turn_end_to_end(env):
     assert len(query.function_calls) == 1
     # A stopped turn never reaches the history.
     assert stack.history_manager.updates == []
+
+
+def test_a_provider_that_does_not_stream_still_shows_the_activity(env):
+    """Any provider goes through the live endpoint: its rounds and tools are
+    reported, and the answer arrives with the final event."""
+    tool_round = tool_round_events()[-1].response
+    answer_round = answer_round_events()[-1].response
+    stack = StreamingStack([tool_round, answer_round])
+    try:
+        with patch.object(OpenAIAdapter, "supports_streaming", False):
+            response = stack.client.post(
+                f"/{COMPANY}/api/llm_query/stream",
+                json={"question": "¿Cuántos registros hay?", "model": MODEL},
+            )
+            # Read inside the patch: the turn runs while the response is consumed.
+            events = _parse_sse(response.get_data(as_text=True))
+    finally:
+        stack.close()
+
+    assert [event for event, _ in events] == [
+        "round_start", "round_end", "tool_start", "tool_end", "round_start", "round_end", "final",
+    ]
+    assert events[-1][1]["valid_response"] is True
+    assert "<strong>42</strong>" in events[-1][1]["answer"]
+    assert len(stack.history_manager.updates) == 1

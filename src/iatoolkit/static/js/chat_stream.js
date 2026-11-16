@@ -4,11 +4,11 @@
 // /api/llm_query/stream and reads the events as they arrive: which tool is
 // running, and the `final` event carrying the very JSON /api/llm_query
 // returns, which the chat renders exactly as before. On for every company
-// unless it sets parameters.chat_streaming: false, and only for the providers
-// whose adapters stream; every other turn goes through callToolkit as always.
+// unless it sets parameters.chat_streaming: false, for every model: the text
+// streams where the provider's adapter does (OpenAI, OpenRouter); with the
+// rest the activity is live and the answer arrives whole.
 
 (function () {
-    const STREAMING_PROVIDERS = new Set(['openai', 'openrouter']);
     // No byte at all (the server sends a heartbeat every 15 s) for this long
     // means the connection is gone.
     const IDLE_TIMEOUT_MS = 90000;
@@ -25,13 +25,15 @@
         return value && value !== key ? value : fallback;
     }
 
-    function shouldStream(modelId) {
+    /**
+     * Every model goes live: the turn's activity (rounds, tools, time) comes
+     * from the server for any provider; the answer's text streams only where
+     * the provider's adapter streams (OpenAI, OpenRouter) and otherwise
+     * arrives with the final event.
+     */
+    function shouldStream() {
         if (window.chatStreamingEnabled !== true) return false;
-        if (typeof ReadableStream === 'undefined' || typeof TextDecoder === 'undefined') return false;
-        const models = Array.isArray(window.availableLlmModels) ? window.availableLlmModels : [];
-        const model = models.find(m => m && m.id === modelId);
-        const provider = String((model && model.provider) || '').trim().toLowerCase();
-        return STREAMING_PROVIDERS.has(provider);
+        return typeof ReadableStream !== 'undefined' && typeof TextDecoder !== 'undefined';
     }
 
     /** What the person sees for a tool: its translation, or its name made readable. */

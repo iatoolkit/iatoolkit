@@ -490,8 +490,9 @@ parameters:
   # Enable or disable the account verification flow when signup
   verify_account: false      # IMPORTANT! in production recommend to set to true
 
-  # The chat shows the turn live: tools, reasoning, the answer as it is written
-  # (OpenAI and OpenRouter models). On by default; false waits for the whole answer.
+  # The chat shows the turn live: tools and reasoning for every model, the answer
+  # as it is written for OpenAI and OpenRouter. On by default; false waits for the
+  # whole answer.
   # chat_streaming: false
 
   # This configuration is for receiving the user feedback from the chat modal window

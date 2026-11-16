@@ -517,8 +517,9 @@ parameters:
 Core/common keys:
 
 - `verify_account` (bool, default behavior true when absent)
-- `chat_streaming` (bool, default true): the chat web shows the turn live (tools
-  running, reasoning, the answer as it is written) for OpenAI and OpenRouter models;
+- `chat_streaming` (bool, default true): the chat web shows the turn live: its
+  activity (tools running, reasoning, time) for every model, and the answer as it
+  is written for OpenAI and OpenRouter models (the rest show it when it is done).
   `false` turns it off and the chat waits for the whole answer. The API always
   answers whole.
 - `cors_origin` (list of origins for CORS)
