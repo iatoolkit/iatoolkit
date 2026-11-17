@@ -1919,30 +1919,36 @@ li {
 
 .conversations-panel-top {
     display: flex;
+    align-items: center;
     gap: 0.25rem;
 }
 
 /* Neutral on purpose: the brand colour is the header's and the send
    button's; a solid brand block here competed with both (strong brand
    colours, e.g. Maxxa's orange) and can lose contrast with light ones. */
+/* An action, not a field: a row like the conversations below it (same left
+   edge and padding), without a border; the search under it is the field. */
 .conversations-new {
     flex: 1;
     display: inline-flex;
     align-items: center;
-    justify-content: center;
-    gap: 0.4rem;
+    justify-content: flex-start;
+    gap: 0.55rem;
     font-weight: 500;
     border-radius: 0.5rem;
-    padding: 0.4rem 0.75rem;
-    background: #fff;
-    border: 1px solid #dee2e6;
+    padding: 0.4rem 0.5rem;
+    background: none;
+    border: 0;
     color: #343a40;
+}
+
+.conversations-new i {
+    font-size: 1.05rem;
 }
 
 .conversations-new:hover,
 .conversations-new:focus-visible {
     background: #f1f3f5;
-    border-color: #ced4da;
     color: #212529;
 }
 
@@ -1963,11 +1969,17 @@ li {
 .conversations-search {
     display: flex;
     align-items: center;
-    gap: 0.4rem;
-    border: 1px solid #dee2e6;
-    border-radius: 0.375rem;
-    padding: 0.2rem 0.5rem;
-    color: #6c757d;
+    gap: 0.5rem;
+    border: 1px solid transparent;
+    border-radius: 0.5rem;
+    padding: 0.3rem 0.55rem;
+    background: #f1f3f5;
+    color: #868e96;
+}
+
+.conversations-search:focus-within {
+    background: #fff;
+    border-color: #ced4da;
 }
 
 .conversations-search input {
