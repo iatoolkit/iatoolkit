@@ -253,11 +253,98 @@
         return Promise.all(pending);
     }
 
+    // ---- Diagrams: ```mermaid blocks (BL-025, PR-6) ---------------------------
+    const MERMAID_URL = 'https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js';
+    let mermaidLoading = null;
+    let diagramCount = 0;
+
+    function loadMermaid() {
+        if (global.mermaid) return Promise.resolve(global.mermaid);
+        if (mermaidLoading) return mermaidLoading;
+        mermaidLoading = new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = MERMAID_URL;
+            script.async = true;
+            script.onload = () => {
+                if (!global.mermaid) return reject(new Error('mermaid missing'));
+                // strict: no HTML in labels, no click handlers, no scripts.
+                global.mermaid.initialize({
+                    startOnLoad: false,
+                    securityLevel: 'strict',
+                    theme: isDarkTheme() ? 'dark' : 'neutral',
+                    fontFamily: 'inherit',
+                });
+                resolve(global.mermaid);
+            };
+            script.onerror = () => {
+                mermaidLoading = null;
+                reject(new Error('mermaid failed to load'));
+            };
+            document.head.appendChild(script);
+        });
+        return mermaidLoading;
+    }
+
+    /**
+     * Models often write node labels with parentheses or other symbols without
+     * quotes (`A[Orden (OC)]`), which Mermaid rejects. Quoting them is safe:
+     * `A["Orden (OC)"]` means the same node.
+     */
+    function quoteMermaidLabels(code) {
+        return String(code)
+            .replace(/(\b[\w-]+)\[(?!["(\[\/\\])([^\]\n"]*[(){}<>:;#&|][^\]\n"]*)\](?!\))/g, '$1["$2"]')
+            .replace(/(\b[\w-]+)\{(?!["{])([^}\n"]*[()\[\]<>:;#&|][^}\n"]*)\}/g, '$1{"$2"}')
+            .replace(/(\b[\w-]+)\(\[(?!")([^\]\n"]*[(){}<>:;#&|][^\]\n"]*)\]\)/g, '$1(["$2"])');
+    }
+
+    function renderMermaid(mermaid, code) {
+        diagramCount += 1;
+        const id = `iat-diagram-${Date.now()}-${diagramCount}`;
+        return mermaid.render(id, code).catch((error) => {
+            const repaired = quoteMermaidLabels(code);
+            if (repaired === code) throw error;
+            diagramCount += 1;
+            return mermaid.render(`${id}-r`, repaired);
+        });
+    }
+
+    function renderDiagram(pre) {
+        const code = $(pre).find('code.language-mermaid').text();
+        if (!code.trim()) return Promise.resolve();
+        return loadMermaid().then((mermaid) => renderMermaid(mermaid, code)).then(({ svg }) => {
+            const figure = $('<figure>').addClass('iat-diagram');
+            const drawing = $('<div>').addClass('iat-diagram-svg').html(svg);
+            const source = $(pre).clone().addClass('iat-diagram-source').hide();
+            const bar = $('<div>').addClass('iat-chart-controls');
+            const toggle = $('<button type="button">').addClass('iat-chart-control').text(t('diagram_view_code', 'Ver código'));
+            toggle.on('click', () => {
+                const showing = source.is(':visible');
+                source.toggle(!showing);
+                drawing.toggle(showing);
+                toggle.text(showing ? t('diagram_view_code', 'Ver código') : t('diagram_view_diagram', 'Ver diagrama'));
+            });
+            const save = $('<button type="button">').addClass('iat-chart-control').text(t('diagram_download_svg', 'Descargar SVG'));
+            save.on('click', () => download('diagrama.svg', svg, 'image/svg+xml'));
+            figure.append(drawing, source, bar.append(toggle, save));
+            $(pre).replaceWith(figure);
+        }).catch(() => {
+            // A diagram that does not parse stays as the code it is.
+        });
+    }
+
+    /** Draws the answer's ```mermaid blocks as diagrams. */
+    function renderDiagrams(container) {
+        const blocks = $(container).find('pre').filter(function () {
+            return $(this).find('code.language-mermaid').length > 0;
+        });
+        return Promise.all(blocks.toArray().map(renderDiagram));
+    }
+
     /** While the answer streams, a marker shows as a waiting block. */
     function replaceMarkersWhileStreaming(html) {
         return String(html || '').replace(MARKER, () =>
             `<span class="iat-chart-pending iat-chart-pending-inline">${$('<span>').text(t('chart_pending', 'Preparando el gráfico…')).html()}</span>`);
     }
 
-    global.IATCharts = { renderParts, replaceMarkersWhileStreaming, loadEcharts, ECHARTS_URL };
+    global.IATCharts = { renderParts, renderDiagrams, quoteMermaidLabels, replaceMarkersWhileStreaming, loadEcharts, ECHARTS_URL };
 })(window);

@@ -2156,7 +2156,10 @@ class llmClient:
         # sanitizer: it keeps the formatting markdown2 produces (headings, lists,
         # tables, code, links, images) and strips scripts, event handlers,
         # iframes/objects and javascript:/data: URLs.
-        return nh3.clean(html_answer, attributes=self._SANITIZER_ATTRIBUTES)
+        cleaned = nh3.clean(html_answer, attributes=self._SANITIZER_ATTRIBUTES,
+                            allowed_classes=self._SANITIZER_CLASSES)
+        # A class with nothing allowed left in it is noise.
+        return cleaned.replace(' class=""', '')
 
     #: nh3's default allowlist plus `align` on table cells: a markdown table's
     #: column alignment (`---:`), which markdown2 writes as a style nh3 drops.
@@ -2165,6 +2168,9 @@ class llmClient:
         "th": set(nh3.ALLOWED_ATTRIBUTES.get("th", set())) | {"align"},
         "td": set(nh3.ALLOWED_ATTRIBUTES.get("td", set())) | {"align"},
     }
+    #: The one code class that survives sanitizing: a ```mermaid block, which the
+    #: chat draws as a diagram (BL-025). Every other class is dropped.
+    _SANITIZER_CLASSES = {"code": {"language-mermaid"}}
     _CELL_ALIGN_STYLE = re.compile(r'\sstyle="text-align:\s*(left|right|center);?"', re.IGNORECASE)
 
     def _render_markdown(self, answer: str) -> str:

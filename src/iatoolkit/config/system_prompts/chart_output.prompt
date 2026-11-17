@@ -18,3 +18,11 @@ visual, usa la herramienta `iat_chart`. IAToolkit dibuja el gráfico en el chat.
 - No repitas los datos del gráfico en una tabla, salvo que el usuario lo pida.
 - Si `iat_chart` devuelve un error, corrige los argumentos o la consulta y vuelve
   a llamarla.
+
+### Diagramas
+
+- Para un diagrama (un flujo, un proceso, una secuencia, un organigrama) escribe un
+  bloque de código ` ```mermaid ` con el diagrama; el chat lo dibuja. Mermaid es solo
+  para diagramas: los gráficos de datos siempre van con `iat_chart`.
+- Usa texto simple en las etiquetas, sin HTML. Si una etiqueta lleva paréntesis,
+  dos puntos u otros símbolos, ponla entre comillas: `A["Orden de compra (OC)"]`.

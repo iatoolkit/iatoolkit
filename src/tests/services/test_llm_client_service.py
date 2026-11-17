@@ -1572,6 +1572,13 @@ class TestMarkdownAsTheAnswerFormat:
     def setup_method(self):
         self.client = llmClient.__new__(llmClient)
 
+    def test_a_mermaid_block_keeps_its_language_for_the_chat_to_draw(self):
+        html = self.client.format_html("```mermaid\nflowchart LR\n  A --> B\n```\n\n```python\nprint(1)\n```")
+
+        assert '<code class="language-mermaid">flowchart LR' in html
+        # Only mermaid keeps a class: any other language stays plain code.
+        assert html.count("class=") == 1
+
     def test_column_alignment_survives_sanitizing(self):
         html = self.client.format_html("| Año | Monto |\n|:---:|---:|\n| 2024 | $1.000 |")
 

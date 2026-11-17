@@ -542,3 +542,21 @@
   font-size: 0.8rem;
   color: #6c757d;
 }
+
+/* ---- Diagrams (BL-025) ----------------------------------------------------- */
+.llm-output .iat-diagram {
+  margin: 14px 0;
+  padding: 12px 12px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+}
+
+.llm-output .iat-diagram-svg {
+  overflow-x: auto;
+  text-align: center;
+}
+
+.llm-output .iat-diagram-svg svg {
+  max-width: 100%;
+  height: auto;
+}

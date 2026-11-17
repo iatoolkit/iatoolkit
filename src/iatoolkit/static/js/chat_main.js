@@ -328,8 +328,12 @@ function processBotResponse(responseData, options = {}) {
 
     // 4. Charts and other parts (BL-025) fill their slots once the answer is on
     //    the page, where they have a width to draw in.
-    if (window.IATCharts && Array.isArray(responseData.parts) && responseData.parts.length) {
-        window.IATCharts.renderParts(answerSection, responseData.parts).then(() => {
+    if (window.IATCharts) {
+        const hasParts = Array.isArray(responseData.parts) && responseData.parts.length;
+        Promise.all([
+            hasParts ? window.IATCharts.renderParts(answerSection, responseData.parts) : null,
+            window.IATCharts.renderDiagrams(answerSection),
+        ]).then(() => {
             const chatContainer = $('#chat-container');
             chatContainer.scrollTop(chatContainer[0].scrollHeight);
         });
