@@ -327,33 +327,8 @@ function processBotResponse(responseData, options = {}) {
         });
     }
 
-    const saveButton = $('<button>')
-        .attr('type', 'button')
-        .addClass('btn btn-sm memory-save-inline-button memory-save-answer-button')
-        .html('<i class="bi bi-bookmark-plus"></i>')
-        .attr('title', 'Guardar en la memoria de la empresa')
-        .on('click', async function () {
-            if (typeof window.saveItemToMemory !== 'function') {
-                toastr.error('Memoria no está disponible.');
-                return;
-            }
-            // Even a detached element parses <img src onerror> and fires it - sanitize first.
-            const plainText = $('<div>').html(sanitizeHtmlFragment(responseData.answer || '')).text().trim();
-            const sourceMeta = { origin: 'chat_answer' };
-            // Where the answer came from (BL-001): its conversation and message.
-            const conversationId = window.IATConversations ? window.IATConversations.currentId() : null;
-            if (conversationId) sourceMeta.conversation_id = conversationId;
-            if (responseData.assistant_message_id) sourceMeta.message_id = responseData.assistant_message_id;
-            await window.saveItemToMemory({
-                item_type: 'chat_assistant_message',
-                content_text: plainText,
-                title: plainText.slice(0, 120) || 'Respuesta del chat',
-                source_meta: sourceMeta
-            });
-        });
-
-    appendInlineAnswerSaveButton(answerSection, saveButton);
     botMessageContainer.append(answerSection);
+    botMessageContainer.append(answerActions(responseData, answerSection));
 
     // 3. Mostrar el contenedor completo
     displayBotMessage(botMessageContainer);
@@ -372,46 +347,106 @@ function processBotResponse(responseData, options = {}) {
     }
 }
 
-function appendInlineAnswerSaveButton(answerSection, saveButton) {
-    const textTargets = answerSection
-        .find('p, li, h1, h2, h3, h4, h5, h6, blockquote')
-        .filter(function () {
-            return $(this).text().trim().length > 0;
-        });
+/** The answer as plain text: what is copied, and what a proposal starts from. */
+function answerPlainText(answerSection) {
+    const clone = $(answerSection).clone();
+    clone.find('.iat-chart-controls, .iat-chart-sql, .iat-chart-note, .answer-actions, .memory-proposal').remove();
+    // A table reads one row per line, its cells apart: "Produce | 8".
+    clone.find('table').each(function () {
+        const rows = $(this).find('tr').map(function () {
+            return $(this).find('th, td').map(function () {
+                return $(this).text().replace(/\s+/g, ' ').trim();
+            }).get().join(' | ');
+        }).get();
+        $(this).replaceWith(document.createTextNode('\n' + rows.join('\n') + '\n'));
+    });
+    clone.find('p, li, h1, h2, h3, h4, h5, h6, pre, blockquote').append('\n');
+    return clone.text()
+        .split('\n').map(line => line.replace(/[ \t]+/g, ' ').trim()).join('\n')
+        .replace(/\n{3,}/g, '\n\n').trim();
+}
 
-    const inlineAnchor = $('<span>')
-        .addClass('memory-save-answer-anchor')
-        .append(saveButton);
+/**
+ * Actions under an answer (BL-001): copy it, or propose it to the company's
+ * memory. A proposal is shared with everyone, so it goes through a short step
+ * where the person keeps only what is worth remembering (a criterion, a
+ * definition), not the figures of the moment.
+ */
+function answerActions(responseData, answerSection) {
+    const bar = $('<div>').addClass('answer-actions');
+    const button = (icon, label) => $('<button type="button">').addClass('answer-action')
+        .attr({ title: label, 'aria-label': label })
+        .append($('<i>').addClass(`bi ${icon}`).attr('aria-hidden', 'true'), $('<span>').text(label));
 
-    if (textTargets.length > 0) {
-        textTargets.last().append(inlineAnchor);
+    const copy = button('bi-copy', t_js('answer_copy'));
+    copy.on('click', async () => {
+        try {
+            await navigator.clipboard.writeText(answerPlainText(answerSection));
+            copy.find('span').text(t_js('answer_copied'));
+            copy.find('i').attr('class', 'bi bi-check2');
+            setTimeout(() => {
+                copy.find('span').text(t_js('answer_copy'));
+                copy.find('i').attr('class', 'bi bi-copy');
+            }, 1800);
+        } catch (e) {
+            toastr.error(t_js('answer_copy_error'));
+        }
+    });
+    bar.append(copy);
+
+    if (typeof window.saveItemToMemory === 'function') {
+        const propose = button('bi-journal-plus', t_js('memory_propose'));
+        propose.on('click', () => openMemoryProposal(responseData, answerSection, bar));
+        bar.append(propose);
+    }
+    return bar;
+}
+
+function openMemoryProposal(responseData, answerSection, bar) {
+    if (bar.next('.memory-proposal').length) {
+        bar.next('.memory-proposal').find('textarea').trigger('focus');
         return;
     }
+    const panel = $('<div>').addClass('memory-proposal');
+    panel.append($('<div>').addClass('memory-proposal-title').text(t_js('memory_propose_title')));
+    panel.append($('<div>').addClass('memory-proposal-note').text(t_js('memory_propose_note')));
+    const text = $('<textarea>').addClass('form-control form-control-sm').attr('rows', 6)
+        .val(answerPlainText(answerSection).slice(0, 4000));
+    panel.append(text);
+    const actions = $('<div>').addClass('memory-proposal-actions');
+    const cancel = $('<button type="button">').addClass('btn btn-sm btn-outline-secondary').text(t_js('memory_propose_cancel'));
+    const send = $('<button type="button">').addClass('btn btn-sm btn-branded-primary').text(t_js('memory_propose_send'));
+    actions.append(cancel, send);
+    panel.append(actions);
+    bar.after(panel);
+    text.trigger('focus');
 
-    const lastTextChild = answerSection
-        .contents()
-        .filter(function () {
-            if (this.nodeType === Node.TEXT_NODE) {
-                return this.textContent.trim().length > 0;
-            }
-            if (this.nodeType === Node.ELEMENT_NODE) {
-                return !$(this).hasClass('image-part') && $(this).text().trim().length > 0;
-            }
-            return false;
-        })
-        .last();
-
-    if (lastTextChild.length > 0 && lastTextChild[0].nodeType === Node.TEXT_NODE) {
-        answerSection.append(inlineAnchor);
-        return;
-    }
-
-    if (lastTextChild.length > 0) {
-        $(lastTextChild[0]).append(inlineAnchor);
-        return;
-    }
-
-    answerSection.append(inlineAnchor);
+    cancel.on('click', () => panel.remove());
+    send.on('click', async () => {
+        const content = String(text.val() || '').trim();
+        if (!content) {
+            text.trigger('focus');
+            return;
+        }
+        send.prop('disabled', true);
+        const sourceMeta = { origin: 'chat_answer' };
+        // Where it came from (BL-001): its conversation and message.
+        const conversationId = window.IATConversations ? window.IATConversations.currentId() : null;
+        if (conversationId) sourceMeta.conversation_id = conversationId;
+        if (responseData && responseData.assistant_message_id) sourceMeta.message_id = responseData.assistant_message_id;
+        const saved = await window.saveItemToMemory({
+            item_type: 'chat_assistant_message',
+            content_text: content,
+            title: content.split('\n')[0].slice(0, 120),
+            source_meta: sourceMeta,
+        }, { silentSuccess: true });
+        if (saved) {
+            panel.remove();
+            toastr.success(t_js('memory_proposed'));
+        } else {
+            send.prop('disabled', false);
+        }
+    });
 }
 
 
@@ -608,25 +643,7 @@ const displayUserMessage = function(message, isEditable, originalQuestion, files
         actionsBar.append(editIcon);
     }
 
-    const saveButton = $('<button>')
-        .attr('type', 'button')
-        .addClass('btn btn-sm memory-save-inline-button')
-        .html('<i class="bi bi-bookmark-plus"></i>')
-        .attr('title', 'Guardar en Memoria')
-        .on('click', async function () {
-            if (typeof window.saveItemToMemory !== 'function') {
-                toastr.error('Memoria no está disponible.');
-                return;
-            }
-            await window.saveItemToMemory({
-                item_type: 'chat_user_message',
-                content_text: originalQuestion || message,
-                title: (message || '').slice(0, 120),
-                source_meta: { origin: 'chat' }
-            });
-        });
-
-    actionsBar.append(saveButton);
+    // A question is not company knowledge: nothing to propose to the memory here.
     userMessage.append(actionsBar);
     chatContainer.append(userMessage);
     chatContainer.scrollTop(chatContainer[0].scrollHeight);
