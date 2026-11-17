@@ -469,8 +469,6 @@
         $('#conversations-backdrop').on('click', closeDrawer);
         $('#conversations-archived-button').on('click', () => showArchived(true));
         $('#conversations-back-button').on('click', () => showArchived(false));
-        // Turns from before conversations: chat_history_button.js opens the history modal.
-        $('#conversations-history-button').on('click', closeDrawer);
         $('#conversation-rename-button').on('click', startRenameCurrent);
         $('#conversation-title').on('dblclick', startRenameCurrent);
 

@@ -28,7 +28,6 @@ def register_views(app):
     from iatoolkit.views.chat_context_preview_api_view import ChatContextPreviewApiView
     from iatoolkit.views.prompt_context_preview_api_view import PromptContextPreviewApiView
     from iatoolkit.views.prompt_resource_api_view import PromptResourceApiView
-    from iatoolkit.views.history_api_view import HistoryApiView
     from iatoolkit.views.help_content_api_view import HelpContentApiView
     from iatoolkit.views.profile_api_view import UserLanguageApiView
     from iatoolkit.views.embedding_api_view import EmbeddingApiView
@@ -190,7 +189,6 @@ def register_views(app):
     )
     # toolbar buttons
     app.add_url_rule('/<company_short_name>/api/feedback', view_func=UserFeedbackApiView.as_view('feedback'))
-    app.add_url_rule('/<company_short_name>/api/history', view_func=HistoryApiView.as_view('history'))
     # Conversations (BL-001)
     conversations_view = ConversationsApiView.as_view('conversations_api')
     app.add_url_rule('/<company_short_name>/api/conversations', view_func=conversations_view,

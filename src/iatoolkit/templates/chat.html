@@ -41,8 +41,6 @@
     <div id="conversations-list" class="conversations-list" role="list"></div>
     <div class="conversations-panel-footer">
         <button type="button" id="conversations-archived-button" class="btn btn-link btn-sm p-0">{{ t('ui.conversations.view_archived') }}</button>
-        <span aria-hidden="true">·</span>
-        <button type="button" id="conversations-history-button" class="btn btn-link btn-sm p-0">{{ t('ui.conversations.previous_history') }}</button>
     </div>
 </aside>
 <div id="conversations-backdrop" class="conversations-backdrop" hidden></div>
@@ -227,7 +225,6 @@
 </script>
 
 <!-- Carga de los scripts JS externos después de definir las variables globales -->
-    <script src="{{ url_for('static', filename='js/chat_history_button.js', _external=True) }}"></script>
     <script src="{{ url_for('static', filename='js/chat_feedback_button.js', _external=True) }}"></script>
     <script src="{{ url_for('static', filename='js/chat_help_content.js', _external=True) }}"></script>
     <script src="{{ url_for('static', filename='js/chat_onboarding_button.js', _external=True) }}"></script>

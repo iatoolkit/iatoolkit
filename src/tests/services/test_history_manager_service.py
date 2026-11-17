@@ -280,32 +280,3 @@ class TestHistoryManager(unittest.TestCase):
             self.company_short_name, self.user_identifier, expected_saved_history, model="deepseek_chat"
         )
 
-    # --- get_full_history Tests ---
-
-    def test_get_full_history_success(self):
-        """Test fetching full history from database."""
-        self.mock_profile_repo.get_company_by_short_name.return_value = self.mock_company
-
-        mock_query = MagicMock(spec=LLMQuery)
-        mock_query.to_dict.return_value = {"query": "Hi"}
-        self.mock_llm_query_repo.get_history.return_value = [mock_query]
-
-        result = self.manager.get_full_history(self.company_short_name, self.user_identifier, limit=25)
-
-        self.assertEqual(result['message'], 'history loaded ok')
-        self.assertEqual(len(result['history']), 1)
-        self.assertEqual(result['history'][0]['query'], "Hi")
-        self.mock_llm_query_repo.get_history.assert_called_once_with(
-            self.mock_company,
-            self.user_identifier,
-            limit=25,
-        )
-
-    def test_get_full_history_company_not_found(self):
-        self.mock_profile_repo.get_company_by_short_name.return_value = None
-        self.mock_i18n.t.return_value = "Company not found error"
-
-        result = self.manager.get_full_history("unknown", self.user_identifier)
-
-        self.assertIn("error", result)
-        self.assertEqual(result["error"], "Company not found error")

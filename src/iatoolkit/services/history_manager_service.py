@@ -34,7 +34,6 @@ class HistoryManagerService:
     is what lets the history be trimmed or compacted and lets a conversation move
     between providers.
 
-    Also reads the persisted chat history for the history popup.
     """
     TYPE_CLIENT_SIDE = 'client_side'
 
@@ -571,21 +570,3 @@ class HistoryManagerService:
                 f"History ({purpose}) over the budget of {budget} tokens: removed the {removed_turns} "
                 f"oldest turns ({removed_messages} messages), {initial_tokens} -> {total_tokens} tokens."
             )
-
-    # --- this is for the history popup in the chat page
-    def get_full_history(self, company_short_name: str, user_identifier: str, limit: int = 100) -> dict:
-        """Retrieves the full persisted history from the database."""
-        try:
-            company = self.profile_repo.get_company_by_short_name(company_short_name)
-            if not company:
-                return {"error": self.i18n.t('errors.company_not_found', company_short_name=company_short_name)}
-
-            history = self.llm_query_repo.get_history(company, user_identifier, limit=limit)
-            if not history:
-                return {'message': 'empty history', 'history': []}
-
-            history_list = [query.to_dict() for query in history]
-            return {'message': 'history loaded ok', 'history': history_list}
-
-        except Exception as e:
-            return {'error': str(e)}

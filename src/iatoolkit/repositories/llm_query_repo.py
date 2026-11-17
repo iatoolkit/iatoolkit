@@ -56,13 +56,6 @@ class LLMQueryRepo:
             or_(LLMQuery.prompt_name.is_(None), ~LLMQuery.prompt_name.startswith(cls.SYSTEM_AGENT_PROMPT_PREFIX)),
         )
 
-    # get user query history
-    def get_history(self, company: Company, user_identifier: str, limit: int = 100) -> list[LLMQuery]:
-        return self.session.query(LLMQuery).filter(
-            LLMQuery.user_identifier == user_identifier,
-            self.conversation_turns_only(),
-        ).filter_by(company_id=company.id).order_by(LLMQuery.created_at.desc()).limit(limit).all()
-
 
     ## --- Tools related methods
     def get_company_tools(self, company: Company) -> list[Tool]:

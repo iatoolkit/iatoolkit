@@ -32,7 +32,6 @@ ui:
     archived_title: "Archivadas"
     back: "Volver"
     view_archived: "Ver archivadas"
-    previous_history: "Historial anterior"
     rename: "Renombrar"
   common:
     actions: "Acciones"
@@ -3009,7 +3008,6 @@ js_messages:
   feedback_sent_error: "No se pudo enviar el feedback, por favor intente nuevamente."
   feedback_rating_error: "Por favor, califica al asistente con las estrellas."
   feedback_comment_error: "Por favor, escribe tu comentario antes de enviar."
-  error_loading_history: "Ocurrió un error al cargar el historial."
   request_aborted: "La generación de la respuesta ha sido detenida."
   processing_error: "Ocurrió un error al procesar la solicitud."
   server_comm_error: "Error de comunicación con el servidor ({status}). Por favor, intente de nuevo más tarde."

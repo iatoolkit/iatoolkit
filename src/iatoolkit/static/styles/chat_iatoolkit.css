@@ -1879,10 +1879,6 @@ li {
     padding: 0.4rem 0.75rem;
 }
 
-/* "· Earlier history" without its dot when "View archived" is hidden. */
-#conversations-archived-button[hidden] + span {
-    display: none;
-}
 
 .conversations-icon-button {
     border: 0;

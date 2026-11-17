@@ -20,7 +20,6 @@ ui:
     archived_title: "Archived"
     back: "Back"
     view_archived: "View archived"
-    previous_history: "Earlier history"
     rename: "Rename"
   common:
     actions: "Actions"
@@ -2990,7 +2989,6 @@ js_messages:
   feedback_sent_error: "Could not send feedback, please try again."
   feedback_rating_error: "Please rate the assistant using the stars."
   feedback_comment_error: "Please write your comment before sending."
-  error_loading_history: "An error occurred while loading the history."
   request_aborted: "The response generation has been stopped."
   processing_error: "An error occurred while processing the request."
   server_comm_error: "Server communication error ({status}). Please try again later."
