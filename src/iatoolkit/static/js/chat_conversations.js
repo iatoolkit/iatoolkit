@@ -136,8 +136,36 @@
         return element;
     }
 
+    /** The full title in a tooltip, only when the list had to cut it. */
+    function attachTitleTooltip(element, title) {
+        const Tooltip = global.bootstrap && global.bootstrap.Tooltip;
+        if (!Tooltip) return;
+        new Tooltip(element, {
+            title,
+            placement: 'right',
+            trigger: 'hover',
+            container: 'body',
+            customClass: 'conversation-tooltip',
+            delay: { show: 350, hide: 0 },
+        });
+        element.addEventListener('show.bs.tooltip', (event) => {
+            if (element.scrollWidth <= element.clientWidth) event.preventDefault();
+        });
+    }
+
+    function disposeTitleTooltips(list) {
+        const Tooltip = global.bootstrap && global.bootstrap.Tooltip;
+        if (!Tooltip) return;
+        list.find('.conversation-item-title').each(function () {
+            const tip = Tooltip.getInstance(this);
+            if (tip) tip.dispose();
+        });
+    }
+
     function renderList() {
-        const list = $('#conversations-list').empty();
+        const list = $('#conversations-list');
+        disposeTitleTooltips(list);
+        list.empty();
         if (!state.items.length && !state.loading) {
             const key = state.search ? ['conv_no_results', 'Sin resultados.']
                 : state.archived ? ['conv_empty_archived', 'No hay conversaciones archivadas.']
@@ -156,7 +184,9 @@
             const row = $('<div>').addClass('conversation-item').attr({ role: 'listitem', 'data-id': item.id, tabindex: 0 })
                 .toggleClass('is-active', item.id === state.currentId);
             const text = $('<div>').addClass('conversation-item-text');
-            text.append($('<span>').addClass('conversation-item-title').text(titleOf(item)).attr('title', titleOf(item)));
+            const titleElement = $('<span>').addClass('conversation-item-title').text(titleOf(item));
+            text.append(titleElement);
+            attachTitleTooltip(titleElement[0], titleOf(item));
             // A search that matched inside the conversation shows where.
             const match = item.match;
             if (match && match.snippet) {

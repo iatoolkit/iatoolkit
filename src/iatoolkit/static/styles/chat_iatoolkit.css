@@ -2109,3 +2109,19 @@ li {
         visibility: visible;
     }
 }
+
+/* The full title of a conversation the list had to cut. */
+.conversation-tooltip {
+    --bs-tooltip-max-width: 320px;
+    --bs-tooltip-padding-x: 0.65rem;
+    --bs-tooltip-padding-y: 0.4rem;
+    --bs-tooltip-font-size: 0.8rem;
+    --bs-tooltip-border-radius: 0.45rem;
+    --bs-tooltip-opacity: 1;
+}
+
+.conversation-tooltip .tooltip-inner {
+    text-align: left;
+    line-height: 1.35;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+}
