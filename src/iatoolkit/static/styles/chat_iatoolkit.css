@@ -2197,3 +2197,85 @@ li {
     opacity: 1;
     text-decoration: underline;
 }
+
+/* ---- Toolbar: one menu for the account ---------------------------------- */
+.user-menu-button {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 1.5px solid;
+    background: rgba(255, 255, 255, 0.12);
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+
+.user-menu-button:hover,
+.user-menu-button:focus-visible,
+.user-menu-button[aria-expanded="true"] {
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.user-menu {
+    min-width: 240px;
+    font-size: 0.9rem;
+    padding: 0.35rem 0;
+}
+
+.user-menu-identity {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.4rem 1rem 0.3rem;
+}
+
+.user-menu-initials {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--brand-primary-color, #495057);
+    color: var(--brand-text-on-primary, #fff);
+    font-size: 0.78rem;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+}
+
+.user-menu-email {
+    color: #495057;
+    font-size: 0.85rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.user-menu .dropdown-item {
+    padding: 0.4rem 1rem;
+}
+
+/* One row on every screen: the brand gives way (cut with an ellipsis) to the
+   three tools and the account menu. */
+.chat-shared-header {
+    flex-wrap: nowrap;
+}
+
+.chat-brand {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.chat-brand-link {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chat-shared-header > div:last-child {
+    flex: 0 0 auto;
+}

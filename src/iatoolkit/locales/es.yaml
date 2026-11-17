@@ -397,6 +397,10 @@ ui:
     init_context: "Inicializando el contexto de la IA ..."
 
   account:
+    menu: "Tu cuenta"
+    menu_admin: "Administración"
+    menu_feedback: "Enviar comentarios"
+    menu_logout: "Cerrar sesión"
     mcp_connection_copy_json_button: "Copiar JSON"
     mcp_connection_json_copy_success: "Configuración JSON copiada."
     mcp_connection_copy_error: "No se pudo copiar el snippet de conexión MCP."

@@ -383,6 +383,10 @@ ui:
     init_context: "Initializing the context ..."
 
   account:
+    menu: "Your account"
+    menu_admin: "Administration"
+    menu_feedback: "Send feedback"
+    menu_logout: "Log out"
     mcp_connection_copy_json_button: "Copy JSON"
     mcp_connection_json_copy_success: "JSON config copied."
     mcp_connection_copy_error: "Could not copy the MCP connection snippet."
