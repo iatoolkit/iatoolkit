@@ -563,3 +563,76 @@ class TestTurnCancellation(_LLMClientFixture):
         self._invoke(event_sink=_CancellingSink(cancel_on="never"))
 
         assert "cancelled" not in self._saved_query().stats
+
+
+class TestCharts(_LLMClientFixture):
+    """Output charts (BL-025): a chart travels with the turn, not with the model."""
+
+    CHART = {"id": "abc123def456", "kind": "chart", "type": "bar", "columns": ["m", "v"],
+             "rows": [["Ene", 1]], "echarts": {"series": []}}
+
+    def _chart_turn(self, answer):
+        self.dispatcher.dispatch.return_value = {
+            "status": "ok", "chart_id": self.CHART["id"], "marker": f"[[chart:{self.CHART['id']}]]",
+            "__iat_chart__": dict(self.CHART),
+        }
+        self.proxy.create_response.side_effect = [
+            _tool_response('r1', ('call1', 'iat_chart', '{"x": "m", "series": ["v"]}')),
+            _final_response(answer),
+        ]
+        return self._invoke()
+
+    def test_the_chart_goes_with_the_answer_in_its_slot(self):
+        result = self._chart_turn("Así fue el año:\n\n[[chart:abc123def456]]\n\nOctubre fue el mayor.")
+
+        assert result["parts"] == [self.CHART]
+        assert '<div class="iat-part" data-part-id="abc123def456"></div>' in result["answer"]
+        assert "[[chart:" not in result["answer"]
+        assert result["answer"].index("Así fue") < result["answer"].index("iat-part") < result["answer"].index("Octubre")
+
+    def test_the_model_never_reads_the_chart_itself(self):
+        result = self._chart_turn("[[chart:abc123def456]]")
+
+        sent = json.loads(self._outputs_sent_on_call(1)[0]["output"])
+        assert "__iat_chart__" not in sent
+        assert sent["marker"] == "[[chart:abc123def456]]"
+        history_outputs = [m for m in result["history_messages"] if m.get("type") == "function_call_output"]
+        assert all("__iat_chart__" not in m["output"] for m in history_outputs)
+
+    def test_the_chart_is_saved_with_the_turn(self):
+        self._chart_turn("[[chart:abc123def456]]")
+
+        saved = self.llmquery_repo.add_query.call_args.args[0]
+        assert saved.response["parts"] == [self.CHART]
+
+    def test_a_chart_the_model_did_not_place_still_shows(self):
+        result = self._chart_turn("Listo, aquí está el gráfico.")
+
+        assert result["answer"].rstrip().endswith('<div class="iat-part" data-part-id="abc123def456"></div>')
+
+    def test_a_turn_without_charts_has_no_parts(self):
+        self.proxy.create_response.side_effect = [_final_response("hola")]
+
+        result = self._invoke()
+
+        assert result["parts"] == []
+        assert "iat-part" not in result["answer"]
+        assert "parts" not in self.llmquery_repo.add_query.call_args.args[0].response
+
+
+class TestPlaceParts:
+    def test_markers_for_unknown_or_repeated_charts_are_dropped(self):
+        html = "<p>[[chart:aaaaaa]]</p>\n<p>otra vez [[chart:aaaaaa]] y [[chart:bbbbbb]]</p>"
+
+        placed = llmClient.place_parts(html, [{"id": "aaaaaa"}])
+
+        assert placed.count("iat-part") == 1
+        assert "[[chart:" not in placed
+
+    def test_whatsapp_gets_no_markers(self):
+        client = llmClient.__new__(llmClient)
+
+        text = client.format_answer("Mira:\n\n[[chart:aaaaaa]]\n\nfin", {"delivery_channel": "whatsapp"},
+                                    parts=[{"id": "aaaaaa"}])
+
+        assert "[[chart" not in text and "iat-part" not in text

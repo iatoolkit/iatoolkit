@@ -24,7 +24,7 @@ import re
 import tiktoken
 from typing import Dict, Optional, List, Any
 from iatoolkit.services.dispatcher_service import Dispatcher
-from iatoolkit.services.chart_service import CHART_RESULT_KEY, CHART_MARKER_RE, chart_marker
+from iatoolkit.services.chart_service import CHART_RESULT_KEY, CHART_MARKER_RE
 from iatoolkit.services.storage_service import StorageService
 from iatoolkit.services.structured_output_service import StructuredOutputService
 from iatoolkit.services.telemetry_service import NoopTelemetryService
@@ -760,7 +760,7 @@ class llmClient:
                              query=question,
                              output=decoded_response.get('answer', ''),
                              valid_response=decoded_response.get('status', False),
-                             response=self.serialize_response(response, decoded_response),
+                             response=self.serialize_response(response, decoded_response, parts=turn_charts),
                              function_calls=f_calls,
                              stats=combined_stats,
                              answer_time=stats['response_time'],
@@ -795,7 +795,11 @@ class llmClient:
                 'answer': self.format_answer(
                     decoded_response.get('answer', ''),
                     execution_metadata=execution_metadata,
+                    parts=turn_charts,
                 ),
+                # What the answer draws besides its text (BL-025): each part has
+                # an id and a kind, and the answer a slot where it goes.
+                'parts': turn_charts,
                 'stats': combined_stats,
                 'answer_format': decoded_response.get('answer_format', ''),
                 'error_message': decoded_response.get('error_message', ''),
@@ -1808,7 +1812,7 @@ class llmClient:
 
         return decoded_response
 
-    def serialize_response(self, response, decoded_response):
+    def serialize_response(self, response, decoded_response, parts=None):
         response_dict = {
             "format": decoded_response.get('answer_format', ''),
             "error_message": decoded_response.get('error_message', ''),
@@ -1823,6 +1827,9 @@ class llmClient:
             "schema_mode": decoded_response.get("schema_mode"),
             "schema_applied": decoded_response.get("schema_applied", False),
         }
+        if parts:
+            # Kept with the turn so the answer can be drawn again (BL-025).
+            response_dict["parts"] = parts
         return response_dict
 
     def get_stats(self, response):
@@ -1988,11 +1995,42 @@ class llmClient:
         3.  **NO** respondas al usuario con este mensaje de error. Tu ÚNICA acción debe ser volver a llamar a la herramienta con la solución.
         """
 
-    def format_answer(self, answer: str, execution_metadata: Optional[Dict[str, Any]] = None):
+    def format_answer(self, answer: str, execution_metadata: Optional[Dict[str, Any]] = None,
+                      parts: Optional[List[Dict[str, Any]]] = None):
         delivery_channel = str((execution_metadata or {}).get("delivery_channel") or "").strip().lower()
         if delivery_channel == "whatsapp":
-            return self.format_plaintext(answer)
-        return self.format_html(answer)
+            # Charts are drawn by the web chat only (BL-025): their markers go.
+            return self.format_plaintext(CHART_MARKER_RE.sub("", answer or ""))
+        return self.place_parts(self.format_html(answer), parts)
+
+    #: Where a part (a chart, BL-025) is drawn: an empty block the chat fills.
+    PART_SLOT_TEMPLATE = '<div class="iat-part" data-part-id="{id}"></div>'
+
+    @classmethod
+    def place_parts(cls, html: str, parts: Optional[List[Dict[str, Any]]] = None) -> str:
+        """The answer's chart markers replaced by the slots the chat fills (BL-025).
+
+        A marker on its own line is its own paragraph and becomes the slot; a
+        marker for a chart this turn did not draw is dropped; a chart the model
+        never placed goes after the answer, so it is never lost."""
+        known = [str(part.get("id")) for part in (parts or []) if isinstance(part, dict) and part.get("id")]
+        placed: list[str] = []
+
+        def slot(match: re.Match) -> str:
+            part_id = match.group(1)
+            if part_id not in known or part_id in placed:
+                return ""
+            placed.append(part_id)
+            return cls.PART_SLOT_TEMPLATE.format(id=part_id)
+
+        marker = CHART_MARKER_RE.pattern
+        html = re.sub(r"<p>\s*" + marker + r"\s*</p>", slot, html or "")
+        html = re.sub(marker, slot, html)
+        html = re.sub(r"<p>\s*</p>", "", html)
+        missing = [part_id for part_id in known if part_id not in placed]
+        if missing:
+            html = html.rstrip() + "\n" + "\n".join(cls.PART_SLOT_TEMPLATE.format(id=part_id) for part_id in missing)
+        return html
 
     #: Block-level HTML a model writes between markdown paragraphs (a table, a
     #: list, a download paragraph). Only top-level blocks: rows and items live
