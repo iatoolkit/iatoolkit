@@ -750,6 +750,96 @@ class LLMQuery(Base):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
 
 
+class Conversation(Base):
+    """A chat conversation a person can come back to (BL-001).
+
+    The turns themselves stay in `iat_queries` (audit and cost); a conversation
+    groups them through its messages. `project_id` is reserved for shared
+    projects (BL-026), so they need no migration.
+    """
+    __tablename__ = 'iat_conversations'
+
+    STATUS_ACTIVE = "active"
+    STATUS_ARCHIVED = "archived"
+    STATUS_DELETED = "deleted"
+    TITLE_AUTO = "auto"
+    TITLE_GENERATED = "generated"
+    TITLE_USER = "user"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    public_id = Column(String(32), nullable=False, unique=True)
+    company_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_companies.id',
+                        ondelete='CASCADE'), nullable=False)
+    owner_user_identifier = Column(String, nullable=False)
+    title = Column(String(200), nullable=False, default="")
+    # auto: the first question cut short; generated: written by the
+    # conversation_title system agent; user: renamed by the person (never
+    # touched again).
+    title_source = Column(String(16), nullable=False, default=TITLE_AUTO)
+    status = Column(String(16), nullable=False, default=STATUS_ACTIVE)
+    # Where it started: chat_ui, api, task, channel.
+    source = Column(String(32), nullable=False, default="chat_ui")
+    prompt_name = Column(String, nullable=True)
+    model = Column(String, nullable=True)
+    project_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+    last_message_at = Column(DateTime, default=datetime.now, nullable=False)
+    # Free-form state: the last compaction summary, so a reopened conversation
+    # starts from it (BL-009).
+    meta = Column('metadata', JSON, nullable=True, default=dict)
+
+    __table_args__ = (
+        Index('ix_iat_conversations_owner_recent', 'company_id', 'owner_user_identifier', 'status',
+              last_message_at.desc()),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.public_id,
+            "title": self.title,
+            "title_source": self.title_source,
+            "status": self.status,
+            "source": self.source,
+            "model": self.model,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "last_message_at": self.last_message_at.isoformat() if self.last_message_at else None,
+        }
+
+
+class ConversationMessage(Base):
+    """One message of a conversation (BL-001): what the person asked, what the
+    assistant answered (its turn in `iat_queries` via `llm_query_id`), or an
+    event such as a failed turn."""
+    __tablename__ = 'iat_conversation_messages'
+
+    ROLE_USER = "user"
+    ROLE_ASSISTANT = "assistant"
+    ROLE_SYSTEM_EVENT = "system_event"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    conversation_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_conversations.id',
+                             ondelete='CASCADE'), nullable=False)
+    company_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_companies.id',
+                        ondelete='CASCADE'), nullable=False)
+    role = Column(String(16), nullable=False)
+    author_user_identifier = Column(String, nullable=True)
+    # The text as written: the question, or the model's answer before it is
+    # rendered (what a reopened conversation gives the model back).
+    content = Column(Text, nullable=False, default="")
+    attachments_meta = Column(JSON, nullable=True)
+    llm_query_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_queries.id',
+                          ondelete='SET NULL'), nullable=True)
+    # stopped (a cancelled turn), error_message (a failed one), prompt_name...
+    meta = Column('metadata', JSON, nullable=True, default=dict)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    __table_args__ = (
+        Index('ix_iat_conversation_messages_conversation', 'conversation_id', 'created_at'),
+    )
+
+
 class VSDoc(Base):
     """Stores a text chunk and its corresponding vector embedding for similarity search."""
     __tablename__ = "iat_vsdocs"

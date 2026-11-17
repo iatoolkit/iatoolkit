@@ -398,6 +398,7 @@ class IAToolkit:
         from iatoolkit.repositories.document_repo import DocumentRepo
         from iatoolkit.repositories.profile_repo import ProfileRepo
         from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
+        from iatoolkit.repositories.conversation_repo import ConversationRepo
         from iatoolkit.repositories.memory_repo import MemoryRepo
         from iatoolkit.repositories.memory_question_repo import MemoryQuestionRepo
         from iatoolkit.repositories.mcp_token_repo import McpTokenRepo
@@ -416,6 +417,7 @@ class IAToolkit:
         binder.bind(DocumentRepo, to=DocumentRepo)
         binder.bind(ProfileRepo, to=ProfileRepo)
         binder.bind(LLMQueryRepo, to=LLMQueryRepo)
+        binder.bind(ConversationRepo, to=ConversationRepo)
         binder.bind(MemoryRepo, to=MemoryRepo)
         binder.bind(MemoryQuestionRepo, to=MemoryQuestionRepo)
         binder.bind(McpTokenRepo, to=McpTokenRepo)
@@ -467,6 +469,7 @@ class IAToolkit:
         from iatoolkit.services.telemetry_service import TelemetryService
         from iatoolkit.services.embedding_service import EmbeddingService
         from iatoolkit.services.history_manager_service import HistoryManagerService
+        from iatoolkit.services.conversation_service import ConversationService
         from iatoolkit.services.tool_service import ToolService
         from iatoolkit.services.attachment_policy_service import AttachmentPolicyService
         from iatoolkit.services.llm_client_service import llmClient
@@ -526,6 +529,7 @@ class IAToolkit:
         binder.bind(TelemetryService, to=TelemetryService)
         binder.bind(EmbeddingService, to=EmbeddingService)
         binder.bind(HistoryManagerService, to=HistoryManagerService)
+        binder.bind(ConversationService, to=ConversationService)
         binder.bind(ToolService, to=ToolService)
         binder.bind(AttachmentPolicyService, to=AttachmentPolicyService)
         binder.bind(llmClient, to=llmClient)
