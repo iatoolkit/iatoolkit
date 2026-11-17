@@ -226,7 +226,9 @@
             } else if (message.role === 'assistant') {
                 const chatStream = global.IATChatStream;
                 const activity = chatStream && chatStream.savedActivity ? chatStream.savedActivity(message.activity) : null;
-                global.processBotResponse({ answer: message.answer || '', parts: message.parts || [] }, { activity });
+                global.processBotResponse({
+                    answer: message.answer || '', parts: message.parts || [], assistant_message_id: message.id,
+                }, { activity });
             } else {
                 const error = $('<div>').addClass('error-section')
                     .append($('<i>').addClass('bi bi-exclamation-triangle'), $('<p>').text(message.content || ''));
@@ -237,8 +239,9 @@
     }
 
     async function open(id, { force = false } = {}) {
-        if (!id || (!force && id === state.currentId)) return;
+        if (!id || (!force && id === state.currentId)) { closeDrawer(); return; }
         if (!stopTurnIfRunning()) return;
+        closeDrawer();
         try {
             const data = await api('GET', `/${encodeURIComponent(id)}/messages`);
             if (!data) return;
@@ -253,6 +256,7 @@
 
     function startNew() {
         if (!stopTurnIfRunning()) return;
+        closeDrawer();
         setCurrent(null, '');
         clearChat();
         $('#question').trigger('focus');
@@ -381,6 +385,29 @@
     }
 
     // ------------------------------------------------------------------ panel
+    function isMobile() {
+        return global.matchMedia && global.matchMedia('(max-width: 767.98px)').matches;
+    }
+
+    /** On a phone the panel is a drawer over the chat. */
+    function openDrawer() {
+        $('.chat-body').addClass('conversations-open');
+        $('#conversations-backdrop').prop('hidden', false);
+    }
+
+    function closeDrawer() {
+        $('.chat-body').removeClass('conversations-open');
+        $('#conversations-backdrop').prop('hidden', true);
+    }
+
+    function showArchived(archived) {
+        state.archived = archived;
+        $('#conversations-archived-banner').prop('hidden', !archived);
+        $('#conversations-archived-button').prop('hidden', archived);
+        $('#new-conversation-button').prop('disabled', archived);
+        loadList(true);
+    }
+
     function setCollapsed(collapsed) {
         $('.chat-body').toggleClass('conversations-collapsed', collapsed);
         try { global.localStorage.setItem('iatoolkit.conversations_collapsed', collapsed ? '1' : '0'); } catch (e) { /* private mode */ }
@@ -394,8 +421,13 @@
         setCollapsed(collapsed);
 
         $('#new-conversation-button').on('click', startNew);
-        $('#conversations-collapse-button').on('click', () => setCollapsed(true));
-        $('#conversations-open-button').on('click', () => setCollapsed(false));
+        $('#conversations-collapse-button').on('click', () => (isMobile() ? closeDrawer() : setCollapsed(true)));
+        $('#conversations-open-button').on('click', () => (isMobile() ? openDrawer() : setCollapsed(false)));
+        $('#conversations-backdrop').on('click', closeDrawer);
+        $('#conversations-archived-button').on('click', () => showArchived(true));
+        $('#conversations-back-button').on('click', () => showArchived(false));
+        // Turns from before conversations: the history modal, as it was.
+        $('#conversations-history-button').on('click', () => { closeDrawer(); $('#history-button').trigger('click'); });
         $('#conversation-rename-button').on('click', startRenameCurrent);
         $('#conversation-title').on('dblclick', startRenameCurrent);
 

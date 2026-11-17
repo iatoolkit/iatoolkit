@@ -324,11 +324,16 @@ function processBotResponse(responseData, options = {}) {
             }
             // Even a detached element parses <img src onerror> and fires it - sanitize first.
             const plainText = $('<div>').html(sanitizeHtmlFragment(responseData.answer || '')).text().trim();
+            const sourceMeta = { origin: 'chat_answer' };
+            // Where the answer came from (BL-001): its conversation and message.
+            const conversationId = window.IATConversations ? window.IATConversations.currentId() : null;
+            if (conversationId) sourceMeta.conversation_id = conversationId;
+            if (responseData.assistant_message_id) sourceMeta.message_id = responseData.assistant_message_id;
             await window.saveItemToMemory({
                 item_type: 'chat_assistant_message',
                 content_text: plainText,
                 title: plainText.slice(0, 120) || 'Respuesta del chat',
-                source_meta: { origin: 'chat_answer' }
+                source_meta: sourceMeta
             });
         });
 

@@ -136,3 +136,24 @@ class TestConversationsApi:
         _as(api, BETO)
         assert api.post(f"/acme/api/conversations/{conversation.public_id}/title").status_code == 404
 
+    def test_a_file_older_than_the_retention_is_marked_expired(self, api):
+        from datetime import datetime, timedelta
+        conversation = api.service.create("acme", ANA)
+        part = {"id": "f1", "kind": "file", "filename": "r.xlsx", "url": "/download/x"}
+        query = LLMQuery(company_id=api.company.id, user_identifier=ANA, query="q", output="listo",
+                         response={"parts": [part, {"id": "c1", "kind": "chart"}]})
+        api.session.add(query)
+        api.session.commit()
+        api.service.append_turn(conversation, question="excel", answer_text="listo", llm_query_id=query.id,
+                                user_identifier=ANA)
+
+        fresh = api.get(f"/acme/api/conversations/{conversation.public_id}/messages").get_json()["messages"][1]
+        assert "expired" not in fresh["parts"][0]
+
+        for message in api.service.messages(conversation):
+            message.created_at = datetime.now() - timedelta(days=8)
+        api.session.commit()
+        old = api.get(f"/acme/api/conversations/{conversation.public_id}/messages").get_json()["messages"][1]
+        assert old["parts"][0]["expired"] is True
+        assert "expired" not in old["parts"][1]
+

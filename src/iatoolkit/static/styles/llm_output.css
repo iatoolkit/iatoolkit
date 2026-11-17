@@ -563,3 +563,19 @@
   max-width: 100%;
   height: auto;
 }
+
+.llm-output .iat-file-card.is-expired {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0;
+  padding: 8px 14px 8px 10px;
+  border: 1px dashed rgba(0, 0, 0, 0.15);
+  border-radius: 10px;
+  color: #868e96;
+  vertical-align: middle;
+}
+
+.llm-output .iat-file-card.is-expired .iat-file-card-icon {
+  color: #adb5bd;
+}

@@ -495,6 +495,31 @@ the slots and read the data from `parts`.
 - Parts are also saved with the query (`response.parts`), so a turn can be drawn again.
 
 ---
+#### Conversations
+
+A turn can belong to a **conversation**: its own history, kept in the database,
+that can be reopened later. Send `"create_conversation": true` to start one with
+the turn, or `"conversation_id": "<id>"` to continue one. Without either, a turn
+uses the user's single history, as before. The response (and the `final` event of
+`/api/llm_query/stream`) then carries `conversation_id`, the `conversation`
+(`id`, `title`, `title_source`, `status`, `last_message_at`...) and the ids of
+the messages it added (`user_message_id`, `assistant_message_id`).
+
+| Route | What it does |
+|---|---|
+| `GET /<company>/api/conversations?archived=1&q=...&before=<iso>&limit=50` | The user's conversations, newest first; `has_more` for the next page (`before` = last `last_message_at`) |
+| `POST /<company>/api/conversations` | Creates an empty one (`{"title"}` or `{"question"}` for the initial title) |
+| `GET /<company>/api/conversations/<id>` | One conversation |
+| `PATCH /<company>/api/conversations/<id>` | Rename (`{"title"}`) or archive / restore (`{"status": "archived" \| "active"}`) |
+| `DELETE /<company>/api/conversations/<id>` | Soft delete |
+| `GET /<company>/api/conversations/<id>/messages` | Its messages; each answer rendered as HTML with its `parts` and its `activity` (`duration_ms`, `tools`) |
+| `POST /<company>/api/conversations/<id>/title` | Asks the `conversation_title` system agent for a short title, unless the user chose one |
+
+Every route is scoped to the authenticated user: someone else's conversation is
+a 404. A file part older than `parameters.generated_downloads.retention_days`
+(7 by default) comes with `"expired": true`, since the file was deleted.
+
+---
 #### `POST /api/load-document`
 
 This endpoint programmatically uploads, processes, and permanently indexes a single 

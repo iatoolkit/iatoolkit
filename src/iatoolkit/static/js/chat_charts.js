@@ -218,6 +218,15 @@
 
     /** A file a tool generated, as a download card (BL-025). */
     function fileCard(part) {
+        if (part.expired) {
+            // A file of an old conversation, deleted after the tenant's retention (BL-001).
+            const gone = $('<span>').addClass('iat-file-card is-expired').attr('data-part-id', part.id);
+            gone.append($('<i>').addClass(`bi ${fileIcon(part)} iat-file-card-icon`));
+            const goneText = $('<span>').addClass('iat-file-card-text');
+            goneText.append($('<span>').addClass('iat-file-card-name').text(part.filename || ''));
+            goneText.append($('<span>').addClass('iat-file-card-action').text(t('part_file_expired', 'Archivo vencido')));
+            return gone.append(goneText);
+        }
         const card = $('<a>')
             .addClass('iat-file-card')
             .attr({ href: part.url, target: '_blank', rel: 'noopener', 'data-part-id': part.id });

@@ -3044,6 +3044,7 @@ js_messages:
   chart_as_lines: "Líneas"
   chart_stack: "Apilar"
   part_file_download: "Descargar"
+  part_file_expired: "Archivo vencido"
   diagram_view_code: "Ver código"
   diagram_view_diagram: "Ver diagrama"
   diagram_download_svg: "Descargar SVG"

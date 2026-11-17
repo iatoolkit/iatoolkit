@@ -245,9 +245,25 @@ class ConversationService:
             duration_ms = int(stats.get("response_time") or getattr(query, "answer_time", 0) or 0) * 1000
         return {"duration_ms": int(duration_ms), "tools": tools}
 
-    def messages_for_display(self, conversation: Conversation, answer_formatter=None) -> list[dict]:
+    #: Generated files are deleted after the tenant's retention
+    #: (`parameters.generated_downloads.retention_days`, 7 by default).
+    DEFAULT_FILE_RETENTION_DAYS = 7
+
+    @staticmethod
+    def _mark_expired_files(parts: list, created_at, retention_days: int | None) -> list:
+        if not created_at or not retention_days:
+            return parts
+        expired = (datetime.now() - created_at).days >= int(retention_days)
+        if not expired:
+            return parts
+        return [dict(part, expired=True) if isinstance(part, dict) and part.get("kind") == "file" else part
+                for part in parts]
+
+    def messages_for_display(self, conversation: Conversation, answer_formatter=None,
+                             file_retention_days: int | None = DEFAULT_FILE_RETENTION_DAYS) -> list[dict]:
         """The conversation as the chat draws it: each answer rendered again from
-        its turn in iat_queries, with its parts (charts, files) and activity."""
+        its turn in iat_queries, with its parts (charts, files) and activity. A
+        file older than the retention is marked expired: it was deleted."""
         messages = self.messages(conversation)
         queries = self.conversation_repo.get_queries(
             conversation.company_id, [m.llm_query_id for m in messages if m.llm_query_id])
@@ -270,6 +286,7 @@ class ConversationService:
                 query = queries.get(message.llm_query_id)
                 response = query.response if query is not None and isinstance(query.response, dict) else {}
                 parts = response.get("parts") if isinstance(response.get("parts"), list) else []
+                parts = self._mark_expired_files(parts, message.created_at, file_retention_days)
                 text = query.output if query is not None and query.output is not None else message.content
                 item["answer"] = answer_formatter(text, parts) if answer_formatter else text
                 item["parts"] = parts

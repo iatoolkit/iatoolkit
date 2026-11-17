@@ -28,6 +28,7 @@ from injector import inject
 from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.repositories.models import Conversation
 from iatoolkit.services.auth_service import AuthService
+from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.conversation_service import ConversationService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.services.llm_client_service import llmClient
@@ -39,11 +40,13 @@ class ConversationsApiView(MethodView):
                  auth_service: AuthService,
                  conversation_service: ConversationService,
                  i18n_service: I18nService,
-                 llm_client: llmClient):
+                 llm_client: llmClient,
+                 config_service: ConfigurationService = None):
         self.auth_service = auth_service
         self.conversation_service = conversation_service
         self.i18n_service = i18n_service
         self.llm_client = llm_client
+        self.config_service = config_service
 
     # ------------------------------------------------------------------ helpers
     def _user(self, company_short_name: str):
@@ -59,6 +62,15 @@ class ConversationsApiView(MethodView):
         logging.exception(f"conversations api: {e}")
         return jsonify({"error_message": self.i18n_service.t("errors.general.unexpected_error",
                                                              error=str(e))}), 500
+
+    def _file_retention_days(self, company_short_name: str) -> int:
+        """How long generated files are kept (enterprise deletes them after it)."""
+        try:
+            parameters = self.config_service.get_configuration(company_short_name, "parameters") or {}
+            days = int(((parameters.get("generated_downloads") or {}).get("retention_days")) or 0)
+        except Exception:
+            days = 0
+        return days if days > 0 else ConversationService.DEFAULT_FILE_RETENTION_DAYS
 
     @staticmethod
     def _parse_before(value: str | None) -> datetime | None:
@@ -97,6 +109,7 @@ class ConversationsApiView(MethodView):
                 messages = self.conversation_service.messages_for_display(
                     conversation,
                     answer_formatter=lambda text, parts: self.llm_client.format_answer(text or "", parts=parts),
+                    file_retention_days=self._file_retention_days(company_short_name),
                 )
                 return jsonify({"conversation": conversation.to_dict(), "messages": messages}), 200
             return jsonify({"conversation": conversation.to_dict()}), 200

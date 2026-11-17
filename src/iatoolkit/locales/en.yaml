@@ -3025,6 +3025,7 @@ js_messages:
   chart_as_lines: "Lines"
   chart_stack: "Stack"
   part_file_download: "Download"
+  part_file_expired: "File expired"
   diagram_view_code: "View code"
   diagram_view_diagram: "View diagram"
   diagram_download_svg: "Download SVG"
