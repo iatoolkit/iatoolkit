@@ -164,7 +164,18 @@ const handleChatMessage = async function () {
         const files = window.filePond.getFiles();
 
         displayUserMessage(displayMessage, isEditable, question, files);
-        showSpinner();
+        // A live turn shows its activity ("Pensando…" and the seconds) from the
+        // moment the question leaves, not after the first event: no spinner
+        // first and activity after. The spinner stays for a turn that cannot
+        // stream (the company turned it off, an old browser).
+        const chatStream = window.IATChatStream;
+        const streaming = !!(chatStream && chatStream.shouldStream(window.currentLlmModel || window.defaultLlmModel || ''));
+        if (streaming) {
+            liveTurn = chatStream.createLiveTurn();
+            liveTurn.start();
+        } else {
+            showSpinner();
+        }
         resetAllInputs();
 
         const filesBase64 = await Promise.all(files.map(fileItem => toBase64(fileItem.file)));
@@ -193,11 +204,9 @@ const handleChatMessage = async function () {
         }
 
         let responseData = undefined;
-        const chatStream = window.IATChatStream;
-        if (chatStream && chatStream.shouldStream(data.model)) {
+        if (streaming && liveTurn) {
             // Live turn (BL-023): progress while it runs, then the same final JSON.
             abortController = new AbortController();
-            liveTurn = chatStream.createLiveTurn();
             const turn = liveTurn;
             responseData = await chatStream.run({
                 apiPath: "/api/llm_query/stream",
@@ -206,8 +215,10 @@ const handleChatMessage = async function () {
                 handlers: { onEvent: (event, payload) => handleChatStreamEvent(event, payload, turn) },
             });
             if (responseData === chatStream.FALLBACK) {
+                // The server does not stream this turn: a plain request, with the spinner.
                 responseData = undefined;
                 liveTurn.remove();
+                showSpinner();
             } else {
                 // The final answer replaces the live one; the turn's activity
                 // stays above it, collapsed.
