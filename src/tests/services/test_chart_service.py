@@ -221,6 +221,29 @@ class TestEchartsOption:
 
         assert all(s["type"] == "line" and "areaStyle" in s and s["stack"] == "total" for s in option["series"])
 
+    def test_lines_never_stack(self, service):
+        """A period comparison drawn as stacked lines showed 2026 above 2025 when it
+        was lower: the second line was the sum of both (seen in production)."""
+        result = service.create_chart(COMPANY, type="line", stacked=True, x="mes",
+                                      series=[{"field": "y2025"}, {"field": "y2026"}],
+                                      data=[{"mes": "Ene", "y2025": 1261, "y2026": 1000}])
+
+        chart = result[CHART_RESULT_KEY]
+        assert all("stack" not in s for s in chart["echarts"]["series"])
+        assert chart["stacked"] is False
+        assert any("no se apilan" in note for note in result["notes"])
+
+    def test_bars_stack_and_combo_stacks_only_its_bars(self, service):
+        bars = self._option(service, type="bar", stacked=True, x="m", series=["a", "b"],
+                            data=[{"m": "Ene", "a": 1, "b": 2}])
+        combo = self._option(service, type="combo", stacked=True, x="m",
+                             series=[{"field": "a", "type": "bar"}, {"field": "b", "type": "bar"},
+                                     {"field": "c", "type": "line"}],
+                             data=[{"m": "Ene", "a": 1, "b": 2, "c": 3}])
+
+        assert all(s["stack"] == "total" for s in bars["series"])
+        assert [s.get("stack") for s in combo["series"]] == ["total", "total", None]
+
     def test_combo_mixes_bars_and_lines(self, service):
         option = self._option(service, type="combo", x="m",
                               series=[{"field": "ventas"}, {"field": "margen", "type": "line"}],

@@ -311,7 +311,7 @@ tools:
           description: "Formato de los valores. percent: los valores ya están en % (ej. 12.5)."
         stacked:
           type: boolean
-          description: "Apila las series (barras o áreas)."
+          description: "Apila las series cuando son partes de un total (barras o áreas), por ejemplo ventas por canal que suman el total del mes. Nunca para comparar periodos o grupos (2025 vs 2026): ahí van lado a lado, sin apilar. Las líneas no se apilan."
         database_key:
           type: string
           description: "Base de datos de la consulta (como en iat_sql_query)."

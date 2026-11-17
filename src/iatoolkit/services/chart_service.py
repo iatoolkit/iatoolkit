@@ -115,6 +115,11 @@ class ChartService:
                 "Agrega los datos en la consulta para ver el total."
             )
 
+        stacked = spec["stacked"]
+        if stacked and chart_type not in ("bar", "area", "combo"):
+            stacked = False
+            notes.append("Las series de líneas no se apilan: cada una muestra su propio valor.")
+
         chart_id = uuid.uuid4().hex[:12]
         header = [x_field] + [series["field"] for series in spec["series"]]
         chart = {
@@ -125,7 +130,7 @@ class ChartService:
             "x": x_field,
             "series": spec["series"],
             "format": spec["format"],
-            "stacked": spec["stacked"],
+            "stacked": stacked,
             "columns": header,
             "rows": table,
             "source": source,
@@ -399,7 +404,10 @@ class ChartService:
                 entry["areaStyle"] = {}
             if chart_type == "scatter":
                 entry["type"] = "scatter"
-            if chart.get("stacked") and chart_type != "scatter":
+            # Only bars and areas stack (parts of a whole). A stacked line draws
+            # each series on top of the others, so a period comparison would
+            # show 2026 above 2025 even when it is lower (seen in production).
+            if chart.get("stacked") and series_type in ("bar", "area"):
                 entry["stack"] = "total"
             series.append(entry)
         option["series"] = series
