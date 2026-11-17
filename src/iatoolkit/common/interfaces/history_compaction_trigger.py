@@ -17,5 +17,9 @@ class HistoryCompactionTrigger(ABC):
     """
 
     @abstractmethod
-    def trigger(self, company_short_name: str, user_identifier: str, model: str) -> bool:
-        """Queues the compaction. True when something was queued or already was."""
+    def trigger(self, company_short_name: str, user_identifier: str, model: str,
+                conversation_id: str | None = None) -> bool:
+        """Queues the compaction. True when something was queued or already was.
+
+        `conversation_id` names the conversation whose history it is (BL-001);
+        None is the person's history outside conversations."""

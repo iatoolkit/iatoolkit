@@ -35,6 +35,13 @@ from iatoolkit.services.system_agent_runner import SystemAgentRunner, SystemAgen
 from iatoolkit.services.user_session_context_service import UserSessionContextService
 
 
+
+def _conversation_kw(conversation_id):
+    """The conversation, as a keyword only when there is one (BL-001): callers
+    and session stores from before conversations keep their signature."""
+    return {"conversation_id": conversation_id} if conversation_id else {}
+
+
 @dataclass(frozen=True)
 class CompactionPlan:
     #: Index of the first message kept as is; everything before it, after the
@@ -80,8 +87,10 @@ class HistoryCompactionService:
     # ------------------------------------------------------------------
 
     def compact(self, company_short_name: str, user_identifier: str, model: str,
-                max_chunks: Optional[int] = None) -> dict:
-        result = self._compact(company_short_name, user_identifier, model, max_chunks)
+                max_chunks: Optional[int] = None, conversation_id: Optional[str] = None) -> dict:
+        """Compacts the person's history for this model, or the history of one of
+        their conversations (BL-001) when `conversation_id` names it."""
+        result = self._compact(company_short_name, user_identifier, model, max_chunks, conversation_id)
         if result.get("status") != "compacted":
             # A run that ends without applying anything is as worth knowing as
             # one that does: in production both looked the same ("executed").
@@ -91,8 +100,9 @@ class HistoryCompactionService:
         return result
 
     def _compact(self, company_short_name: str, user_identifier: str, model: str,
-                 max_chunks: Optional[int]) -> dict:
-        history = self.session_context.get_context_history(company_short_name, user_identifier, model=model) or []
+                 max_chunks: Optional[int], conversation_id: Optional[str] = None) -> dict:
+        history = self.session_context.get_context_history(company_short_name, user_identifier, model=model,
+                                                           **_conversation_kw(conversation_id)) or []
         # What the recent turns may keep verbatim is a share of the size the
         # history is compacted toward, not of the whole budget.
         budget = self.history_manager.compaction_budget_tokens(company_short_name, model)
@@ -120,7 +130,8 @@ class HistoryCompactionService:
 
         summary = plan.previous_summary
         for index, chunk in enumerate(chunks):
-            if index and not self._still_matches(company_short_name, user_identifier, model, plan):
+            if index and not self._still_matches(company_short_name, user_identifier, model, plan,
+                                                 conversation_id):
                 # Each part costs a model call of minutes; once the history has
                 # changed under the plan, the rest would be summarized for nothing.
                 return {"status": "skipped", "reason": "history_changed", "summarized_parts": index}
@@ -138,9 +149,12 @@ class HistoryCompactionService:
                 return {"status": "error", "reason": "empty_summary"}
             summary = part
 
-        result = self._apply(company_short_name, user_identifier, model, plan, summary)
+        result = self._apply(company_short_name, user_identifier, model, plan, summary, conversation_id)
         if result.get("status") == "compacted":
             result["chunks"] = len(chunks)
+            if conversation_id:
+                self._keep_summary_with_conversation(company_short_name, user_identifier,
+                                                     conversation_id, summary)
             if dropped_chunks:
                 result["dropped_chunks"] = dropped_chunks
         return result
@@ -283,17 +297,20 @@ class HistoryCompactionService:
     # ------------------------------------------------------------------
 
     def _still_matches(self, company_short_name: str, user_identifier: str, model: str,
-                       plan: CompactionPlan) -> bool:
-        current = self.session_context.get_context_history(company_short_name, user_identifier, model=model) or []
+                       plan: CompactionPlan, conversation_id: Optional[str] = None) -> bool:
+        current = self.session_context.get_context_history(company_short_name, user_identifier, model=model,
+                                                           **_conversation_kw(conversation_id)) or []
         return len(current) >= plan.cut and self._fingerprint(current[:plan.cut]) == plan.prefix_hash
 
     def _apply(self, company_short_name: str, user_identifier: str, model: str,
-               plan: CompactionPlan, summary: str) -> dict:
-        lock_key = self.history_manager.history_lock_key(company_short_name, user_identifier, model)
+               plan: CompactionPlan, summary: str, conversation_id: Optional[str] = None) -> dict:
+        lock_key = self.history_manager.history_lock_key(company_short_name, user_identifier, model,
+                                                         conversation_id)
         if not self.history_manager.acquire_history_lock(lock_key):
             return {"status": "skipped", "reason": "history_busy"}
         try:
-            current = self.session_context.get_context_history(company_short_name, user_identifier, model=model) or []
+            current = self.session_context.get_context_history(company_short_name, user_identifier, model=model,
+                                                               **_conversation_kw(conversation_id)) or []
             if len(current) < plan.cut or self._fingerprint(current[:plan.cut]) != plan.prefix_hash:
                 # Reset, reloaded or already compacted by someone else since the
                 # snapshot: the summary describes a history that is gone.
@@ -303,12 +320,14 @@ class HistoryCompactionService:
             # The turns kept verbatim keep their words, not their old tool
             # outputs: else a compaction can leave the history as big as it was.
             HistoryManagerService._trim_old_tool_outputs(compacted)
-            self.session_context.save_context_history(company_short_name, user_identifier, compacted, model=model)
+            self.session_context.save_context_history(company_short_name, user_identifier, compacted, model=model,
+                                                      **_conversation_kw(conversation_id))
             # The provider's last measure described the long history; until the
             # next turn measures again, an estimate keeps the in-line check from
             # compacting a history that already fits.
             self.session_context.save_context_tokens(
-                company_short_name, user_identifier, sum(self._count(m) for m in compacted), model=model
+                company_short_name, user_identifier, sum(self._count(m) for m in compacted), model=model,
+                **_conversation_kw(conversation_id),
             )
         finally:
             self.history_manager.release_history_lock(lock_key)
@@ -322,6 +341,21 @@ class HistoryCompactionService:
             "summarized_messages": len(plan.material),
             "kept_messages": len(compacted) - 2,
         }
+
+    @staticmethod
+    def _keep_summary_with_conversation(company_short_name: str, user_identifier: str,
+                                        conversation_id: str, summary: str):
+        """A reopened conversation starts from its last summary (BL-001): Redis
+        forgets the history, the conversation keeps the summary."""
+        try:
+            from iatoolkit import current_iatoolkit
+            from iatoolkit.services.conversation_service import ConversationService
+            service = current_iatoolkit().get_injector().get(ConversationService)
+            conversation = service.get_for_user(company_short_name, user_identifier, conversation_id)
+            if conversation is not None:
+                service.save_meta(conversation, compaction_summary=summary)
+        except Exception as e:
+            logging.warning("Could not keep the compaction summary of conversation %s: %s", conversation_id, e)
 
     # ------------------------------------------------------------------
     # Helpers

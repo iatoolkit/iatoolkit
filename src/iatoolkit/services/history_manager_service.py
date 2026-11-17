@@ -17,6 +17,13 @@ from iatoolkit.repositories.profile_repo import ProfileRepo
 from injector import inject
 
 
+
+def _conversation_kw(conversation_id):
+    """The conversation, as a keyword only when there is one (BL-001): callers
+    and session stores from before conversations keep their signature."""
+    return {"conversation_id": conversation_id} if conversation_id else {}
+
+
 class HistoryManagerService:
     """
     Manages conversation history for LLMs.
@@ -159,12 +166,14 @@ class HistoryManagerService:
         Returns True if a rebuild is needed, False otherwise.
         """
         model = getattr(handle, "model", None)
+        conversation_id = getattr(handle, "conversation_id", None)
         budget = self.context_budget_tokens(handle.company_short_name, model)
         if not ignore_history:
             self._compact_in_line_if_needed(handle.company_short_name, handle.user_identifier, model,
-                                            user_turn_prompt, budget)
+                                            user_turn_prompt, budget, conversation_id=conversation_id)
         context_history = self.session_context.get_context_history(
-            handle.company_short_name, handle.user_identifier, model=model) or []
+            handle.company_short_name, handle.user_identifier, model=model,
+            **_conversation_kw(conversation_id)) or []
 
         if not context_history:
             handle.request_params = {}
@@ -190,27 +199,31 @@ class HistoryManagerService:
         company_short_name = history_handle.company_short_name
         user_identifier = history_handle.user_identifier
         model = getattr(history_handle, "model", None)
+        conversation_id = getattr(history_handle, "conversation_id", None)
 
         # A compaction writing the history meanwhile would be overwritten by the
         # read-modify-write below. Waited for briefly; if it never frees, the turn
         # is saved anyway: the compaction is what gets lost, never the turn.
-        lock_key = self.history_lock_key(company_short_name, user_identifier, model)
+        lock_key = self.history_lock_key(company_short_name, user_identifier, model, conversation_id)
         locked = self.acquire_history_lock(lock_key, wait_seconds=self.HISTORY_LOCK_WAIT_SECONDS)
         try:
-            self._append_turn(company_short_name, user_identifier, model, user_turn_prompt, response)
+            self._append_turn(company_short_name, user_identifier, model, user_turn_prompt, response,
+                              conversation_id=conversation_id)
         finally:
             if locked:
                 self.release_history_lock(lock_key)
 
-        self._record_context_size(company_short_name, user_identifier, model, response)
+        self._record_context_size(company_short_name, user_identifier, model, response,
+                                  conversation_id=conversation_id)
 
     def _append_turn(self, company_short_name: str, user_identifier: str, model: Optional[str],
-                     user_turn_prompt: str, response: Dict[str, Any]):
-        # get the history for this company/user/model
+                     user_turn_prompt: str, response: Dict[str, Any], conversation_id: Optional[str] = None):
+        # get the history for this company/user/model (and conversation)
         context_history = self.session_context.get_context_history(
             company_short_name,
             user_identifier,
-            model=model) or []
+            model=model,
+            **_conversation_kw(conversation_id)) or []
 
         # Ensure the user prompt is recorded if not already.
         # We check content equality to handle the case where the previous message was
@@ -233,21 +246,23 @@ class HistoryManagerService:
             company_short_name,
             user_identifier,
             context_history,
-            model=model)
+            model=model,
+            **_conversation_kw(conversation_id))
 
     # ------------------------------------------------------------------
     # Compaction (BL-009, Fase E)
     # ------------------------------------------------------------------
 
     def _record_context_size(self, company_short_name: str, user_identifier: str, model: Optional[str],
-                             response: Dict[str, Any]):
+                             response: Dict[str, Any], conversation_id: Optional[str] = None):
         """Keeps the context size the provider measured, and asks for a compaction past the threshold."""
         stats = response.get("stats") if isinstance(response, dict) else None
         context_tokens = self._positive_int((stats or {}).get("context_tokens"))
         if not context_tokens:
             return
         try:
-            self.session_context.save_context_tokens(company_short_name, user_identifier, context_tokens, model=model)
+            self.session_context.save_context_tokens(company_short_name, user_identifier, context_tokens, model=model,
+                                                     **_conversation_kw(conversation_id))
             budget = self.context_budget_tokens(company_short_name, model)
             threshold = int(self.compaction_budget_tokens(company_short_name, model) * self.COMPACTION_TRIGGER_SHARE)
             compact = context_tokens >= threshold
@@ -258,13 +273,13 @@ class HistoryManagerService:
                 f"{' -> requested' if compact else ''}."
             )
             if compact:
-                self.compaction_trigger.trigger(company_short_name, user_identifier, model)
+                self._trigger_compaction(company_short_name, user_identifier, model, conversation_id)
         except Exception as e:
             # A compaction that is not asked for now is asked for on the next turn.
             logging.warning(f"Could not request the history compaction of {company_short_name}/{user_identifier}: {e}")
 
     def _compact_in_line_if_needed(self, company_short_name: str, user_identifier: str, model: Optional[str],
-                                   user_turn_prompt: str, budget: int):
+                                   user_turn_prompt: str, budget: int, conversation_id: Optional[str] = None):
         """Handles a turn that would not fit because the background compaction did not land in time.
 
         With workers, the turn asks for the compaction again and goes out
@@ -274,26 +289,68 @@ class HistoryManagerService:
         would.
         """
         try:
-            measured = self.session_context.get_context_tokens(company_short_name, user_identifier, model=model)
+            measured = self.session_context.get_context_tokens(company_short_name, user_identifier, model=model,
+                                                               **_conversation_kw(conversation_id))
             if not measured:
                 return
             estimated = measured + self.llm_client.count_tokens(user_turn_prompt or "")
             if estimated < budget * self.INLINE_COMPACTION_SHARE:
                 return
-            if self.compaction_trigger.trigger(company_short_name, user_identifier, model):
+            if self._trigger_compaction(company_short_name, user_identifier, model, conversation_id):
                 return
             result = self.compaction_service.compact(
                 company_short_name, user_identifier, model,
                 max_chunks=self.INLINE_COMPACTION_MAX_CHUNKS,
+                **({"conversation_id": conversation_id} if conversation_id else {}),
             )
             logging.info(f"In-line compaction of {company_short_name}/{user_identifier}: {result}")
         except Exception as e:
             # The trim that follows still keeps the request inside the window.
             logging.warning(f"In-line history compaction failed for {company_short_name}/{user_identifier}: {e}")
 
+    def _trigger_compaction(self, company_short_name: str, user_identifier: str, model: Optional[str],
+                            conversation_id: Optional[str]) -> bool:
+        # A conversation is named only when there is one, so a trigger written
+        # before conversations (BL-001) keeps working for the person's history.
+        if conversation_id:
+            return self.compaction_trigger.trigger(company_short_name, user_identifier, model,
+                                                   conversation_id=conversation_id)
+        return self.compaction_trigger.trigger(company_short_name, user_identifier, model)
+
     @staticmethod
-    def history_lock_key(company_short_name: str, user_identifier: str, model: Optional[str]) -> str:
-        return f"lock:history:{company_short_name}/{user_identifier}/{model or ''}"
+    def history_lock_key(company_short_name: str, user_identifier: str, model: Optional[str],
+                         conversation_id: Optional[str] = None) -> str:
+        conversation_key = f"/conv:{conversation_id}" if conversation_id else ""
+        return f"lock:history:{company_short_name}/{user_identifier}/{model or ''}{conversation_key}"
+
+    def start_conversation_history(self, company_short_name: str, user_identifier: str, model: Optional[str],
+                                   conversation_id: str, *, summary: Optional[str] = None,
+                                   turns: Optional[list] = None) -> bool:
+        """Rebuilds a conversation's history (BL-001): Redis lost it (TTL), the
+        model changed, or the conversation was reopened.
+
+        It starts from the person's prepared context (the first message of
+        their history for this model), then the conversation's last compaction
+        summary, then the text of its latest turns as the database kept them.
+        Tool results are not replayed: the model calls the tool again if it
+        needs fresh data. False when there is no prepared context to start from.
+        """
+        base = self.session_context.get_context_history(company_short_name, user_identifier, model=model) or []
+        if not base:
+            return False
+        history = [base[0]]
+        if summary and str(summary).strip():
+            history.append(self.summary_message(summary))
+        for message in turns or []:
+            if not isinstance(message, dict):
+                continue
+            role = message.get("role")
+            content = str(message.get("content") or "").strip()
+            if role in ("user", "assistant") and content:
+                history.append({"role": role, "content": content})
+        self.session_context.save_context_history(company_short_name, user_identifier, history,
+                                                  model=model, **_conversation_kw(conversation_id))
+        return True
 
     def acquire_history_lock(self, lock_key: str, wait_seconds: float = 0.0) -> bool:
         deadline = time.monotonic() + max(wait_seconds, 0.0)

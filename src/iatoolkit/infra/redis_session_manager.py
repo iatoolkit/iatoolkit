@@ -115,6 +115,11 @@ class RedisSessionManager:
 
 
     @classmethod
+    def expire(cls, key: str, seconds: int):
+        client = cls._get_client()
+        return client.expire(key, int(seconds))
+
+    @classmethod
     def remove(cls, key: str):
         client = cls._get_client()
         result = client.delete(key)

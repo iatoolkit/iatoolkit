@@ -15,14 +15,21 @@ class UserSessionContextService:
     Esto mejora la atomicidad y la eficiencia.
     """
 
-    def _get_session_key(self, company_short_name: str, user_identifier: str, model: str = None) -> Optional[str]:
+    #: A conversation's history lives in its own hash (BL-001) and expires when
+    #: nobody uses it: the database keeps the conversation, and a reopened one
+    #: is rebuilt from it.
+    CONVERSATION_HISTORY_TTL_SECONDS = 24 * 3600
+
+    def _get_session_key(self, company_short_name: str, user_identifier: str, model: str = None,
+                         conversation_id: str = None) -> Optional[str]:
         """Devuelve la clave única de Redis para el Hash de sesión del usuario."""
         user_identifier = (user_identifier or "").strip()
         if not company_short_name or not user_identifier:
             return None
 
         model_key = "" if not model else f"-{model}"
-        return f"session:{company_short_name}/{user_identifier}{model_key}"
+        conversation_key = "" if not conversation_id else f"/conv:{conversation_id}"
+        return f"session:{company_short_name}/{user_identifier}{model_key}{conversation_key}"
 
     def clear_all_context(self, company_short_name: str, user_identifier: str, model: str = None):
         """Clears LLM-related context for a user (history and response IDs), preserving profile_data."""
@@ -38,9 +45,11 @@ class UserSessionContextService:
             RedisSessionManager.hdel(session_key, "initial_response_id")
             RedisSessionManager.hdel(session_key, "selected_system_prompt_keys")
 
-    def clear_llm_history(self, company_short_name: str, user_identifier: str, model: str = None):
+    def clear_llm_history(self, company_short_name: str, user_identifier: str, model: str = None,
+                          conversation_id: str = None):
         """Clears only the LLM history (context_history, plus the legacy server-side ids)."""
-        session_key = self._get_session_key(company_short_name, user_identifier, model=model)
+        session_key = self._get_session_key(company_short_name, user_identifier, model=model,
+                                            conversation_id=conversation_id)
         if session_key:
             RedisSessionManager.hdel(
                 session_key, "last_response_id", "initial_response_id", "context_history", "context_tokens"
@@ -50,14 +59,18 @@ class UserSessionContextService:
                             company_short_name: str,
                             user_identifier: str,
                             context_tokens: int,
-                            model: str = None):
+                            model: str = None,
+                            conversation_id: str = None):
         """The context size the provider reported for the last turn (BL-009)."""
-        session_key = self._get_session_key(company_short_name, user_identifier, model=model)
+        session_key = self._get_session_key(company_short_name, user_identifier, model=model,
+                                            conversation_id=conversation_id)
         if session_key:
             RedisSessionManager.hset(session_key, "context_tokens", str(int(context_tokens or 0)))
 
-    def get_context_tokens(self, company_short_name: str, user_identifier: str, model: str = None) -> int:
-        session_key = self._get_session_key(company_short_name, user_identifier, model=model)
+    def get_context_tokens(self, company_short_name: str, user_identifier: str, model: str = None,
+                           conversation_id: str = None) -> int:
+        session_key = self._get_session_key(company_short_name, user_identifier, model=model,
+                                            conversation_id=conversation_id)
         if not session_key:
             return 0
         try:
@@ -71,13 +84,17 @@ class UserSessionContextService:
             user_identifier: str,
             context_history: List[Dict],
             model: str = None,
+            conversation_id: str = None,
     ):
         """Serializes and stores the context history for this user/model combination."""
-        session_key = self._get_session_key(company_short_name, user_identifier, model=model)
+        session_key = self._get_session_key(company_short_name, user_identifier, model=model,
+                                            conversation_id=conversation_id)
         if session_key:
             try:
                 history_json = json.dumps(context_history)
                 RedisSessionManager.hset(session_key, "context_history", history_json)
+                if conversation_id:
+                    RedisSessionManager.expire(session_key, self.CONVERSATION_HISTORY_TTL_SECONDS)
             except (TypeError, ValueError) as e:
                 logging.error(f"Error serializing context_history for {session_key}: {e}")
 
@@ -86,9 +103,11 @@ class UserSessionContextService:
             company_short_name: str,
             user_identifier: str,
             model: str = None,
+            conversation_id: str = None,
     ) -> Optional[List[Dict]]:
         """Reads and deserializes the context history for this user/model combination."""
-        session_key = self._get_session_key(company_short_name, user_identifier, model=model)
+        session_key = self._get_session_key(company_short_name, user_identifier, model=model,
+                                            conversation_id=conversation_id)
         if not session_key:
             return []
 

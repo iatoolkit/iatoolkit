@@ -17,5 +17,6 @@ class NoopHistoryCompactionTrigger(HistoryCompactionTrigger):
     def __init__(self):
         pass
 
-    def trigger(self, company_short_name: str, user_identifier: str, model: str) -> bool:
+    def trigger(self, company_short_name: str, user_identifier: str, model: str,
+                conversation_id: str | None = None) -> bool:
         return False

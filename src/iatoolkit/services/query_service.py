@@ -39,6 +39,9 @@ class HistoryHandle:
     type: str
     model: str | None = None
     request_params: dict = None
+    # The conversation whose history this turn uses (BL-001); None = the
+    # person's single history, as before conversations.
+    conversation_id: str | None = None
 
 
 class QueryService:
