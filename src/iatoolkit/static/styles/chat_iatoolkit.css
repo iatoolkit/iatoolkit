@@ -2,6 +2,9 @@
 :root {
     --bs-tooltip-bg: #495057; /* Gris carbón, más claro y profesional */
     --bs-tooltip-opacity: 0.95; /* Ligeramente más opaco para mejor legibilidad */
+    /* Bootstrap pinta todo <code> en rosado (#d63384), que se lee como un error:
+       el código toma el color del texto que lo rodea. */
+    --bs-code-color: currentColor;
 }
 
 h1, h2, h3, h4, h5, h6 {

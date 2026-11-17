@@ -88,8 +88,10 @@
   margin-top: 0;
 }
 
-/* CÓDIGO */
-.llm-output code {
+/* CÓDIGO: texto monoespaciado sobre un fondo gris suave, en la respuesta y en
+   el razonamiento (el color lo fija --bs-code-color en chat_iatoolkit.css). */
+.llm-output code,
+.turn-activity code {
   font-size: 13px;
   background-color: #f3f4f6;
   padding: 1px 4px;
@@ -103,7 +105,8 @@
   overflow-x: auto;
 }
 
-.llm-output pre code {
+.llm-output pre code,
+.turn-activity pre code {
   background: none;
   padding: 0;
 }
