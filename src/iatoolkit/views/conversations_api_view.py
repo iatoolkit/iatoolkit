@@ -11,6 +11,7 @@
     PATCH  /<co>/api/conversations/<id>            rename ({"title"}) or archive/restore ({"status"})
     DELETE /<co>/api/conversations/<id>            soft delete
     GET    /<co>/api/conversations/<id>/messages   its messages, answers rendered again
+    POST   /<co>/api/conversations/<id>/title      a short title by the conversation_title system agent
 
 Every route is scoped by company and owner: someone else's conversation is 404.
 """
@@ -118,8 +119,13 @@ class ConversationsApiView(MethodView):
             return self._unexpected(e)
 
     def _post_on_conversation(self, company_short_name, user_identifier, conversation_id, resource):
-        # Actions on one conversation (the title, BL-001 PR-5) are added here.
-        return jsonify({"error_message": "not found"}), 404
+        conversation = self.conversation_service.get_for_user(company_short_name, user_identifier, conversation_id)
+        if conversation is None or resource != "title":
+            return self._not_found()
+        # POST .../title: the chat asks for it once the first answer is on screen,
+        # so writing it never delays an answer. Kept as is when the person chose it.
+        self.conversation_service.generate_title(company_short_name, user_identifier, conversation)
+        return jsonify({"conversation": conversation.to_dict()}), 200
 
     def patch(self, company_short_name: str, conversation_id: str | None = None, resource: str | None = None):
         try:

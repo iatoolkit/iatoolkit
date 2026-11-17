@@ -123,3 +123,16 @@ class TestConversationsApi:
         api.auth.verify_for_company.return_value = {"success": False, "status_code": 401, "error_message": "auth"}
 
         assert api.get("/acme/api/conversations").status_code == 401
+
+    def test_title_asks_the_agent_once_the_first_answer_is_there(self, api):
+        conversation = api.service.create("acme", ANA, title="dame las ventas")
+        api.service.generate_title = MagicMock(side_effect=lambda co, user, conv: conv)
+
+        response = api.post(f"/acme/api/conversations/{conversation.public_id}/title")
+
+        assert response.status_code == 200
+        assert api.service.generate_title.call_args.args[:2] == ("acme", ANA)
+        assert api.post(f"/acme/api/conversations/{conversation.public_id}/other").status_code == 404
+        _as(api, BETO)
+        assert api.post(f"/acme/api/conversations/{conversation.public_id}/title").status_code == 404
+

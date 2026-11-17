@@ -334,3 +334,23 @@ agents:
     inputs: [previous_summary, transcript]
     default_model: null
 
+  - key: conversation_title
+    name: Título de la conversación
+    name_en: Conversation title
+    description: >-
+      (Chat) Escribe un título corto para una conversación nueva a partir de su primera pregunta y
+      respuesta, para encontrarla después en la lista de conversaciones.
+    description_en: >-
+      (Chat) Writes a short title for a new conversation from its first question and answer, so it can
+      be found later in the list of conversations.
+    module: chat
+    prompt: conversation_title.prompt
+    output_schema:
+      type: object
+      properties:
+        title:
+          type: string
+      required: [title]
+      additionalProperties: false
+    inputs: [question, answer]
+    default_model: null

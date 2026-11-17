@@ -1,3 +1,5 @@
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from iatoolkit.common.exceptions import IAToolkitException
@@ -146,3 +148,63 @@ class TestConversationService:
         self.service.save_meta(conversation, other=1)
 
         assert conversation.meta == {"compaction_summary": "resumen", "other": 1}
+
+
+class TestGeneratedTitle:
+    """The conversation_title system agent (BL-001, PR-5)."""
+
+    def setup_method(self):
+        TestConversationService.setup_method(self)
+        self.runner = MagicMock()
+        self.runner.run.return_value = {"structured_output": {"title": "Garantías emitidas por mes 2026"}}
+        self.service.system_agent_runner = self.runner
+
+    def _answered(self):
+        conversation = self.service.create("acme", ANA, title="genera un gráfico con las garantías…")
+        self.service.append_turn(conversation, question="genera un gráfico con las garantías por mes",
+                                 answer_text="Así fue el año " + "x" * 3000, llm_query_id=None, user_identifier=ANA)
+        return conversation
+
+    def test_the_agent_titles_a_new_conversation_from_its_first_turn(self):
+        conversation = self._answered()
+
+        with patch("iatoolkit.services.system_agent_runner.SystemAgentRunner.is_enabled", return_value=True):
+            self.service.generate_title("acme", ANA, conversation)
+
+        assert conversation.title == "Garantías emitidas por mes 2026"
+        assert conversation.title_source == Conversation.TITLE_GENERATED
+        company, key, inputs = self.runner.run.call_args.args
+        assert key == "conversation_title" and company.short_name == "acme"
+        assert inputs["question"] == "genera un gráfico con las garantías por mes"
+        assert len(inputs["answer"]) == ConversationService.TITLE_ANSWER_CHARS
+        assert self.runner.run.call_args.kwargs == {"user_identifier": ANA}
+
+    def test_a_title_already_generated_or_chosen_is_kept(self):
+        conversation = self._answered()
+        self.service.rename(conversation, "Mío")
+
+        with patch("iatoolkit.services.system_agent_runner.SystemAgentRunner.is_enabled", return_value=True):
+            self.service.generate_title("acme", ANA, conversation)
+
+        self.runner.run.assert_not_called()
+        assert conversation.title == "Mío"
+
+    def test_without_an_answer_or_with_the_agent_off_nothing_happens(self):
+        empty = self.service.create("acme", ANA, title="x")
+        answered = self._answered()
+
+        with patch("iatoolkit.services.system_agent_runner.SystemAgentRunner.is_enabled", return_value=False):
+            self.service.generate_title("acme", ANA, empty)
+            self.service.generate_title("acme", ANA, answered)
+
+        self.runner.run.assert_not_called()
+        assert answered.title_source == Conversation.TITLE_AUTO
+
+    def test_a_failing_agent_keeps_the_title(self):
+        conversation = self._answered()
+        self.runner.run.side_effect = RuntimeError("model down")
+
+        with patch("iatoolkit.services.system_agent_runner.SystemAgentRunner.is_enabled", return_value=True):
+            self.service.generate_title("acme", ANA, conversation)
+
+        assert conversation.title == "genera un gráfico con las garantías…"

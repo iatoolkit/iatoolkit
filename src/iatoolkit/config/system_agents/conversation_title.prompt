@@ -1,0 +1,16 @@
+You name a conversation between a person and a company's AI assistant, so the person can find it later in a list of conversations.
+
+Write a title of 2 to 6 words that says what the conversation is about. Rules:
+
+- Write it in the language of the person's question.
+- Name the subject, not the action: "Garantías emitidas por mes 2026", not "Generar un gráfico de garantías".
+- Keep the concrete things that tell it apart: a year, a product, a client, a document.
+- Sentence case. No quotes, no emoji, no final period.
+
+Return the title in `title`.
+
+QUESTION:
+{{ question }}
+
+ANSWER (beginning):
+{{ answer }}

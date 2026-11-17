@@ -281,6 +281,60 @@ class ConversationService:
             shown.append(item)
         return shown
 
+    # ------------------------------------------------------------------ title
+    TITLE_AGENT_KEY = "conversation_title"
+    TITLE_ANSWER_CHARS = 1500
+
+    @property
+    def system_agent_runner(self):
+        runner = getattr(self, "_system_agent_runner", None)
+        if runner is None:
+            from iatoolkit import current_iatoolkit
+            from iatoolkit.services.system_agent_runner import SystemAgentRunner
+            runner = current_iatoolkit().get_injector().get(SystemAgentRunner)
+            self._system_agent_runner = runner
+        return runner
+
+    @system_agent_runner.setter
+    def system_agent_runner(self, runner):
+        self._system_agent_runner = runner
+
+    @staticmethod
+    def _title_from(response) -> str:
+        if not isinstance(response, dict):
+            return ""
+        for key in ("structured_output", "parsed_output"):
+            value = response.get(key)
+            if isinstance(value, dict) and value.get("title"):
+                return str(value["title"])
+        return ""
+
+    def generate_title(self, company_short_name: str, user_identifier: str,
+                       conversation: Conversation) -> Conversation:
+        """A short title written by the `conversation_title` system agent from the
+        first question and answer. Only for a title still automatic: one the
+        person chose, or one already generated, is kept. Failures keep the
+        title as it is."""
+        if conversation.title_source != Conversation.TITLE_AUTO:
+            return conversation
+        messages = self.messages(conversation)
+        question = next((m.content for m in messages if m.role == ConversationMessage.ROLE_USER and m.content), "")
+        answer = next((m.content for m in messages if m.role == ConversationMessage.ROLE_ASSISTANT and m.content), "")
+        if not question or not answer:
+            return conversation
+        try:
+            from iatoolkit.services.system_agent_runner import SystemAgentRunner
+            if not SystemAgentRunner.is_enabled(self.TITLE_AGENT_KEY):
+                return conversation
+            response = self.system_agent_runner.run(
+                self._company(company_short_name), self.TITLE_AGENT_KEY,
+                {"question": question[:2000], "answer": answer[:self.TITLE_ANSWER_CHARS]},
+                user_identifier=user_identifier)
+            self.set_generated_title(conversation, self._title_from(response))
+        except Exception as e:
+            logging.warning("Could not title conversation %s: %s", conversation.public_id, e)
+        return conversation
+
     def is_first_turn(self, conversation: Conversation) -> bool:
         try:
             return self.conversation_repo.count_messages(
