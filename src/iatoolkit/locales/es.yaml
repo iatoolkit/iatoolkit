@@ -390,6 +390,7 @@ ui:
     back_to_home: "Volver al inicio"
 
   chat:
+    drop_files: "Suelta los archivos para adjuntarlos"
     welcome_message: "¡Hola! ¿En qué te puedo ayudar hoy?"
     input_placeholder: "Escribe aquí..."
     prompts_available: "Prompts disponibles"
@@ -3068,6 +3069,9 @@ js_messages:
   conv_rename_prompt: "Nuevo nombre de la conversación"
   conv_save: "Guardar"
   conv_cancel: "Cancelar"
+  attach_remove: "Quitar"
+  attach_rejected: "No se pudo adjuntar"
+  attach_limits: "Máximo 5 archivos de hasta 30 MB: imágenes, PDF, Word, Excel, CSV o texto."
   tool_iat_document_search: "Buscando en los documentos"
   tool_iat_document_read: "Leyendo un documento"
   tool_iat_document_list: "Listando documentos"

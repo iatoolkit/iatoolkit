@@ -56,168 +56,179 @@ document.addEventListener('DOMContentLoaded', function () {
     window.filePond = filePond;
 
 
-    // 3. DOM references for the new custom UI
-    const dropzone = document.getElementById('chat-dropzone');
+    if (!filePond) return;
+    // The question box takes pasted images itself (below); FilePond's own
+    // listener on the whole page would add each of them a second time.
+    filePond.setOptions({ allowPaste: false });
     const fileListContainer = document.getElementById('inline-file-list');
-    const fileCounter = document.getElementById('file-counter');
     const paperclipBtn = document.getElementById('paperclip-button');
+    const overlay = document.getElementById('chat-drop-overlay');
+    const dropTarget = document.querySelector('.chat-main') || document.getElementById('chat-container');
+    const textarea = document.getElementById('question');
+    const tr = (key, fallback) => {
+        if (typeof window.t_js === 'function') {
+            const text = window.t_js(key);
+            if (text && text !== key) return text;
+        }
+        return fallback;
+    };
 
-
-    // 4. Rendering Functions
-
-    /**
-     * Returns the Bootstrap icon class based on filename or file type.
-     */
+    /** The Bootstrap icon for a file, by its type or extension. */
     function getFileIconClass(filename, type) {
-        const ext = filename.split('.').pop().toLowerCase();
-
-        // Images
-        if (type.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) {
-            return 'bi-file-earmark-image';
-        }
-        // PDF
-        if (type === 'application/pdf' || ext === 'pdf') {
-            return 'bi-file-earmark-pdf';
-        }
-        // Excel / Spreadsheets
-        if (['xls', 'xlsx', 'csv'].includes(ext) || type.includes('spreadsheet') || type.includes('excel')) {
-            return 'bi-file-earmark-excel';
-        }
-        // Word / Documents
-        if (['doc', 'docx'].includes(ext) || type.includes('word') || type.includes('document')) {
-            return 'bi-file-earmark-word';
-        }
-        // Text / Code
-        if (['txt', 'md', 'json', 'py', 'js', 'html', 'css'].includes(ext)) {
-            return 'bi-file-earmark-text';
-        }
-
-        // Default icon
+        const ext = String(filename || '').split('.').pop().toLowerCase();
+        if (type.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) return 'bi-file-earmark-image';
+        if (type === 'application/pdf' || ext === 'pdf') return 'bi-file-earmark-pdf';
+        if (['xls', 'xlsx', 'csv'].includes(ext) || type.includes('spreadsheet') || type.includes('excel')) return 'bi-file-earmark-excel';
+        if (['doc', 'docx'].includes(ext) || type.includes('word') || type.includes('document')) return 'bi-file-earmark-word';
+        if (['txt', 'md', 'json', 'py', 'js', 'html', 'css'].includes(ext)) return 'bi-file-earmark-text';
         return 'bi-file-earmark';
     }
 
-    /**
-     * Rebuilds the visual file list below the input.
-     */
+    function formatSize(bytes) {
+        if (!bytes && bytes !== 0) return '';
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
+
+    const previews = new Map();
+
+    /** The attached files as chips inside the input bar, above the text. */
     function renderFileList() {
         if (!fileListContainer) return;
-
         const files = filePond.getFiles();
-        fileListContainer.innerHTML = ''; // Clear current list
+        fileListContainer.innerHTML = '';
+        fileListContainer.hidden = files.length === 0;
+        const alive = new Set(files.map(item => item.id));
+        previews.forEach((url, id) => {
+            if (!alive.has(id)) { URL.revokeObjectURL(url); previews.delete(id); }
+        });
 
-        if (files.length > 0) {
-            fileListContainer.style.display = 'block';
+        files.forEach(fileItem => {
+            const file = fileItem.file;
+            const type = file.type || '';
+            const chip = document.createElement('div');
+            chip.className = 'file-chip';
 
-            // Update counter
-            if (fileCounter) {
-                fileCounter.textContent = `${files.length}/${filePond.maxFiles || 5}`;
-                fileCounter.style.display = 'inline-block';
+            if (type.startsWith('image/')) {
+                if (!previews.has(fileItem.id)) previews.set(fileItem.id, URL.createObjectURL(file));
+                const thumb = document.createElement('img');
+                thumb.className = 'file-chip-thumb';
+                thumb.src = previews.get(fileItem.id);
+                thumb.alt = '';
+                chip.appendChild(thumb);
+            } else {
+                const icon = document.createElement('i');
+                icon.className = `bi ${getFileIconClass(file.name, type)} file-chip-icon`;
+                icon.setAttribute('aria-hidden', 'true');
+                chip.appendChild(icon);
             }
 
-            files.forEach(fileItem => {
-                const file = fileItem.file;
-                const iconClass = getFileIconClass(file.name, file.type || '');
+            const text = document.createElement('span');
+            text.className = 'file-chip-text';
+            const name = document.createElement('span');
+            name.className = 'file-chip-name';
+            name.textContent = file.name;
+            name.title = file.name;
+            const size = document.createElement('span');
+            size.className = 'file-chip-size';
+            size.textContent = formatSize(file.size);
+            text.append(name, size);
+            chip.appendChild(text);
 
-                // Create file row
-                const row = document.createElement('div');
-                row.className = 'file-list-item';
-
-                row.innerHTML = `
-                    <i class="bi ${iconClass} file-icon"></i>
-                    <span class="file-name" title="${file.name}">${file.name}</span>
-                    <i class="bi bi-x-circle-fill file-remove" role="button" aria-label="Remove file"></i>
-                `;
-
-                // Click event on the remove button of the row
-                const removeBtn = row.querySelector('.file-remove');
-                removeBtn.addEventListener('click', (e) => {
-                    e.stopPropagation(); // Prevent click propagation if nested in a clickable area
-                    filePond.removeFile(fileItem.id);
-                });
-
-                fileListContainer.appendChild(row);
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'file-chip-remove';
+            remove.setAttribute('aria-label', `${tr('attach_remove', 'Quitar')} ${file.name}`);
+            remove.innerHTML = '<i class="bi bi-x" aria-hidden="true"></i>';
+            remove.addEventListener('click', (event) => {
+                event.stopPropagation();
+                filePond.removeFile(fileItem.id);
             });
-        } else {
-            // Hide list and counter if no files
-            fileListContainer.style.display = 'none';
-            if (fileCounter) fileCounter.style.display = 'none';
+            chip.appendChild(remove);
+            fileListContainer.appendChild(chip);
+        });
+
+        if (files.length) {
+            const counter = document.createElement('span');
+            counter.className = 'file-chip-counter';
+            counter.textContent = `${files.length}/${filePond.maxFiles || 5}`;
+            counter.title = tr('attach_limits', '');
+            fileListContainer.appendChild(counter);
         }
     }
 
+    // -- Drop files anywhere on the chat: an overlay says where they go --
+    const hasFiles = (event) => Array.from((event.dataTransfer && event.dataTransfer.types) || []).includes('Files');
+    let dragDepth = 0;
+    const showOverlay = (visible) => { if (overlay) overlay.hidden = !visible; };
 
-    // 5. Interaction Event Management
+    window.addEventListener('dragenter', (event) => {
+        if (!hasFiles(event)) return;
+        event.preventDefault();
+        dragDepth += 1;
+        showOverlay(true);
+    });
+    window.addEventListener('dragover', (event) => {
+        if (!hasFiles(event)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = dropTarget && dropTarget.contains(event.target) ? 'copy' : 'none';
+    });
+    window.addEventListener('dragleave', (event) => {
+        if (!hasFiles(event)) return;
+        dragDepth = Math.max(0, dragDepth - 1);
+        if (dragDepth === 0) showOverlay(false);
+    });
+    window.addEventListener('drop', (event) => {
+        if (!hasFiles(event)) return;
+        // Never let the browser open the file in place of the chat.
+        event.preventDefault();
+        dragDepth = 0;
+        showOverlay(false);
+        if (dropTarget && dropTarget.contains(event.target) && event.dataTransfer.files.length) {
+            filePond.addFiles(Array.from(event.dataTransfer.files));
+        }
+    });
 
-    // -- Custom Dropzone Robust Handling --
-    if (dropzone) {
-        // Prevent default browser behavior for drag events
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-            dropzone.addEventListener(eventName, (e) => {
-                e.preventDefault();
-                e.stopPropagation();
-            }, false);
-        });
-
-        // Highlight dropzone on drag enter/over
-        ['dragenter', 'dragover'].forEach(eventName => {
-            dropzone.addEventListener(eventName, () => {
-                dropzone.classList.add('drag-over');
-            }, false);
-        });
-
-        // Remove highlight on drag leave or drop
-        // Note: checking relatedTarget prevents flickering when dragging over child elements
-        dropzone.addEventListener('dragleave', (e) => {
-            if (!dropzone.contains(e.relatedTarget)) {
-                dropzone.classList.remove('drag-over');
-            }
-        }, false);
-
-        dropzone.addEventListener('drop', (e) => {
-            dropzone.classList.remove('drag-over');
-
-            // Pass dropped files to FilePond
-            // We convert FileList to Array to ensure compatibility
-            if (e.dataTransfer && e.dataTransfer.files.length > 0) {
-                filePond.addFiles(Array.from(e.dataTransfer.files));
-            }
-        }, false);
-
-        // Click on zone opens native selector
-        dropzone.addEventListener('click', function() {
-            filePond.browse();
+    // -- Paste an image (a screenshot) straight into the question --
+    if (textarea) {
+        textarea.addEventListener('paste', (event) => {
+            const items = Array.from((event.clipboardData && event.clipboardData.items) || []);
+            const files = items.filter(item => item.kind === 'file').map(item => item.getAsFile()).filter(Boolean);
+            if (!files.length) return;
+            const pastedText = event.clipboardData.getData('text/plain');
+            if (!pastedText) event.preventDefault();
+            filePond.addFiles(files.map((file, index) => (
+                file.name && file.name !== 'image.png'
+                    ? file
+                    : new File([file], `captura-${Date.now()}-${index + 1}.${(file.type.split('/')[1] || 'png')}`,
+                               { type: file.type })
+            )));
         });
     }
 
-    // -- "Clip" Button (Legacy design compatibility) --
+    // -- The (+) button opens the file picker --
     if (paperclipBtn) {
-        paperclipBtn.addEventListener('click', function() {
+        paperclipBtn.addEventListener('click', function () {
             filePond.browse();
         });
     }
 
-
-    // 6. FilePond Hooks for Reactivity
-
-    // On file add (even if validation error, FilePond manages array)
+    // -- FilePond hooks --
     filePond.on('addfile', (error, file) => {
         if (error) {
-            console.error('FilePond Error:', error);
-            // Optional: Show error toast if file is invalid (e.g., too large)
+            // Too large, a type not allowed, or over the limit: it goes, with the reason.
+            const reason = [error.main, error.sub].filter(Boolean).join(' · ');
+            if (window.toastr) window.toastr.warning(`${tr('attach_rejected', 'No se pudo adjuntar')} ${file && file.filename ? file.filename : ''}: ${reason}`);
+            if (file) filePond.removeFile(file.id);
             return;
         }
         renderFileList();
     });
-
-    // On file remove
-    filePond.on('removefile', (error, file) => {
-        renderFileList();
-    });
-
-    // Event for general error (e.g., type not allowed on drop)
+    filePond.on('removefile', () => renderFileList());
     filePond.on('warning', (error) => {
-        console.warn('FilePond Warning:', error);
+        if (window.toastr && error && error.body) window.toastr.warning(`${error.body}. ${tr('attach_limits', '')}`);
     });
 
-    // Initialization: Initial render in case browser cached state
     renderFileList();
 });

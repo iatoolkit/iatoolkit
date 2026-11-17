@@ -59,6 +59,13 @@
     </button>
 </div>
 
+<!-- Dropping files anywhere on the chat attaches them. -->
+<div id="chat-drop-overlay" class="chat-drop-overlay" hidden>
+    <div class="chat-drop-overlay-box">
+        <i class="bi bi-cloud-arrow-up" aria-hidden="true"></i>
+        <span>{{ t('ui.chat.drop_files') }}</span>
+    </div>
+</div>
 <div id="chat-container"
      class="flex-grow-1" style="overflow-y: auto;">
 
@@ -129,7 +136,9 @@
     </div>
 
     <!-- 2. La Barra de Entrada Principal -->
-    <div id="chat-input-bar" class="chat-input-bar d-flex align-items-center">
+    <div id="chat-input-bar" class="chat-input-bar d-flex flex-wrap align-items-center">
+        <!-- Attached files, as chips above the text; empty when there are none. -->
+        <div id="inline-file-list" class="file-chips" hidden></div>
         <!-- Iconos de la izquierda -->
         <div class="d-flex align-items-center">
             <!-- varita magica -->
@@ -165,19 +174,6 @@
                     <i class="bi bi-stop-circle-fill"></i>
                 </a>
             </div>
-        </div>
-    </div>
-
-    <!-- NUEVO: Área de Adjuntos (Lista + Dropzone) -->
-    <div id="attachments-wrapper" class="px-1">
-        <!-- Lista de archivos cargados -->
-        <div id="inline-file-list" class="file-list-inline"></div>
-
-        <!-- Dropzone siempre visible -->
-        <div id="chat-dropzone" class="chat-dropzone">
-            <i class="bi bi-cloud-upload"></i>
-            <span>Arrastra archivos aquí o haz clic para adjuntar</span>
-            <span id="file-counter" class="dropzone-counter" style="display:none;">0/5</span>
         </div>
     </div>
 

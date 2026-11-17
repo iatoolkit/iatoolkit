@@ -98,7 +98,11 @@ li {
 
 /* El textarea "invisible" en el centro */
 .chat-textarea {
-    flex-grow: 1;
+    /* The bar wraps (attached files go on their own row): the text takes
+       whatever the icons leave, never a row of its own. */
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
     background: transparent !important;
     border: none !important;
     box-shadow: none !important;
@@ -318,100 +322,126 @@ li {
     color: #343a40;
 }
 
-/* --- NUEVO: Dropzone y Lista de Archivos Inline --- */
-
-/* Contenedor de la lista de archivos */
-.file-list-inline {
-    margin-bottom: 0.5rem;
-    display: none; /* Se oculta si no hay archivos */
-}
-
-.file-list-item {
-    background-color: #fff;
-    border: 1px solid #dee2e6;
-    border-radius: 6px;
-    padding: 6px 10px;
-    margin-bottom: 5px;
+/* --- Attached files: chips inside the input bar, above the text --- */
+.file-chips {
+    flex: 0 0 100%;
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    font-size: 0.9rem;
-    transition: background-color 0.2s;
+    gap: 6px;
+    padding: 6px 4px 2px;
 }
 
-.file-list-item:hover {
-    background-color: #f8f9fa;
+.file-chips[hidden] {
+    display: none;
 }
 
-.file-list-item i.file-icon {
-    font-size: 1.1rem;
-    margin-right: 8px;
-    color: var(--brand-primary-color);
+.file-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 260px;
+    padding: 4px 4px 4px 6px;
+    border: 1px solid #dee2e6;
+    border-radius: 0.6rem;
+    background: #f8f9fa;
+    font-size: 0.82rem;
 }
 
-.file-list-item .file-name {
-    flex-grow: 1;
+.file-chip-thumb {
+    width: 32px;
+    height: 32px;
+    object-fit: cover;
+    border-radius: 0.4rem;
+    flex: 0 0 auto;
+}
+
+.file-chip-icon {
+    font-size: 1.4rem;
+    color: var(--brand-primary-color, #0d6efd);
+    flex: 0 0 auto;
+}
+
+.file-chip-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.2;
+}
+
+.file-chip-name {
+    color: #343a40;
+    font-weight: 500;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    margin-right: 10px;
-    color: #495057;
 }
 
-.file-list-item .file-remove {
-    cursor: pointer;
-    color: #dc3545; /* Rojo Bootstrap estándar */
-    opacity: 0.6;
-    transition: opacity 0.2s, transform 0.2s;
+.file-chip-size {
+    color: #868e96;
+    font-size: 0.72rem;
 }
 
-.file-list-item .file-remove:hover {
-    opacity: 1;
-    transform: scale(1.1);
+.file-chip-remove {
+    border: 0;
+    background: none;
+    color: #868e96;
+    border-radius: 50%;
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    flex: 0 0 auto;
 }
 
-/* Dropzone estática */
-.chat-dropzone {
-    border: 2px dashed #ced4da;
-    border-radius: 0.5rem;
-    padding: 10px;
-    text-align: center;
-    background-color: rgba(255, 255, 255, 0.5);
-    color: #6c757d;
-    cursor: pointer;
-    transition: all 0.2s ease-in-out;
-    margin-top: 0.5rem;
-    font-size: 0.9rem;
-}
-
-.chat-dropzone:hover {
-    border-color: var(--brand-primary-color);
-    background-color: rgba(255, 255, 255, 0.8);
-    color: var(--brand-primary-color);
-}
-
-.chat-dropzone.drag-over {
-    border-color: var(--brand-primary-color);
-    background-color: #e9ecef;
-    transform: scale(1.01);
-}
-
-.chat-dropzone i {
-    font-size: 1.2rem;
-    vertical-align: middle;
-    margin-right: 5px;
-}
-
-/* Ajuste para el contador de archivos */
-.dropzone-counter {
-    font-size: 0.8rem;
-    margin-left: 5px;
+.file-chip-remove:hover,
+.file-chip-remove:focus-visible {
     background: #e9ecef;
-    padding: 2px 6px;
-    border-radius: 10px;
-    color: #495057;
+    color: #212529;
 }
 
-/* --- FIN NUEVO --- */
+.file-chip-counter {
+    font-size: 0.75rem;
+    color: #868e96;
+    margin-left: 2px;
+}
+
+/* --- Dropping files on the chat --- */
+.chat-panel {
+    position: relative;
+}
+
+.chat-drop-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.88);
+    border: 2px dashed var(--brand-primary-color, #0d6efd);
+    border-radius: inherit;
+    pointer-events: none;
+}
+
+.chat-drop-overlay[hidden] {
+    display: none;
+}
+
+.chat-drop-overlay-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--brand-primary-color, #0d6efd);
+    font-weight: 600;
+}
+
+.chat-drop-overlay-box i {
+    font-size: 2.4rem;
+}
 
 
 /* Anulación específica para el botón de ENVIAR usando su ID (Máxima Prioridad) */

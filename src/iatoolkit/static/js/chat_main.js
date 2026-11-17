@@ -168,6 +168,10 @@ const handleChatMessage = async function () {
         resetAllInputs();
 
         const filesBase64 = await Promise.all(files.map(fileItem => toBase64(fileItem.file)));
+        // The files now travel with the question (and show in it): the input bar is free for the next one.
+        if (window.filePond && files.length) {
+            window.filePond.removeFiles();
+        }
 
         // The conversation this turn belongs to (BL-001): created before its
         // first turn, so a turn that is stopped or fails is kept in it too.
