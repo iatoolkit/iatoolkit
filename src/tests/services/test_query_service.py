@@ -1,6 +1,8 @@
 # Copyright (c) 2024 Fernando Libedinsky
 # Product: IAToolkit
 
+import logging
+
 import pytest
 from unittest.mock import MagicMock, patch
 from iatoolkit.services.query_service import QueryService, HistoryHandle
@@ -858,8 +860,9 @@ class TestQueryService:
         assert execution_attachments["company_defaults"]["attachment_mode"] == "extracted_only"
         assert execution_attachments["company_defaults"]["attachment_fallback"] == "extract"
 
-    def test_llm_query_rebuilds_context_if_needed(self):
+    def test_llm_query_rebuilds_context_if_needed(self, caplog):
         """Prueba que llm_query reconstruye el contexto si el history manager lo indica."""
+        caplog.set_level(logging.INFO)
 
         self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "q", [])
         self.mock_llm_client.invoke.return_value = {'valid_response': True}
@@ -875,6 +878,11 @@ class TestQueryService:
             mock_prepare.assert_called_once()
             mock_set_context.assert_called_once()
             assert self.mock_history_manager.populate_request_params.call_count == 2
+
+        # An expired context is the expected path: INFO, not a WARNING that
+        # Elastic APM would record as an error.
+        rebuild_levels = [r.levelno for r in caplog.records if "Rebuilding context" in r.getMessage()]
+        assert rebuild_levels == [logging.INFO]
 
     def test_a_context_built_before_an_access_change_is_rebuilt(self, monkeypatch):
         from iatoolkit.common import access

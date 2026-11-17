@@ -996,7 +996,12 @@ class QueryService:
             needs_rebuild = True
 
         if needs_rebuild:
-            logging.warning(f"No valid history for {company.short_name}/{user_identifier}. Rebuilding context...")
+            # The expected path when the cached context expired or access changed;
+            # a rebuild that fails returns context_rebuild_failed below.
+            logging.info(
+                "No valid history for %s/%s. Rebuilding context...",
+                company.short_name, user_identifier,
+            )
 
             # try to rebuild the context
             self.prepare_context(
