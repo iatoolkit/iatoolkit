@@ -3,9 +3,25 @@
         <div class="modal-content">
             <div class="modal-header branded">
                 <h5 class="modal-title" id="memoryModalLabel">
-                    <i class="bi bi-bookmark-star me-2"></i>
+                    <i class="bi bi-journal-bookmark me-2"></i>
                     {{ t('ui.memory.title') }}
                 </h5>
+                {# Where else the memory lives: the questions the AI could not answer
+                   (everyone, BL-015) and the console (who administers it, BL-013). #}
+                {% set memory_questions_url = optional_url_for('memory_questions_page', company_short_name=company_short_name) %}
+                {% set memory_console_url = optional_url_for('admin_dashboard', company_short_name=company_short_name) %}
+                <div class="memory-modal-links ms-auto me-3">
+                    {% if memory_questions_url %}
+                    <a href="{{ memory_questions_url }}" target="_blank" rel="noopener">
+                        <i class="bi bi-patch-question me-1" aria-hidden="true"></i>{{ t('ui.memory.my_questions') }}
+                    </a>
+                    {% endif %}
+                    {% if memory_console_url and user_role and user_role != "user" and license == 'enterprise' %}
+                    <a href="{{ memory_console_url }}#memory" target="_blank" rel="noopener">
+                        <i class="bi bi-box-arrow-up-right me-1" aria-hidden="true"></i>{{ t('ui.memory.open_console') }}
+                    </a>
+                    {% endif %}
+                </div>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{{ t('ui.common.close') }}"></button>
             </div>
             <div class="modal-body">
