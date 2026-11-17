@@ -1,5 +1,5 @@
 /**
- * Output charts in the chat (BL-025).
+ * Output charts and other answer parts in the chat (BL-025).
  *
  * The server sends each chart as a part of the answer: its ECharts option
  * (data only, built by ChartService), its rows and where they came from. The
@@ -206,7 +206,31 @@
         });
     }
 
-    /** Fills the answer's part slots with the parts the turn returned. */
+    function fileIcon(part) {
+        const name = String(part.filename || '').toLowerCase();
+        const mime = String(part.mime_type || '').toLowerCase();
+        if (mime.includes('spreadsheet') || /\.(xlsx|xls|csv)$/.test(name)) return 'bi-file-earmark-excel';
+        if (mime.includes('pdf') || name.endsWith('.pdf')) return 'bi-file-earmark-pdf';
+        if (mime.includes('word') || /\.docx?$/.test(name)) return 'bi-file-earmark-word';
+        if (mime.startsWith('image/')) return 'bi-file-earmark-image';
+        return 'bi-file-earmark-arrow-down';
+    }
+
+    /** A file a tool generated, as a download card (BL-025). */
+    function fileCard(part) {
+        const card = $('<a>')
+            .addClass('iat-file-card')
+            .attr({ href: part.url, target: '_blank', rel: 'noopener', 'data-part-id': part.id });
+        card.append($('<i>').addClass(`bi ${fileIcon(part)} iat-file-card-icon`));
+        const text = $('<span>').addClass('iat-file-card-text');
+        text.append($('<span>').addClass('iat-file-card-name').text(part.filename || ''));
+        text.append($('<span>').addClass('iat-file-card-action').text(t('part_file_download', 'Descargar')));
+        card.append(text);
+        return card;
+    }
+
+    /** Fills the answer's part slots with the parts the turn returned: charts
+     *  are drawn, files become download cards (also where the answer links them). */
     function renderParts(container, parts) {
         const byId = {};
         (parts || []).forEach((part) => { if (part && part.id) byId[part.id] = part; });
@@ -215,9 +239,16 @@
             const part = byId[this.getAttribute('data-part-id')];
             if (part && part.kind === 'chart') {
                 pending.push(renderChart(this, part));
-            } else if (!part) {
+            } else if (part && part.kind === 'file') {
+                $(this).replaceWith(fileCard(part));
+            } else {
                 $(this).remove();
             }
+        });
+        (parts || []).filter((part) => part && part.kind === 'file' && part.url).forEach((part) => {
+            $(container).find('a[href]').not('.iat-file-card').each(function () {
+                if (this.getAttribute('href') === part.url) $(this).replaceWith(fileCard(part));
+            });
         });
         return Promise.all(pending);
     }

@@ -3010,6 +3010,7 @@ js_messages:
   chart_as_bars: "Bars"
   chart_as_lines: "Lines"
   chart_stack: "Stack"
+  part_file_download: "Download"
   tool_iat_document_search: "Searching the documents"
   tool_iat_document_read: "Reading a document"
   tool_iat_document_list: "Listing documents"

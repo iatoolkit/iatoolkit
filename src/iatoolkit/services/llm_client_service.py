@@ -21,6 +21,8 @@ from html import unescape
 from iatoolkit.common.exceptions import IAToolkitException, is_worker_timeout_signal
 import threading
 import re
+import html as html_lib
+import uuid
 import tiktoken
 from typing import Dict, Optional, List, Any
 from iatoolkit.services.dispatcher_service import Dispatcher
@@ -347,7 +349,7 @@ class llmClient:
         attachments = attachments or []
         active_attachments = list(attachments)
         f_calls = []  # keep track of the function calls executed by the LLM
-        turn_charts = []  # charts drawn by iat_chart in this turn (BL-025)
+        turn_parts = []  # what the answer shows besides its text: charts, files (BL-025)
         f_call_time = 0
         history_messages = []
         response = None
@@ -613,7 +615,11 @@ class llmClient:
                                 # A chart (BL-025) travels with the turn; the model reads only its summary.
                                 result, tool_chart = self._split_tool_result_chart(result)
                                 if tool_chart:
-                                    turn_charts.append(tool_chart)
+                                    turn_parts.append(tool_chart)
+                                # A file a tool generated is shown as a download card.
+                                tool_file = self._file_part_from_result(function_name, result)
+                                if tool_file:
+                                    turn_parts.append(tool_file)
                             tool_result_for_telemetry = result
                             tool_output_type = type(result).__name__
                             tool_attachments_count = len(tool_native_attachments or [])
@@ -754,7 +760,7 @@ class llmClient:
             if isinstance(decoded_response.get('answer'), str):
                 decoded_response['answer'], fenced_charts = self._charts_from_fenced_blocks(
                     decoded_response['answer'])
-                turn_charts.extend(fenced_charts)
+                turn_parts.extend(fenced_charts)
 
             # Extract reasoning from the final response object
             final_reasoning = getattr(response, 'reasoning_content', '')
@@ -766,7 +772,7 @@ class llmClient:
                              query=question,
                              output=decoded_response.get('answer', ''),
                              valid_response=decoded_response.get('status', False),
-                             response=self.serialize_response(response, decoded_response, parts=turn_charts),
+                             response=self.serialize_response(response, decoded_response, parts=turn_parts),
                              function_calls=f_calls,
                              stats=combined_stats,
                              answer_time=stats['response_time'],
@@ -801,11 +807,11 @@ class llmClient:
                 'answer': self.format_answer(
                     decoded_response.get('answer', ''),
                     execution_metadata=execution_metadata,
-                    parts=turn_charts,
+                    parts=turn_parts,
                 ),
                 # What the answer draws besides its text (BL-025): each part has
                 # an id and a kind, and the answer a slot where it goes.
-                'parts': turn_charts,
+                'parts': turn_parts,
                 'stats': combined_stats,
                 'answer_format': decoded_response.get('answer_format', ''),
                 'error_message': decoded_response.get('error_message', ''),
@@ -1153,6 +1159,30 @@ class llmClient:
         sanitized = dict(result)
         sanitized.pop("__native_attachments__", None)
         return sanitized, attachments
+
+    @staticmethod
+    def _file_part_from_result(function_name: str, result):
+        """The download card for a file a tool generated (BL-025): from the
+        tool's output contract (kind file, signed URL), or the usual
+        `download_link` + `filename` of the file generators."""
+        if not isinstance(result, dict):
+            return None
+        from iatoolkit.services.system_tools import get_system_tool_output_contract
+        contract = get_system_tool_output_contract(function_name) or {}
+        if contract and contract.get("kind") != "file":
+            return None
+        url = result.get(contract.get("url_field") or "download_link")
+        filename = result.get(contract.get("filename_field") or "filename")
+        if not isinstance(url, str) or not url.strip() or not isinstance(filename, str) or not filename.strip():
+            return None
+        return {
+            "id": uuid.uuid4().hex[:12],
+            "kind": "file",
+            "filename": filename.strip(),
+            "url": url.strip(),
+            "mime_type": result.get("content_type") or contract.get("mime_type") or "",
+            "tool": function_name,
+        }
 
     _FENCED_CHART_RE = re.compile(r"^```chart[ \t]*\n(.*?)\n```[ \t]*$", re.DOTALL | re.MULTILINE)
 
@@ -2044,13 +2074,23 @@ class llmClient:
 
     @classmethod
     def place_parts(cls, html: str, parts: Optional[List[Dict[str, Any]]] = None) -> str:
-        """The answer's chart markers replaced by the slots the chat fills (BL-025).
+        """The answer's parts in place: the slots the chat fills (BL-025).
 
-        A marker on its own line is its own paragraph and becomes the slot; a
-        marker for a chart this turn did not draw is dropped; a chart the model
-        never placed goes after the answer, so it is never lost."""
-        known = [str(part.get("id")) for part in (parts or []) if isinstance(part, dict) and part.get("id")]
+        A chart marker on its own line is its own paragraph and becomes the
+        slot; a marker for a chart this turn did not draw is dropped. A file
+        whose link the answer already has is drawn there by the chat; one the
+        answer never linked, like a chart never placed, goes after the answer,
+        so neither is lost."""
+        parts = [part for part in (parts or []) if isinstance(part, dict) and part.get("id")]
+        known = [str(part["id"]) for part in parts if part.get("kind") != "file"]
         placed: list[str] = []
+        for part in parts:
+            if part.get("kind") == "file" and part.get("url"):
+                url = str(part["url"])
+                if url in (html or "") or html_lib.escape(url, quote=True) in (html or ""):
+                    placed.append(str(part["id"]))
+                else:
+                    known.append(str(part["id"]))
 
         def slot(match: re.Match) -> str:
             part_id = match.group(1)

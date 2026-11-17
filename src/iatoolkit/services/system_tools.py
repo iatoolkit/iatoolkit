@@ -205,3 +205,13 @@ def get_system_tool_routing_profile(function_name: str) -> dict | None:
         return None
 
     return None
+
+
+def get_system_tool_output_contract(function_name: str) -> dict | None:
+    """The output contract a system tool declares (e.g. a file and its URL field)."""
+    target = str(function_name or "").strip()
+    for tool in SYSTEM_TOOLS_DEFINITIONS:
+        if str(tool.get("function_name") or "").strip() == target:
+            contract = tool.get("output_contract")
+            return copy.deepcopy(contract) if isinstance(contract, dict) else None
+    return None

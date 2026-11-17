@@ -662,3 +662,48 @@ class TestFencedChartFallback(_LLMClientFixture):
 
         assert result["parts"] == []
         assert "xychart-beta" in result["answer"]
+
+
+class TestFileParts(_LLMClientFixture):
+    """A file a tool generated is a part too: the chat draws it as a download card (BL-025)."""
+
+    def _excel_turn(self, answer):
+        self.dispatcher.dispatch.return_value = {
+            "filename": "reporte.xlsx", "attachment_token": "t",
+            "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "download_link": "/download/abc?x=1&y=2",
+        }
+        self.proxy.create_response.side_effect = [
+            _tool_response('r1', ('call1', 'iat_generate_excel', '{"filename": "reporte.xlsx", "data": []}')),
+            _final_response(answer),
+        ]
+        return self._invoke()
+
+    def test_the_file_is_a_part(self):
+        result = self._excel_turn("Listo: [📥 Descargar reporte.xlsx](/download/abc?x=1&y=2)")
+
+        [part] = result["parts"]
+        assert part["kind"] == "file"
+        assert part["filename"] == "reporte.xlsx"
+        assert part["url"] == "/download/abc?x=1&y=2"
+        assert part["mime_type"].endswith("spreadsheetml.sheet")
+
+    def test_a_linked_file_gets_no_extra_slot(self):
+        result = self._excel_turn("Listo: [📥 Descargar reporte.xlsx](/download/abc?x=1&y=2)")
+
+        assert "iat-part" not in result["answer"]
+        assert 'href="/download/abc?x=1&amp;y=2"' in result["answer"]
+
+    def test_a_file_the_answer_never_linked_still_shows(self):
+        result = self._excel_turn("Listo, generé el archivo.")
+
+        assert f'data-part-id="{result["parts"][0]["id"]}"' in result["answer"]
+
+    def test_a_tool_result_without_a_file_is_not_a_part(self):
+        self.dispatcher.dispatch.return_value = {"rows": [1, 2]}
+        self.proxy.create_response.side_effect = [
+            _tool_response('r1', ('call1', 'iat_sql_query', '{"database_key": "x", "query": "q"}')),
+            _final_response("dos filas"),
+        ]
+
+        assert self._invoke()["parts"] == []

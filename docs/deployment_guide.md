@@ -446,6 +446,55 @@ curl -X POST \
 ```
 
 ---
+#### Answer parts: charts and files
+
+Besides its text, an answer can show **parts**: a chart drawn with the
+`iat_chart` system tool, or a file a tool generated (`iat_generate_excel`,
+`iat_generate_pdf`). The response lists them in `parts`, always present (an empty
+list when there are none). The `answer` HTML has an empty slot where each one goes,
+`<div class="iat-part" data-part-id="..."></div>`; a file the answer already links
+has no slot, its link is the place. A client that does not draw parts can ignore
+the slots and read the data from `parts`.
+
+```json
+{
+  "answer": "<p>Así fue el año:</p>\n<div class=\"iat-part\" data-part-id=\"3f9c1a2b7d4e\"></div>\n<p>Octubre fue el mayor.</p>",
+  "parts": [
+    {
+      "id": "3f9c1a2b7d4e",
+      "kind": "chart",
+      "type": "bar",
+      "title": "Garantías emitidas por mes 2026",
+      "x": "mes",
+      "series": [{"field": "garantias", "label": "Garantías", "type": null}],
+      "format": "number",
+      "stacked": false,
+      "columns": ["mes", "garantias"],
+      "rows": [["2026-01", 4398], ["2026-02", 3829]],
+      "source": {"kind": "sql", "database_key": "erp", "query": "SELECT ..."},
+      "notes": [],
+      "echarts": {"dataset": {"source": [["mes", "garantias"], ["2026-01", 4398]]}, "series": [{"type": "bar"}]}
+    },
+    {
+      "id": "8a1d0c5e9f21",
+      "kind": "file",
+      "filename": "reporte.xlsx",
+      "url": "/download/<signed-token>",
+      "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "tool": "iat_generate_excel"
+    }
+  ]
+}
+```
+
+- `kind: "chart"`: `columns` and `rows` are the data as drawn (at most 500 rows; a
+  pie keeps 12 slices). `echarts` is a ready [ECharts](https://echarts.apache.org)
+  option with the data only; formatting, theme and toolbox are up to the client.
+  `source.kind` is `sql` (with the query) or `inline`.
+- `kind: "file"`: `url` is the signed download link, valid while its token is.
+- Parts are also saved with the query (`response.parts`), so a turn can be drawn again.
+
+---
 #### `POST /api/load-document`
 
 This endpoint programmatically uploads, processes, and permanently indexes a single 

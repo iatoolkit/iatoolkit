@@ -490,3 +490,55 @@
   font-size: 0.8rem;
   color: #6c757d;
 }
+
+/* ---- Download cards (BL-025) ------------------------------------------------ */
+.llm-output a.iat-file-card {
+  display: inline-flex;
+  vertical-align: middle;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0;
+  padding: 8px 14px 8px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 10px;
+  text-decoration: none;
+  color: inherit;
+  max-width: 100%;
+}
+
+.llm-output a.iat-file-card:hover,
+.llm-output a.iat-file-card:focus-visible {
+  border-color: #0d6efd;
+  background: rgba(13, 110, 253, 0.04);
+}
+
+.llm-output .iat-file-card-icon {
+  font-size: 1.6rem;
+  color: #198754;
+}
+
+.llm-output .iat-file-card-icon.bi-file-earmark-pdf {
+  color: #dc3545;
+}
+
+.llm-output .iat-file-card-icon.bi-file-earmark-word {
+  color: #0d6efd;
+}
+
+.llm-output .iat-file-card-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.llm-output .iat-file-card-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.llm-output .iat-file-card-action {
+  font-size: 0.8rem;
+  color: #6c757d;
+}
