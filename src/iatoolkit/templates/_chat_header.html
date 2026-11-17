@@ -73,13 +73,6 @@
                         </div>
                     </div>
                 </div>
-                <a href="{{ url_for('chat', company_short_name=company_short_name) if account_toolbar | default(false) else 'javascript:void(0);' }}"
-                   data-chat-action="history-button"
-                   id="history-button"
-                   class="ms-3 action-icon-style" title="{{ t('ui.tooltips.history') }}"
-                   style="color: {{ branding.header_text_color }};">
-                    <i class="bi bi-clock-history"></i>
-                </a>
                 <a href="{{ url_for('account', company_short_name=company_short_name) }}"
                    id="account-button"
                    class="ms-3 action-icon-style"

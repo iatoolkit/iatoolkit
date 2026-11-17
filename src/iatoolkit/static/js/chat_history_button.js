@@ -2,7 +2,8 @@ $(document).ready(function () {
     // Evento para abrir el modal de historial
     const historyModal = $('#historyModal');
 
-    $('#history-button').on('click', function() {
+    // Turns from before conversations (BL-001): opened from the conversations panel.
+    $('#conversations-history-button').on('click', function() {
         historyModal.modal('show');
         loadHistory();
     });

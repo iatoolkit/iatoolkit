@@ -211,6 +211,7 @@
         state.currentTitle = title || '';
         $('#conversation-title').text(id ? titleOf({ title }) : '');
         $('#conversation-rename-button').prop('hidden', !id);
+        $('#chat-panel').toggleClass('has-title', !!id);
         $('#conversations-list .conversation-item').each(function () {
             $(this).toggleClass('is-active', this.getAttribute('data-id') === id);
         });
@@ -468,8 +469,8 @@
         $('#conversations-backdrop').on('click', closeDrawer);
         $('#conversations-archived-button').on('click', () => showArchived(true));
         $('#conversations-back-button').on('click', () => showArchived(false));
-        // Turns from before conversations: the history modal, as it was.
-        $('#conversations-history-button').on('click', () => { closeDrawer(); $('#history-button').trigger('click'); });
+        // Turns from before conversations: chat_history_button.js opens the history modal.
+        $('#conversations-history-button').on('click', closeDrawer);
         $('#conversation-rename-button').on('click', startRenameCurrent);
         $('#conversation-title').on('dblclick', startRenameCurrent);
 

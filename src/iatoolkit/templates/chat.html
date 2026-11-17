@@ -21,8 +21,8 @@
 <!-- Conversations (BL-001): the person's conversations, newest first. -->
 <aside id="conversations-panel" class="conversations-panel chat-block" aria-label="{{ t('ui.conversations.panel_label') }}">
     <div class="conversations-panel-top">
-        <button type="button" id="new-conversation-button" class="btn btn-sm btn-outline-secondary conversations-new">
-            <i class="bi bi-plus-lg" aria-hidden="true"></i> {{ t('ui.conversations.new') }}
+        <button type="button" id="new-conversation-button" class="btn btn-sm btn-branded-primary conversations-new">
+            <i class="bi bi-pencil-square" aria-hidden="true"></i> {{ t('ui.conversations.new') }}
         </button>
         <button type="button" id="conversations-collapse-button" class="btn btn-sm conversations-icon-button"
                 title="{{ t('ui.conversations.hide_panel') }}" aria-label="{{ t('ui.conversations.hide_panel') }}">
@@ -48,6 +48,7 @@
 <div id="conversations-backdrop" class="conversations-backdrop" hidden></div>
 
 <div class="chat-main">
+<div id="chat-panel" class="chat-panel chat-block">
 <div id="conversation-bar" class="conversation-bar">
     <button type="button" id="conversations-open-button" class="btn btn-sm conversations-icon-button"
             title="{{ t('ui.conversations.show_panel') }}" aria-label="{{ t('ui.conversations.show_panel') }}">
@@ -61,20 +62,21 @@
 </div>
 
 <div id="chat-container"
-     class="chat-block mt-2 flex-grow-1" style="overflow-y: auto;">
+     class="flex-grow-1" style="overflow-y: auto;">
 
     <!-- Mensaje de bienvenida  -->
     <div class="answer-section">
          {{ t('ui.chat.welcome_message') }}
     </div>
 </div>
+</div><!-- .chat-panel -->
 
 <!-- Input oculto de FilePond -->
 <div class="filepond-container" style="display: none;">
     <input type="file" id="file-upload" class="filepond" data-max-files="5" multiple>
 </div>
 
-<div id="input-area" class="input-area chat-block  mt-2 mb-2">
+<div id="input-area" class="input-area chat-block mt-2">
 
     <!-- 1. Contenido Colapsable del Asistente de prompts -->
     <div class="collapse" id="prompt-assistant-collapse">

@@ -72,7 +72,9 @@ def test_profile_renders_without_tokens(account_app):
     assert 'id="company-section"' in html
     assert 'data-account-page="true"' in html
     assert 'id="llm-model-button"' in html
-    assert 'data-chat-action="history-button"' in html
+    # The history is reached from the conversations panel (BL-001), not the toolbar.
+    assert 'data-chat-action="history-button"' not in html
+    assert 'data-chat-action="memory-button"' in html
     # The context is managed by the history itself (BL-009): nothing to reload by hand.
     assert 'force-reload-button' not in html
     assert 'data-chat-action="logout-button"' in html
