@@ -1922,6 +1922,9 @@ li {
     gap: 0.25rem;
 }
 
+/* Neutral on purpose: the brand colour is the header's and the send
+   button's; a solid brand block here competed with both (strong brand
+   colours, e.g. Maxxa's orange) and can lose contrast with light ones. */
 .conversations-new {
     flex: 1;
     display: inline-flex;
@@ -1931,6 +1934,16 @@ li {
     font-weight: 500;
     border-radius: 0.5rem;
     padding: 0.4rem 0.75rem;
+    background: #fff;
+    border: 1px solid #dee2e6;
+    color: #343a40;
+}
+
+.conversations-new:hover,
+.conversations-new:focus-visible {
+    background: #f1f3f5;
+    border-color: #ced4da;
+    color: #212529;
 }
 
 
