@@ -335,6 +335,28 @@ class ConversationService:
             shown.append(item)
         return shown
 
+    def answer_for_display(self, company_short_name: str, query_id: int, answer_formatter=None,
+                           file_retention_days: int | None = DEFAULT_FILE_RETENTION_DAYS) -> dict | None:
+        """One answer as the chat draws it, by its turn in iat_queries: for an
+        operator looking at a run (monitoring), whatever channel it came from.
+        None when the company has no such query."""
+        company = self.profile_repo.get_company_by_short_name(company_short_name)
+        if company is None or not query_id:
+            return None
+        query = self.conversation_repo.get_queries(company.id, [int(query_id)]).get(int(query_id))
+        if query is None:
+            return None
+        response = query.response if isinstance(query.response, dict) else {}
+        parts = response.get("parts") if isinstance(response.get("parts"), list) else []
+        parts = self._mark_expired_files(parts, query.created_at, file_retention_days)
+        text = query.output or ""
+        return {
+            "query_id": query.id,
+            "answer": answer_formatter(text, parts) if answer_formatter else text,
+            "answer_text": text,
+            "parts": parts,
+        }
+
     # ------------------------------------------------------------------ title
     TITLE_AGENT_KEY = "conversation_title"
     TITLE_ANSWER_CHARS = 1500

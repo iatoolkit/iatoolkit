@@ -141,6 +141,27 @@ class TestConversationService:
         self.service.append_turn(conversation, question="q", answer_text="a", llm_query_id=None, user_identifier=ANA)
         assert self.service.is_first_turn(conversation) is False
 
+    def test_one_answer_is_drawn_again_by_its_query(self):
+        from datetime import datetime, timedelta
+        chart = {"id": "c1", "kind": "chart"}
+        old_file = {"id": "f1", "kind": "file", "url": "/x.xlsx"}
+        query = self._query("Ver [[chart:c1]]")
+        query.response = {"parts": [chart, old_file]}
+        query.created_at = datetime.now() - timedelta(days=10)
+        self.session.commit()
+
+        shown = self.service.answer_for_display("acme", query.id,
+                                                answer_formatter=lambda text, parts: f"<p>{text}</p>|{len(parts)}")
+
+        assert shown["answer"] == "<p>Ver [[chart:c1]]</p>|2"
+        assert shown["answer_text"] == "Ver [[chart:c1]]"
+        assert shown["parts"] == [chart, dict(old_file, expired=True)]
+
+    def test_an_answer_of_another_company_is_not_found(self):
+        query = self._query()
+        assert self.service.answer_for_display("other", query.id) is None
+        assert self.service.answer_for_display("acme", 999999) is None
+
     def test_meta_keeps_what_was_there(self):
         conversation = self.service.create("acme", ANA)
 

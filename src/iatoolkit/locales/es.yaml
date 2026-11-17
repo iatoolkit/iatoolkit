@@ -138,7 +138,7 @@ ui:
       no_tools: "No se usaron herramientas en esta sesión."
       primary_input: "Entrada Principal"
       prompt_args: "Argumentos del Prompt (Client Data)"
-      llm_output: "Salida LLM (JSON Crudo)"
+      llm_output: "Respuesta"
       raw_response: "Respuesta cruda"
       structured_output: "Structured Output"
       additional_data: "Additional Data"
