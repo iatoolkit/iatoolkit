@@ -208,3 +208,21 @@ class TestGeneratedTitle:
             self.service.generate_title("acme", ANA, conversation)
 
         assert conversation.title == "genera un gráfico con las garantías…"
+
+
+class TestSnippet:
+    def test_the_words_around_the_match_on_one_line(self):
+        text = "Inicio. " + "palabra " * 40 + "aquí está **Alemania** con 4\nclientes. " + "fin " * 40
+
+        snippet = ConversationService.snippet(text, "alemania")
+
+        assert "Alemania" in snippet and "\n" not in snippet and "**" not in snippet
+        assert snippet.startswith("…") and snippet.endswith("…")
+        assert len(snippet) <= ConversationService.SNIPPET_CHARS + 2
+
+    def test_a_short_text_is_whole(self):
+        assert ConversationService.snippet("hola Alemania", "alemania") == "hola Alemania"
+
+    def test_markdown_marks_leave_no_gaps(self):
+        assert ConversationService.snippet("Germany had **4 customers**.", "germany") == "Germany had 4 customers."
+        assert ConversationService.snippet("| Germany | 4 |", "germany") == "Germany 4"

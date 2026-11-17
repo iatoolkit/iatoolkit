@@ -57,11 +57,36 @@ class ConversationRepo:
             Conversation.status == status,
         )
         if search:
-            query = query.filter(Conversation.title.ilike(f"%{search}%"))
+            # The title or what was said in it (BL-001): the person's questions
+            # and the assistant's answers as written.
+            pattern = f"%{search}%"
+            in_messages = (self.session.query(ConversationMessage.id)
+                           .filter(ConversationMessage.conversation_id == Conversation.id,
+                                   ConversationMessage.role.in_([ConversationMessage.ROLE_USER,
+                                                                 ConversationMessage.ROLE_ASSISTANT]),
+                                   ConversationMessage.content.ilike(pattern))
+                           .exists())
+            query = query.filter(or_(Conversation.title.ilike(pattern), in_messages))
         if before is not None:
             query = query.filter(Conversation.last_message_at < before)
         return (query.order_by(Conversation.last_message_at.desc(), Conversation.id.desc())
                 .limit(limit).all())
+
+    def matching_messages(self, conversation_ids: list[int], search: str) -> dict[int, ConversationMessage]:
+        """The latest message of each conversation that says `search`."""
+        if not conversation_ids or not search:
+            return {}
+        rows = (self.session.query(ConversationMessage)
+                .filter(ConversationMessage.conversation_id.in_(conversation_ids),
+                        ConversationMessage.role.in_([ConversationMessage.ROLE_USER,
+                                                      ConversationMessage.ROLE_ASSISTANT]),
+                        ConversationMessage.content.ilike(f"%{search}%"))
+                .order_by(ConversationMessage.created_at.desc(), ConversationMessage.id.desc())
+                .all())
+        found: dict[int, ConversationMessage] = {}
+        for row in rows:
+            found.setdefault(row.conversation_id, row)
+        return found
 
     # ------------------------------------------------------------ messages
     def add_messages(self, conversation: Conversation, messages: list[ConversationMessage]):

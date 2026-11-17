@@ -1936,6 +1936,35 @@ li {
     background: #e7f1ff;
 }
 
+.conversation-item-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.conversation-item-snippet {
+    font-size: 0.78rem;
+    color: #6c757d;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.conversation-item-snippet mark {
+    padding: 0;
+    background: #fff3bf;
+    color: inherit;
+}
+
+#chat-container .search-hit {
+    outline: 2px solid #ffd43b;
+    outline-offset: 4px;
+    border-radius: 6px;
+    transition: outline-color 0.6s ease;
+}
+
 .conversation-item-title {
     flex: 1;
     min-width: 0;

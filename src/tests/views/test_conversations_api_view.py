@@ -157,3 +157,22 @@ class TestConversationsApi:
         assert old["parts"][0]["expired"] is True
         assert "expired" not in old["parts"][1]
 
+
+    def test_search_finds_words_inside_the_messages_and_says_where(self, api):
+        ventas = api.service.create("acme", ANA, title="Ventas")
+        api.service.append_turn(ventas, question="¿cuántos clientes hay en Alemania?",
+                                answer_text="Alemania tiene **4** clientes activos.", llm_query_id=None,
+                                user_identifier=ANA)
+        api.service.create("acme", ANA, title="Garantías")
+        titled = api.service.create("acme", ANA, title="Informe de Alemania")
+        other = api.service.create("acme", BETO, title="De Beto")
+        api.service.append_turn(other, question="Alemania", answer_text="x", llm_query_id=None, user_identifier=BETO)
+
+        found = api.get("/acme/api/conversations?q=alemania").get_json()["conversations"]
+
+        by_id = {c["id"]: c for c in found}
+        assert set(by_id) == {ventas.public_id, titled.public_id}
+        assert by_id[titled.public_id]["match"] is None
+        match = by_id[ventas.public_id]["match"]
+        assert match["role"] == "assistant"
+        assert "Alemania tiene 4 clientes activos." in match["snippet"]

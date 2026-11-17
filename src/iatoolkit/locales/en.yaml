@@ -16,7 +16,7 @@ ui:
     new: "New conversation"
     hide_panel: "Hide conversations"
     show_panel: "Conversations"
-    search: "Search"
+    search: "Search conversations"
     archived_title: "Archived"
     back: "Back"
     view_archived: "View archived"

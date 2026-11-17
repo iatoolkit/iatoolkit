@@ -5,7 +5,8 @@
 
 """The person's conversations (BL-001).
 
-    GET    /<co>/api/conversations                 list (?archived=1&q=...&before=ISO&limit=50)
+    GET    /<co>/api/conversations                 list (?archived=1&q=...&before=ISO&limit=50);
+                                                    q searches titles and messages
     POST   /<co>/api/conversations                 create an empty one ({"title"})
     GET    /<co>/api/conversations/<id>            one conversation
     PATCH  /<co>/api/conversations/<id>            rename ({"title"}) or archive/restore ({"status"})
@@ -89,13 +90,18 @@ class ConversationsApiView(MethodView):
                 return error
             if conversation_id is None:
                 limit = request.args.get("limit", type=int) or ConversationService.PAGE_SIZE
+                archived = request.args.get("archived") in ("1", "true", "yes")
+                before = self._parse_before(request.args.get("before"))
+                search = str(request.args.get("q") or "").strip()
+                if search:
+                    # Title or messages; each result says where it matched.
+                    found = self.conversation_service.search_for_user(
+                        company_short_name, user_identifier, search, archived=archived, before=before,
+                        limit=limit + 1)
+                    conversations = [dict(item.to_dict(), match=match) for item, match in found[:limit]]
+                    return jsonify({"conversations": conversations, "has_more": len(found) > limit}), 200
                 items = self.conversation_service.list_for_user(
-                    company_short_name, user_identifier,
-                    archived=request.args.get("archived") in ("1", "true", "yes"),
-                    search=request.args.get("q"),
-                    before=self._parse_before(request.args.get("before")),
-                    limit=limit + 1,
-                )
+                    company_short_name, user_identifier, archived=archived, before=before, limit=limit + 1)
                 return jsonify({
                     "conversations": [item.to_dict() for item in items[:limit]],
                     "has_more": len(items) > limit,

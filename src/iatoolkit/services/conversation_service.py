@@ -117,6 +117,42 @@ class ConversationService:
             company.id, self._owner(user_identifier), status=status,
             search=str(search or "").strip() or None, before=before, limit=size)
 
+    SNIPPET_CHARS = 120
+
+    @classmethod
+    def snippet(cls, text: str, search: str) -> str:
+        """The words around the first match, on one line, for the search results."""
+        # Markdown marks go; a table's cell separators become spaces.
+        plain = re.sub(r"[*_`#>]", "", str(text or "")).replace("|", " ")
+        flat = re.sub(r"\s+", " ", plain).strip()
+        position = flat.lower().find(str(search or "").lower())
+        if position < 0:
+            return flat[:cls.SNIPPET_CHARS]
+        start = max(0, position - cls.SNIPPET_CHARS // 3)
+        end = min(len(flat), start + cls.SNIPPET_CHARS)
+        start = max(0, end - cls.SNIPPET_CHARS)
+        piece = flat[start:end].strip()
+        return ("…" if start > 0 else "") + piece + ("…" if end < len(flat) else "")
+
+    def search_for_user(self, company_short_name: str, user_identifier: str, search: str, *,
+                        archived: bool = False, before: datetime | None = None,
+                        limit: int | None = None) -> list[tuple[Conversation, dict | None]]:
+        """Conversations whose title or messages say `search`, each with where it
+        matched in its messages (None when only the title did)."""
+        conversations = self.list_for_user(company_short_name, user_identifier, archived=archived,
+                                           search=search, before=before, limit=limit)
+        clean = str(search or "").strip()
+        matches = self.conversation_repo.matching_messages([c.id for c in conversations], clean)
+        results = []
+        for conversation in conversations:
+            message = matches.get(conversation.id)
+            match = None
+            if message is not None:
+                match = {"message_id": message.id, "role": message.role,
+                         "snippet": self.snippet(message.content, clean)}
+            results.append((conversation, match))
+        return results
+
     def rename(self, conversation: Conversation, title: str) -> Conversation:
         clean = self.clean_title(title)
         if not clean:

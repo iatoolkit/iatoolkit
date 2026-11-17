@@ -28,7 +28,7 @@ ui:
     new: "Nueva conversación"
     hide_panel: "Ocultar conversaciones"
     show_panel: "Conversaciones"
-    search: "Buscar"
+    search: "Buscar en conversaciones"
     archived_title: "Archivadas"
     back: "Volver"
     view_archived: "Ver archivadas"

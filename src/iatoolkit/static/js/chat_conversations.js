@@ -115,6 +115,27 @@
         return dropdown.append(toggle, menu);
     }
 
+    /** The text with each occurrence of `query` marked, built from text nodes only. */
+    function highlighted(text, query) {
+        const element = $('<span>');
+        const value = String(text || '');
+        const needle = String(query || '').toLowerCase();
+        if (!needle) return element.text(value);
+        let index = 0;
+        const lower = value.toLowerCase();
+        while (index < value.length) {
+            const found = lower.indexOf(needle, index);
+            if (found < 0) {
+                element.append(document.createTextNode(value.slice(index)));
+                break;
+            }
+            if (found > index) element.append(document.createTextNode(value.slice(index, found)));
+            element.append($('<mark>').text(value.slice(found, found + needle.length)));
+            index = found + needle.length;
+        }
+        return element;
+    }
+
     function renderList() {
         const list = $('#conversations-list').empty();
         if (!state.items.length && !state.loading) {
@@ -134,10 +155,19 @@
             }
             const row = $('<div>').addClass('conversation-item').attr({ role: 'listitem', 'data-id': item.id, tabindex: 0 })
                 .toggleClass('is-active', item.id === state.currentId);
-            row.append($('<span>').addClass('conversation-item-title').text(titleOf(item)).attr('title', titleOf(item)));
-            row.append(menuFor(item));
-            row.on('click', () => open(item.id));
-            row.on('keydown', (event) => { if (event.key === 'Enter') open(item.id); });
+            const text = $('<div>').addClass('conversation-item-text');
+            text.append($('<span>').addClass('conversation-item-title').text(titleOf(item)).attr('title', titleOf(item)));
+            // A search that matched inside the conversation shows where.
+            const match = item.match;
+            if (match && match.snippet) {
+                text.append(highlighted(match.snippet, state.search).addClass('conversation-item-snippet'));
+            }
+            row.append(text, menuFor(item));
+            const focus = match ? match.message_id : null;
+            row.on('click', () => open(item.id, { focusMessageId: focus, force: !!focus }));
+            row.on('keydown', (event) => {
+                if (event.key === 'Enter') open(item.id, { focusMessageId: focus, force: !!focus });
+            });
             list.append(row);
         });
     }
@@ -215,6 +245,7 @@
         const chat = $('#chat-container');
         chat.empty();
         (messages || []).forEach((message) => {
+            const before = chat.children().length;
             if (message.role === 'user') {
                 const files = (message.attachments || []).map((a) => ({ file: { name: a.name || '', type: '' } }));
                 displayUserMessage(message.content || '', true, message.content || '', files);
@@ -234,11 +265,21 @@
                     .append($('<i>').addClass('bi bi-exclamation-triangle'), $('<p>').text(message.content || ''));
                 global.displayBotMessage(error);
             }
+            // Tag what this message added, so a search can bring it into view.
+            chat.children().slice(before, before + 1).attr('data-message-id', message.id);
         });
         chat.scrollTop(chat[0].scrollHeight);
     }
 
-    async function open(id, { force = false } = {}) {
+    function focusMessage(messageId) {
+        const target = $(`#chat-container [data-message-id="${messageId}"]`);
+        if (!target.length) return;
+        target[0].scrollIntoView({ block: 'center' });
+        target.addClass('search-hit');
+        setTimeout(() => target.removeClass('search-hit'), 2500);
+    }
+
+    async function open(id, { force = false, focusMessageId = null } = {}) {
         if (!id || (!force && id === state.currentId)) { closeDrawer(); return; }
         if (!stopTurnIfRunning()) return;
         closeDrawer();
@@ -247,6 +288,7 @@
             if (!data) return;
             setCurrent(data.conversation.id, data.conversation.title);
             drawMessages(data.messages);
+            if (focusMessageId) focusMessage(focusMessageId);
         } catch (error) {
             console.error('conversations: open', error);
             if (global.toastr) global.toastr.error(t('conv_open_error', 'No se pudo abrir la conversación.'));
