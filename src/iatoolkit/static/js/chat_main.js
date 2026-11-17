@@ -325,6 +325,15 @@ function processBotResponse(responseData, options = {}) {
 
     // 3. Mostrar el contenedor completo
     displayBotMessage(botMessageContainer);
+
+    // 4. Charts and other parts (BL-025) fill their slots once the answer is on
+    //    the page, where they have a width to draw in.
+    if (window.IATCharts && Array.isArray(responseData.parts) && responseData.parts.length) {
+        window.IATCharts.renderParts(answerSection, responseData.parts).then(() => {
+            const chatContainer = $('#chat-container');
+            chatContainer.scrollTop(chatContainer[0].scrollHeight);
+        });
+    }
 }
 
 function appendInlineAnswerSaveButton(answerSection, saveButton) {

@@ -400,3 +400,93 @@
   border-left: 3px solid #ffc107;
   padding-left: 10px;
 }
+
+/* ---- Output charts (BL-025) ------------------------------------------------ */
+.llm-output .iat-chart {
+  margin: 14px 0;
+  padding: 12px 12px 8px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 10px;
+  max-width: 100%;
+}
+
+.llm-output .iat-chart-canvas {
+  width: 100%;
+  position: relative;
+}
+
+.llm-output .iat-chart-pending {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  min-height: 48px;
+  color: #6c757d;
+  font-size: 0.9rem;
+}
+
+.llm-output .iat-chart-pending-inline {
+  display: block;
+  margin: 12px 0;
+  padding: 18px;
+  border: 1px dashed rgba(0, 0, 0, 0.15);
+  border-radius: 10px;
+}
+
+.llm-output .iat-chart-failed {
+  color: #b02a37;
+}
+
+.llm-output .iat-chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 6px;
+}
+
+.llm-output .iat-chart-control {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: #6c757d;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.llm-output .iat-chart-control:hover,
+.llm-output .iat-chart-control:focus-visible {
+  color: #0d6efd;
+  text-decoration: underline;
+}
+
+.llm-output .iat-chart-data {
+  max-height: 340px;
+  overflow: auto;
+}
+
+.llm-output .iat-chart-data table {
+  margin: 0;
+}
+
+.llm-output .iat-chart-sql {
+  margin-top: 4px;
+  font-size: 0.82rem;
+  color: #6c757d;
+}
+
+.llm-output .iat-chart-sql summary {
+  cursor: pointer;
+}
+
+.llm-output .iat-chart-sql pre {
+  margin: 6px 0 0;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.llm-output .iat-chart-note {
+  margin-top: 4px;
+  font-size: 0.8rem;
+  color: #6c757d;
+}

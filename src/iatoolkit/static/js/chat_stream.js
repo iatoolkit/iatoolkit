@@ -218,6 +218,10 @@
         } else {
             html = $('<div>').text(text).html().replace(/\n/g, '<br>');
         }
+        if (window.IATCharts) {
+            // A chart marker (BL-025) waits as a block until the final answer draws it.
+            html = window.IATCharts.replaceMarkersWhileStreaming(html);
+        }
         return typeof window.sanitizeHtmlFragment === 'function'
             ? window.sanitizeHtmlFragment(html)
             : $('<div>').text(text).html();

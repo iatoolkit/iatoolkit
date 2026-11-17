@@ -1,0 +1,232 @@
+/**
+ * Output charts in the chat (BL-025).
+ *
+ * The server sends each chart as a part of the answer: its ECharts option
+ * (data only, built by ChartService), its rows and where they came from. The
+ * answer HTML has an empty slot per part (`.iat-part[data-part-id]`); this
+ * module fills it. ECharts loads from the CDN the first time an answer has a
+ * chart. Number formatting, the theme and the controls (image, bars/lines,
+ * the data as a table, CSV, the SQL) are added here, never by the model.
+ */
+(function (global) {
+    'use strict';
+
+    const ECHARTS_URL = 'https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js';
+    const CHART_HEIGHT_PX = 340;
+    const MARKER = /\[\[chart:([a-z0-9]{6,32})\]\]/g;
+
+    let echartsLoading = null;
+
+    function t(key, fallback) {
+        if (typeof global.t_js === 'function') {
+            const text = global.t_js(key);
+            if (text && text !== key) return text;
+        }
+        return fallback || key;
+    }
+
+    function loadEcharts() {
+        if (global.echarts) return Promise.resolve(global.echarts);
+        if (echartsLoading) return echartsLoading;
+        echartsLoading = new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = ECHARTS_URL;
+            script.async = true;
+            script.onload = () => (global.echarts ? resolve(global.echarts) : reject(new Error('echarts missing')));
+            script.onerror = () => {
+                echartsLoading = null;
+                reject(new Error('echarts failed to load'));
+            };
+            document.head.appendChild(script);
+        });
+        return echartsLoading;
+    }
+
+    function isDarkTheme() {
+        const root = document.documentElement;
+        const explicit = root.getAttribute('data-bs-theme') || document.body.getAttribute('data-bs-theme');
+        if (explicit) return explicit === 'dark';
+        return false;
+    }
+
+    function locale() {
+        return document.documentElement.lang || navigator.language || 'es';
+    }
+
+    function numberFormatter(format) {
+        const plain = new Intl.NumberFormat(locale(), { maximumFractionDigits: 2 });
+        return (value) => {
+            if (value === null || value === undefined || value === '' || isNaN(Number(value))) return '–';
+            const text = plain.format(Number(value));
+            if (format === 'percent') return `${text} %`;
+            if (format === 'currency') return `$${text}`;
+            return text;
+        };
+    }
+
+    /** The server's option, plus what a function or the page decides. */
+    function finishOption(chart, dark) {
+        const option = JSON.parse(JSON.stringify(chart.echarts || {}));
+        const formatValue = numberFormatter(chart.format);
+        option.backgroundColor = 'transparent';
+        option.animationDuration = 400;
+        option.tooltip = Object.assign({}, option.tooltip, { valueFormatter: formatValue, confine: true });
+        if (option.yAxis && option.yAxis.type === 'value') {
+            option.yAxis = Object.assign({}, option.yAxis, { axisLabel: { formatter: formatValue } });
+        }
+        if (option.xAxis && option.xAxis.type === 'category') {
+            option.xAxis = Object.assign({}, option.xAxis, { axisLabel: { hideOverlap: true } });
+        }
+        if (option.title) {
+            option.title = Object.assign({}, option.title, {
+                textStyle: { fontSize: 15, fontWeight: 600, color: dark ? '#e6e6e6' : '#212529' },
+            });
+        }
+
+        const features = {
+            saveAsImage: {
+                title: t('chart_download_png', 'Descargar imagen'),
+                name: (chart.title || 'grafico').replace(/[^\w\-áéíóúñÁÉÍÓÚÑ ]+/g, '').trim() || 'grafico',
+                backgroundColor: dark ? '#212529' : '#ffffff',
+                pixelRatio: 2,
+            },
+        };
+        if (['bar', 'line', 'area', 'combo'].includes(chart.type)) {
+            const types = ['bar', 'line'];
+            if ((chart.series || []).length > 1) types.push('stack');
+            features.magicType = {
+                type: types,
+                title: { bar: t('chart_as_bars', 'Barras'), line: t('chart_as_lines', 'Líneas'), stack: t('chart_stack', 'Apilar') },
+            };
+        }
+        option.toolbox = { right: 4, top: 0, itemSize: 14, feature: features };
+        return option;
+    }
+
+    function csvOf(chart) {
+        const escape = (value) => {
+            const text = value === null || value === undefined ? '' : String(value);
+            return /[",\n;]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+        };
+        const lines = [chart.columns || []].concat(chart.rows || []).map((row) => row.map(escape).join(','));
+        return '﻿' + lines.join('\n');
+    }
+
+    function download(filename, content, type) {
+        const blob = new Blob([content], { type });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    function dataTable(chart) {
+        const labels = {};
+        (chart.series || []).forEach((s) => { labels[s.field] = s.label || s.field; });
+        const formatValue = numberFormatter(chart.format);
+        const table = $('<table>');
+        const head = $('<tr>');
+        (chart.columns || []).forEach((column) => head.append($('<th>').text(labels[column] || column)));
+        table.append($('<thead>').append(head));
+        const body = $('<tbody>');
+        (chart.rows || []).forEach((row) => {
+            const tr = $('<tr>');
+            row.forEach((value, index) => {
+                const cell = $('<td>');
+                if (index === 0) cell.text(value === null ? '' : String(value));
+                else cell.attr('align', 'right').text(formatValue(value));
+                tr.append(cell);
+            });
+            body.append(tr);
+        });
+        return $('<div>').addClass('iat-chart-data').append(table.append(body));
+    }
+
+    function controls(chart, figure) {
+        const bar = $('<div>').addClass('iat-chart-controls');
+        const canvas = figure.find('.iat-chart-canvas');
+        let table = null;
+
+        const toggle = $('<button type="button">').addClass('iat-chart-control').text(t('chart_view_data', 'Ver datos'));
+        toggle.on('click', () => {
+            if (!table) {
+                table = dataTable(chart).hide();
+                canvas.after(table);
+            }
+            const showing = table.is(':visible');
+            table.toggle(!showing);
+            canvas.toggle(showing);
+            toggle.text(showing ? t('chart_view_data', 'Ver datos') : t('chart_view_chart', 'Ver gráfico'));
+            if (showing && figure.data('chart')) figure.data('chart').resize();
+        });
+
+        const csv = $('<button type="button">').addClass('iat-chart-control').text(t('chart_download_csv', 'Descargar CSV'));
+        csv.on('click', () => download(`${chart.title || 'grafico'}.csv`, csvOf(chart), 'text/csv;charset=utf-8'));
+
+        bar.append(toggle, csv);
+
+        const source = chart.source || {};
+        if (source.kind === 'sql' && source.query) {
+            const details = $('<details>').addClass('iat-chart-sql');
+            details.append($('<summary>').text(`${t('chart_show_sql', 'Consulta SQL')} · ${source.database_key || ''}`));
+            details.append($('<pre>').append($('<code>').text(source.query)));
+            figure.append(bar, details);
+        } else {
+            figure.append(bar);
+        }
+        (chart.notes || []).forEach((note) => figure.append($('<div>').addClass('iat-chart-note').text(note)));
+    }
+
+    function renderChart(slot, chart) {
+        const figure = $('<figure>').addClass('iat-chart').attr('data-part-id', chart.id);
+        const canvas = $('<div>').addClass('iat-chart-canvas').css('height', `${CHART_HEIGHT_PX}px`);
+        const pending = $('<div>').addClass('iat-chart-pending').text(t('chart_pending', 'Preparando el gráfico…'));
+        figure.append(canvas.append(pending));
+        $(slot).replaceWith(figure);
+
+        return loadEcharts().then((echarts) => {
+            pending.remove();
+            const dark = isDarkTheme();
+            const instance = echarts.init(canvas[0], dark ? 'dark' : null, { renderer: 'canvas' });
+            instance.setOption(finishOption(chart, dark));
+            figure.data('chart', instance);
+            if (typeof ResizeObserver === 'function') {
+                const observer = new ResizeObserver(() => instance.resize());
+                observer.observe(canvas[0]);
+            }
+            controls(chart, figure);
+        }).catch(() => {
+            pending.text(t('chart_unavailable', 'No se pudo dibujar el gráfico.')).addClass('iat-chart-failed');
+            // The numbers are still worth having: offer them as a table.
+            controls(chart, figure);
+        });
+    }
+
+    /** Fills the answer's part slots with the parts the turn returned. */
+    function renderParts(container, parts) {
+        const byId = {};
+        (parts || []).forEach((part) => { if (part && part.id) byId[part.id] = part; });
+        const pending = [];
+        $(container).find('.iat-part[data-part-id]').each(function () {
+            const part = byId[this.getAttribute('data-part-id')];
+            if (part && part.kind === 'chart') {
+                pending.push(renderChart(this, part));
+            } else if (!part) {
+                $(this).remove();
+            }
+        });
+        return Promise.all(pending);
+    }
+
+    /** While the answer streams, a marker shows as a waiting block. */
+    function replaceMarkersWhileStreaming(html) {
+        return String(html || '').replace(MARKER, () =>
+            `<span class="iat-chart-pending iat-chart-pending-inline">${$('<span>').text(t('chart_pending', 'Preparando el gráfico…')).html()}</span>`);
+    }
+
+    global.IATCharts = { renderParts, replaceMarkersWhileStreaming, loadEcharts, ECHARTS_URL };
+})(window);
