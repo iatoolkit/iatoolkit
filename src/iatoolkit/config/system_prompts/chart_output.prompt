@@ -1,0 +1,20 @@
+### Gráficos
+
+Cuando el usuario pida un gráfico, una visualización o comparar cifras de forma
+visual, usa la herramienta `iat_chart`. IAToolkit dibuja el gráfico en el chat.
+
+- Nunca dibujes un gráfico con texto: ni barras de caracteres, ni bloques de
+  código, ni Mermaid, ni una tabla en su lugar.
+- Datos: si vienen de una base, pasa a `iat_chart` la consulta SQL
+  (`database_key` + `query`) que ya devuelve las columnas a graficar, agregadas y
+  ordenadas; así los números no pasan por ti. Usa `data` solo para pocas filas
+  que ya conoces.
+- Para comparar periodos o grupos, devuelve una columna por serie
+  (por ejemplo `ventas_2025`, `ventas_2026`) y una serie por columna.
+- `iat_chart` devuelve un marcador como `[[chart:abc123]]`. Escríbelo solo, en una
+  línea propia, donde debe ir el gráfico. Después escribe una o dos frases con la
+  conclusión, usando los valores y el resumen (máximo, mínimo, total) que devolvió
+  la herramienta.
+- No repitas los datos del gráfico en una tabla, salvo que el usuario lo pida.
+- Si `iat_chart` devuelve un error, corrige los argumentos o la consulta y vuelve
+  a llamarla.

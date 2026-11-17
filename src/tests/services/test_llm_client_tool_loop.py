@@ -636,3 +636,29 @@ class TestPlaceParts:
                                     parts=[{"id": "aaaaaa"}])
 
         assert "[[chart" not in text and "iat-part" not in text
+
+
+class TestFencedChartFallback(_LLMClientFixture):
+    """A model that writes a ```chart block instead of calling iat_chart (BL-025)."""
+
+    def test_a_chart_block_with_data_becomes_a_real_chart(self):
+        block = json.dumps({"type": "bar", "x": "mes", "series": ["n"],
+                            "data": [{"mes": "Ene", "n": 0}, {"mes": "Feb", "n": 2}]})
+        self.proxy.create_response.side_effect = [
+            _final_response(f"Garantías por mes:\n\n```chart\n{block}\n```\n\nFebrero tuvo 2.")]
+
+        result = self._invoke()
+
+        assert len(result["parts"]) == 1
+        assert result["parts"][0]["rows"] == [["Ene", 0], ["Feb", 2]]
+        assert f'data-part-id="{result["parts"][0]["id"]}"' in result["answer"]
+        assert "```" not in result["answer"] and "<code" not in result["answer"]
+
+    def test_a_block_that_is_not_a_chart_stays_as_code(self):
+        self.proxy.create_response.side_effect = [
+            _final_response("```chart\nxychart-beta\n  bar [0, 2]\n```")]
+
+        result = self._invoke()
+
+        assert result["parts"] == []
+        assert "xychart-beta" in result["answer"]

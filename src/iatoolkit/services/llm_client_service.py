@@ -749,6 +749,12 @@ class llmClient:
             # decode the LLM response
             decoded_response = self.decode_response(response)
             decoded_response = self._apply_response_contract(decoded_response, response_contract)
+            # A model that wrote a ```chart block instead of calling iat_chart
+            # still gets a real chart (BL-025), validated like the tool's.
+            if isinstance(decoded_response.get('answer'), str):
+                decoded_response['answer'], fenced_charts = self._charts_from_fenced_blocks(
+                    decoded_response['answer'])
+                turn_charts.extend(fenced_charts)
 
             # Extract reasoning from the final response object
             final_reasoning = getattr(response, 'reasoning_content', '')
@@ -1147,6 +1153,36 @@ class llmClient:
         sanitized = dict(result)
         sanitized.pop("__native_attachments__", None)
         return sanitized, attachments
+
+    _FENCED_CHART_RE = re.compile(r"^```chart[ \t]*\n(.*?)\n```[ \t]*$", re.DOTALL | re.MULTILINE)
+
+    @classmethod
+    def _charts_from_fenced_blocks(cls, answer: str):
+        """```chart blocks with IAToolkit's chart schema and inline data, turned
+        into charts and markers (BL-025). A block that is not a valid chart is
+        left as the code it is."""
+        if "```chart" not in (answer or ""):
+            return answer, []
+        from iatoolkit.services.chart_service import ChartService
+        charts = []
+        builder = ChartService(sql_service=None)
+
+        def replace(match: re.Match) -> str:
+            try:
+                spec = json.loads(match.group(1))
+                if not isinstance(spec, dict) or not spec.get("data"):
+                    return match.group(0)
+                spec.pop("database_key", None)
+                spec.pop("query", None)
+                created = builder.create_chart("", **spec)
+            except Exception as e:
+                logging.info("A ```chart block is not a valid chart, left as code: %s", e)
+                return match.group(0)
+            chart = created[CHART_RESULT_KEY]
+            charts.append(chart)
+            return created["marker"]
+
+        return cls._FENCED_CHART_RE.sub(replace, answer), charts
 
     @staticmethod
     def _split_tool_result_chart(result):

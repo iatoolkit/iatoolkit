@@ -30,6 +30,7 @@ from iatoolkit.infra.llm_providers.openai_adapter import OpenAIAdapter
 from iatoolkit.infra.llm_proxy import LLMProxy
 from iatoolkit.repositories.models import Company
 from iatoolkit.services.configuration_service import ConfigurationService
+from iatoolkit.services.chart_service import ChartService
 from iatoolkit.services.dispatcher_service import Dispatcher
 from iatoolkit.services.llm_client_service import llmClient
 from iatoolkit.services.query_service import QueryService
@@ -114,9 +115,15 @@ class FakeContextBuilder:
 class FakeToolService:
     def __init__(self, sql_service):
         self.sql_service = sql_service
+        self.chart_service = ChartService(sql_service=sql_service)
 
     def get_tools_for_llm(self, company, user_identifier=None):
         return [{
+            "type": "function",
+            "name": "iat_chart",
+            "description": "Draw a chart",
+            "parameters": {"type": "object", "properties": {}},
+        }, {
             "type": "function",
             "name": "iat_sql_query",
             "description": "Execute SQL against a company database",
@@ -128,10 +135,11 @@ class FakeToolService:
         }]
 
     def get_tool_definition(self, company_short_name, function_name):
-        return SimpleNamespace(tool_type="SYSTEM") if function_name == "iat_sql_query" else None
+        return SimpleNamespace(tool_type="SYSTEM") if function_name in ("iat_sql_query", "iat_chart") else None
 
     def get_system_handler(self, function_name):
-        return self.sql_service.exec_sql if function_name == "iat_sql_query" else None
+        return {"iat_sql_query": self.sql_service.exec_sql,
+                "iat_chart": self.chart_service.create_chart}.get(function_name)
 
 
 class FakeCompanyRegistry:
@@ -449,3 +457,58 @@ def test_a_provider_that_does_not_stream_still_shows_the_activity(env):
     assert "<strong>42</strong>" in events[-1][1]["answer"]
     assert events[-1][1]["stats"]["stream"]["mode"] == "activity"
     assert len(stack.history_manager.updates) == 1
+
+
+def test_a_chart_drawn_from_sql_end_to_end(env):
+    """Output charts (BL-025): the model asks for a chart with a SQL query, the
+    query runs here, the model reads only a summary, and the final event
+    carries the chart in its slot."""
+    call = SimpleNamespace(type="function_call", call_id="call_chart_1", name="iat_chart", arguments=json.dumps({
+        "type": "bar", "title": "Garantías 2026", "x": "mes",
+        "series": [{"field": "garantias", "label": "Garantías"}],
+        "database_key": DATABASE_KEY, "query": "SELECT mes, garantias FROM g",
+    }))
+    chart_round = [_completed("resp_1", [call], _usage(100, 20))]
+
+    def answer_round(marker):
+        text = f"Así fue el año:\n\n{marker}\n\nEnero fue el mayor."
+        return _text_deltas(text) + [_completed("resp_2", [_message(text)], _usage(130, 10))]
+
+    stack = StreamingStack([FakeOpenAIStream(chart_round), None])
+    stack.db_provider.rows = [{"mes": "2026-01", "garantias": 4398}, {"mes": "2026-02", "garantias": 3829}]
+    original_create = stack.openai_client._create
+
+    def create(**params):
+        # The second round answers with the marker the tool returned to the model.
+        if stack.openai_client._rounds and stack.openai_client._rounds[0] is None:
+            output = next(item for item in params["input"] if item.get("type") == "function_call_output")
+            tool_result = json.loads(output["output"])
+            assert "__iat_chart__" not in tool_result
+            assert tool_result["data"]["summary_by_series"]["Garantías"]["max"]["value"] == 4398
+            stack.openai_client._rounds[0] = FakeOpenAIStream(answer_round(tool_result["marker"]))
+        return original_create(**params)
+
+    stack.openai_client.responses.create = create
+    try:
+        response = stack.client.post(f"/{COMPANY}/api/llm_query/stream",
+                                     json={"question": "grafica las garantías por mes", "model": MODEL})
+        events = _parse_sse(response.get_data(as_text=True))
+    finally:
+        stack.close()
+
+    assert stack.db_provider.executed == ["SELECT mes, garantias FROM g"]
+    tool_events = [payload for event, payload in events if event == "tool_end"]
+    assert tool_events[0]["name"] == "iat_chart" and tool_events[0]["ok"] is True
+
+    final = events[-1][1]
+    assert events[-1][0] == "final"
+    [chart] = final["parts"]
+    assert chart["kind"] == "chart" and chart["type"] == "bar"
+    assert chart["rows"] == [["2026-01", 4398], ["2026-02", 3829]]
+    assert chart["source"]["query"] == "SELECT mes, garantias FROM g"
+    assert chart["echarts"]["series"][0]["type"] == "bar"
+    assert f'<div class="iat-part" data-part-id="{chart["id"]}"></div>' in final["answer"]
+    assert "[[chart:" not in final["answer"]
+    # Saved with the turn, so it can be drawn again.
+    assert stack.llmquery_repo.saved_queries[0].response["parts"] == [chart]
+

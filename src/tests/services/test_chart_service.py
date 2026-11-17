@@ -60,8 +60,10 @@ class TestFromSql:
         result = service.create_chart(COMPANY, x="mes", series=["garantias"],
                                       database_key="erp", query="SELECT 1")
 
-        assert result["data"] == {"columns": ["mes", "garantias"],
-                                  "rows": [[r["mes"], r["garantias"]] for r in MONTHS]}
+        assert result["data"]["rows"] == [[r["mes"], r["garantias"]] for r in MONTHS]
+        # The extremes are computed, not left for the model to read off the rows.
+        assert result["data"]["summary_by_series"]["garantias"]["max"] == {"x": "2026-01", "value": 4398}
+        assert result["data"]["summary_by_series"]["garantias"]["min"] == {"x": "2026-02", "value": 3829}
         assert result["series"] == ["garantias"]
 
     def test_the_model_reads_a_summary_when_many(self, service, sql):

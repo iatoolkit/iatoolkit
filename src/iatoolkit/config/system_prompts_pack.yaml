@@ -91,6 +91,14 @@ prompts:
         - chat
       response_modes:
         - chat_compatible
+  - key: chart_output
+    filename: chart_output.prompt
+    section: output_contract
+    include:
+      execution_modes:
+        - chat
+      response_modes:
+        - chat_compatible
   - key: tool_html_passthrough
     filename: tool_html_passthrough.prompt
     section: output_contract

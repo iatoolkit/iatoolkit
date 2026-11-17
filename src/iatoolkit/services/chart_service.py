@@ -330,9 +330,10 @@ class ChartService:
 
     # ------------------------------------------------------------------ the model's view
     def _data_for_model(self, header: list, table: list[list], series: list[dict]):
-        """What the model reads to write its conclusion: the rows when few, else a summary."""
-        if len(table) <= self.ROWS_FOR_MODEL:
-            return {"columns": header, "rows": table}
+        """What the model reads to write its conclusion: a per-series summary
+        (total, min, max, first, last) always, and the rows themselves when few.
+        The summary is computed here so the conclusion does not depend on the
+        model reading a column of numbers right."""
         summary = {}
         for index, item in enumerate(series, start=1):
             points = [(row[0], row[index]) for row in table if row[index] is not None]
@@ -347,7 +348,10 @@ class ChartService:
                 "first": {"x": points[0][0], "value": points[0][1]},
                 "last": {"x": points[-1][0], "value": points[-1][1]},
             }
-        return {"columns": header, "row_count": len(table), "summary_by_series": summary}
+        data = {"columns": header, "row_count": len(table), "summary_by_series": summary}
+        if len(table) <= self.ROWS_FOR_MODEL:
+            data["rows"] = table
+        return data
 
     # ------------------------------------------------------------------ ECharts
     def build_echarts_option(self, chart: dict) -> dict:
