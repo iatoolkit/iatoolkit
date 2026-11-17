@@ -24,6 +24,7 @@ import re
 import tiktoken
 from typing import Dict, Optional, List, Any
 from iatoolkit.services.dispatcher_service import Dispatcher
+from iatoolkit.services.chart_service import CHART_RESULT_KEY, CHART_MARKER_RE, chart_marker
 from iatoolkit.services.storage_service import StorageService
 from iatoolkit.services.structured_output_service import StructuredOutputService
 from iatoolkit.services.telemetry_service import NoopTelemetryService
@@ -346,6 +347,7 @@ class llmClient:
         attachments = attachments or []
         active_attachments = list(attachments)
         f_calls = []  # keep track of the function calls executed by the LLM
+        turn_charts = []  # charts drawn by iat_chart in this turn (BL-025)
         f_call_time = 0
         history_messages = []
         response = None
@@ -608,6 +610,10 @@ class llmClient:
                             else:
                                 result, tool_native_attachments = self._split_tool_result_and_native_attachments(result)
                                 active_attachments = self._merge_native_attachments(active_attachments, tool_native_attachments)
+                                # A chart (BL-025) travels with the turn; the model reads only its summary.
+                                result, tool_chart = self._split_tool_result_chart(result)
+                                if tool_chart:
+                                    turn_charts.append(tool_chart)
                             tool_result_for_telemetry = result
                             tool_output_type = type(result).__name__
                             tool_attachments_count = len(tool_native_attachments or [])
@@ -1137,6 +1143,15 @@ class llmClient:
         sanitized = dict(result)
         sanitized.pop("__native_attachments__", None)
         return sanitized, attachments
+
+    @staticmethod
+    def _split_tool_result_chart(result):
+        """The chart a tool result carries (BL-025), and the result without it."""
+        if not isinstance(result, dict) or CHART_RESULT_KEY not in result:
+            return result, None
+        sanitized = dict(result)
+        chart = sanitized.pop(CHART_RESULT_KEY, None)
+        return sanitized, chart if isinstance(chart, dict) else None
 
     @staticmethod
     def _merge_native_attachments(current_attachments, new_attachments):

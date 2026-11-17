@@ -10,7 +10,7 @@ projected tools). Before the tool runs, this scopes the call to the resources
 the person may use:
 
 - the tool itself (level 1 over "tool", by its name);
-- the SQL source a query names (`database_key`);
+- the SQL source a query names (`database_key`), also for a chart drawn from SQL;
 - the RAG collections a document search names; with none named, the search is
   narrowed to the collections the person may see (it no longer reaches all);
 - the document a read asks for, by its collection;
@@ -42,6 +42,9 @@ TOOL_ACCESS_ALIASES = {"iat_sql_schema": "iat_sql_query"}
 def tool_access_key(function_name: str) -> str:
     """The tool name whose access list decides this tool's access."""
     return TOOL_ACCESS_ALIASES.get(function_name, function_name)
+#: Output charts (BL-025): the tool itself is open to everyone, but a chart that
+#: runs SQL reaches a source like iat_sql_query does, and needs what it needs.
+CHART_TOOLS = frozenset({"iat_chart"})
 COLLECTION_TOOLS = frozenset({"iat_document_search", "iat_document_list", "iat_image_search", "iat_visual_search"})
 DOCUMENT_READ_TOOLS = frozenset({"iat_document_read"})
 WIKI_TOOLS = frozenset({"iat_wiki_search", "iat_wiki_get_page"})
@@ -72,6 +75,14 @@ class ResourceAccessScope:
             database = str(scoped.get("database_key") or "").strip()
             if database and not access.can(company_short_name, user_identifier, USE, "sql_source", database):
                 raise _denied(f"No access to the SQL source '{database}'.")
+
+        elif function_name in CHART_TOOLS:
+            database = str(scoped.get("database_key") or "").strip()
+            if database:
+                if not access.can(company_short_name, user_identifier, USE, "tool", "iat_sql_query"):
+                    raise _denied("No access to SQL queries: a chart from SQL needs it.")
+                if not access.can(company_short_name, user_identifier, USE, "sql_source", database):
+                    raise _denied(f"No access to the SQL source '{database}'.")
 
         elif function_name in COLLECTION_TOOLS:
             named = _as_list(scoped.get("collection"))

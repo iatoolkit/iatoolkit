@@ -88,7 +88,8 @@ class ToolService:
                  memory_service=None,
                  web_search_service=None,
                  knowledge_wiki_service=None,
-                 bridge_repo: BridgeRepo = None):
+                 bridge_repo: BridgeRepo = None,
+                 chart_service=None):
         self.llm_query_repo = llm_query_repo
         self.bridge_repo = bridge_repo
         self.profile_repo = profile_repo
@@ -102,6 +103,7 @@ class ToolService:
         self.visual_tool_service = visual_tool_service
         self._web_search_service = web_search_service
         self._knowledge_wiki_service = knowledge_wiki_service
+        self._chart_service = chart_service
         self.system_tool_force_include_capabilities = get_system_tool_force_include_capabilities()
 
         # execution mapper for system tools
@@ -111,6 +113,7 @@ class ToolService:
             "iat_send_email": self.mail_service.send_mail,
             "iat_sql_query": self.sql_service.exec_sql,
             "iat_sql_schema": self._handle_sql_schema_tool,
+            "iat_chart": self._handle_chart_tool,
             "iat_image_search": self._handle_image_search_tool,
             "iat_visual_search": self._handle_visual_search_tool,
             "iat_document_search": self._handle_document_search_tool,
@@ -133,6 +136,18 @@ class ToolService:
             from iatoolkit.services.web_search_service import WebSearchService
             self._web_search_service = current_iatoolkit().get_injector().get(WebSearchService)
         return self._web_search_service
+
+    @property
+    def chart_service(self):
+        if self._chart_service is None:
+            from iatoolkit.services.chart_service import ChartService
+            self._chart_service = current_iatoolkit().get_injector().get(ChartService)
+        return self._chart_service
+
+    def _handle_chart_tool(self, company_short_name: str, **kwargs):
+        # Output charts (BL-025): the chart travels with the turn, the model gets a summary.
+        kwargs.pop("request_images", None)
+        return self.chart_service.create_chart(company_short_name, **kwargs)
 
     @property
     def memory_service(self):
@@ -1648,7 +1663,8 @@ class ToolService:
 
     # Every `routing.force_include_capability` of system_tools_pack.yaml must be one of these
     # (test_tool_service checks it), or its tools are never forced.
-    RUNTIME_TOOL_CAPABILITIES = ("has_sql_sources", "has_kb_collections", "has_knowledge_wikis", "has_user_memory")
+    RUNTIME_TOOL_CAPABILITIES = ("has_sql_sources", "has_kb_collections", "has_knowledge_wikis", "has_user_memory",
+                                 "has_charts")
 
     def _resolve_runtime_tool_capabilities(self, company_short_name: str) -> dict[str, bool]:
         has_sql_sources = False
@@ -1679,6 +1695,9 @@ class ToolService:
             # the search, page and save tools always reach the model (a router
             # that trims to top-k must not drop them).
             "has_user_memory": True,
+            # Output charts (BL-025) are on in every tenant: a router that trims
+            # to top-k must not drop iat_chart, or the model draws with text.
+            "has_charts": True,
         }
 
 

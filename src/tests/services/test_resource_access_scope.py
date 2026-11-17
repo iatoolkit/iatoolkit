@@ -57,6 +57,19 @@ class TestResourceAccessScope:
             self.call("iat_sql_query", database_key="rrhh", query="select 1")
         assert self.call("iat_sql_query", database_key="ventas", query="select 1")["database_key"] == "ventas"
 
+    def test_a_chart_from_sql_follows_the_source_and_sql_access(self):
+        with pytest.raises(IAToolkitException):
+            self.call("iat_chart", x="m", series=["v"], database_key="rrhh", query="select 1")
+        assert self.call("iat_chart", x="m", series=["v"], database_key="ventas", query="q")["database_key"] == "ventas"
+        Decider.DENIED.add(("tool", "iat_sql_query"))
+        try:
+            with pytest.raises(IAToolkitException):
+                self.call("iat_chart", x="m", series=["v"], database_key="ventas", query="q")
+            # A chart from inline data needs no SQL access.
+            assert self.call("iat_chart", x="m", series=["v"], data=[{"m": 1, "v": 2}])["x"] == "m"
+        finally:
+            Decider.DENIED.discard(("tool", "iat_sql_query"))
+
     def test_a_search_with_no_collection_reaches_only_what_the_person_sees(self):
         assert self.call("iat_document_search", query="x")["collection"] == ["Contratos"]
         with pytest.raises(IAToolkitException):

@@ -253,6 +253,79 @@ tools:
       required:
         - database_key
         - table_names
+  - function_name: iat_chart
+    description: "Gráficos de IAToolkit: úsala SIEMPRE que el usuario pida un gráfico, una visualización o comparar datos visualmente. IAToolkit dibuja el gráfico en el chat; nunca lo dibujes con texto, caracteres, Mermaid ni tablas. Datos: preferentemente database_key + query (una consulta SQL que ya devuelve las columnas a graficar, agregadas); o data con pocas filas ya conocidas. Devuelve un marcador [[chart:id]] que debes escribir solo en una línea de tu respuesta, donde va el gráfico."
+    routing:
+      force_include_capability: has_charts
+    routing_profile:
+      tags:
+        - chart
+        - graph
+        - visualization
+        - plot
+        - grafico
+      intents:
+        - Draw a bar, line, area, pie, scatter or combo chart in the chat.
+        - Visualize query results or compare series over time.
+      examples:
+        - iat_chart(type="bar", title="Ventas por mes 2026", x="mes", series=[{"field":"total","label":"Ventas"}], database_key="erp", query="SELECT to_char(fecha,'YYYY-MM') AS mes, sum(monto) AS total FROM ventas WHERE fecha >= '2026-01-01' GROUP BY 1 ORDER BY 1")
+        - iat_chart(type="pie", title="Clientes por segmento", x="segmento", series=[{"field":"clientes"}], data=[{"segmento":"Pyme","clientes":120},{"segmento":"Corporativo","clientes":30}])
+      cost:
+        penalty: 0.05
+        latency_class: medium
+        expensive: false
+    parameters:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [bar, line, area, pie, scatter, combo]
+          description: "Tipo de gráfico. bar: categorías o meses pocos; line/area: evolución en el tiempo; pie: partes de un total (una sola serie); scatter: relación entre dos números; combo: barras y líneas juntas (indica type en cada serie). Si lo omites, IAToolkit lo sugiere según los datos."
+        title:
+          type: string
+          description: "Título corto del gráfico."
+        x:
+          type: string
+          description: "Columna del eje horizontal (o de las categorías, en una torta). Debe existir en los datos."
+        series:
+          type: array
+          description: "Columnas numéricas a graficar (una serie cada una). Para comparar periodos (2025 vs 2026), una columna por periodo."
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+                description: "Columna numérica de los datos."
+              label:
+                type: string
+                description: "Nombre visible de la serie."
+              type:
+                type: string
+                enum: [bar, line, area]
+                description: "Solo en combo: cómo se dibuja esta serie."
+            required:
+              - field
+        format:
+          type: string
+          enum: [number, percent, currency]
+          description: "Formato de los valores. percent: los valores ya están en % (ej. 12.5)."
+        stacked:
+          type: boolean
+          description: "Apila las series (barras o áreas)."
+        database_key:
+          type: string
+          description: "Base de datos de la consulta (como en iat_sql_query)."
+        query:
+          type: string
+          description: "SELECT que devuelve x y las series, ya agregado y ordenado. Máximo 500 filas."
+        data:
+          type: array
+          description: "Alternativa a SQL, solo para pocas filas ya conocidas: lista de objetos columna → valor."
+          items:
+            type: object
+      required:
+        - x
+        - series
   - function_name: iat_document_search
     description: Búsqueda semántica sobre documentos internos de la empresa para traer contexto adicional cuando haga falta. No usar si el usuario pide trabajar exclusivamente con un archivo ya adjunto en el turno actual. Usa metadata_filter solo cuando el usuario o el contexto indiquen un filtro de metadata concreto y necesario; si no hace falta, envía null.
     routing:

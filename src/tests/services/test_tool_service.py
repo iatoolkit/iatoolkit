@@ -64,6 +64,17 @@ class TestToolService:
     def test_system_handlers_include_pdf_generator(self):
         assert self.service.system_handlers["iat_generate_pdf"] == self.mock_pdf_service.pdf_generator
 
+    def test_iat_chart_goes_to_the_chart_service(self):
+        self.service._chart_service = MagicMock()
+        self.service._chart_service.create_chart.return_value = {"status": "ok"}
+
+        handler = self.service.system_handlers["iat_chart"]
+        result = handler(self.company_short_name, x="m", series=["v"], data=[], request_images=["img"])
+
+        assert result == {"status": "ok"}
+        self.service._chart_service.create_chart.assert_called_once_with(
+            self.company_short_name, x="m", series=["v"], data=[])
+
     def test_handle_memory_get_page_tool_requests_native_attachments(self):
         self.service._memory_service = MagicMock()
         self.service._memory_service.get_page.return_value = {"status": "success", "page": {"page_id": 14}}
@@ -1835,6 +1846,19 @@ class TestForceIncludeCapabilities:
         service._resolve_runtime_tool_capabilities = lambda company: {"has_user_memory": True}
 
         assert service.get_always_include_tool_names("acme", [{"name": "iat_memory_search"}]) == ["iat_memory_search"]
+
+
+    def test_the_chart_tool_is_forced_even_in_a_tenant_with_nothing(self):
+        service = ToolService.__new__(ToolService)
+        service.system_tool_force_include_capabilities = {"iat_chart": "has_charts"}
+        service.sql_service = MagicMock()
+        service.sql_service.get_db_names.return_value = []
+        service.knowledge_base_service = MagicMock()
+        service.knowledge_base_service.get_collection_names.return_value = []
+        service._knowledge_wiki_service = MagicMock()
+        service._knowledge_wiki_service.list_wikis.return_value = {"status": "success", "wikis": []}
+
+        assert service.get_always_include_tool_names("acme", [{"name": "iat_chart"}]) == ["iat_chart"]
 
 
 class TestStrictCompatibleSchema:
