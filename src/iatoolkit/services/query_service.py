@@ -967,12 +967,17 @@ class QueryService:
                               effective_model: str,
                               question: str,
                               user_turn_prompt: str,
-                              ignore_history: bool
+                              ignore_history: bool,
+                              conversation=None,
                               ) -> tuple[Optional[HistoryHandle], Optional[dict]]:
         """
             Manages the history strategy and rebuilds context if necessary.
             Returns: (HistoryHandle, error_response)
         """
+        if conversation is not None:
+            return self._ensure_conversation_history(company, user_identifier, effective_model, question,
+                                                     user_turn_prompt, conversation)
+
         # Initialize the handle with base context info
         handle = HistoryHandle(
             company_short_name=company.short_name,
@@ -1013,6 +1018,82 @@ class QueryService:
                                                     user_identifier=user_identifier)
                 return None, {'error': True, "error_message": error_message}
 
+        return handle, None
+
+    #: Messages a reopened conversation is rebuilt from (BL-001): its latest
+    #: turns as text, within the history budget the manager then applies. With
+    #: a compaction summary, fewer: the summary already holds the older ones.
+    REHYDRATE_MAX_MESSAGES = 40
+    REHYDRATE_MAX_MESSAGES_WITH_SUMMARY = 10
+
+    @property
+    def conversation_service(self):
+        service = getattr(self, "_conversation_service", None)
+        if service is None:
+            from iatoolkit import current_iatoolkit
+            from iatoolkit.services.conversation_service import ConversationService
+            service = current_iatoolkit().get_injector().get(ConversationService)
+            self._conversation_service = service
+        return service
+
+    @conversation_service.setter
+    def conversation_service(self, service):
+        self._conversation_service = service
+
+    def _rehydrate_conversation(self, company_short_name: str, user_identifier: str, model: str,
+                                conversation) -> bool:
+        summary = str((conversation.meta or {}).get("compaction_summary") or "").strip()
+        limit = self.REHYDRATE_MAX_MESSAGES_WITH_SUMMARY if summary else self.REHYDRATE_MAX_MESSAGES
+        turns = [
+            {"role": message.role, "content": message.content}
+            for message in self.conversation_service.recent_turns(conversation, limit)
+            # A question the person stopped got no answer: it is not part of the conversation.
+            if not (message.meta or {}).get("stopped")
+        ]
+        return self.history_manager.start_conversation_history(
+            company_short_name, user_identifier, model, conversation.public_id, summary=summary, turns=turns)
+
+    def _ensure_conversation_history(self, company, user_identifier: str, effective_model: str, question: str,
+                                     user_turn_prompt: str, conversation
+                                     ) -> tuple[Optional[HistoryHandle], Optional[dict]]:
+        """The history of one conversation (BL-001).
+
+        Redis may have forgotten it (TTL), the person may have reopened it or
+        switched models: it is rebuilt from the database, on top of the
+        person's prepared context, which is itself rebuilt when missing or when
+        access changed since it was built.
+        """
+        company_short_name = company.short_name
+        handle = HistoryHandle(
+            company_short_name=company_short_name,
+            user_identifier=user_identifier,
+            type=HistoryManagerService.TYPE_CLIENT_SIDE,
+            model=effective_model,
+            conversation_id=conversation.public_id,
+        )
+        needs_rebuild = self.history_manager.populate_request_params(handle, user_turn_prompt, False)
+        access_changed = self._access_changed_since_context(company_short_name, user_identifier)
+        if not needs_rebuild and not access_changed:
+            return handle, None
+
+        has_context = bool(self.session_context.get_context_history(company_short_name, user_identifier,
+                                                                    model=effective_model))
+        if access_changed or not has_context:
+            logging.info(f"Rebuilding the context of {company_short_name}/{user_identifier} "
+                         f"for conversation {conversation.public_id}.")
+            self.prepare_context(company_short_name=company_short_name, user_identifier=user_identifier,
+                                 query_text=question)
+            self.set_context_for_llm(company_short_name=company_short_name, user_identifier=user_identifier,
+                                     model=effective_model)
+
+        rebuilt = self._rehydrate_conversation(company_short_name, user_identifier, effective_model, conversation)
+        if rebuilt:
+            rebuilt = not self.history_manager.populate_request_params(handle, user_turn_prompt, False)
+        if not rebuilt:
+            error_message = self.i18n_service.t('errors.services.context_rebuild_failed',
+                                                company_short_name=company_short_name,
+                                                user_identifier=user_identifier)
+            return None, {'error': True, "error_message": error_message}
         return handle, None
 
     @staticmethod
@@ -1477,7 +1558,98 @@ class QueryService:
                   files: list = [],
                   input_files: list | None = None,
                   event_sink: ChatEventSink | None = None,
+                  conversation_id: str | None = None,
+                  create_conversation: bool = False,
                   ) -> dict:
+        """One turn. With `conversation_id` (or `create_conversation`) the turn
+        belongs to a conversation (BL-001): it uses that conversation's history
+        and is recorded in it, answered, failed or stopped. Without them it is
+        the person's single history, as always."""
+        if not (conversation_id or create_conversation):
+            return self._llm_query_turn(
+                company_short_name, user_identifier, model=model, llm_request_options=llm_request_options,
+                prompt_name=prompt_name, question=question, client_data=client_data, task_id=task_id,
+                ignore_history=ignore_history, files=files, input_files=input_files,
+                **({"event_sink": event_sink} if event_sink is not None else {}))
+
+        if not prompt_name and not question:
+            return {"error": True, "error_message": self.i18n_service.t('services.start_query')}
+        try:
+            if conversation_id:
+                conversation = self.conversation_service.get_for_user(company_short_name, user_identifier,
+                                                                      conversation_id)
+                if conversation is None:
+                    return {"error": True, "status_code": 404,
+                            "error_message": self.i18n_service.t('errors.conversations.not_found')}
+            else:
+                source = str((client_data or {}).get("source") or "chat_ui") if isinstance(client_data, dict) else "chat_ui"
+                conversation = self.conversation_service.create(
+                    company_short_name, user_identifier,
+                    title=self.conversation_service.initial_title(question, prompt_name),
+                    source=source, model=model or None, prompt_name=prompt_name)
+        except Exception as e:
+            logging.exception(e)
+            return {"error": True, "error_message": f"{str(e)}"}
+
+        response = self._llm_query_turn(
+            company_short_name, user_identifier, model=model, llm_request_options=llm_request_options,
+            prompt_name=prompt_name, question=question, client_data=client_data, task_id=task_id,
+            ignore_history=False, files=files, input_files=input_files, conversation=conversation,
+            **({"event_sink": event_sink} if event_sink is not None else {}))
+        return self._record_conversation_turn(conversation, user_identifier, question, prompt_name, files,
+                                              response)
+
+    def _record_conversation_turn(self, conversation, user_identifier: str, question: str,
+                                  prompt_name: str | None, files: list | None, response: dict) -> dict:
+        """The turn, kept in its conversation: answered, failed or stopped."""
+        response = response if isinstance(response, dict) else {}
+        question_text = str(question or "") or str(prompt_name or "")
+        attachments = [
+            {"name": str(item.get("filename") or item.get("name") or "")}
+            for item in (files or []) if isinstance(item, dict)
+        ] or None
+        common = {"question": question_text, "user_identifier": user_identifier, "prompt_name": prompt_name,
+                  "attachments": attachments}
+        try:
+            if response.get("cancelled"):
+                user_message = self.conversation_service.append_cancelled_turn(conversation, **common)
+                assistant_message = None
+            elif response.get("error") or not response.get("valid_response", True):
+                user_message, assistant_message = self.conversation_service.append_failed_turn(
+                    conversation, error_message=str(response.get("error_message") or ""),
+                    llm_query_id=response.get("query_id"), **common)
+            else:
+                user_message, assistant_message = self.conversation_service.append_turn(
+                    conversation, answer_text=str(response.get("answer_text") or ""),
+                    llm_query_id=response.get("query_id"), **common)
+        except Exception as e:
+            # The person got the answer; losing it from the conversation is logged, never raised.
+            logging.exception(f"Could not record the turn in conversation {conversation.public_id}: {e}")
+            user_message = assistant_message = None
+
+        response["conversation_id"] = conversation.public_id
+        response["conversation"] = conversation.to_dict()
+        if user_message is not None:
+            response["user_message_id"] = user_message.id
+        if assistant_message is not None:
+            response["assistant_message_id"] = assistant_message.id
+        return response
+
+    def _llm_query_turn(self,
+                        company_short_name: str,
+                        user_identifier: str,
+                        model: Optional[str] = None,
+                        llm_request_options: dict | None = None,
+                        prompt_name: str = None,
+                        question: str = '',
+                        client_data: dict = {},
+                        task_id: Optional[int] = None,
+                        ignore_history: bool = False,
+                        files: list = [],
+                        input_files: list | None = None,
+                        event_sink: ChatEventSink | None = None,
+                        conversation=None,
+                        ) -> dict:
         try:
             stage_started_at = time.time()
             execution_trace = self.build_execution_trace(
@@ -1696,7 +1868,8 @@ class QueryService:
                     effective_model=effective_model,
                     question=effective_question,
                     user_turn_prompt=user_turn_prompt,
-                    ignore_history=ignore_history
+                    ignore_history=ignore_history,
+                    conversation=conversation,
                 )
                 if error_response:
                     return error_response

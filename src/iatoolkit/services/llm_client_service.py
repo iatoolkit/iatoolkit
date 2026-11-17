@@ -812,6 +812,9 @@ class llmClient:
                 # What the answer draws besides its text (BL-025): each part has
                 # an id and a kind, and the answer a slot where it goes.
                 'parts': turn_parts,
+                # The answer as the model wrote it, before rendering: what a
+                # conversation keeps and gives back to the model (BL-001).
+                'answer_text': decoded_response.get('answer', '') if isinstance(decoded_response.get('answer'), str) else '',
                 'stats': combined_stats,
                 'answer_format': decoded_response.get('answer_format', ''),
                 'error_message': decoded_response.get('error_message', ''),

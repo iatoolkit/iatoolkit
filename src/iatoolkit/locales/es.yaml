@@ -2855,6 +2855,9 @@ ui:
     stop: "Detener"
 
 errors:
+  conversations:
+    not_found: "La conversación no existe."
+    empty_title: "El título no puede quedar vacío."
   company_not_found: "La empresa {company_short_name} no existe."
   access:
     agent_denied: "No tienes acceso al agente {prompt_name}."

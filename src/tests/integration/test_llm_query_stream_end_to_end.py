@@ -294,6 +294,8 @@ class StreamingStack:
             context_builder=FakeContextBuilder(),
         )
 
+        self.query_service = query_service
+
         auth_service = MagicMock()
         auth_service.verify_for_company.return_value = {"success": True, "user_identifier": USER}
         view_config = MagicMock(spec=ConfigurationService)
@@ -511,4 +513,46 @@ def test_a_chart_drawn_from_sql_end_to_end(env):
     assert "[[chart:" not in final["answer"]
     # Saved with the turn, so it can be drawn again.
     assert stack.llmquery_repo.saved_queries[0].response["parts"] == [chart]
+
+
+def test_a_conversation_is_created_and_continued_end_to_end(env, tmp_path):
+    """Conversations (BL-001): the first streamed turn creates one, the final
+    event names it, and the next turn continues it."""
+    from iatoolkit.repositories.conversation_repo import ConversationRepo
+    from iatoolkit.repositories.database_manager import DatabaseManager
+    from iatoolkit.services.conversation_service import ConversationService
+
+    # A file, not :memory:: the turn runs in its own thread, with its own connection.
+    db = DatabaseManager(f"sqlite:///{tmp_path / 'conversations.db'}")
+    db.create_all()
+    db.get_session().add(Company(id=1, name="Acme", short_name=COMPANY))
+    db.get_session().commit()
+
+    def turn(stack, body):
+        response = stack.client.post(f"/{COMPANY}/api/llm_query/stream", json=body)
+        return _parse_sse(response.get_data(as_text=True))[-1]
+
+    stack = StreamingStack([FakeOpenAIStream(answer_round_events()), FakeOpenAIStream(answer_round_events())])
+    conversations = ConversationService(ConversationRepo(db), FakeProfileRepo(Company(id=1, name="Acme",
+                                                                                      short_name=COMPANY)))
+    stack.query_service.conversation_service = conversations
+    try:
+        event, first = turn(stack, {"question": "¿Cuántos registros hay?", "model": MODEL,
+                                    "create_conversation": True})
+        assert event == "final"
+        conversation_id = first["conversation_id"]
+        assert first["conversation"]["title"] == "¿Cuántos registros hay?"
+
+        event, second = turn(stack, {"question": "¿Y ahora?", "model": MODEL, "conversation_id": conversation_id})
+    finally:
+        stack.close()
+
+    assert event == "final" and second["conversation_id"] == conversation_id
+    conversation = conversations.get_for_user(COMPANY, USER, conversation_id)
+    messages = conversations.messages(conversation)
+    assert [m.content for m in messages] == ["¿Cuántos registros hay?", "Hay **42** registros.",
+                                             "¿Y ahora?", "Hay **42** registros."]
+    # Each answer is linked to its turn in iat_queries.
+    saved_ids = [query.id for query in stack.llmquery_repo.saved_queries]
+    assert [m.llm_query_id for m in messages if m.role == "assistant"] == saved_ids
 

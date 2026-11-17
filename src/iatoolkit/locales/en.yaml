@@ -2840,6 +2840,9 @@ ui:
     stop: "Stop"
 
 errors:
+  conversations:
+    not_found: "The conversation does not exist."
+    empty_title: "The title cannot be empty."
   company_not_found: "The company {company_short_name} does not exist."
   access:
     agent_denied: "You do not have access to the agent {prompt_name}."

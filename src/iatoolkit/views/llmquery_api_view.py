@@ -15,7 +15,7 @@ def build_llm_query_kwargs(data: dict) -> dict:
     else:
         client_data = dict(client_data)
     client_data.setdefault("source", "chat_ui")
-    return {
+    kwargs = {
         "model": data.get('model', ''),
         "llm_request_options": {
             "reasoning_effort": data.get('reasoning_effort', '')
@@ -26,6 +26,15 @@ def build_llm_query_kwargs(data: dict) -> dict:
         "ignore_history": data.get('ignore_history', False),
         "files": data.get('files', []),
     }
+    # The conversation the turn belongs to (BL-001); create_conversation starts
+    # one when there is none yet. Only when asked: a turn without them is the
+    # person's single history, as before conversations.
+    conversation_id = str(data.get('conversation_id') or '').strip()
+    if conversation_id:
+        kwargs["conversation_id"] = conversation_id
+    elif data.get('create_conversation'):
+        kwargs["create_conversation"] = True
+    return kwargs
 
 
 def compact_llm_query_result(result: dict) -> dict:
