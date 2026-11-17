@@ -289,8 +289,9 @@
             if (chat && nearBottom) chat.scrollTop = chat.scrollHeight;
         }
 
-        /** Shows the activity at once, in place of the spinner. */
-        start() {
+        /** Shows the activity at once, in place of the spinner. `detached`
+         *  builds it without placing it on the page (a saved turn, BL-001). */
+        start(detached = false) {
             if (this.container) return;
             const timelineId = 'turn-activity-' + (++activitySequence);
             this.container = $('<div>').addClass('bot-message-container live-turn');
@@ -312,6 +313,7 @@
 
             this._setTitle(translate('chat_activity_thinking', 'Pensando…'));
             this._tick();
+            if (detached) return;
             this.clock = setInterval(() => this._tick(), 1000);
 
             this._keepBottom(() => {
@@ -564,7 +566,30 @@
         }
     }
 
+    /**
+     * The collapsed activity of a saved turn (BL-001): "Pensó durante 25 s ·
+     * 2 herramientas" with its tools, as the live turn left it. Null when the
+     * turn ran no tools, like a live one with nothing to show.
+     */
+    function savedActivity(saved) {
+        const tools = (saved && Array.isArray(saved.tools)) ? saved.tools : [];
+        if (!tools.length) return null;
+        const turn = new LiveTurn();
+        turn.start(true);
+        tools.forEach((tool, index) => {
+            turn.toolStart(`saved-${index}`, tool.name);
+            turn.toolEnd(`saved-${index}`, tool.ok !== false, typeof tool.ms === 'number' ? tool.ms : 0);
+        });
+        const duration = Math.max(0, Number(saved.duration_ms) || 0);
+        turn.startedAt = 0;
+        turn.answerStartedAt = duration;
+        turn.finishedAt = duration;
+        turn._finish('chat_activity_done', 'Pensó durante {duration}', true);
+        return turn.activity.detach();
+    }
+
     window.IATChatStream = {
+        savedActivity,
         FALLBACK,
         shouldStream,
         toolLabel,

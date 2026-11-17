@@ -169,6 +169,12 @@ const handleChatMessage = async function () {
 
         const filesBase64 = await Promise.all(files.map(fileItem => toBase64(fileItem.file)));
 
+        // The conversation this turn belongs to (BL-001): created before its
+        // first turn, so a turn that is stopped or fails is kept in it too.
+        const conversationId = window.IATConversations
+            ? await window.IATConversations.ensureConversation(question || displayMessage)
+            : null;
+
         const data = {
             question: question,
             prompt_name: promptName,
@@ -178,6 +184,9 @@ const handleChatMessage = async function () {
             model: (window.currentLlmModel || window.defaultLlmModel || ''),
             reasoning_effort: (window.currentLlmReasoningEffort || '')
         };
+        if (conversationId) {
+            data.conversation_id = conversationId;
+        }
 
         let responseData = undefined;
         const chatStream = window.IATChatStream;
@@ -208,6 +217,9 @@ const handleChatMessage = async function () {
 
         // Delegamos el procesamiento de la respuesta a la nueva función
         processBotResponse(responseData, { activity: turnActivity });
+        if (window.IATConversations) {
+            window.IATConversations.afterTurn(responseData);
+        }
 
     } catch (error) {
         if (liveTurn) {

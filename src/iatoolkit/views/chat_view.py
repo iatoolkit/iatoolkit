@@ -27,7 +27,7 @@ class ChatView(MethodView):
         self.prompt_service = prompt_service
         self.i18n_service = i18n_service
 
-    def get(self, company_short_name: str):
+    def get(self, company_short_name: str, conversation_id: str | None = None):
         # 1. Validate Company
         company = self.profile_service.get_company_by_short_name(company_short_name)
         if not company:
@@ -70,6 +70,8 @@ class ChatView(MethodView):
                 llm_available_models=available_llm_models,
                 llm_default_reasoning_effort=llm_default_reasoning_effort,
                 chat_streaming=self.config_service.is_chat_streaming_enabled(company_short_name),
+                # The conversation the link opens (BL-001); the chat checks it is the person's.
+                conversation_id=conversation_id,
                 # redeem_token is None for direct access
                 redeem_token=None
             )

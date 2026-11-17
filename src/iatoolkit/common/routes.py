@@ -102,6 +102,9 @@ def register_views(app):
     # Chat Route (Direct Access)
     app.add_url_rule('/<company_short_name>/chat',
                      view_func=ChatView.as_view('chat'))
+    # A conversation opened by its link (BL-001).
+    app.add_url_rule('/<company_short_name>/chat/<string:conversation_id>',
+                     view_func=ChatView.as_view('chat_conversation'))
     app.add_url_rule('/<company_short_name>/account',
                      view_func=AccountView.as_view('account'),
                      methods=['GET', 'POST'])

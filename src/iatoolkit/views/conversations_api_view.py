@@ -111,8 +111,11 @@ class ConversationsApiView(MethodView):
             if conversation_id is not None:
                 return self._post_on_conversation(company_short_name, user_identifier, conversation_id, resource)
             data = request.get_json(silent=True) or {}
+            # The chat creates the conversation before its first turn, titled
+            # with the question cut short until the title agent names it.
+            title = str(data.get("title") or "") or self.conversation_service.initial_title(data.get("question"))
             conversation = self.conversation_service.create(
-                company_short_name, user_identifier, title=str(data.get("title") or ""),
+                company_short_name, user_identifier, title=title,
                 source=str(data.get("source") or "chat_ui"), model=data.get("model") or None)
             return jsonify({"conversation": conversation.to_dict()}), 201
         except Exception as e:

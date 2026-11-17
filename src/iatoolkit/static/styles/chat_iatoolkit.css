@@ -1810,3 +1810,200 @@ li {
         margin-top: 0.1rem;
     }
 }
+
+/* ---- Conversations (BL-001) ------------------------------------------------ */
+.chat-body {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.chat-main {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+}
+
+.chat-main > #chat-container {
+    margin-top: 0 !important;
+}
+
+.conversations-panel {
+    width: 260px;
+    flex: 0 0 260px;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    background: #fff;
+    min-height: 0;
+    font-size: 0.9rem;
+}
+
+.chat-body.conversations-collapsed .conversations-panel {
+    display: none;
+}
+
+.conversations-panel-top {
+    display: flex;
+    gap: 0.25rem;
+}
+
+.conversations-new {
+    flex: 1;
+}
+
+.conversations-icon-button {
+    border: 0;
+    background: none;
+    color: #6c757d;
+    padding: 0.15rem 0.4rem;
+}
+
+.conversations-icon-button:hover,
+.conversations-icon-button:focus-visible {
+    color: #212529;
+    background: #f1f3f5;
+}
+
+.conversations-search {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    padding: 0.2rem 0.5rem;
+    color: #6c757d;
+}
+
+.conversations-search input {
+    border: 0;
+    outline: none;
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    font-size: 0.85rem;
+}
+
+.conversations-archived-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-weight: 600;
+    color: #495057;
+}
+
+.conversations-list {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    min-height: 0;
+    margin: 0 -0.25rem;
+    padding: 0 0.25rem;
+}
+
+.conversations-group {
+    font-size: 0.75rem;
+    color: #868e96;
+    margin: 0.6rem 0.4rem 0.2rem;
+}
+
+.conversations-empty {
+    color: #868e96;
+    font-size: 0.85rem;
+    padding: 0.5rem 0.4rem;
+}
+
+.conversation-item {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.3rem 0.25rem 0.3rem 0.5rem;
+    border-radius: 0.375rem;
+    cursor: pointer;
+}
+
+.conversation-item:hover,
+.conversation-item:focus-visible {
+    background: #f1f3f5;
+    outline: none;
+}
+
+.conversation-item.is-active {
+    background: #e7f1ff;
+}
+
+.conversation-item-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.conversation-item .conversation-item-menu {
+    visibility: hidden;
+}
+
+.conversation-item:hover .conversation-item-menu,
+.conversation-item.is-active .conversation-item-menu,
+.conversation-item-menu .show {
+    visibility: visible;
+}
+
+.conversations-panel-footer {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+    color: #adb5bd;
+    font-size: 0.8rem;
+    border-top: 1px solid #f1f3f5;
+    padding-top: 0.4rem;
+}
+
+.conversations-panel-footer .btn-link {
+    color: #6c757d;
+    text-decoration: none;
+    font-size: 0.8rem;
+}
+
+.conversations-panel-footer .btn-link:hover {
+    color: #212529;
+    text-decoration: underline;
+}
+
+.conversation-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-height: 32px;
+    padding: 0 0.25rem 0.25rem;
+}
+
+.conversation-bar #conversations-open-button {
+    display: none;
+}
+
+.chat-body.conversations-collapsed .conversation-bar #conversations-open-button {
+    display: inline-block;
+}
+
+.conversation-title {
+    font-weight: 600;
+    color: #343a40;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.conversation-title-input {
+    min-width: 220px;
+}
+
+.conversations-backdrop {
+    display: none;
+}

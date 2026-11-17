@@ -17,6 +17,49 @@
 
 {% include '_chat_header.html' %}
 
+<div class="chat-body">
+<!-- Conversations (BL-001): the person's conversations, newest first. -->
+<aside id="conversations-panel" class="conversations-panel chat-block" aria-label="{{ t('ui.conversations.panel_label') }}">
+    <div class="conversations-panel-top">
+        <button type="button" id="new-conversation-button" class="btn btn-sm btn-outline-secondary conversations-new">
+            <i class="bi bi-plus-lg" aria-hidden="true"></i> {{ t('ui.conversations.new') }}
+        </button>
+        <button type="button" id="conversations-collapse-button" class="btn btn-sm conversations-icon-button"
+                title="{{ t('ui.conversations.hide_panel') }}" aria-label="{{ t('ui.conversations.hide_panel') }}">
+            <i class="bi bi-layout-sidebar-inset" aria-hidden="true"></i>
+        </button>
+    </div>
+    <div class="conversations-search">
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <input type="search" id="conversations-search-input" placeholder="{{ t('ui.conversations.search') }}"
+               aria-label="{{ t('ui.conversations.search') }}">
+    </div>
+    <div id="conversations-archived-banner" class="conversations-archived-banner" hidden>
+        <span>{{ t('ui.conversations.archived_title') }}</span>
+        <button type="button" id="conversations-back-button" class="btn btn-link btn-sm p-0">{{ t('ui.conversations.back') }}</button>
+    </div>
+    <div id="conversations-list" class="conversations-list" role="list"></div>
+    <div class="conversations-panel-footer">
+        <button type="button" id="conversations-archived-button" class="btn btn-link btn-sm p-0">{{ t('ui.conversations.view_archived') }}</button>
+        <span aria-hidden="true">·</span>
+        <button type="button" id="conversations-history-button" class="btn btn-link btn-sm p-0">{{ t('ui.conversations.previous_history') }}</button>
+    </div>
+</aside>
+<div id="conversations-backdrop" class="conversations-backdrop" hidden></div>
+
+<div class="chat-main">
+<div id="conversation-bar" class="conversation-bar">
+    <button type="button" id="conversations-open-button" class="btn btn-sm conversations-icon-button"
+            title="{{ t('ui.conversations.show_panel') }}" aria-label="{{ t('ui.conversations.show_panel') }}">
+        <i class="bi bi-list" aria-hidden="true"></i>
+    </button>
+    <span id="conversation-title" class="conversation-title"></span>
+    <button type="button" id="conversation-rename-button" class="btn btn-sm conversations-icon-button" hidden
+            title="{{ t('ui.conversations.rename') }}" aria-label="{{ t('ui.conversations.rename') }}">
+        <i class="bi bi-pencil" aria-hidden="true"></i>
+    </button>
+</div>
+
 <div id="chat-container"
      class="chat-block mt-2 flex-grow-1" style="overflow-y: auto;">
 
@@ -140,6 +183,9 @@
 
 </div>
 
+</div><!-- .chat-main -->
+</div><!-- .chat-body -->
+
 {% include 'chat_memory_modal.html' %}
 
 <!-- Incluir los modales desde un archivo externo -->
@@ -165,6 +211,8 @@
     window.defaultLlmReasoningEffort = {{ llm_default_reasoning_effort | tojson }};
     // Live turn over SSE (BL-023): only for the providers that stream.
     window.chatStreamingEnabled = {{ (chat_streaming or false) | tojson }};
+    // Conversations (BL-001): the one the URL opens, if any.
+    window.initialConversationId = {{ (conversation_id | default(none)) | tojson }};
 
 
     // JS translations helper
@@ -191,6 +239,7 @@
     <script src="{{ url_for('static', filename='js/chat_charts.js', _external=True) }}"></script>
     <script src="{{ url_for('static', filename='js/chat_stream.js', _external=True) }}"></script>
     <script src="{{ url_for('static', filename='js/chat_main.js', _external=True) }}"></script>
+    <script src="{{ url_for('static', filename='js/chat_conversations.js', _external=True) }}"></script>
 
     <script>
 
