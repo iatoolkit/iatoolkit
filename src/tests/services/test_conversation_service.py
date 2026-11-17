@@ -226,3 +226,22 @@ class TestSnippet:
     def test_markdown_marks_leave_no_gaps(self):
         assert ConversationService.snippet("Germany had **4 customers**.", "germany") == "Germany had 4 customers."
         assert ConversationService.snippet("| Germany | 4 |", "germany") == "Germany 4"
+
+
+class TestTitleFromTheAgentsAnswer:
+    """What models really answered in production (BL-001): JSON, or the title as plain text."""
+
+    @pytest.mark.parametrize("response, title", [
+        ({"structured_output": {"title": "Stock promedio de anillos por tienda"}}, "Stock promedio de anillos por tienda"),
+        ({"structured_output": None, "output_text": "Cambios de precios en Boaz 2026"}, "Cambios de precios en Boaz 2026"),
+        ({"structured_output": None, "output_text": '{"title": "Venta neta 2025 vs 2026"}'}, "Venta neta 2025 vs 2026"),
+        ({"output_text": "**Título:** Ventas por país."}, "Ventas por país"),
+        ({"output_text": '"Clientes por segmento"'}, "Clientes por segmento"),
+        ({"output_text": "Una línea\notra línea"}, ""),
+        ({"output_text": " ".join(["palabra"] * 20)}, ""),
+        ({"output_text": ""}, ""),
+        (None, ""),
+    ])
+    def test_json_or_one_short_line(self, response, title):
+        assert ConversationService._title_from(response) == title
+

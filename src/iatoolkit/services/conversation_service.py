@@ -14,6 +14,7 @@ not found.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import uuid
@@ -352,15 +353,36 @@ class ConversationService:
     def system_agent_runner(self, runner):
         self._system_agent_runner = runner
 
-    @staticmethod
-    def _title_from(response) -> str:
+    #: A title the model wrote as plain text: one short line.
+    PLAIN_TITLE_MAX_WORDS = 12
+
+    @classmethod
+    def _title_from(cls, response) -> str:
+        """The title in the agent's answer. Some models (DeepSeek, seen in
+        production) answer the title as plain text instead of `{"title": ...}`;
+        a single short line is taken as the title too."""
         if not isinstance(response, dict):
             return ""
         for key in ("structured_output", "parsed_output"):
             value = response.get(key)
             if isinstance(value, dict) and value.get("title"):
                 return str(value["title"])
-        return ""
+        text = str(response.get("output_text") or "").strip()
+        if text.startswith("{"):
+            try:
+                value = json.loads(text)
+            except ValueError:
+                value = None
+            return str(value.get("title") or "") if isinstance(value, dict) else ""
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        if len(lines) != 1:
+            return ""
+        title = re.sub(r"[*_#`]", "", lines[0]).strip()
+        title = re.sub(r"^(t[ií]tulo|title)\s*:\s*", "", title, flags=re.IGNORECASE)
+        title = title.strip().strip("\"'“”").strip().rstrip(".")
+        if not title or len(title.split()) > cls.PLAIN_TITLE_MAX_WORDS:
+            return ""
+        return title
 
     def generate_title(self, company_short_name: str, user_identifier: str,
                        conversation: Conversation) -> Conversation:
@@ -383,7 +405,11 @@ class ConversationService:
                 self._company(company_short_name), self.TITLE_AGENT_KEY,
                 {"question": question[:2000], "answer": answer[:self.TITLE_ANSWER_CHARS]},
                 user_identifier=user_identifier)
-            self.set_generated_title(conversation, self._title_from(response))
+            title = self._title_from(response)
+            if not title:
+                logging.warning("Conversation %s: the title agent answered no usable title: %r",
+                                conversation.public_id, str((response or {}).get("output_text") or "")[:200])
+            self.set_generated_title(conversation, title)
         except Exception as e:
             logging.warning("Could not title conversation %s: %s", conversation.public_id, e)
         return conversation
