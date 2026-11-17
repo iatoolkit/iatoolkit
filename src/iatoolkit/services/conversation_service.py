@@ -217,6 +217,70 @@ class ConversationService:
         newest = self.conversation_repo.get_messages(conversation, limit=limit_messages, newest_first=True)
         return list(reversed(newest))
 
+    # ------------------------------------------------------------------ display
+    TOOL_CALL_META_KEYS = ("time", "result")
+
+    @classmethod
+    def activity_of(cls, query) -> dict:
+        """What the turn did, for the collapsed activity of a reopened answer
+        (BL-023): how long it took and which tools ran."""
+        stats = query.stats if isinstance(getattr(query, "stats", None), dict) else {}
+        stream = stats.get("stream") if isinstance(stats.get("stream"), dict) else {}
+        tools = []
+        for call in query.function_calls if isinstance(getattr(query, "function_calls", None), list) else []:
+            if not isinstance(call, dict):
+                continue
+            name = next((key for key in call.keys() if key not in cls.TOOL_CALL_META_KEYS), None)
+            if not name:
+                continue
+            result = call.get("result") if isinstance(call.get("result"), dict) else {}
+            try:
+                ms = int(round(float(call.get("time") or 0) * 1000))
+            except (TypeError, ValueError):
+                ms = 0
+            tools.append({"name": name, "ok": result.get("status") != "error", "ms": ms})
+        # "Thought for": until the answer started when the turn was streamed, else the whole turn.
+        duration_ms = stream.get("first_text_ms")
+        if not isinstance(duration_ms, (int, float)):
+            duration_ms = int(stats.get("response_time") or getattr(query, "answer_time", 0) or 0) * 1000
+        return {"duration_ms": int(duration_ms), "tools": tools}
+
+    def messages_for_display(self, conversation: Conversation, answer_formatter=None) -> list[dict]:
+        """The conversation as the chat draws it: each answer rendered again from
+        its turn in iat_queries, with its parts (charts, files) and activity."""
+        messages = self.messages(conversation)
+        queries = self.conversation_repo.get_queries(
+            conversation.company_id, [m.llm_query_id for m in messages if m.llm_query_id])
+        shown = []
+        for message in messages:
+            item = {
+                "id": message.id,
+                "role": message.role,
+                "created_at": message.created_at.isoformat() if message.created_at else None,
+            }
+            meta = message.meta or {}
+            if message.role == ConversationMessage.ROLE_USER:
+                item["content"] = message.content
+                item["attachments"] = message.attachments_meta or []
+                if meta.get("stopped"):
+                    item["stopped"] = True
+                if meta.get("prompt_name"):
+                    item["prompt_name"] = meta["prompt_name"]
+            elif message.role == ConversationMessage.ROLE_ASSISTANT:
+                query = queries.get(message.llm_query_id)
+                response = query.response if query is not None and isinstance(query.response, dict) else {}
+                parts = response.get("parts") if isinstance(response.get("parts"), list) else []
+                text = query.output if query is not None and query.output is not None else message.content
+                item["answer"] = answer_formatter(text, parts) if answer_formatter else text
+                item["parts"] = parts
+                item["query_id"] = message.llm_query_id
+                item["activity"] = self.activity_of(query) if query is not None else {"duration_ms": 0, "tools": []}
+            else:
+                item["content"] = message.content
+                item["event"] = meta.get("event")
+            shown.append(item)
+        return shown
+
     def is_first_turn(self, conversation: Conversation) -> bool:
         try:
             return self.conversation_repo.count_messages(

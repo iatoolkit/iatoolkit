@@ -15,6 +15,7 @@ from iatoolkit.common.exceptions import IAToolkitException
 def register_views(app):
 
     from iatoolkit.views.init_context_api_view import InitContextApiView
+    from iatoolkit.views.conversations_api_view import ConversationsApiView
     from iatoolkit.views.llmquery_api_view import LLMQueryApiView
     from iatoolkit.views.llmquery_stream_api_view import LLMQueryStreamApiView
     from iatoolkit.views.signup_view import SignupView
@@ -187,6 +188,14 @@ def register_views(app):
     # toolbar buttons
     app.add_url_rule('/<company_short_name>/api/feedback', view_func=UserFeedbackApiView.as_view('feedback'))
     app.add_url_rule('/<company_short_name>/api/history', view_func=HistoryApiView.as_view('history'))
+    # Conversations (BL-001)
+    conversations_view = ConversationsApiView.as_view('conversations_api')
+    app.add_url_rule('/<company_short_name>/api/conversations', view_func=conversations_view,
+                     methods=['GET', 'POST'])
+    app.add_url_rule('/<company_short_name>/api/conversations/<string:conversation_id>',
+                     view_func=conversations_view, methods=['GET', 'PATCH', 'DELETE'])
+    app.add_url_rule('/<company_short_name>/api/conversations/<string:conversation_id>/<string:resource>',
+                     view_func=conversations_view, methods=['GET', 'POST'])
     app.add_url_rule('/<company_short_name>/api/help-content', view_func=HelpContentApiView.as_view('help-content'))
     memory_view = MemoryApiView.as_view('memory_api')
     app.add_url_rule('/<company_short_name>/api/memory', view_func=memory_view, methods=['GET', 'POST'])
