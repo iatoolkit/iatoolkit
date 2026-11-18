@@ -26,7 +26,12 @@ import logging
 import re
 import unicodedata
 from iatoolkit.common import access
-from iatoolkit.common.decision_types import DecisionSpecError, is_decision_model, normalize_decision_spec
+from iatoolkit.common.decision_types import (
+    DecisionSpecError,
+    decision_spec_for_display,
+    is_decision_model,
+    normalize_decision_spec,
+)
 import yaml
 
 class PromptService:
@@ -549,7 +554,9 @@ class PromptService:
         """The questions as the editor's YAML view shows them, in their order."""
         if not decision_spec or not (decision_spec.get("questions") or {}):
             return ""
-        return yaml.safe_dump(decision_spec, allow_unicode=True, sort_keys=False, width=100)
+        return yaml.safe_dump(
+            decision_spec_for_display(decision_spec), allow_unicode=True, sort_keys=False, width=100,
+        )
 
     def _resolve_decision_spec(self, data: dict, existing_prompt) -> dict | None:
         """The decision spec to store, or None for a conversational agent (BL-008).

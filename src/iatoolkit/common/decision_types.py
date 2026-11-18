@@ -27,6 +27,28 @@ QUESTION_CHOICE = "choice"
 QUESTION_SCORE = "score"
 QUESTION_TYPES = (QUESTION_NOUL, QUESTION_CHOICE, QUESTION_SCORE)
 
+#: The name people read and write for a yes/no question. `noul` is the API's
+#: word for it, kept on the wire and in storage; the YAML the editor shows uses
+#: `yes_no`, and either is accepted on input.
+QUESTION_YES_NO = "yes_no"
+_QUESTION_TYPE_ALIASES = {QUESTION_YES_NO: QUESTION_NOUL}
+
+
+def question_type_for_display(question_type: str) -> str:
+    return QUESTION_YES_NO if question_type == QUESTION_NOUL else question_type
+
+
+def decision_spec_for_display(spec: dict | None) -> dict | None:
+    """The spec as the editor's YAML shows it: `yes_no` instead of the API's `noul`."""
+    if not isinstance(spec, dict) or not isinstance(spec.get("questions"), dict):
+        return spec
+    questions = {}
+    for name, question in spec["questions"].items():
+        if isinstance(question, dict):
+            question = {**question, "type": question_type_for_display(str(question.get("type") or ""))}
+        questions[name] = question
+    return {**spec, "questions": questions}
+
 # Same shape as a tool argument name: the answers come back keyed by it, and the
 # agent's structured output exposes them under it.
 _QUESTION_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
@@ -96,9 +118,11 @@ def parse_question(name: str, raw: Any) -> DecisionQuestion:
         raise DecisionSpecError(f"Question '{name}' must be an object.")
 
     question_type = _clean_text(raw.get("type")).lower()
+    question_type = _QUESTION_TYPE_ALIASES.get(question_type, question_type)
     if question_type not in QUESTION_TYPES:
         raise DecisionSpecError(
-            f"Question '{name}' has type '{question_type}'; expected one of {', '.join(QUESTION_TYPES)}."
+            f"Question '{name}' has type '{question_type}'; expected one of "
+            f"{QUESTION_YES_NO}, {QUESTION_CHOICE}, {QUESTION_SCORE}."
         )
 
     instructions = _clean_text(raw.get("instructions"))

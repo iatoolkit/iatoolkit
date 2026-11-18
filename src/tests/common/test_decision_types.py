@@ -5,6 +5,7 @@ from iatoolkit.common.decision_types import (
     DecisionSpecError,
     chat_models,
     decision_output_schema,
+    decision_spec_for_display,
     is_decision_model,
     normalize_decision_spec,
     parse_decision_spec,
@@ -93,6 +94,24 @@ def test_decision_output_schema_describes_the_answers():
     assert schema["required"] == ["es_cobranza", "area", "urgencia"]
     assert schema["properties"]["area"]["description"] == "¿Qué área debe atenderlo?"
     assert decision_output_schema({"questions": {}}) == {"type": "object", "properties": {}, "required": []}
+
+
+def test_yes_no_is_accepted_and_stored_as_the_api_noul():
+    spec = {"questions": {"es_boleta": {"type": "yes_no", "instructions": "¿Es una boleta?"}}}
+    assert normalize_decision_spec(spec)["questions"]["es_boleta"]["type"] == "noul"
+
+
+def test_an_unknown_type_names_yes_no_in_the_error():
+    with pytest.raises(DecisionSpecError) as exc:
+        parse_decision_spec({"questions": {"q": {"type": "boolean", "instructions": "?"}}})
+    assert "yes_no, choice, score" in str(exc.value)
+
+
+def test_the_displayed_spec_says_yes_no():
+    displayed = decision_spec_for_display(SPEC)
+    assert displayed["questions"]["es_cobranza"]["type"] == "yes_no"
+    assert displayed["questions"]["area"]["type"] == "choice"
+    assert SPEC["questions"]["es_cobranza"]["type"] == "noul"  # the original is untouched
 
 
 def test_chat_models_leaves_decision_models_out():

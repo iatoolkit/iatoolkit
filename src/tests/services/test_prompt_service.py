@@ -835,6 +835,7 @@ properties:
         spec = {'questions': {'b': {'type': 'noul', 'instructions': '¿B?'}, 'a': {'type': 'noul', 'instructions': '¿A?'}}}
         dumped = PromptService.dump_decision_spec_yaml(spec)
         assert dumped.index('b:') < dumped.index('a:')
+        assert 'type: yes_no' in dumped and 'noul' not in dumped
         assert '¿B?' in dumped
         assert PromptService.dump_decision_spec_yaml(None) == ''
 
