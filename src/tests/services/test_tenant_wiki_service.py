@@ -1102,6 +1102,48 @@ class TestTenantWikiService:
         assert unlabelled["unlabelled_page"] is True
         assert unlabelled["required_labels"] == []
 
+    def test_reading_one_page_never_loads_the_whole_wiki(self, monkeypatch):
+        # Each read used to load every full row of the wiki (bodies included) to
+        # check one page's labels; a burst of parallel reads of a large wiki
+        # saturated the database. One page now costs one row.
+        self.setup_labelled_wiki()
+        TenantWikiService.register_access_label_resolver(self.resolver({"public"}))
+        repo = self.service.knowledge_wiki_repo
+
+        def must_not_run(*args, **kwargs):
+            raise AssertionError("a single-page read loaded the whole wiki")
+
+        monkeypatch.setattr(repo, "list_pages", must_not_run)
+        monkeypatch.setattr(repo, "list_page_access_tags", must_not_run)
+
+        allowed = self.service.get_page("acme", wiki_key="kb", path="public/pricing.md", user_identifier="dcanales")
+        denied = self.service.get_page("acme", wiki_key="kb", path="board/comp.md", user_identifier="dcanales")
+        unlabelled = self.service.get_page("acme", wiki_key="kb", path="loose.md", user_identifier="dcanales")
+
+        assert allowed["status"] == "success"
+        assert denied["status"] == "forbidden"
+        assert denied["required_labels"] == ["board"]
+        assert unlabelled["unlabelled_page"] is True
+
+    def test_the_home_page_index_does_not_load_page_bodies(self, monkeypatch):
+        self.setup_labelled_wiki()
+        TenantWikiService.register_access_label_resolver(self.resolver({"public"}))
+        repo = self.service.knowledge_wiki_repo
+        original = repo.list_pages
+        calls = []
+
+        def spy(*args, **kwargs):
+            calls.append(kwargs.get("include_body", True))
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(repo, "list_pages", spy)
+
+        home = self.service.get_page("acme", wiki_key="kb", path="/", user_identifier="dcanales")
+
+        assert home["status"] == "success"
+        assert "public/pricing.md" in home["page"]["markdown"]
+        assert calls and not any(calls)
+
     def test_enforce_denies_everything_without_an_identity(self):
         self.setup_labelled_wiki()
         TenantWikiService.register_access_label_resolver(self.resolver({"public", "board"}))

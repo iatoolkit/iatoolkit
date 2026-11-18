@@ -10,6 +10,7 @@ from datetime import datetime
 
 from injector import inject
 from sqlalchemy import or_, text
+from sqlalchemy.orm import defer
 
 from iatoolkit.repositories.database_manager import DatabaseManager
 from iatoolkit.repositories.models import (
@@ -144,18 +145,67 @@ class KnowledgeWikiRepo:
         *,
         include_archived: bool = False,
         limit: int = 500,
+        include_body: bool = True,
     ) -> list[KnowledgeWikiPage]:
+        """
+        Pages of one wiki, ordered by path.
+
+        `include_body=False` leaves `body_text` unloaded. Listings that only need
+        titles and paths (the home page index) pass it: in a large wiki the body
+        is nearly all the bytes, and loading it on every read saturated the
+        database when an agent read pages in parallel.
+        """
         if not wiki_id:
             return []
         query = self.session.query(KnowledgeWikiPage).filter_by(wiki_id=wiki_id)
         if not include_archived:
             query = query.filter(KnowledgeWikiPage.status != KnowledgeWikiPageStatus.ARCHIVED)
+        if not include_body:
+            query = query.options(defer(KnowledgeWikiPage.body_text))
         return (
             query
             .order_by(KnowledgeWikiPage.path.asc(), KnowledgeWikiPage.id.asc())
             .limit(limit)
             .all()
         )
+
+    def get_page_access_tags(self, wiki_id: int, path: str) -> list[str] | None:
+        """
+        Access labels of one non-archived page, or None when there is no such page.
+
+        Reads two columns of one row, so checking a single page's access costs
+        the same in a 10-page wiki as in a 5.000-page one.
+        """
+        if not wiki_id or not path:
+            return None
+        row = (
+            self.session.query(KnowledgeWikiPage.access_tags)
+            .filter(
+                KnowledgeWikiPage.wiki_id == wiki_id,
+                KnowledgeWikiPage.path == path,
+                KnowledgeWikiPage.status != KnowledgeWikiPageStatus.ARCHIVED,
+            )
+            .first()
+        )
+        if row is None:
+            return None
+        return list(row[0] or [])
+
+    def list_page_access_tags(self, wiki_id: int, *, limit: int = 500) -> dict[str, list[str]]:
+        """Access labels of every non-archived page, by path; only those two columns are read."""
+        if not wiki_id:
+            return {}
+        rows = (
+            self.session.query(KnowledgeWikiPage.path, KnowledgeWikiPage.access_tags)
+            .filter(
+                KnowledgeWikiPage.wiki_id == wiki_id,
+                KnowledgeWikiPage.status != KnowledgeWikiPageStatus.ARCHIVED,
+            )
+            .order_by(KnowledgeWikiPage.path.asc(), KnowledgeWikiPage.id.asc())
+            .limit(limit)
+            .all()
+        )
+        return {path: list(access_tags or []) for path, access_tags in rows}
 
     def create_or_update_page(
         self,

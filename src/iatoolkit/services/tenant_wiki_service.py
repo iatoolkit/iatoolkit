@@ -1716,7 +1716,13 @@ class TenantWikiService:
         return sorted(labels)
 
     def _page_entries(self, wiki: KnowledgeWiki) -> list[dict]:
-        pages = self.knowledge_wiki_repo.list_pages(wiki.id, include_archived=False, limit=self.MAX_PAGES)
+        # Entries are serialized without the body, so it is not loaded either.
+        pages = self.knowledge_wiki_repo.list_pages(
+            wiki.id,
+            include_archived=False,
+            limit=self.MAX_PAGES,
+            include_body=False,
+        )
         return [self.serialize_page(page, include_body=False) for page in pages]
 
     def _root_index_storage_key(self, wiki: KnowledgeWiki) -> str:
@@ -2555,6 +2561,9 @@ class AccessGate:
         self.base_filter = base_filter
         self.mode = mode
         self.user_labels = user_labels
+        # Labels looked up one page at a time, until a second distinct page is
+        # asked about; then the whole wiki's labels (path and labels only).
+        self._access_tags_by_path: dict[str, list[str] | None] = {}
         self._access_tags_index: dict[str, list[str]] | None = None
         # One log line per call, not per page: a 1.268-page index would bury the
         # log. The full picture is the `wiki-access-check` report.
@@ -2640,16 +2649,29 @@ class AccessGate:
         }
 
     def _access_tags_for(self, path: str):
-        if self._access_tags_index is None:
-            self._access_tags_index = {
-                page.path: (page.access_tags or [])
-                for page in self.service.knowledge_wiki_repo.list_pages(
-                    self.wiki.id,
-                    include_archived=False,
-                    limit=TenantWikiService.MAX_PAGES,
-                )
-            }
-        # A path with no row is unknown, and unknown denies.
+        """
+        The page's labels; None for a path with no row, which denies.
+
+        Reading one page asks about one path, so that path is looked up alone.
+        Listing the home page or filtering search results asks about many, so
+        the second distinct path loads the labels of the whole wiki in one query.
+        Neither ever loads page bodies: the gate used to read every full row of
+        the wiki on each `get_page`, and a burst of parallel reads of a large
+        wiki saturated the database.
+        """
+        if self._access_tags_index is not None:
+            return self._access_tags_index.get(path)
+        if path in self._access_tags_by_path:
+            return self._access_tags_by_path[path]
+        repo = self.service.knowledge_wiki_repo
+        if not self._access_tags_by_path:
+            tags = repo.get_page_access_tags(self.wiki.id, path)
+            self._access_tags_by_path[path] = tags
+            return tags
+        self._access_tags_index = repo.list_page_access_tags(
+            self.wiki.id,
+            limit=TenantWikiService.MAX_PAGES,
+        )
         return self._access_tags_index.get(path)
 
     @staticmethod
