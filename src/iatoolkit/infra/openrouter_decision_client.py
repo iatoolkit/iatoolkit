@@ -24,6 +24,9 @@ from iatoolkit.common.decision_types import DecisionQuestion, DecisionResult
 from iatoolkit.common.exceptions import IAToolkitException
 
 DEFAULT_DECISIONS_PATH = "/api/alpha/decisions"
+#: Relative to a gateway's OpenRouter base, which stands for `/api/v1`.
+GATEWAY_DECISIONS_SUFFIX = "/systemone"
+OPENROUTER_HOSTS = {"openrouter.ai", "www.openrouter.ai"}
 DEFAULT_BASE_URL = "https://openrouter.ai/api/v1"
 RETRYABLE_STATUS = {408, 429, 500, 502, 503, 504}
 DEFAULT_RETRY_ATTEMPTS = 2
@@ -38,19 +41,27 @@ class OpenRouterDecisionClient:
 
     @staticmethod
     def decisions_url(base_url: str | None, path: str | None = None) -> str:
-        """The decisions endpoint on the company's OpenRouter host.
+        """The decisions endpoint for the company's OpenRouter base URL.
 
-        The configured `base_url` is the chat one (`https://openrouter.ai/api/v1`);
-        the decisions router lives on the same host under its own path, so only
-        the origin is kept. A gateway in front of OpenRouter keeps working as long
-        as it forwards that path.
+        The configured `base_url` is the chat one, which stands for OpenRouter's
+        `/api/v1` wherever it points. On openrouter.ai itself the decisions
+        router sits outside that prefix, at `/api/alpha/decisions`. Anything else
+        is a gateway or proxy that exposes only `/api/v1` under its own path —
+        Cloudflare AI Gateway answers 404 to the alpha router — so the same
+        contract is reached at `{base_url}/systemone`, which serves every
+        decision model (measured through Maxxa's Cloudflare gateway, 2026-11-18).
+
+        An explicit `path` (`llm.decisions.path`) is taken as is, on the origin.
         """
-        parts = urlsplit(str(base_url or DEFAULT_BASE_URL).strip() or DEFAULT_BASE_URL)
+        raw_base = str(base_url or DEFAULT_BASE_URL).strip() or DEFAULT_BASE_URL
+        parts = urlsplit(raw_base)
         origin = f"{parts.scheme or 'https'}://{parts.netloc or 'openrouter.ai'}"
-        decision_path = str(path or DEFAULT_DECISIONS_PATH).strip() or DEFAULT_DECISIONS_PATH
-        if not decision_path.startswith("/"):
-            decision_path = f"/{decision_path}"
-        return f"{origin}{decision_path}"
+        explicit_path = str(path or "").strip()
+        if explicit_path:
+            return f"{origin}{explicit_path if explicit_path.startswith('/') else '/' + explicit_path}"
+        if (parts.netloc or "").lower() in OPENROUTER_HOSTS:
+            return f"{origin}{DEFAULT_DECISIONS_PATH}"
+        return f"{raw_base.rstrip('/')}{GATEWAY_DECISIONS_SUFFIX}"
 
     def decide(
         self,
@@ -81,7 +92,12 @@ class OpenRouterDecisionClient:
             payload["user"] = user
 
         headers = dict(default_headers or {})
-        headers["Authorization"] = f"Bearer {api_key}"
+        # Behind a gateway that holds the provider key (Cloudflare's
+        # cloudflare_managed mode) there is no key to send; an empty bearer is an
+        # illegal header value, so the header is left out and the gateway's own
+        # headers authenticate the call.
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
         headers["Content-Type"] = "application/json"
         timeout = httpx.Timeout(read_timeout_seconds, connect=connect_timeout_seconds)
 

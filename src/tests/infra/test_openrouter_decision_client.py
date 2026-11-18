@@ -43,6 +43,11 @@ class TestDecisionsUrl:
         (None, None, URL),
         ("https://gw.example.com/openrouter/v1", "/api/v1/systemone", "https://gw.example.com/api/v1/systemone"),
         ("https://openrouter.ai/api/v1", "api/alpha/decisions", URL),
+        # Cloudflare AI Gateway exposes only OpenRouter's /api/v1 under its path.
+        ("https://gateway.ai.cloudflare.com/v1/acct/default/openrouter", None,
+         "https://gateway.ai.cloudflare.com/v1/acct/default/openrouter/systemone"),
+        ("https://gateway.ai.cloudflare.com/v1/acct/default/openrouter/", None,
+         "https://gateway.ai.cloudflare.com/v1/acct/default/openrouter/systemone"),
     ])
     def test_keeps_the_origin_and_uses_the_decisions_path(self, base_url, path, expected):
         assert OpenRouterDecisionClient.decisions_url(base_url, path) == expected
@@ -64,6 +69,13 @@ class TestDecide:
         assert sent["questions"]["area"]["criteria"]["legal"] == "Reclamos formales."
         assert calls[0].headers["authorization"] == "Bearer sk-test"
         assert calls[0].headers["x-title"] == "IAToolkit"
+
+    def test_without_a_key_no_authorization_header_is_sent(self):
+        # Behind a gateway that injects the key, an empty bearer was an illegal header.
+        calls = []
+        _decide(_client([(200, RESPONSE)], calls), api_key="", default_headers={"cf-aig-authorization": "Bearer t"})
+        assert "authorization" not in calls[0].headers
+        assert calls[0].headers["cf-aig-authorization"] == "Bearer t"
 
     def test_omits_provider_when_there_is_no_policy(self):
         calls = []
