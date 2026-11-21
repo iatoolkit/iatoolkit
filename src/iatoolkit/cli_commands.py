@@ -7,6 +7,7 @@ import click
 import logging
 from iatoolkit.core import IAToolkit, current_iatoolkit
 from iatoolkit.services.api_key_service import ApiKeyService
+from iatoolkit.services.benchmark_service import BenchmarkService
 
 
 def register_core_commands(app):
@@ -67,3 +68,28 @@ def register_core_commands(app):
         except Exception as e:
             logging.exception(e)
             click.echo(f"Error: {str(e)}")
+
+    @app.cli.command("run-benchmark")
+    @click.argument("company_short_name")
+    @click.argument("dataset_file_path")
+    def run_benchmark(company_short_name: str, dataset_file_path: str):
+        """🧠 Execute benchmark testing against a proprietary XLSX dataset.
+
+        \b
+        Arguments:
+          COMPANY_SHORT_NAME   The registered short name of the company to benchmark.
+          DATASET_FILE_PATH    Path to the .xlsx input file (see docs/benchmark_testing.md).
+
+        \b
+        Example:
+          flask run-benchmark acme_corp ./benchmarks/acme_q1_2025.xlsx
+        """
+        try:
+            benchmark_service = IAToolkit.get_instance().get_injector().get(BenchmarkService)
+            click.echo(f"🚀 Starting benchmark for company '{company_short_name}'...")
+            click.echo(f"   Dataset : {dataset_file_path}")
+            output_path = benchmark_service.run(company_short_name, dataset_file_path)
+            click.echo(f"✅ Benchmark complete! Results saved to: {output_path}")
+        except Exception as e:
+            logging.exception(e)
+            click.echo(f"❌ Benchmark failed: {e}")
