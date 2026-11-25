@@ -39,6 +39,7 @@ def register_views(app):
         GlobalGoogleLoginStartView,
         FinalizeContextView,
     )
+    from iatoolkit.views.sso_login_view import SsoLoginStartView, SsoLoginCallbackView
     from iatoolkit.views.configuration_api_view import ConfigurationApiView, ValidateConfigurationApiView
     from iatoolkit.views.logout_api_view import LogoutApiView
     from iatoolkit.views.home_view import HomeView
@@ -89,6 +90,15 @@ def register_views(app):
     app.add_url_rule(
         '/auth/google/callback',
         view_func=GoogleLoginCallbackView.as_view('login_google_callback')
+    )
+    # sign-in with the company's own identity provider (BL-031); one return URL for all
+    app.add_url_rule(
+        '/<company_short_name>/login/sso',
+        view_func=SsoLoginStartView.as_view('login_sso_start')
+    )
+    app.add_url_rule(
+        '/auth/sso/callback',
+        view_func=SsoLoginCallbackView.as_view('login_sso_callback')
     )
 
     # company-less login: identifies the person, the caller picks the company

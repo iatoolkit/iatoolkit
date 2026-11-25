@@ -13,6 +13,8 @@ from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.repositories.database_manager import DatabaseManager
 from iatoolkit.repositories.models import AccessLog
 from iatoolkit.infra.google_auth_client import GoogleAuthClient, GoogleAuthError
+from iatoolkit.infra.oidc_client import OidcClient, OidcError
+from iatoolkit.common.interfaces.identity_provider_resolver import CompanyIdentityProvider
 from flask import request
 import logging
 import re
@@ -35,7 +37,8 @@ class AuthService:
                  jwt_service: JWTService,
                  db_manager: DatabaseManager,
                  google_auth_client: GoogleAuthClient,
-                 i18n_service: I18nService
+                 i18n_service: I18nService,
+                 oidc_client: OidcClient = None,
                  ):
         self.profile_service = profile_service
         self.api_key_service = api_key_service
@@ -43,6 +46,7 @@ class AuthService:
         self.db_manager = db_manager
         self.google_auth_client = google_auth_client
         self.i18n_service = i18n_service
+        self.oidc_client = oidc_client or OidcClient()
 
     def login_local_user(self, company_short_name: str, email: str, password: str) -> dict:
         # try to autenticate a local user, register the event and return the result
@@ -236,6 +240,49 @@ class AuthService:
                 user_identifier=auth_response.get('user_identifier'),
             )
 
+        return auth_response
+
+    def login_sso_user(self, provider: CompanyIdentityProvider, *, code: str, redirect_uri: str,
+                       code_verifier: str, nonce: str) -> dict:
+        """
+        Finishes a sign-in with the company's identity provider (BL-031): proves the
+        identity with the provider's id_token, then opens the company session.
+        """
+        company_short_name = provider.company_short_name
+        if rate_limiter.over_limit('login_ip', self._client_ip(), rate_limiter.LOGIN_ATTEMPTS_PER_IP):
+            self.log_access(company_short_name=company_short_name, auth_type='sso',
+                            outcome='failure', reason_code='RATE_LIMITED')
+            return {'success': False, 'reason_code': 'RATE_LIMITED',
+                    'message': self.i18n_service.t('errors.auth.too_many_attempts')}
+
+        try:
+            identity = self.oidc_client.exchange_code(
+                provider.oidc, code=code, redirect_uri=redirect_uri,
+                code_verifier=code_verifier, nonce=nonce)
+        except OidcError as exc:
+            logging.warning("SSO provider rejected login. company=%s provider=%s reason_code=%s",
+                            company_short_name, provider.provider_type, exc.reason_code)
+            self.log_access(company_short_name=company_short_name, auth_type='sso',
+                            outcome='failure', reason_code=exc.reason_code)
+            return {'success': False, 'reason_code': exc.reason_code,
+                    'message': self.i18n_service.t(exc.message_key)}
+        except Exception:
+            logging.exception("Unexpected SSO failure. company=%s", company_short_name)
+            self.log_access(company_short_name=company_short_name, auth_type='sso',
+                            outcome='failure', reason_code='SSO_UNEXPECTED_ERROR')
+            return {'success': False, 'reason_code': 'SSO_UNEXPECTED_ERROR',
+                    'message': self.i18n_service.t('errors.auth.sso_login_failed')}
+
+        auth_response = self.profile_service.login_with_sso(provider, identity)
+        if auth_response.get('success'):
+            self.log_access(company_short_name=company_short_name, auth_type='sso',
+                            outcome='success', user_identifier=auth_response.get('user_identifier'))
+        else:
+            logging.warning("SSO login rejected. company=%s email=%s reason_code=%s",
+                            company_short_name, identity.email, auth_response.get('reason_code'))
+            self.log_access(company_short_name=company_short_name, auth_type='sso',
+                            outcome='failure', reason_code=auth_response.get('reason_code', 'SSO_LOGIN_FAILED'),
+                            user_identifier=identity.email)
         return auth_response
 
     def login_global_local_user(self, email: str, password: str) -> dict:

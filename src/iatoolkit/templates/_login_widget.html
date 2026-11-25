@@ -16,13 +16,25 @@
     </div>
     {% endif %}
 
+    {% set methods = login_methods|default({'sso': none, 'google': true, 'password': true}) %}
+    {% if methods.sso %}
+    <a href="{{ url_for('login_sso_start', company_short_name=company_short_name, lang=current_lang, next=login_next) }}"
+       id="sso-login-button"
+       class="btn btn-branded-primary w-100 fw-semibold py-2 d-flex align-items-center justify-content-center gap-2 mb-2">
+        <i class="bi {{ 'bi-microsoft' if methods.sso.provider_type == 'entra' else 'bi-shield-lock' }}"></i>
+        {{ t('ui.login_widget.sso_button', name=methods.sso.display_name) }}
+    </a>
+    {% endif %}
+
     {% if google_login_enabled|default(false) %}
     <a href="{{ url_for('login_google_start', company_short_name=company_short_name, lang=current_lang, next=login_next) }}"
        class="btn btn-outline-secondary w-100 fw-semibold py-2 d-flex align-items-center justify-content-center gap-2">
         <i class="bi bi-google"></i>
         {{ t('ui.login_widget.google_button') }}
     </a>
+    {% endif %}
 
+    {% if (methods.sso or google_login_enabled|default(false)) and methods.password %}
     <div class="d-flex align-items-center gap-3 my-4">
         <div class="flex-grow-1" style="height: 1px; background: #e0e0e0;"></div>
         <span class="text-muted text-uppercase" style="font-size: 0.75rem; letter-spacing: 0.08em;">
@@ -32,6 +44,17 @@
     </div>
     {% endif %}
 
+    {# Password off: the form stays reachable for the company's owners only,
+       behind a discreet link — the emergency door when the provider fails. #}
+    {% if not methods.password %}
+    <div class="text-center mt-3">
+      <a class="text-muted small text-decoration-none" data-bs-toggle="collapse" href="#owner-password-access"
+         role="button" aria-expanded="false" aria-controls="owner-password-access">
+        {{ t('ui.login_widget.owner_password_access') }}
+      </a>
+    </div>
+    <div class="collapse mt-3" id="owner-password-access">
+    {% endif %}
     <!-- 2. Formulario de Inicio de Sesión -->
     <form id="login-form"
           action="{{ url_for('login', company_short_name=company_short_name, lang=current_lang) }}"
@@ -51,8 +74,10 @@
           {{ t('ui.login_widget.login_button') }}
       </button>
     </form>
+    {% if not methods.password %}</div>{% endif %}
 
     <!-- 3. Nueva Sección de Registro más Atractiva -->
+    {% if methods.password %}
     <div class="mt-4 pt-3 text-center" style="border-top: 1px solid #e0e0e0;">
         {% if signup_invitation_required|default(false) %}
         <span class="text-muted small">{{ t('ui.login_widget.invitation_prompt') }}</span>
@@ -70,4 +95,5 @@
         {{ t('ui.login_widget.forgot_password_link') }}
       </a>
     </div>
+    {% endif %}
 </div>

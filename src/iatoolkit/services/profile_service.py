@@ -17,6 +17,9 @@ from iatoolkit.services.configuration_service import ConfigurationService
 from flask_bcrypt import Bcrypt
 from iatoolkit.services.mail_service import MailService
 from iatoolkit.infra.google_auth_client import GoogleIdentity, GOOGLE_ISSUER
+from iatoolkit.infra.oidc_client import OidcIdentity
+from iatoolkit.common.interfaces.identity_provider_resolver import (
+    CompanyIdentityProvider, CompanyLoginMethods, IdentityProviderResolver)
 import hashlib
 import hmac
 import re
@@ -47,7 +50,8 @@ class ProfileService:
                  lang_service: LanguageService,
                  dispatcher: Dispatcher,
                  mail_service: MailService,
-                 signup_policy_resolver: SignupPolicyResolver = None):
+                 signup_policy_resolver: SignupPolicyResolver = None,
+                 identity_provider_resolver: IdentityProviderResolver = None):
         self.i18n_service = i18n_service
         self.profile_repo = profile_repo
         self.dispatcher = dispatcher
@@ -56,7 +60,19 @@ class ProfileService:
         self.lang_service = lang_service
         self.mail_service = mail_service
         self.signup_policy_resolver = signup_policy_resolver or AllowAllSignupPolicyResolver()
+        self.identity_provider_resolver = identity_provider_resolver
         self.bcrypt = Bcrypt()
+
+    def login_methods(self, company_short_name: str) -> CompanyLoginMethods:
+        """How people may sign in to the company (BL-031). Every method when the
+        edition has no resolver or it fails: a lookup error must not lock anyone out."""
+        if self.identity_provider_resolver is None:
+            return CompanyLoginMethods()
+        try:
+            return self.identity_provider_resolver.get_login_methods(company_short_name)
+        except Exception as exc:
+            logging.warning("Login methods of %s could not be read: %s", company_short_name, type(exc).__name__)
+            return CompanyLoginMethods()
 
     @staticmethod
     def _is_google_auth_user(user: User | None) -> bool:
@@ -124,7 +140,8 @@ class ProfileService:
         last_name = self._normalize_name_value(family_name, "user")
         return first_name, last_name
 
-    def _build_session_user_profile(self, user: User, company: Company, user_role: str | None) -> dict:
+    def _build_session_user_profile(self, user: User, company: Company, user_role: str | None,
+                                    login_method: str | None = None) -> dict:
         if access.Access.registered():
             # What the person can do over the company (BL-010, Fase 1), for screens and
             # prompt context; access is always decided with `access.can`.
@@ -142,6 +159,10 @@ class ProfileService:
                 "auth_method": auth_method,
             }
         }
+        if login_method:
+            # How this session signed in, when it differs from the account's own method
+            # (a local account entering through the company's identity provider).
+            user_profile["extras"]["login_method"] = login_method
         if auth_method == "google":
             user_profile["extras"]["google_email_verified"] = bool(user.google_email_verified)
             if user.google_email:
@@ -328,6 +349,11 @@ class ProfileService:
                 return {'success': False,
                         "message": self.i18n_service.t('errors.services.account_not_verified')}
 
+            if not self.login_methods(company_short_name).password and not access.is_owner(
+                    company_short_name, user.email):
+                return {'success': False, 'reason_code': 'PASSWORD_LOGIN_DISABLED',
+                        "message": self.i18n_service.t('errors.auth.password_login_disabled')}
+
             user_role = self.profile_repo.get_user_role_in_company(company.id, user.id)
 
             return self._build_session_user_profile(user, company, user_role)
@@ -453,7 +479,7 @@ class ProfileService:
     def _account_user(self, company_short_name: str, session_info: dict):
         profile = session_info.get("profile") or {}
         method = (profile.get("extras") or {}).get("auth_method")
-        if not profile.get("user_is_local") and method != "google":
+        if not profile.get("user_is_local") and method not in ("google", "sso"):
             return None
         user = self.profile_repo.get_user_by_email(session_info["user_identifier"])
         company = self.profile_repo.get_company_by_short_name(company_short_name)
@@ -557,6 +583,13 @@ class ProfileService:
                     "success": False,
                     "message": self.i18n_service.t('errors.signup.company_not_found', company_name=company_short_name),
                     "reason_code": "COMPANY_NOT_FOUND",
+                }
+
+            if not self.login_methods(company_short_name).google:
+                return {
+                    "success": False,
+                    "message": self.i18n_service.t('errors.auth.google_login_disabled'),
+                    "reason_code": "GOOGLE_LOGIN_DISABLED",
                 }
 
             email = str(google_identity.email or "").strip().lower()
@@ -728,6 +761,95 @@ class ProfileService:
                 "reason_code": "UNEXPECTED_ERROR",
             }
 
+    @staticmethod
+    def _sso_email_is_trusted(identity: OidcIdentity, provider: CompanyIdentityProvider) -> bool:
+        """
+        BL-031: believe the provider when it says whether the e-mail is verified;
+        when it does not say (Entra ID), trust only the company's own domains.
+        """
+        if identity.email_verified is not None:
+            return identity.email_verified
+        domain = (identity.email or "").rsplit("@", 1)[-1].lower()
+        trusted = {str(d or "").strip().lower().lstrip("@") for d in provider.trusted_email_domains}
+        return bool(domain) and domain in trusted
+
+    def login_with_sso(self, provider: CompanyIdentityProvider, identity: OidcIdentity) -> dict:
+        """
+        Opens a company session for someone the company's identity provider just
+        signed in. The account is found by (issuer, subject); an existing account
+        with the same, trusted e-mail is linked to it; otherwise a new account is
+        created. Joining the company is decided by its Signup Policy, as with Google.
+        """
+        company_short_name = provider.company_short_name
+
+        def refuse(reason_code: str, key: str = 'errors.auth.sso_login_failed', message: str | None = None):
+            self._safe_rollback()
+            return {"success": False, "reason_code": reason_code,
+                    "message": message or self.i18n_service.t(key)}
+
+        try:
+            company = self.profile_repo.get_company_by_short_name(company_short_name)
+            if not company:
+                return refuse("COMPANY_NOT_FOUND")
+
+            email = str(identity.email or "").strip().lower()
+            if not email or "@" not in email:
+                return refuse("SSO_EMAIL_MISSING", 'errors.auth.sso_email_missing')
+            if not self._sso_email_is_trusted(identity, provider):
+                return refuse("SSO_EMAIL_NOT_TRUSTED", 'errors.auth.sso_email_not_trusted')
+
+            outcome = "existing_identity"
+            user = self.profile_repo.get_user_by_identity(identity.issuer, identity.subject)
+            if user is None:
+                user = self.profile_repo.get_user_by_email(email)
+                if user is not None:
+                    linked = user.find_identity(identity.issuer)
+                    if linked is not None and linked.subject != identity.subject:
+                        # Another account at the same provider already owns this user.
+                        return refuse("SSO_ACCOUNT_CONFLICT", 'errors.auth.sso_account_conflict')
+                    outcome = "linked_existing_user"
+                else:
+                    first_name, last_name = self._resolve_google_names(email, identity)
+                    user = User(email=email, password=None, auth_method='sso',
+                                first_name=first_name, last_name=last_name, verified=True)
+                    outcome = "new_sso_user"
+
+            user.link_identity(identity.issuer, identity.subject, email, True)
+            user.verified = True
+
+            policy_metadata = {}
+            if company not in user.companies:
+                decision = self.signup_policy_resolver.evaluate_signup(
+                    company_short_name=company_short_name, email=email, invite_token=None)
+                policy_metadata = dict(decision.metadata or {})
+                if not decision.allowed:
+                    logging.info("SSO login blocked by signup policy. company=%s email=%s policy=%s",
+                                 company_short_name, email, policy_metadata.get("policy_mode") or "unknown")
+                    message = decision.reason_message or (
+                        self.i18n_service.t(decision.reason_key) if decision.reason_key else None)
+                    return refuse("SIGNUP_NOT_ALLOWED", 'errors.signup.signup_not_allowed', message)
+                if not self.signup_policy_resolver.claim_signup(company_short_name, email, verified_email=True):
+                    return refuse("SIGNUP_NOT_ALLOWED", 'errors.signup.signup_not_allowed')
+                user.companies.append(company)
+                if outcome != "new_sso_user":
+                    outcome = "company_associated"
+
+            if user.id is None:
+                self.profile_repo.create_user(user)
+            else:
+                self.profile_repo.save_user(user)
+
+            logging.info("SSO login success. company=%s provider=%s email=%s outcome=%s policy_mode=%s",
+                         company_short_name, provider.provider_type, email, outcome,
+                         policy_metadata.get("policy_mode") or "existing_membership")
+
+            user_role = self.profile_repo.get_user_role_in_company(company.id, user.id)
+            return self._build_session_user_profile(user, company, user_role, login_method="sso")
+        except Exception as e:
+            self._safe_rollback()
+            return {"success": False, "reason_code": "UNEXPECTED_ERROR",
+                    "message": unexpected_error_message(self.i18n_service, e, where="profile_service.login_with_sso")}
+
     def send_google_welcome_email(
         self,
         *,
@@ -800,6 +922,9 @@ class ProfileService:
             if not company:
                 return {
                     "error": self.i18n_service.t('errors.signup.company_not_found', company_name=company_short_name)}
+
+            if not self.login_methods(company_short_name).password:
+                return {"error": self.i18n_service.t('errors.signup.password_signup_disabled')}
 
             # normalize  format's
             email = email.lower()

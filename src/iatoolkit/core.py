@@ -535,6 +535,8 @@ class IAToolkit:
         from iatoolkit.services.warmup_service import WarmupService
         from iatoolkit.common.interfaces.signup_policy_resolver import SignupPolicyResolver
         from iatoolkit.services.signup_policy_resolver import AllowAllSignupPolicyResolver
+        from iatoolkit.common.interfaces.identity_provider_resolver import IdentityProviderResolver
+        from iatoolkit.services.identity_provider_resolver import NoIdentityProviderResolver
 
         binder.bind(QueryService, to=QueryService)
         binder.bind(ApiKeyService, to=ApiKeyService)
@@ -596,11 +598,14 @@ class IAToolkit:
 
         if not is_bound(self._injector, SignupPolicyResolver):
             binder.bind(SignupPolicyResolver, to=AllowAllSignupPolicyResolver)
+        if not is_bound(self._injector, IdentityProviderResolver):
+            binder.bind(IdentityProviderResolver, to=NoIdentityProviderResolver)
 
     def _bind_infrastructure(self, binder: Binder):
         from iatoolkit.infra.llm_proxy import LLMProxy
         from iatoolkit.infra.google_chat_app import GoogleChatApp
         from iatoolkit.infra.google_auth_client import GoogleAuthClient
+        from iatoolkit.infra.oidc_client import OidcClient
         from iatoolkit.infra.brevo_mail_app import BrevoMailApp
         from iatoolkit.infra.jina_embeddings_client import JinaEmbeddingsClient
         from iatoolkit.common.util import Utility
@@ -609,6 +614,8 @@ class IAToolkit:
         binder.bind(LLMProxy, to=LLMProxy)
         binder.bind(GoogleChatApp, to=GoogleChatApp)
         binder.bind(GoogleAuthClient, to=GoogleAuthClient)
+        # One instance per process: it caches each provider's metadata and keys.
+        binder.bind(OidcClient, to=OidcClient, scope=singleton)
         binder.bind(BrevoMailApp, to=BrevoMailApp)
         binder.bind(JinaEmbeddingsClient, to=JinaEmbeddingsClient)
         binder.bind(Utility, to=Utility)
@@ -714,6 +721,18 @@ class IAToolkit:
             )
             user_profile = session_info.get('profile', {})
 
+            # How people sign in to the company in the route (BL-031): the login,
+            # signup and invitation pages show only the allowed methods.
+            login_methods = {'sso': None, 'google': True, 'password': True}
+            if route_company_short_name:
+                methods = profile_service.login_methods(route_company_short_name)
+                login_methods = {
+                    'sso': ({'display_name': methods.sso.display_name,
+                             'provider_type': methods.sso.provider_type} if methods.sso else None),
+                    'google': methods.google,
+                    'password': methods.password,
+                }
+
             return {
                 'url_for': url_for,
                 'iatoolkit_version': f'{self.version}',
@@ -732,7 +751,8 @@ class IAToolkit:
                 't': translate_for_template,
                 'optional_url_for': optional_url_for,
                 'google_analytics_id': self._get_config_value('GOOGLE_ANALYTICS_ID', ''),
-                'google_login_enabled': google_auth_client.is_enabled(),
+                'google_login_enabled': google_auth_client.is_enabled() and login_methods['google'],
+                'login_methods': login_methods,
             }
 
     def _get_default_static_folder(self) -> str:

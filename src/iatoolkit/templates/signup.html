@@ -22,13 +22,24 @@
                 <div class="col-lg-6 col-md-8">
                     <div class="branded-form-container">
                         <h4 class="branded-form-title">{{ t('ui.signup.title') }}</h4>
+                        {% set methods = login_methods|default({'sso': none, 'google': true, 'password': true}) %}
+                        {% if methods.sso %}
+                        <a href="{{ url_for('login_sso_start', company_short_name=company_short_name, lang=lang or 'en', login_hint=invited_email) }}"
+                           id="sso-signup-button"
+                           class="btn btn-branded-primary w-100 fw-semibold py-2 d-flex align-items-center justify-content-center gap-2 mb-2">
+                            <i class="bi {{ 'bi-microsoft' if methods.sso.provider_type == 'entra' else 'bi-shield-lock' }}"></i>
+                            {{ t('ui.login_widget.sso_button', name=methods.sso.display_name) }}
+                        </a>
+                        {% endif %}
                         {% if google_login_enabled|default(false) %}
                         <a href="{{ url_for('login_google_start', company_short_name=company_short_name, lang=lang or 'en') }}"
                            class="btn btn-outline-secondary w-100 fw-semibold py-2 d-flex align-items-center justify-content-center gap-2 mb-4">
                             <i class="bi bi-google"></i>
                             {{ t('ui.signup.google_button') }}
                         </a>
+                        {% endif %}
 
+                        {% if (methods.sso or google_login_enabled|default(false)) and methods.password %}
                         <div class="d-flex align-items-center gap-3 mb-4">
                             <div class="flex-grow-1" style="height: 1px; background: #e0e0e0;"></div>
                             <span class="text-muted text-uppercase" style="font-size: 0.75rem; letter-spacing: 0.08em;">
@@ -38,6 +49,7 @@
                         </div>
                         {% endif %}
 
+                        {% if methods.password %}
                         <form action="{{ url_for('signup', company_short_name=company_short_name) }}" method="post">
                             {% if invite_token %}<input type="hidden" name="invite_token" value="{{ invite_token }}">{% endif %}
                             <input type="hidden" name="form_token" value="{{ form_token }}">
@@ -89,6 +101,7 @@
                             <!-- Botón actualizado con la clase de branding -->
                             <button type="submit" class="btn btn-branded-primary w-100 fw-bold py-2 mt-3">{{ t('ui.signup.signup_button') }}</button>
                         </form>
+                        {% endif %}
                         <!-- Nota de privacidad -->
                         <p class="text-muted small mb-0 text-center mt-4">
                             {{ t('ui.signup.disclaimer') }}
