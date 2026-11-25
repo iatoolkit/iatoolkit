@@ -186,7 +186,7 @@ class TestAuthServiceVerify:
         self.mock_api_key_service.get_active_api_key_entry.return_value = None
         secret = "zgpFN8VCRrY7mub4iIGSmA5BpL6qgGuIsPq5Jg2s"
 
-        with caplog.at_level("ERROR"), self.app.test_request_context(headers={'Authorization': f'Bearer {secret}'}):
+        with caplog.at_level("WARNING"), self.app.test_request_context(headers={'Authorization': f'Bearer {secret}'}):
             self.service.verify()
 
         logged = " ".join(record.getMessage() for record in caplog.records)

@@ -372,7 +372,7 @@ class AuthService:
         if not api_key_entry:
             rate_limiter.record_failure('api_key_ip', client_ip, rate_limiter.INVALID_API_KEYS_PER_IP)
             # Never the key itself: a mistyped or just-rotated key would end up in the logs.
-            logging.error("Invalid or inactive IAToolkit API Key: %s", self.key_fingerprint(api_key))
+            logging.warning("Invalid or inactive IAToolkit API Key: %s", self.key_fingerprint(api_key))
             return {"success": False,
                     "error_message": self.i18n_service.t('errors.auth.invalid_api_key'),
                     "status_code": 402}
