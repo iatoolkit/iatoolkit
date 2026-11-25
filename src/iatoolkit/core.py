@@ -30,6 +30,27 @@ from iatoolkit.services.configuration_service import ConfigurationService
 # global variable for the unique instance of IAToolkit
 _iatoolkit_instance: Optional['IAToolkit'] = None
 
+# Environments where the signing secrets may fall back to a development value.
+# Anything else, an unset FLASK_ENV included, is treated as production.
+NON_PRODUCTION_ENVS = frozenset({'dev', 'development', 'test', 'testing'})
+
+# The secrets that sign sessions and tokens, with the value each one falls back to
+# outside production.
+SIGNING_SECRETS = {
+    'FLASK_SECRET_KEY': 'iatoolkit-default-secret',
+    'IATOOLKIT_SECRET_KEY': 'iatoolkit-jwt-secret',
+}
+
+# Values that are public, so signing with them signs nothing: the development
+# fallbacks above and the placeholders the docs and templates show.
+KNOWN_PLACEHOLDER_SECRETS = frozenset({
+    'iatoolkit-default-secret',
+    'iatoolkit-jwt-secret',
+    'define-your-own-key',
+    'una_clave_larga',
+    'a-long-random-string',
+})
+
 def is_bound(injector: Injector, cls) -> bool:
     return cls in injector.binder._bindings
 
@@ -244,6 +265,24 @@ class IAToolkit:
         register_views(self.app)
         logging.info("✅ Community routes registered.")
 
+    def _get_signing_secret(self, name: str, flask_env: str) -> str:
+        """
+        A secret that signs sessions or tokens. Outside production it falls back to a
+        development value; in production a missing or publicly known value stops the
+        boot, because anyone could forge what it signs.
+        """
+        value = str(self._get_config_value(name, '') or '').strip()
+        if flask_env in NON_PRODUCTION_ENVS:
+            return value or SIGNING_SECRETS[name]
+        if not value or value in KNOWN_PLACEHOLDER_SECRETS:
+            raise IAToolkitException(
+                IAToolkitException.ErrorType.CONFIG_ERROR,
+                f"{name} must be set to a private random value in production "
+                f"(FLASK_ENV={flask_env or 'unset'}). Generate one with: "
+                f"python -c \"import secrets; print(secrets.token_hex(32))\""
+            )
+        return value
+
     def _create_flask_instance(self):
         static_folder = self._get_config_value('STATIC_FOLDER') or self._get_default_static_folder()
         template_folder = self._get_config_value('TEMPLATE_FOLDER') or self._get_default_template_folder()
@@ -258,6 +297,8 @@ class IAToolkit:
         session_cookie_samesite = str(
             self._get_config_value('SESSION_COOKIE_SAMESITE', session_cookie_samesite_default)
         ).strip()
+        flask_secret_key = self._get_signing_secret('FLASK_SECRET_KEY', flask_env)
+        iatoolkit_secret_key = self._get_signing_secret('IATOOLKIT_SECRET_KEY', flask_env)
         session_cookie_name = str(self._get_config_value('SESSION_COOKIE_NAME', 'session')).strip() or 'session'
         session_key_prefix = str(self._get_config_value('SESSION_KEY_PREFIX', 'session:')).strip() or 'session:'
 
@@ -267,7 +308,7 @@ class IAToolkit:
 
         self.app.config.update({
             'VERSION': self.version,
-            'SECRET_KEY': self._get_config_value('FLASK_SECRET_KEY', 'iatoolkit-default-secret'),
+            'SECRET_KEY': flask_secret_key,
             'SESSION_COOKIE_NAME': session_cookie_name,
             'SESSION_COOKIE_SAMESITE': session_cookie_samesite,
             'SESSION_COOKIE_SECURE': session_cookie_secure,
@@ -276,7 +317,7 @@ class IAToolkit:
             'PERMANENT_SESSION_LIFETIME': timedelta(minutes=idle_timeout_minutes),
             'SESSION_REFRESH_EACH_REQUEST': True,
             'SESSION_USE_SIGNER': True,
-            'IATOOLKIT_SECRET_KEY': self._get_config_value('IATOOLKIT_SECRET_KEY', 'iatoolkit-jwt-secret'),
+            'IATOOLKIT_SECRET_KEY': iatoolkit_secret_key,
             'JWT_ALGORITHM': 'HS256',
         })
 

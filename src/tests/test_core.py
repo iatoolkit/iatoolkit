@@ -221,6 +221,58 @@ class TestIAToolkit(unittest.TestCase):
         self.assertEqual(toolkit.app.config['PERMANENT_SESSION_LIFETIME'], timedelta(minutes=120))
         self.assertTrue(toolkit.app.config['SESSION_REFRESH_EACH_REQUEST'])
 
+    def test_production_refuses_to_boot_without_signing_secrets(self):
+        toolkit = IAToolkit({'FLASK_ENV': 'production', 'FLASK_SECRET_KEY': '', 'IATOOLKIT_SECRET_KEY': ''})
+
+        with self.assertRaises(IAToolkitException) as raised:
+            toolkit._create_flask_instance()
+
+        self.assertIn('FLASK_SECRET_KEY', str(raised.exception))
+
+    def test_production_refuses_a_known_placeholder_secret(self):
+        for placeholder in ('iatoolkit-default-secret', 'iatoolkit-jwt-secret', 'define-your-own-key'):
+            import iatoolkit.core as iat_module
+            iat_module._iatoolkit_instance = None
+            toolkit = IAToolkit({
+                'FLASK_ENV': 'production',
+                'FLASK_SECRET_KEY': 'a' * 64,
+                'IATOOLKIT_SECRET_KEY': placeholder,
+            })
+
+            with self.assertRaises(IAToolkitException) as raised:
+                toolkit._create_flask_instance()
+
+            self.assertIn('IATOOLKIT_SECRET_KEY', str(raised.exception))
+
+    def test_an_unset_flask_env_counts_as_production(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('FLASK_ENV', None)
+            os.environ.pop('FLASK_SECRET_KEY', None)
+            toolkit = IAToolkit({'IATOOLKIT_SECRET_KEY': 'b' * 64})
+
+            with self.assertRaises(IAToolkitException):
+                toolkit._create_flask_instance()
+
+    def test_production_uses_the_configured_secrets(self):
+        toolkit = IAToolkit({
+            'FLASK_ENV': 'production',
+            'FLASK_SECRET_KEY': 'a' * 64,
+            'IATOOLKIT_SECRET_KEY': 'b' * 64,
+        })
+
+        toolkit._create_flask_instance()
+
+        self.assertEqual(toolkit.app.config['SECRET_KEY'], 'a' * 64)
+        self.assertEqual(toolkit.app.config['IATOOLKIT_SECRET_KEY'], 'b' * 64)
+
+    def test_development_falls_back_to_development_secrets(self):
+        toolkit = IAToolkit({'FLASK_ENV': 'dev', 'FLASK_SECRET_KEY': '', 'IATOOLKIT_SECRET_KEY': ''})
+
+        toolkit._create_flask_instance()
+
+        self.assertEqual(toolkit.app.config['SECRET_KEY'], 'iatoolkit-default-secret')
+        self.assertEqual(toolkit.app.config['IATOOLKIT_SECRET_KEY'], 'iatoolkit-jwt-secret')
+
     def test_create_flask_instance_accepts_custom_session_cookie_settings(self):
         toolkit = IAToolkit({
             'SESSION_COOKIE_NAME': 'iatoolkit_enterprise_session',

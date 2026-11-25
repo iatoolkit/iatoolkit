@@ -143,8 +143,14 @@ You will need to set all the variables required by IAToolkit and your specific c
 - FLASK_ENV=production
 - DATABASE_URI (for the IAToolkit core database)
 - REDIS_URL
-- IATOOLKIT_SECRET_KEY
+- IATOOLKIT_SECRET_KEY (signs tokens and links)
+- FLASK_SECRET_KEY (signs the session cookie)
 - FERNET_KEY
+
+Outside `FLASK_ENV=dev` or `test`, the app refuses to start when
+`IATOOLKIT_SECRET_KEY` or `FLASK_SECRET_KEY` is missing or still holds a placeholder
+such as `define-your-own-key`. Generate each one with
+`python -c "import secrets; print(secrets.token_hex(32))"`.
 - OPENAI_API_KEY (or other LLM provider keys)
 - SAMPLE_DATABASE_URI (for your company's external database)
 Any other keys referenced in your company.yaml (e.g., BREVO_API_KEY, AWS_ACCESS_KEY_ID).
