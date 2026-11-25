@@ -100,3 +100,25 @@ def test_a_trusted_origin_from_config_passes():
     response = _client({"IAT_CSRF_TRUSTED_ORIGINS": "https://portal.example.com/ https://other.example"}).post(
         "/change", headers={"Sec-Fetch-Site": "cross-site", "Origin": "https://portal.example.com"})
     assert response.status_code == 200
+
+
+def test_an_origin_declared_in_cors_may_post_with_the_session():
+    """BL-030: Maxxa's portal serves the chat and calls back cross-site with the cookie;
+    its origin is in the company's cors_origin, which the guard trusts."""
+    app = Flask(__name__)
+    app.config["SESSION_COOKIE_NAME"] = "session"
+    install_csrf_guard(app, {})
+    app.config["IAT_CORS_ORIGINS"] = ["https://portal-interno.maxxa.cl"]  # set later by _setup_cors
+
+    @app.route("/change", methods=["POST"])
+    def change():
+        return "changed"
+
+    client = app.test_client()
+    client.set_cookie("session", "abc")
+    portal = client.post("/change", headers={"Sec-Fetch-Site": "cross-site",
+                                             "Origin": "https://portal-interno.maxxa.cl"})
+    other = client.post("/change", headers={"Sec-Fetch-Site": "cross-site", "Origin": "https://evil.example"})
+
+    assert portal.status_code == 200
+    assert other.status_code == 403

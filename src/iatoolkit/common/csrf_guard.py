@@ -12,8 +12,10 @@ comes from this same site:
 
 1. `Sec-Fetch-Site: same-origin` (or `none`, typed by the person) is enough; every
    current browser sends it.
-2. Otherwise its `Origin`, or the origin of its `Referer`, must be this host or one
-   listed in IAT_CSRF_TRUSTED_ORIGINS.
+2. Otherwise its `Origin`, or the origin of its `Referer`, must be this host, one
+   listed in IAT_CSRF_TRUSTED_ORIGINS, or one a company declares in `cors_origin`:
+   CORS already lets those call with credentials, and a portal that serves the chat
+   (Maxxa's) calls back from there with the session cookie.
 3. A request with neither signal is not from a browser, and a forgery needs a
    browser, so it passes.
 
@@ -108,6 +110,9 @@ def install_csrf_guard(app: Flask, config: dict | None = None) -> None:
     @app.before_request
     def _csrf_guard():
         cookie_name = app.config.get("SESSION_COOKIE_NAME") or "session"
+        cors_origins = frozenset(
+            origin for origin in (_origin_of(item) for item in app.config.get("IAT_CORS_ORIGINS") or [])
+            if origin)
         allowed, reason = csrf_verdict(
             method=request.method,
             has_authorization=bool(request.headers.get("Authorization")),
@@ -117,7 +122,7 @@ def install_csrf_guard(app: Flask, config: dict | None = None) -> None:
             origin=request.headers.get("Origin"),
             referer=request.headers.get("Referer"),
             own_origin=f"{request.scheme}://{request.host}",
-            trusted_origins=trusted,
+            trusted_origins=trusted | cors_origins,
         )
         if allowed:
             return None

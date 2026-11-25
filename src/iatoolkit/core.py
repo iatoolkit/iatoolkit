@@ -405,6 +405,9 @@ class IAToolkit:
                 extra_origins += cors_origin
 
         all_origins = default_origins + extra_origins
+        # The same origins may post with the session cookie: the CSRF guard trusts
+        # them (BL-030). Maxxa's portal serves the chat and calls back this way.
+        self.app.config['IAT_CORS_ORIGINS'] = list(all_origins)
 
         CORS(self.app,
              supports_credentials=True,
