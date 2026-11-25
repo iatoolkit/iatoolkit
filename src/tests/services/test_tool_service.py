@@ -1669,6 +1669,63 @@ class TestToolService:
         assert result[0]['parameters']['additionalProperties'] is False
 
 
+    def _web_search_tools(self, tool_type=Tool.TYPE_SYSTEM):
+        web_search = MagicMock(spec=Tool)
+        web_search.name = 'iat_web_search'
+        web_search.description = 'web'
+        web_search.tool_type = tool_type
+        web_search.is_active = True
+        web_search.parameters = {'type': 'object', 'properties': {'query': {'type': 'string'}}, 'required': ['query']}
+        other = MagicMock(spec=Tool)
+        other.name = 'iat_sql_query'
+        other.description = 'sql'
+        other.tool_type = Tool.TYPE_SYSTEM
+        other.is_active = True
+        other.parameters = {'type': 'object', 'properties': {}, 'required': []}
+        self.mock_llm_query_repo.get_company_tools.return_value = [web_search, other]
+        self.mock_company.short_name = self.company_short_name
+        self.service._configuration_service = MagicMock()
+        return self.service._configuration_service
+
+    def test_shipped_catalog_ties_web_search_to_its_config_section(self):
+        assert self.service.system_tool_required_configs.get('iat_web_search') == 'web_search'
+
+    @pytest.mark.parametrize("web_search_config", [None, "brave", {"enabled": False, "provider": "brave"}])
+    def test_get_tools_for_llm_hides_web_search_without_usable_config(self, web_search_config):
+        config_service = self._web_search_tools()
+        config_service.get_configuration.return_value = web_search_config
+
+        names = [tool['name'] for tool in self.service.get_tools_for_llm(self.mock_company)]
+
+        assert names == ['iat_sql_query']
+        config_service.get_configuration.assert_called_once_with(self.company_short_name, 'web_search')
+
+    def test_get_tools_for_llm_offers_web_search_when_configured(self):
+        config_service = self._web_search_tools()
+        config_service.get_configuration.return_value = {"provider": "brave"}
+
+        names = [tool['name'] for tool in self.service.get_tools_for_llm(self.mock_company)]
+
+        assert names == ['iat_web_search', 'iat_sql_query']
+
+    def test_get_tools_for_llm_hides_web_search_when_config_cannot_be_read(self):
+        config_service = self._web_search_tools()
+        config_service.get_configuration.side_effect = RuntimeError("boom")
+
+        names = [tool['name'] for tool in self.service.get_tools_for_llm(self.mock_company)]
+
+        assert names == ['iat_sql_query']
+
+    def test_get_tools_for_llm_does_not_gate_a_company_tool_with_the_same_name(self):
+        config_service = self._web_search_tools(tool_type=Tool.TYPE_INFERENCE)
+        config_service.get_configuration.return_value = None
+
+        names = [tool['name'] for tool in self.service.get_tools_for_llm(self.mock_company)]
+
+        assert names == ['iat_web_search', 'iat_sql_query']
+        config_service.get_configuration.assert_not_called()
+
+
 class TestToolServiceMcpTools:
     """Tools imported from an MCP server mirror that server: they are never
     created by hand, and only their local description and active flag change."""

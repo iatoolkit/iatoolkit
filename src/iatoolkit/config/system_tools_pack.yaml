@@ -887,6 +887,8 @@ tools:
     # Reaches the public internet: openWorldHint in MCP annotations.
     execution_config:
       open_world: true
+    routing:
+      requires_config: web_search
     routing_profile:
       tags:
         - web

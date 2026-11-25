@@ -28,6 +28,7 @@ from iatoolkit.services.system_tools import (
     SYSTEM_TOOLS_DEFINITIONS,
     get_system_tools_catalog_source,
     get_system_tool_force_include_capabilities,
+    get_system_tool_required_configs,
 )
 from iatoolkit.services.tool_output_contract import clone_output_contract, normalize_output_contract
 from iatoolkit import current_iatoolkit
@@ -89,7 +90,8 @@ class ToolService:
                  web_search_service=None,
                  knowledge_wiki_service=None,
                  bridge_repo: BridgeRepo = None,
-                 chart_service=None):
+                 chart_service=None,
+                 configuration_service=None):
         self.llm_query_repo = llm_query_repo
         self.bridge_repo = bridge_repo
         self.profile_repo = profile_repo
@@ -104,7 +106,9 @@ class ToolService:
         self._web_search_service = web_search_service
         self._knowledge_wiki_service = knowledge_wiki_service
         self._chart_service = chart_service
+        self._configuration_service = configuration_service
         self.system_tool_force_include_capabilities = get_system_tool_force_include_capabilities()
+        self.system_tool_required_configs = get_system_tool_required_configs()
 
         # execution mapper for system tools
         self.system_handlers = {
@@ -136,6 +140,13 @@ class ToolService:
             from iatoolkit.services.web_search_service import WebSearchService
             self._web_search_service = current_iatoolkit().get_injector().get(WebSearchService)
         return self._web_search_service
+
+    @property
+    def configuration_service(self):
+        if self._configuration_service is None:
+            from iatoolkit.services.configuration_service import ConfigurationService
+            self._configuration_service = current_iatoolkit().get_injector().get(ConfigurationService)
+        return self._configuration_service
 
     @property
     def chart_service(self):
@@ -1614,10 +1625,19 @@ class ToolService:
 
         # get all the tools for the company and system
         company_tools = self.llm_query_repo.get_company_tools(company)
+        enabled_sections: dict[str, bool] = {}
 
         for function in company_tools:
             if not function.is_active:
                 continue
+            required_section = (self.system_tool_required_configs.get(function.name)
+                                if getattr(function, "tool_type", None) == Tool.TYPE_SYSTEM else None)
+            if required_section:
+                if required_section not in enabled_sections:
+                    enabled_sections[required_section] = self._company_config_section_enabled(
+                        company.short_name, required_section)
+                if not enabled_sections[required_section]:
+                    continue
 
             # clone for no modify the SQLAlchemy session object
             params = function.parameters.copy() if function.parameters else {}
@@ -1640,6 +1660,14 @@ class ToolService:
                      if access.can(company.short_name, user_identifier, access.USE, "tool",
                                    tool_access_key(tool["name"]))]
         return tools
+
+    def _company_config_section_enabled(self, company_short_name: str, section: str) -> bool:
+        try:
+            config = self.configuration_service.get_configuration(company_short_name, section)
+        except Exception as exc:
+            logging.warning("Could not read '%s' configuration for %s: %s", section, company_short_name, exc)
+            return False
+        return isinstance(config, dict) and config.get("enabled", True) is not False
 
     def get_always_include_tool_names(self, company_short_name: str, tools: list[dict]) -> list[str]:
         capabilities = self._resolve_runtime_tool_capabilities(company_short_name)

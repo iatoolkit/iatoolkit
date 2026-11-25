@@ -13,6 +13,9 @@ SYSTEM_TOOLS_CONFIG_PACKAGE = "iatoolkit.config"
 SYSTEM_TOOLS_CONFIG_FILENAME = "system_tools_pack.yaml"
 SYSTEM_TOOLS_CATALOG_SOURCE = "yaml"
 _ROUTING_PROFILE_ALLOWED_KEYS = {"tags", "intents", "examples", "cost"}
+# requires_config: the company.yaml section a tool cannot run without. Without it
+# (or with enabled: false) the tool is not offered, so the model never calls it.
+_ROUTING_ALLOWED_KEYS = ("force_include_capability", "requires_config")
 
 
 def _read_system_tools_catalog_text() -> str:
@@ -41,17 +44,20 @@ def _validate_system_tool_entry(entry: dict, index: int) -> dict:
     if routing is not None:
         if not isinstance(routing, dict):
             raise ValueError(f"tools[{index}].routing must be an object")
-        unknown_routing_keys = [key for key in routing.keys() if key != "force_include_capability"]
+        unknown_routing_keys = [key for key in routing.keys() if key not in _ROUTING_ALLOWED_KEYS]
         if unknown_routing_keys:
             raise ValueError(
                 f"tools[{index}].routing has unsupported keys: {sorted(unknown_routing_keys)}"
             )
 
-        force_include_capability = str(routing.get("force_include_capability") or "").strip()
-        if force_include_capability:
-            normalized_routing = {
-                "force_include_capability": force_include_capability
-            }
+        normalized_routing = {}
+        for key in _ROUTING_ALLOWED_KEYS:
+            if routing.get(key) is not None and not isinstance(routing[key], str):
+                raise ValueError(f"tools[{index}].routing.{key} must be a string")
+            value = str(routing.get(key) or "").strip()
+            if value:
+                normalized_routing[key] = value
+        normalized_routing = normalized_routing or None
 
     routing_profile = entry.get("routing_profile")
     normalized_routing_profile = _validate_routing_profile(routing_profile, index)
@@ -187,6 +193,16 @@ def get_system_tool_force_include_capabilities() -> dict[str, str]:
         capability = str(routing.get("force_include_capability") or "").strip()
         if capability:
             mapping[function_name] = capability
+    return mapping
+
+
+def get_system_tool_required_configs() -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    for tool in SYSTEM_TOOLS_DEFINITIONS:
+        function_name = str(tool.get("function_name") or "").strip()
+        section = str((tool.get("routing") or {}).get("requires_config") or "").strip()
+        if function_name and section:
+            mapping[function_name] = section
     return mapping
 
 

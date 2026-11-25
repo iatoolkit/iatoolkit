@@ -98,6 +98,36 @@ tools:
     ]
 
 
+def test_parse_system_tools_catalog_accepts_routing_requires_config():
+    payload = """
+tools:
+  - function_name: custom_tool
+    description: Custom description
+    routing:
+      requires_config: custom_section
+    parameters:
+      type: object
+      properties: {}
+"""
+    result = system_tools._parse_system_tools_catalog(payload)
+    assert result[0]["routing"] == {"requires_config": "custom_section"}
+
+
+def test_parse_system_tools_catalog_rejects_non_string_requires_config():
+    payload = """
+tools:
+  - function_name: custom_tool
+    description: Custom description
+    routing:
+      requires_config: [web_search]
+    parameters:
+      type: object
+      properties: {}
+"""
+    with pytest.raises(ValueError, match="routing.requires_config must be a string"):
+        system_tools._parse_system_tools_catalog(payload)
+
+
 def test_parse_system_tools_catalog_accepts_routing_profile():
     payload = """
 tools:
