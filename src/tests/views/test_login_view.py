@@ -494,7 +494,8 @@ class TestLoginView:
         assert resp.data == b"CHAT"
 
         # Debe haberse validado el token y usado el user_identifier del payload
-        self.jwt_service.validate_chat_jwt.assert_called_once_with("abc123")
+        self.jwt_service.validate_chat_jwt.assert_called_once_with(
+            "abc123", company_short_name=self.company_short_name)
         self.query_service.set_context_for_llm.assert_called_once_with(
             company_short_name=self.company_short_name,
             user_identifier=self.user_identifier,
@@ -520,5 +521,6 @@ class TestLoginView:
 
         assert resp.status_code == 302
         assert f"/{self.company_short_name}/home" in resp.headers["Location"]
-        self.jwt_service.validate_chat_jwt.assert_called_once_with("bad")
+        self.jwt_service.validate_chat_jwt.assert_called_once_with(
+            "bad", company_short_name=self.company_short_name)
         self.query_service.finalize_context_rebuild.assert_not_called()

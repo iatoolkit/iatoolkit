@@ -74,16 +74,22 @@ class AuthService:
         payload = self.jwt_service.validate_chat_jwt(token)
 
         if not payload:
-            self.log_access(
-                company_short_name=company_short_name,
-                auth_type='redeem_token',
-                outcome='failure',
-                reason_code='JWT_INVALID'
-            )
-            return {'success': False, 'error': self.i18n_service.t('errors.auth.invalid_or_expired_token')}
+            return self._refuse_redeem(company_short_name, 'JWT_INVALID')
 
-        # 2. if token is valid, extract the user_identifier
+        # A token opens a session only in the company it was issued for (BL-030).
         user_identifier = payload.get('user_identifier')
+        if payload.get('company_short_name') != company_short_name:
+            return self._refuse_redeem(company_short_name, 'JWT_COMPANY_MISMATCH', user_identifier)
+
+        # ...and only once: a token copied from the page or a log is worthless.
+        try:
+            first_use = self.jwt_service.claim_chat_jwt(payload)
+        except Exception as e:
+            logging.error(f"could not record the redeem of a chat token for {user_identifier}: {e}")
+            return self._refuse_redeem(company_short_name, 'JWT_CLAIM_FAILED', user_identifier)
+        if not first_use:
+            return self._refuse_redeem(company_short_name, 'JWT_ALREADY_REDEEMED', user_identifier)
+
         try:
             # create the Flask session
             self.profile_service.set_session_for_user(company_short_name, user_identifier)
@@ -104,6 +110,16 @@ class AuthService:
                 user_identifier=user_identifier
             )
             return {'success': False, 'error': self.i18n_service.t('errors.auth.session_creation_failed')}
+
+    def _refuse_redeem(self, company_short_name: str, reason_code: str, user_identifier: str = None) -> dict:
+        self.log_access(
+            company_short_name=company_short_name,
+            auth_type='redeem_token',
+            outcome='failure',
+            reason_code=reason_code,
+            user_identifier=user_identifier,
+        )
+        return {'success': False, 'error': self.i18n_service.t('errors.auth.invalid_or_expired_token')}
 
     def login_google_user(
         self,

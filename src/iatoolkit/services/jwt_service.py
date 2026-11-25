@@ -6,13 +6,18 @@
 import jwt
 import time
 import logging
+import secrets
 from injector import singleton, inject
 from typing import Optional, Dict, Any
 from flask import Flask
+from iatoolkit.infra.redis_session_manager import RedisSessionManager
 
 
 @singleton
 class JWTService:
+    # Redis key that marks a chat token as already redeemed (BL-030).
+    REDEEMED_JTI_KEY = "iat:chat_jwt:redeemed:{jti}"
+
     @inject
     def __init__(self,  app: Flask):
         # Acceder a la configuración directamente desde app.config
@@ -38,6 +43,8 @@ class JWTService:
                 'user_identifier': user_identifier,
                 'exp': time.time() + expires_delta_seconds,
                 'iat': time.time(),
+                # Lets the token be redeemed only once (claim_chat_jwt).
+                'jti': secrets.token_urlsafe(16),
                 'type': 'chat_session'  # Identificador del tipo de token
             }
             token = jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
@@ -46,10 +53,12 @@ class JWTService:
             logging.error(f"Error al generar JWT para {company_short_name}/{user_identifier}: {e}")
             return None
 
-    def validate_chat_jwt(self, token: str) -> Optional[Dict[str, Any]]:
+    def validate_chat_jwt(self, token: str, company_short_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """
         Valida un JWT de sesión de chat.
-        Retorna el payload decodificado si es válido y coincide con la empresa, o None.
+        Retorna el payload decodificado si es válido, o None. Con `company_short_name`,
+        también exige que el token haya sido emitido para esa empresa: un token de una
+        empresa no abre sesión en otra (BL-030).
         """
         if not token:
             return None
@@ -70,6 +79,13 @@ class JWTService:
                 logging.warning(f"missing company_short_name in JWT payload.")
                 return None
 
+            if company_short_name is not None and payload.get('company_short_name') != company_short_name:
+                logging.warning(
+                    "chat JWT issued for company '%s' presented at company '%s'.",
+                    payload.get('company_short_name'), company_short_name,
+                )
+                return None
+
             return payload
 
         except jwt.InvalidTokenError as e:
@@ -78,3 +94,16 @@ class JWTService:
         except Exception as e:
             logging.error(f"unexpected error during JWT validation: {e}")
             return None
+
+    def claim_chat_jwt(self, payload: Dict[str, Any]) -> bool:
+        """
+        Marks a validated chat token as redeemed. True only the first time: a token
+        copied from a page or a log cannot open a second session. A token without a
+        `jti` (issued before BL-030) is refused. Raises if Redis cannot answer, so the
+        caller fails closed.
+        """
+        jti = str(payload.get('jti') or '').strip()
+        if not jti:
+            return False
+        ttl = max(1, int(float(payload.get('exp', 0)) - time.time()) + 1)
+        return bool(RedisSessionManager.set(self.REDEEMED_JTI_KEY.format(jti=jti), '1', nx=True, ex=ttl))

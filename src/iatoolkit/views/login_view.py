@@ -470,7 +470,8 @@ class FinalizeContextView(MethodView):
                 token = ''
             elif token:
                 # user identified by api-key
-                payload = self.jwt_service.validate_chat_jwt(token)
+                # Only a token issued for this company; the browser redeems it later.
+                payload = self.jwt_service.validate_chat_jwt(token, company_short_name=company_short_name)
                 if not payload:
                     logging.warning("Fallo crítico: No se pudo leer el auth token.")
                     return redirect(url_for('home', company_short_name=company_short_name, lang=current_lang))

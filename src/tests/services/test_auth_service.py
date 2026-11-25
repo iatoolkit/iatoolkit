@@ -309,12 +309,14 @@ class TestAuthServiceLoginFlows:
 
     def test_redeem_token_success(self):
         """redeem_token should succeed, create a session, and log a successful 'redeem_token' access."""
-        self.mock_jwt_service.validate_chat_jwt.return_value = {'user_identifier': self.user_identifier}
+        self.mock_jwt_service.validate_chat_jwt.return_value = self._redeem_payload()
+        self.mock_jwt_service.claim_chat_jwt.return_value = True
 
         with self.app.test_request_context():
             result = self.service.redeem_token_for_session(self.company_short_name, "valid-token")
 
         assert result['success'] is True
+        self.mock_jwt_service.claim_chat_jwt.assert_called_once_with(self._redeem_payload())
         assert result['user_identifier'] == self.user_identifier
         self.mock_profile_service.set_session_for_user.assert_called_once_with(self.company_short_name, self.user_identifier)
         self.mock_log_access.assert_called_once_with(
@@ -337,12 +339,14 @@ class TestAuthServiceLoginFlows:
             company_short_name=self.company_short_name,
             auth_type='redeem_token',
             outcome='failure',
-            reason_code='JWT_INVALID'
+            reason_code='JWT_INVALID',
+            user_identifier=None,
         )
 
     def test_redeem_token_session_creation_fails(self):
         """redeem_token should log a failure if session creation throws an exception."""
-        self.mock_jwt_service.validate_chat_jwt.return_value = {'user_identifier': self.user_identifier}
+        self.mock_jwt_service.validate_chat_jwt.return_value = self._redeem_payload()
+        self.mock_jwt_service.claim_chat_jwt.return_value = True
         self.mock_profile_service.set_session_for_user.side_effect = Exception("DB connection error")
 
         with self.app.test_request_context():
@@ -356,6 +360,52 @@ class TestAuthServiceLoginFlows:
             reason_code='SESSION_CREATION_FAILED',
             user_identifier=self.user_identifier
         )
+
+    def _redeem_payload(self, company=None):
+        return {
+            'user_identifier': self.user_identifier,
+            'company_short_name': company or self.company_short_name,
+            'jti': 'jti-1',
+        }
+
+    def _assert_redeem_refused(self, result, reason_code):
+        assert result['success'] is False
+        self.mock_profile_service.set_session_for_user.assert_not_called()
+        self.mock_log_access.assert_called_once_with(
+            company_short_name=self.company_short_name,
+            auth_type='redeem_token',
+            outcome='failure',
+            reason_code=reason_code,
+            user_identifier=self.user_identifier,
+        )
+
+    def test_redeem_token_issued_for_another_company_is_refused(self):
+        """A token for company A never opens a session in company B (BL-030)."""
+        self.mock_jwt_service.validate_chat_jwt.return_value = self._redeem_payload(company="other-co")
+
+        with self.app.test_request_context():
+            result = self.service.redeem_token_for_session(self.company_short_name, "token-for-other-co")
+
+        self._assert_redeem_refused(result, 'JWT_COMPANY_MISMATCH')
+        self.mock_jwt_service.claim_chat_jwt.assert_not_called()
+
+    def test_redeem_token_already_redeemed_is_refused(self):
+        self.mock_jwt_service.validate_chat_jwt.return_value = self._redeem_payload()
+        self.mock_jwt_service.claim_chat_jwt.return_value = False
+
+        with self.app.test_request_context():
+            result = self.service.redeem_token_for_session(self.company_short_name, "used-token")
+
+        self._assert_redeem_refused(result, 'JWT_ALREADY_REDEEMED')
+
+    def test_redeem_token_fails_closed_when_the_claim_cannot_be_recorded(self):
+        self.mock_jwt_service.validate_chat_jwt.return_value = self._redeem_payload()
+        self.mock_jwt_service.claim_chat_jwt.side_effect = Exception("redis down")
+
+        with self.app.test_request_context():
+            result = self.service.redeem_token_for_session(self.company_short_name, "valid-token")
+
+        self._assert_redeem_refused(result, 'JWT_CLAIM_FAILED')
 
     def test_login_google_user_success(self):
         self.mock_google_auth_client.exchange_code_for_identity.return_value = GoogleIdentity(

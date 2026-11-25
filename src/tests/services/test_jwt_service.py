@@ -191,3 +191,45 @@ class TestJWTService:
         payload = jwt_service.validate_chat_jwt(token)
         assert payload is None
 
+
+    def test_each_chat_jwt_carries_its_own_jti(self, jwt_service):
+        first = jwt_service.validate_chat_jwt(
+            jwt_service.generate_chat_jwt(COMPANY_SHORT_NAME, EXTERNAL_USER_ID, EXPIRES_DELTA_SECONDS))
+        second = jwt_service.validate_chat_jwt(
+            jwt_service.generate_chat_jwt(COMPANY_SHORT_NAME, EXTERNAL_USER_ID, EXPIRES_DELTA_SECONDS))
+        assert first['jti'] and second['jti']
+        assert first['jti'] != second['jti']
+
+    def test_validate_chat_jwt_for_its_own_company(self, jwt_service):
+        token = jwt_service.generate_chat_jwt(COMPANY_SHORT_NAME, EXTERNAL_USER_ID, EXPIRES_DELTA_SECONDS)
+        payload = jwt_service.validate_chat_jwt(token, company_short_name=COMPANY_SHORT_NAME)
+        assert payload['company_short_name'] == COMPANY_SHORT_NAME
+
+    def test_validate_chat_jwt_refuses_another_company(self, jwt_service):
+        """A token issued for one company is not valid at another company's URL (BL-030)."""
+        token = jwt_service.generate_chat_jwt(COMPANY_SHORT_NAME, EXTERNAL_USER_ID, EXPIRES_DELTA_SECONDS)
+        assert jwt_service.validate_chat_jwt(token, company_short_name="other-company") is None
+
+    @patch('iatoolkit.services.jwt_service.RedisSessionManager')
+    def test_claim_chat_jwt_succeeds_only_once(self, mock_redis, jwt_service):
+        mock_redis.set.side_effect = [True, None]
+        payload = {'jti': 'abc', 'exp': time.time() + 300}
+
+        assert jwt_service.claim_chat_jwt(payload) is True
+        assert jwt_service.claim_chat_jwt(payload) is False
+
+        key, value = mock_redis.set.call_args.args
+        assert key == 'iat:chat_jwt:redeemed:abc'
+        assert mock_redis.set.call_args.kwargs['nx'] is True
+        assert 1 <= mock_redis.set.call_args.kwargs['ex'] <= 301
+
+    @patch('iatoolkit.services.jwt_service.RedisSessionManager')
+    def test_claim_chat_jwt_refuses_a_token_without_jti(self, mock_redis, jwt_service):
+        assert jwt_service.claim_chat_jwt({'exp': time.time() + 300}) is False
+        mock_redis.set.assert_not_called()
+
+    @patch('iatoolkit.services.jwt_service.RedisSessionManager')
+    def test_claim_chat_jwt_propagates_a_redis_failure(self, mock_redis, jwt_service):
+        mock_redis.set.side_effect = ConnectionError("redis down")
+        with pytest.raises(ConnectionError):
+            jwt_service.claim_chat_jwt({'jti': 'abc', 'exp': time.time() + 300})
