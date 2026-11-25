@@ -26,6 +26,7 @@ import threading
 from iatoolkit import __version__ as IATOOLKIT_VERSION
 from iatoolkit.runtime_logging import configure_runtime_logging, install_flask_request_logging
 from iatoolkit.common.security_headers import install_security_headers
+from iatoolkit.common.csrf_guard import install_csrf_guard
 from iatoolkit.services.configuration_service import ConfigurationService
 
 # global variable for the unique instance of IAToolkit
@@ -327,6 +328,8 @@ class IAToolkit:
 
         # Security headers on every response; the CSP starts in report-only (BL-030).
         install_security_headers(self.app, self.config)
+        # Refuses cross-site requests that ride on the session cookie (BL-030).
+        install_csrf_guard(self.app, self.config)
 
         # Configuración para tokenizers en desarrollo
         if flask_env == 'dev':
