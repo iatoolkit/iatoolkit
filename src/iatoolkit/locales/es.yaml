@@ -2915,11 +2915,12 @@ errors:
   templates:
     company_not_found: "Empresa no encontrada."
     home_template_not_found: "La plantilla de la página de inicio para la empresa '{company_short_name}' no está configurada."
-    processing_error: "Error al procesar el template: {error}"
+    processing_error: "No pudimos cargar esta página. Si el problema persiste, contacta a soporte e indica la referencia {ref}."
     template_not_found: "No se encontro el template: '{template_name}'."
 
   general:
-    unexpected_error: "Ha ocurrido un error inesperado: {error}."
+    unexpected_error: "Ha ocurrido un error inesperado. Si el problema persiste, contacta a soporte."
+    unexpected_error_ref: "Ha ocurrido un error inesperado. Si el problema persiste, contacta a soporte e indica la referencia {ref}."
     unsupported_language: "El idioma seleccionado no es válido."
   signup:
     company_not_found: "La empresa {company_short_name} no existe."

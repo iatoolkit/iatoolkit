@@ -7,6 +7,7 @@ from iatoolkit.services.branding_service import BrandingService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.common.util import Utility
 import logging
+from iatoolkit.common.user_errors import unexpected_error_message
 
 class HomeView(MethodView):
     """
@@ -79,7 +80,7 @@ class HomeView(MethodView):
                 **login_context,
             )
         except Exception as e:
-            message = self.i18n_service.t('errors.templates.processing_error', error=str(e))
+            message = unexpected_error_message(self.i18n_service, e, where="home_view", key="errors.templates.processing_error")
             return render_template(
                 "error.html",
                 company_short_name=company_short_name,

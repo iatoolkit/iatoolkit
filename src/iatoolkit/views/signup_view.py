@@ -12,6 +12,7 @@ from iatoolkit.services.signup_guard_service import SignupGuardService
 from injector import inject
 from itsdangerous import URLSafeTimedSerializer
 import os
+from iatoolkit.common.user_errors import unexpected_error_message
 
 
 class SignupView(MethodView):
@@ -153,7 +154,7 @@ class SignupView(MethodView):
             return redirect(url_for('home', company_short_name=company_short_name, lang=current_lang))
 
         except Exception as e:
-            message = self.i18n_service.t('errors.templates.processing_error', error=str(e))
+            message = unexpected_error_message(self.i18n_service, e, where="signup_view", key="errors.templates.processing_error")
             return render_template(
                 "error.html",
                 company_short_name=company_short_name,

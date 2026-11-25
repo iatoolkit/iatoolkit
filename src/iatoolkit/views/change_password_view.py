@@ -12,6 +12,7 @@ from itsdangerous import URLSafeTimedSerializer, SignatureExpired
 from flask_bcrypt import Bcrypt
 from injector import inject
 import os
+from iatoolkit.common.user_errors import unexpected_error_message
 
 
 class ChangePasswordView(MethodView):
@@ -51,7 +52,7 @@ class ChangePasswordView(MethodView):
                                    token=token,
                                    email=email)
         except Exception as e:
-            message = self.i18n_service.t('errors.templates.processing_error', error=str(e))
+            message = unexpected_error_message(self.i18n_service, e, where="change_password_view", key="errors.templates.processing_error")
             return render_template(
                 "error.html",
                 company_short_name=company_short_name,
@@ -107,7 +108,7 @@ class ChangePasswordView(MethodView):
             return redirect(url_for('home', company_short_name=company_short_name))
 
         except Exception as e:
-            message = self.i18n_service.t('errors.templates.processing_error', error=str(e))
+            message = unexpected_error_message(self.i18n_service, e, where="change_password_view", key="errors.templates.processing_error")
             return render_template(
                 "error.html",
                 company_short_name=company_short_name,

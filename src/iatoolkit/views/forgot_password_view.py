@@ -11,6 +11,7 @@ from iatoolkit.services.branding_service import BrandingService
 from iatoolkit.services.i18n_service import I18nService
 from itsdangerous import URLSafeTimedSerializer
 import os
+from iatoolkit.common.user_errors import unexpected_error_message
 
 class ForgotPasswordView(MethodView):
     @inject
@@ -71,5 +72,5 @@ class ForgotPasswordView(MethodView):
             return redirect(url_for('home', company_short_name=company_short_name, lang=lang))
 
         except Exception as e:
-            flash(self.i18n_service.t('errors.general.unexpected_error', error=str(e)), 'error')
+            flash(unexpected_error_message(self.i18n_service, e, where="forgot_password_view"), 'error')
             return redirect(url_for('home', company_short_name=company_short_name))

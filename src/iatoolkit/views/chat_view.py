@@ -7,6 +7,7 @@ from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.prompt_service import PromptService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.common import access
+from iatoolkit.common.user_errors import unexpected_error_message
 
 class ChatView(MethodView):
     """
@@ -77,7 +78,7 @@ class ChatView(MethodView):
             )
         except Exception as e:
             # Fallback error handling
-            message = self.i18n_service.t('errors.templates.processing_error', error=str(e))
+            message = unexpected_error_message(self.i18n_service, e, where="chat_view", key="errors.templates.processing_error")
             branding_data = self.branding_service.get_company_branding(company_short_name)
             return render_template(
                 "error.html",

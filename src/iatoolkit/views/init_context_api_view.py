@@ -6,6 +6,7 @@ from iatoolkit.services.auth_service import AuthService
 from iatoolkit.services.i18n_service import I18nService
 from flask import jsonify, request
 import logging
+from iatoolkit.common.user_errors import unexpected_error_message
 
 
 class InitContextApiView(MethodView):
@@ -57,7 +58,7 @@ class InitContextApiView(MethodView):
 
         except Exception as e:
             logging.exception(f"errors while reloading context: {e}")
-            error_message = self.i18n_service.t('errors.general.unexpected_error', error=str(e))
+            error_message = unexpected_error_message(self.i18n_service, e, where="init_context_api_view")
             return jsonify({"error_message": error_message}), 406
 
     def options(self, company_short_name):

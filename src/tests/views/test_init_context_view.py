@@ -96,4 +96,4 @@ class TestInitContextApiView:
 
         # Assert
         assert response.status_code == 406
-        assert response.json['error_message'] == 'translated:errors.general.unexpected_error'
+        assert response.json['error_message'] == 'translated:errors.general.unexpected_error_ref'

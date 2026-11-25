@@ -33,6 +33,7 @@ from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.conversation_service import ConversationService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.services.llm_client_service import llmClient
+from iatoolkit.common.user_errors import unexpected_error_message
 
 
 class ConversationsApiView(MethodView):
@@ -61,8 +62,8 @@ class ConversationsApiView(MethodView):
 
     def _unexpected(self, e: Exception):
         logging.exception(f"conversations api: {e}")
-        return jsonify({"error_message": self.i18n_service.t("errors.general.unexpected_error",
-                                                             error=str(e))}), 500
+        return jsonify({"error_message": unexpected_error_message(
+            self.i18n_service, e, where="conversations_api_view")}), 500
 
     def _file_retention_days(self, company_short_name: str) -> int:
         """How long generated files are kept (enterprise deletes them after it)."""

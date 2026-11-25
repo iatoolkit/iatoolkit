@@ -111,4 +111,4 @@ class TestHelpContentApiView:
         # Assert
         assert response.status_code == 500
         assert "error_message" in response.json
-        assert 'translated:errors.general.unexpected_error' == response.json['error_message']
+        assert 'translated:errors.general.unexpected_error_ref' == response.json['error_message']

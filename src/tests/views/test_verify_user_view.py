@@ -135,4 +135,4 @@ class TestVerifyAccountView:
 
         assert response.status_code == 302
         assert len(flashed) == 1
-        assert flashed[0] == ('error', 'translated:errors.general.unexpected_error')
+        assert flashed[0] == ('error', 'translated:errors.general.unexpected_error_ref')

@@ -5,7 +5,7 @@
 
 import pytest
 from flask import Flask, url_for, get_flashed_messages
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, ANY
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.repositories.models import Company
@@ -153,4 +153,4 @@ class TestForgotPasswordView:
 
         # 1. Verificar la redirección
         assert response.status_code == 302
-        self.i8n_service.t.assert_called_with('errors.general.unexpected_error', error='an error')
+        self.i8n_service.t.assert_called_with('errors.general.unexpected_error_ref', ref=ANY)

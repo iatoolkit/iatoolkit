@@ -11,6 +11,7 @@ from iatoolkit.services.branding_service import BrandingService
 from iatoolkit.services.i18n_service import I18nService
 from injector import inject
 import os
+from iatoolkit.common.user_errors import unexpected_error_message
 
 
 class VerifyAccountView(MethodView):
@@ -56,5 +57,5 @@ class VerifyAccountView(MethodView):
             return redirect(url_for('home', company_short_name=company_short_name))
 
         except Exception as e:
-            flash(self.i18n_service.t('errors.general.unexpected_error', error=str(e)), 'error')
+            flash(unexpected_error_message(self.i18n_service, e, where="verify_user_view"), 'error')
             return redirect(url_for('home', company_short_name=company_short_name))

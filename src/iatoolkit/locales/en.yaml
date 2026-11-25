@@ -2898,9 +2898,10 @@ errors:
     company_not_found: "Company not found."
     home_template_not_found: "The home page template for the company '{company_short_name}' is not configured."
     template_not_found: "Template not found: '{template_name}'."
-    processing_error: "An error occurred while processing the custom home page template: {error}"
+    processing_error: "We could not load this page. If the problem persists, contact support with reference {ref}."
   general:
     unexpected_error: "An unexpected error has occurred. Please contact support."
+    unexpected_error_ref: "An unexpected error has occurred. If the problem persists, contact support with reference {ref}."
     unsupported_language: "The selected language is not supported."
   signup:
     company_not_found: "The company {company_short_name} does not exist."

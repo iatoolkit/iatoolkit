@@ -31,6 +31,7 @@ from sqlalchemy import update
 from iatoolkit.common.interfaces.signup_policy_resolver import SignupPolicyResolver
 from iatoolkit.services.signup_policy_resolver import AllowAllSignupPolicyResolver
 from iatoolkit.common import access
+from iatoolkit.common.user_errors import unexpected_error_message
 
 
 class ProfileService:
@@ -512,7 +513,7 @@ class ProfileService:
             self._safe_rollback()
             # Log the error and return a generic failure message.
             logging.error(f"Failed to update language for {user_identifier}: {e}")
-            return {'success': False, 'error_message': self.i18n_service.t('errors.general.unexpected_error', error=str(e))}
+            return {'success': False, 'error_message': unexpected_error_message(self.i18n_service, e, where="profile_service")}
 
 
     def get_profile_by_identifier(self, company_short_name: str, user_identifier: str) -> dict:
@@ -704,7 +705,7 @@ class ProfileService:
             self._safe_rollback()
             return {
                 "success": False,
-                "message": self.i18n_service.t('errors.general.unexpected_error', error=str(e)),
+                "message": unexpected_error_message(self.i18n_service, e, where="profile_service"),
                 "reason_code": "UNEXPECTED_ERROR",
             }
 
@@ -870,7 +871,7 @@ class ProfileService:
             return {"message": message}
         except Exception as e:
             self._safe_rollback()
-            return {"error": self.i18n_service.t('errors.general.unexpected_error', error=str(e))}
+            return {"error": unexpected_error_message(self.i18n_service, e, where="profile_service")}
 
     def update_user(self, email: str, **kwargs) -> User:
         return self.profile_repo.update_user(email, **kwargs)
@@ -888,7 +889,7 @@ class ProfileService:
 
         except Exception as e:
             self._safe_rollback()
-            return {"error": self.i18n_service.t('errors.general.unexpected_error', error=str(e))}
+            return {"error": unexpected_error_message(self.i18n_service, e, where="profile_service")}
 
     def change_password(self,
                          email: str,
@@ -919,7 +920,7 @@ class ProfileService:
             return {"message": self.i18n_service.t('flash_messages.password_changed_success')}
         except Exception as e:
             self._safe_rollback()
-            return {"error": self.i18n_service.t('errors.general.unexpected_error', error=str(e))}
+            return {"error": unexpected_error_message(self.i18n_service, e, where="profile_service")}
 
     def forgot_password(self, company_short_name: str, email: str, reset_url: str):
         # The answer is the same whether or not the email is registered (or belongs to
@@ -946,7 +947,7 @@ class ProfileService:
             return success
         except Exception as e:
             self._safe_rollback()
-            return {"error": self.i18n_service.t('errors.general.unexpected_error', error=str(e))}
+            return {"error": unexpected_error_message(self.i18n_service, e, where="profile_service")}
 
     # Password reset code (BL-030): 8 characters from 36, 15 minutes, 5 wrong attempts.
     TEMP_CODE_ALPHABET = string.ascii_uppercase + string.digits

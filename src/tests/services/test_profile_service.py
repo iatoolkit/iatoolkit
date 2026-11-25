@@ -4,7 +4,7 @@
 import pytest
 import re
 from datetime import datetime, timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, ANY
 from flask import Flask
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.user_session_context_service import UserSessionContextService
@@ -337,7 +337,7 @@ class TestProfileService:
             verification_url='http://verification'
         )
 
-        assert  response['error'] == 'translated:errors.general.unexpected_error'
+        assert  response['error'] == 'translated:errors.general.unexpected_error_ref'
 
     def test_get_companies_when_ok(self, mock_session_manager):
         self.mock_repo.get_companies.return_value = [self.mock_company]
@@ -401,8 +401,8 @@ class TestProfileService:
         self.mock_repo.get_user_by_email.side_effect = Exception('an error')
         response = self.service.verify_account(email='test@email.com')
 
-        assert 'translated:errors.general.unexpected_error' == response['error']
-        self.mock_i18n.t.assert_called_with('errors.general.unexpected_error', error='an error')
+        assert 'translated:errors.general.unexpected_error_ref' == response['error']
+        self.mock_i18n.t.assert_called_with('errors.general.unexpected_error_ref', ref=ANY)
 
     def test_verify_account_when_ok(self,mock_session_manager):
         self.mock_repo.get_user_by_email.return_value = self.mock_user
@@ -488,8 +488,8 @@ class TestProfileService:
         code = self._give_reset_code('ABCD2345')
         self.mock_repo.update_password.side_effect = Exception('db error')
         response = self._change(code)
-        assert 'translated:errors.general.unexpected_error' == response['error']
-        self.mock_i18n.t.assert_called_with('errors.general.unexpected_error', error='db error')
+        assert 'translated:errors.general.unexpected_error_ref' == response['error']
+        self.mock_i18n.t.assert_called_with('errors.general.unexpected_error_ref', ref=ANY)
 
     def test_change_password_when_google_account(self, mock_session_manager):
         self.mock_user.auth_method = 'google'
@@ -554,8 +554,8 @@ class TestProfileService:
             reset_url='http://a_reset_utl'
         )
 
-        assert 'translated:errors.general.unexpected_error' == response['error']
-        self.mock_i18n.t.assert_called_with('errors.general.unexpected_error', error='mail error')
+        assert 'translated:errors.general.unexpected_error_ref' == response['error']
+        self.mock_i18n.t.assert_called_with('errors.general.unexpected_error_ref', ref=ANY)
 
     def test_authenticate_local_credentials_does_not_open_company_session(self, mock_session_manager):
         response = self.service.authenticate_local_credentials('test@email.com', 'password')

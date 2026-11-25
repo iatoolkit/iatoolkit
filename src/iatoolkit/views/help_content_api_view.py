@@ -10,6 +10,7 @@ from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.services.auth_service import AuthService
 from injector import inject
 import logging
+from iatoolkit.common.user_errors import unexpected_error_message
 
 
 class HelpContentApiView(MethodView):
@@ -51,4 +52,4 @@ class HelpContentApiView(MethodView):
         except Exception as e:
             logging.exception(
                 f"Unexpected error fetching help_content for {company_short_name}: {e}")
-            return jsonify({"error_message": self.i18n_service.t('errors.general.unexpected_error', error=str(e))}), 500
+            return jsonify({"error_message": unexpected_error_message(self.i18n_service, e, where="help_content_api_view")}), 500

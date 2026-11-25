@@ -23,6 +23,7 @@ import logging
 import secrets
 from urllib.parse import urljoin, urlparse
 from iatoolkit.common import access
+from iatoolkit.common.user_errors import unexpected_error_message
 
 
 def _normalize_safe_next_target(raw_target: str | None) -> str | None:
@@ -126,7 +127,7 @@ class LoginView(BaseLoginView):
         try:
             return self._handle_login_path(company_short_name, user_identifier, target_url)
         except Exception as e:
-            message = self.i18n_service.t('errors.templates.processing_error', error=str(e))
+            message = unexpected_error_message(self.i18n_service, e, where="login_view", key="errors.templates.processing_error")
             return render_template(
                 "error.html",
                 company_short_name=company_short_name,
@@ -307,7 +308,7 @@ class GoogleLoginCallbackView(BaseLoginView):
                 target_url,
             )
         except Exception as e:
-            message = self.i18n_service.t('errors.templates.processing_error', error=str(e))
+            message = unexpected_error_message(self.i18n_service, e, where="login_view", key="errors.templates.processing_error")
             return render_template(
                 "error.html",
                 company_short_name=company_short_name,
@@ -531,4 +532,6 @@ class FinalizeContextView(MethodView):
             return render_template("error.html",
                                    company_short_name=company_short_name,
                                    branding=branding_data,
-                                   message=f"An unexpected error occurred during context loading: {str(e)}"), 500
+                                   message=unexpected_error_message(
+                                       self.i18n_service, e, where="login_view.finalize",
+                                       key="errors.templates.processing_error")), 500
