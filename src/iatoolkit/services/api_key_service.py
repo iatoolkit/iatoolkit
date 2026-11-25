@@ -14,6 +14,9 @@ from iatoolkit.repositories.api_key_repo import ApiKeyRepo
 
 
 class ApiKeyService:
+    # How many characters of a key the console shows to tell keys apart.
+    KEY_PREFIX_LENGTH = 6
+
     @inject
     def __init__(self,
                  i18n_service: I18nService,
@@ -28,7 +31,8 @@ class ApiKeyService:
             "id": api_key.id,
             "company_id": api_key.company_id,
             "key_name": api_key.key_name,
-            "key": api_key.key,
+            # Never the key: only its first characters, to tell keys apart (BL-030).
+            "key_prefix": api_key.key_prefix,
             "is_active": api_key.is_active,
             # BL-010, Fase 0: whether the key may name the user it acts for.
             "can_act_for_users": bool(getattr(api_key, "can_act_for_users", False)),
@@ -84,9 +88,15 @@ class ApiKeyService:
         key = ''.join(secrets.choice(alphabet) for _ in range(length))
 
         # A new key acts as itself unless the admin allows it to act for users (BL-010).
-        api_key = ApiKey(key=key, company_id=company.id, key_name=key_name, can_act_for_users=bool(can_act_for_users))
+        # Only its hash and prefix are stored: this response is the one time the key
+        # itself is shown (BL-030).
+        api_key = ApiKey(key=None,
+                         key_hash=ApiKeyRepo.hash_key(key),
+                         key_prefix=key[:self.KEY_PREFIX_LENGTH],
+                         company_id=company.id, key_name=key_name,
+                         can_act_for_users=bool(can_act_for_users))
         created = self.api_key_repo.create_api_key(api_key)
-        return {"data": self._api_key_to_dict(created)}
+        return {"data": {**self._api_key_to_dict(created), "key": key}}
 
     def update_api_key_entry(self,
                              company_short_name: str,

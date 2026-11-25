@@ -23,7 +23,7 @@ class TestApiKeyRepo:
         self.session.commit()
 
     def test_create_api_key(self):
-        key = ApiKey(company_id=self.company.id, key_name='default', key='k1')
+        key = ApiKey(company_id=self.company.id, key_name='default', key_hash=ApiKeyRepo.hash_key('k1'))
 
         created = self.repo.create_api_key(key)
 
@@ -34,16 +34,16 @@ class TestApiKeyRepo:
         older = ApiKey(
             company_id=self.company.id,
             key_name='older',
-            key='k-old',
+            key_hash=ApiKeyRepo.hash_key('k-old'),
             created_at=datetime.now() - timedelta(days=1)
         )
         newer = ApiKey(
             company_id=self.company.id,
             key_name='newer',
-            key='k-new',
+            key_hash=ApiKeyRepo.hash_key('k-new'),
             created_at=datetime.now()
         )
-        foreign = ApiKey(company_id=self.other_company.id, key_name='foreign', key='k-other')
+        foreign = ApiKey(company_id=self.other_company.id, key_name='foreign', key_hash=ApiKeyRepo.hash_key('k-other'))
 
         self.session.add_all([older, newer, foreign])
         self.session.commit()
@@ -55,7 +55,7 @@ class TestApiKeyRepo:
         assert result[1].key_name == 'older'
 
     def test_get_api_key_by_id(self):
-        api_key = ApiKey(company_id=self.company.id, key_name='main', key='k-main')
+        api_key = ApiKey(company_id=self.company.id, key_name='main', key_hash=ApiKeyRepo.hash_key('k-main'))
         self.session.add(api_key)
         self.session.commit()
 
@@ -65,7 +65,7 @@ class TestApiKeyRepo:
         assert result.key_name == 'main'
 
     def test_get_api_key_by_id_returns_none_for_other_company(self):
-        api_key = ApiKey(company_id=self.company.id, key_name='main', key='k-main')
+        api_key = ApiKey(company_id=self.company.id, key_name='main', key_hash=ApiKeyRepo.hash_key('k-main'))
         self.session.add(api_key)
         self.session.commit()
 
@@ -74,17 +74,17 @@ class TestApiKeyRepo:
         assert result is None
 
     def test_get_api_key_by_name(self):
-        api_key = ApiKey(company_id=self.company.id, key_name='integration', key='k-int')
+        api_key = ApiKey(company_id=self.company.id, key_name='integration', key_hash=ApiKeyRepo.hash_key('k-int'))
         self.session.add(api_key)
         self.session.commit()
 
         result = self.repo.get_api_key_by_name(self.company, 'integration')
 
         assert result is not None
-        assert result.key == 'k-int'
+        assert result.key_hash == ApiKeyRepo.hash_key('k-int')
 
     def test_update_api_key(self):
-        api_key = ApiKey(company_id=self.company.id, key_name='before', key='k-1', is_active=True)
+        api_key = ApiKey(company_id=self.company.id, key_name='before', key_hash=ApiKeyRepo.hash_key('k-1'), is_active=True)
         self.session.add(api_key)
         self.session.commit()
 
@@ -96,7 +96,7 @@ class TestApiKeyRepo:
         assert updated.is_active is False
 
     def test_delete_api_key(self):
-        api_key = ApiKey(company_id=self.company.id, key_name='to_delete', key='k-del')
+        api_key = ApiKey(company_id=self.company.id, key_name='to_delete', key_hash=ApiKeyRepo.hash_key('k-del'))
         self.session.add(api_key)
         self.session.commit()
         api_key_id = api_key.id
@@ -106,8 +106,8 @@ class TestApiKeyRepo:
         assert self.session.query(ApiKey).filter(ApiKey.id == api_key_id).first() is None
 
     def test_get_active_api_key_entry(self):
-        active = ApiKey(company_id=self.company.id, key_name='active', key='k-active', is_active=True)
-        inactive = ApiKey(company_id=self.company.id, key_name='inactive', key='k-inactive', is_active=False)
+        active = ApiKey(company_id=self.company.id, key_name='active', key_hash=ApiKeyRepo.hash_key('k-active'), is_active=True)
+        inactive = ApiKey(company_id=self.company.id, key_name='inactive', key_hash=ApiKeyRepo.hash_key('k-inactive'), is_active=False)
         self.session.add_all([active, inactive])
         self.session.commit()
 
@@ -115,11 +115,11 @@ class TestApiKeyRepo:
         assert self.repo.get_active_api_key_entry('k-inactive') is None
 
     def test_get_active_api_key_by_company(self):
-        active = ApiKey(company_id=self.company.id, key_name='active', key='k-active', is_active=True)
-        inactive = ApiKey(company_id=self.other_company.id, key_name='inactive', key='k-inactive', is_active=False)
+        active = ApiKey(company_id=self.company.id, key_name='active', key_hash=ApiKeyRepo.hash_key('k-active'), is_active=True)
+        inactive = ApiKey(company_id=self.other_company.id, key_name='inactive', key_hash=ApiKeyRepo.hash_key('k-inactive'), is_active=False)
         self.session.add_all([active, inactive])
         self.session.commit()
 
         result = self.repo.get_active_api_key_by_company(self.company)
         assert result is not None
-        assert result.key == 'k-active'
+        assert result.key_hash == ApiKeyRepo.hash_key('k-active')

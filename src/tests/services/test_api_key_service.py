@@ -36,13 +36,16 @@ class TestApiKeyService:
 
     def test_list_api_keys_success(self):
         self.mock_profile_repo.get_company_by_short_name.return_value = self.company
-        api_key = ApiKey(id=1, company_id=10, key_name='k1', key='abc', is_active=True)
+        api_key = ApiKey(id=1, company_id=10, key_name='k1', key_hash='h' * 64, key_prefix='abc123', is_active=True)
         self.mock_api_key_repo.get_api_keys_by_company.return_value = [api_key]
 
         result = self.service.list_api_keys('acme')
 
         assert len(result['data']) == 1
-        assert result['data'][0]['key'] == 'abc'
+        assert result['data'][0]['key_prefix'] == 'abc123'
+        # The key itself never leaves the service after creation (BL-030).
+        assert 'key' not in result['data'][0]
+        assert 'key_hash' not in result['data'][0]
 
     def test_get_api_key_not_found(self):
         self.mock_profile_repo.get_company_by_short_name.return_value = self.company
@@ -74,14 +77,20 @@ class TestApiKeyService:
         self.mock_profile_repo.get_company_by_short_name.return_value = self.company
         self.mock_api_key_repo.get_api_key_by_name.return_value = None
 
-        created = ApiKey(id=7, company_id=10, key_name='new_key', key='x' * 40, is_active=True)
-        self.mock_api_key_repo.create_api_key.return_value = created
+        self.mock_api_key_repo.create_api_key.side_effect = lambda api_key: api_key
 
         result = self.service.create_api_key_entry('acme', 'new_key')
 
-        assert result['data']['id'] == 7
+        key = result['data']['key']
+        assert len(key) == 40
         assert result['data']['key_name'] == 'new_key'
-        assert result['data']['key'] == 'x' * 40
+        assert result['data']['key_prefix'] == key[:6]
+
+        # Only the hash and the prefix are stored, never the key (BL-030).
+        stored = self.mock_api_key_repo.create_api_key.call_args.args[0]
+        assert stored.key is None
+        assert stored.key_hash == ApiKeyRepo.hash_key(key)
+        assert stored.key_prefix == key[:6]
 
     def test_update_api_key_no_changes(self):
         self.mock_profile_repo.get_company_by_short_name.return_value = self.company
@@ -135,10 +144,10 @@ class TestApiKeyService:
     def test_new_api_key_wrapper_success(self):
         self.mock_profile_repo.get_company_by_short_name.return_value = self.company
         self.mock_api_key_repo.get_api_key_by_name.return_value = None
-        self.mock_api_key_repo.create_api_key.return_value = ApiKey(
-            id=9, company_id=10, key_name='cli', key='y' * 40, is_active=True
-        )
+        self.mock_api_key_repo.create_api_key.side_effect = lambda api_key: api_key
 
         result = self.service.new_api_key('acme', 'cli')
 
-        assert result['api-key'] == 'y' * 40
+        assert len(result['api-key']) == 40
+        stored = self.mock_api_key_repo.create_api_key.call_args.args[0]
+        assert stored.key_hash == ApiKeyRepo.hash_key(result['api-key'])

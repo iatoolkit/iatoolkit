@@ -28,6 +28,7 @@ def register_core_commands(app):
             else:
                 click.echo("✅ ¡Api-key is ready! add this variable to your environment:")
                 click.echo(f"IATOOLKIT_API_KEY='{result['api-key']}'")
+                click.echo("⚠️  Copy it now: only its hash is stored, it will not be shown again.")
         except Exception as e:
             logging.exception(e)
             click.echo(f"❌ unexpectd error during the configuration: {e}")

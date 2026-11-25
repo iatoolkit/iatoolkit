@@ -122,7 +122,13 @@ class ApiKey(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     company_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_companies.id', ondelete='CASCADE'), nullable=False)
     key_name = Column(String, nullable=False)
-    key = Column(String, unique=True, nullable=False, index=True) # La API Key en sí
+    # The key itself is never stored (BL-030): only its SHA-256 and its first characters,
+    # so the console can tell keys apart. `key` held it in clear text before that; it is
+    # left empty for new keys and emptied for the old ones by a later script.
+    # migration: iatoolkit-enterprise/migrations/2026-11-25-api-keys-hash.sql
+    key = Column(String, unique=True, nullable=True, index=True)
+    key_hash = Column(String(64), unique=True, nullable=False, index=True)
+    key_prefix = Column(String(16), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=datetime.now)
     last_used_at = Column(DateTime, nullable=True) # Opcional: para rastrear uso

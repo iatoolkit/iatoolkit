@@ -3,6 +3,7 @@
 #
 # IAToolkit is open source software.
 
+import hashlib
 from injector import inject
 from iatoolkit.repositories.database_manager import DatabaseManager
 from iatoolkit.repositories.models import ApiKey, Company
@@ -50,10 +51,17 @@ class ApiKeyRepo:
         self.session.delete(api_key)
         self.session.commit()
 
+    @staticmethod
+    def hash_key(api_key_value: str) -> str:
+        """What is stored and searched for a key: its SHA-256, never the key (BL-030)."""
+        return hashlib.sha256(str(api_key_value or '').encode('utf-8')).hexdigest()
+
     def get_active_api_key_entry(self, api_key_value: str) -> ApiKey | None:
+        if not api_key_value:
+            return None
         return (
             self.session.query(ApiKey)
-            .filter(ApiKey.key == api_key_value, ApiKey.is_active == True)
+            .filter(ApiKey.key_hash == self.hash_key(api_key_value), ApiKey.is_active == True)
             .first()
         )
 
