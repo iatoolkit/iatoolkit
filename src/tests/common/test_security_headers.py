@@ -99,3 +99,10 @@ def test_a_malformed_or_huge_report_is_ignored():
 
     assert client.post(CSP_REPORT_PATH, data="not json", content_type="application/csp-report").status_code == 204
     assert client.post(CSP_REPORT_PATH, data="x" * 20000, content_type="application/csp-report").status_code == 204
+
+
+def test_google_analytics_can_send_its_hits():
+    """Found in production (report-only): gtag.js posts to region1.google-analytics.com."""
+    policy = _client().get("/page").headers["Content-Security-Policy-Report-Only"]
+    connect = next(d for d in policy.split("; ") if d.startswith("connect-src"))
+    assert "https://*.google-analytics.com" in connect

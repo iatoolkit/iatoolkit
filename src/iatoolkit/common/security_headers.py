@@ -33,6 +33,9 @@ DEFAULT_FRAME_ANCESTORS = "'self'"
 # Sources the templates load today: the CDNs for scripts, styles and fonts, Google
 # Tag Manager on the public site and Google Fonts.
 CDN_SOURCES = "https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com https://code.jquery.com"
+# Google Analytics: gtag.js (script-src above) sends its hits here.
+ANALYTICS_CONNECT_SOURCES = ("https://*.google-analytics.com https://*.analytics.google.com "
+                             "https://www.googletagmanager.com")
 HSTS_VALUE = "max-age=31536000"
 MAX_REPORT_BYTES = 16 * 1024
 
@@ -44,7 +47,7 @@ def build_csp(frame_ancestors: str) -> str:
         f"style-src 'self' 'unsafe-inline' {CDN_SOURCES} https://fonts.googleapis.com",
         f"font-src 'self' data: {CDN_SOURCES} https://fonts.gstatic.com",
         "img-src 'self' data: blob: https:",
-        "connect-src 'self'",
+        f"connect-src 'self' {ANALYTICS_CONNECT_SOURCES}",
         "frame-src 'self'",
         f"frame-ancestors {frame_ancestors}",
         "object-src 'none'",
