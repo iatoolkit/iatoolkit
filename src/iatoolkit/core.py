@@ -25,6 +25,7 @@ import threading
 
 from iatoolkit import __version__ as IATOOLKIT_VERSION
 from iatoolkit.runtime_logging import configure_runtime_logging, install_flask_request_logging
+from iatoolkit.common.security_headers import install_security_headers
 from iatoolkit.services.configuration_service import ConfigurationService
 
 # global variable for the unique instance of IAToolkit
@@ -323,6 +324,9 @@ class IAToolkit:
 
         # 2. ProxyFix para no tener problemas con iframes y rutas
         self.app.wsgi_app = ProxyFix(self.app.wsgi_app, x_proto=1)
+
+        # Security headers on every response; the CSP starts in report-only (BL-030).
+        install_security_headers(self.app, self.config)
 
         # Configuración para tokenizers en desarrollo
         if flask_env == 'dev':
