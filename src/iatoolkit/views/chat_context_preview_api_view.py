@@ -14,6 +14,7 @@ from injector import inject
 from iatoolkit.services.auth_service import AuthService
 from iatoolkit.services.query_service import QueryService
 from iatoolkit.common import access
+from iatoolkit.common.user_errors import public_error_text
 
 
 class ChatContextPreviewApiView(MethodView):
@@ -58,4 +59,4 @@ class ChatContextPreviewApiView(MethodView):
             return jsonify(result), 200
         except Exception as exc:
             logging.exception("Fatal error building chat context preview")
-            return jsonify({"error": str(exc)}), 500
+            return jsonify({"error": public_error_text(exc, __name__)}), 500

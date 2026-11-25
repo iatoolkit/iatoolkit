@@ -10,6 +10,7 @@ import logging
 
 from iatoolkit.services.auth_service import AuthService
 from iatoolkit.services.memory_service import MemoryService
+from iatoolkit.common.user_errors import public_error_text
 
 
 class MemoryApiView(MethodView):
@@ -37,7 +38,7 @@ class MemoryApiView(MethodView):
             return jsonify(response), status
         except Exception as exc:
             logging.exception("Unexpected memory GET error for %s: %s", company_short_name, exc)
-            return jsonify({"status": "error", "error_message": str(exc)}), 500
+            return jsonify({"status": "error", "error_message": public_error_text(exc, __name__)}), 500
 
     def post(self, company_short_name: str, page_id: int | None = None):
         try:
@@ -104,4 +105,4 @@ class MemoryApiView(MethodView):
             return jsonify(response), status
         except Exception as exc:
             logging.exception("Unexpected memory POST error for %s: %s", company_short_name, exc)
-            return jsonify({"status": "error", "error_message": str(exc)}), 500
+            return jsonify({"status": "error", "error_message": public_error_text(exc, __name__)}), 500

@@ -5,6 +5,7 @@ from iatoolkit.services.auth_service import AuthService
 from iatoolkit.services.profile_service import ProfileService
 import logging
 from iatoolkit.common import access
+from iatoolkit.common.user_errors import public_error_text
 
 
 class UsersApiView(MethodView):
@@ -35,4 +36,4 @@ class UsersApiView(MethodView):
 
         except Exception as e:
             logging.exception(f"Error fetching users for {company_short_name}: {e}")
-            return jsonify({"error": "Unexpected error", "details": str(e)}), 500
+            return jsonify({"error": "Unexpected error", "details": public_error_text(e, __name__)}), 500

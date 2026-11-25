@@ -114,7 +114,8 @@ class TestLoadDocumentView:
         assert response_json is not None, "Expected JSON response, got None"
 
         assert "error" in response_json
-        assert response_json["error"] == "Internal Error"
+        assert "Internal Error" not in response_json["error"]  # BL-030: a reference, not the exception
+        assert "reference" in response_json["error"]
 
         self.mock_profile_repo.get_company_by_short_name.assert_called_once_with("test_company")
         self.mock_kb_service.ingest_document_sync.assert_called_once()

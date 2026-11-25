@@ -14,6 +14,7 @@ from iatoolkit.services.knowledge_base_service import KnowledgeBaseService
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.repositories.models import PromptCategory, Tool
 import logging
+from iatoolkit.common.user_errors import public_error_text
 
 class CategoriesApiView(MethodView):
     """
@@ -86,7 +87,7 @@ class CategoriesApiView(MethodView):
 
         except Exception as e:
             logging.exception(f"Error fetching categories for {company_short_name}: {e}")
-            return jsonify({"status": "error", "message": str(e)}), 500
+            return jsonify({"status": "error", "message": public_error_text(e, __name__)}), 500
 
     def post(self, company_short_name):
         try:
@@ -127,7 +128,7 @@ class CategoriesApiView(MethodView):
 
         except Exception as e:
             logging.exception(f"Error syncing categories for {company_short_name}: {e}")
-            return jsonify({"status": "error", "message": str(e)}), 500
+            return jsonify({"status": "error", "message": public_error_text(e, __name__)}), 500
     SUPPORTED_PROMPT_EXECUTION_MODES = [
         "conversational",
         "agentic",

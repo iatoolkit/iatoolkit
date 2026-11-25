@@ -2922,6 +2922,7 @@ errors:
   general:
     unexpected_error: "Ha ocurrido un error inesperado. Si el problema persiste, contacta a soporte."
     unexpected_error_ref: "Ha ocurrido un error inesperado. Si el problema persiste, contacta a soporte e indica la referencia {ref}."
+    internal_error_ref: "error interno (referencia {ref})"
     unsupported_language: "El idioma seleccionado no es válido."
   signup:
     company_not_found: "La empresa {company_short_name} no existe."

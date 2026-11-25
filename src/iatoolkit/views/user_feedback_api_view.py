@@ -9,6 +9,7 @@ from iatoolkit.services.user_feedback_service import UserFeedbackService
 from iatoolkit.services.auth_service import AuthService
 from injector import inject
 import logging
+from iatoolkit.common.user_errors import public_error_text
 
 
 class UserFeedbackApiView(MethodView):
@@ -56,4 +57,4 @@ class UserFeedbackApiView(MethodView):
         except Exception as e:
             logging.exception(
                 f"unexpected error processing feedback for {company_short_name}: {e}")
-            return jsonify({"error_message": str(e)}), 500
+            return jsonify({"error_message": public_error_text(e, __name__)}), 500

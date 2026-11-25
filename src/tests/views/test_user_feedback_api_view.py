@@ -57,7 +57,8 @@ class TestUserFeedbackView:
         response = self.client.post(self.url, json={'message': 'feedback message', 'rating': 4})
 
         assert response.status_code == 500
-        assert 'Database connection failed' in response.json['error_message']
+        assert 'Database connection failed' not in response.json['error_message']  # BL-030
+        assert 'reference' in response.json['error_message']
 
     def test_post_when_service_returns_error(self):
         """Test that a 402 is returned if the service reports a business logic error."""

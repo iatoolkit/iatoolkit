@@ -11,6 +11,7 @@ import base64
 from iatoolkit.services.knowledge_base_service import KnowledgeBaseService
 from iatoolkit.services.auth_service import AuthService
 from iatoolkit.repositories.profile_repo import ProfileRepo
+from iatoolkit.common.user_errors import public_error_text
 
 
 class LoadDocumentApiView(MethodView):
@@ -64,7 +65,7 @@ class LoadDocumentApiView(MethodView):
             }), 200
 
         except Exception as e:
-            response = jsonify({"error": str(e)})
+            response = jsonify({"error": public_error_text(e, __name__)})
             response.status_code = 500
 
             return response

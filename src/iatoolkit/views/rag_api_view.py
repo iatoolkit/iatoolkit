@@ -18,6 +18,7 @@ from datetime import datetime
 import io
 import mimetypes
 import json
+from iatoolkit.common.user_errors import public_error_text
 
 class RagApiView(MethodView):
     """
@@ -215,7 +216,7 @@ class RagApiView(MethodView):
                 return self._permission_denied(e)
             return jsonify({'result': 'error', 'message': e.message}), e.http_code
         except Exception as e:
-            return jsonify({'result': 'error', 'message': str(e)}), 500
+            return jsonify({'result': 'error', 'message': public_error_text(e, __name__)}), 500
 
     def _get_metadata_search_fields(self, company_short_name: str) -> list[dict]:
         kb_config = self.configuration_service.get_configuration(company_short_name, "knowledge_base") or {}
@@ -301,7 +302,7 @@ class RagApiView(MethodView):
                 return self._permission_denied(e)
             return jsonify({'result': 'error', 'message': e.message}), e.http_code
         except Exception as e:
-            return jsonify({'result': 'error', 'message': str(e)}), 500
+            return jsonify({'result': 'error', 'message': public_error_text(e, __name__)}), 500
 
     def delete_file(self, company_short_name, document_id):
         """
@@ -332,7 +333,7 @@ class RagApiView(MethodView):
                 return self._permission_denied(e)
             return jsonify({'result': 'error', 'message': e.message}), e.http_code
         except Exception as e:
-            return jsonify({'result': 'error', 'message': str(e)}), 500
+            return jsonify({'result': 'error', 'message': public_error_text(e, __name__)}), 500
 
     def search(self, company_short_name):
         """
@@ -386,7 +387,7 @@ class RagApiView(MethodView):
                 return self._permission_denied(e)
             return jsonify({'result': 'error', 'error_message': e.message}), 501
         except Exception as e:
-            return jsonify({'result': 'error', 'error_message': str(e)}), 500
+            return jsonify({'result': 'error', 'error_message': public_error_text(e, __name__)}), 500
 
     def search_text(self, company_short_name):
         """
@@ -430,7 +431,7 @@ class RagApiView(MethodView):
                 return self._permission_denied(e)
             return jsonify({"result": "error", "error_code": "INTERNAL_ERROR", "message": e.message}), e.http_code
         except Exception as e:
-            return jsonify({"result": "error", "error_code": "INTERNAL_ERROR", "message": str(e)}), 500
+            return jsonify({"result": "error", "error_code": "INTERNAL_ERROR", "message": public_error_text(e, __name__)}), 500
 
     def search_image(self, company_short_name):
         """
@@ -474,7 +475,7 @@ class RagApiView(MethodView):
                 return self._permission_denied(e)
             return jsonify({"result": "error", "error_code": "INTERNAL_ERROR", "message": e.message}), e.http_code
         except Exception as e:
-            return jsonify({"result": "error", "error_code": "INTERNAL_ERROR", "message": str(e)}), 500
+            return jsonify({"result": "error", "error_code": "INTERNAL_ERROR", "message": public_error_text(e, __name__)}), 500
 
     def search_visual(self, company_short_name):
         """
@@ -521,7 +522,7 @@ class RagApiView(MethodView):
                 return self._permission_denied(e)
             return jsonify({"result": "error", "error_code": "INTERNAL_ERROR", "message": e.message}), e.http_code
         except Exception as e:
-            return jsonify({"result": "error", "error_code": "INTERNAL_ERROR", "message": str(e)}), 500
+            return jsonify({"result": "error", "error_code": "INTERNAL_ERROR", "message": public_error_text(e, __name__)}), 500
 
     @staticmethod
     def _to_markdown_link(label: str | None, url: str | None) -> str:

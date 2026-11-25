@@ -11,6 +11,7 @@ from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.auth_service import AuthService
 import logging
 from iatoolkit.common import access
+from iatoolkit.common.user_errors import public_error_text
 
 
 #: The configuration keys a company may change about itself.
@@ -92,7 +93,7 @@ class ConfigurationApiView(MethodView):
             return jsonify(response), status_code
         except Exception as e:
             logging.exception(f"Unexpected error loading config: {e}")
-            return jsonify({'status': 'error', 'message': str(e)}), 500
+            return jsonify({'status': 'error', 'message': public_error_text(e, __name__)}), 500
 
     def _refresh_runtime_clients(self, company_short_name: str) -> dict:
         refresh_status = {
@@ -185,7 +186,7 @@ class ConfigurationApiView(MethodView):
             return jsonify({'error': 'Configuration file not found'}), 404
         except Exception as e:
             logging.exception(f"Error updating config: {e}")
-            return jsonify({'status': 'error', 'message': str(e)}), 500
+            return jsonify({'status': 'error', 'message': public_error_text(e, __name__)}), 500
 
 
 class ValidateConfigurationApiView(MethodView):
@@ -215,4 +216,4 @@ class ValidateConfigurationApiView(MethodView):
 
         except Exception as e:
             logging.exception(f"Error validating config: {e}")
-            return jsonify({'status': 'error', 'message': str(e)}), 500
+            return jsonify({'status': 'error', 'message': public_error_text(e, __name__)}), 500

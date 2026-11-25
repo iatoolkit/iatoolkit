@@ -13,6 +13,7 @@ from iatoolkit.common.exceptions import IAToolkitException
 from injector import inject
 import logging
 from iatoolkit.common import access
+from iatoolkit.common.user_errors import public_error_text
 
 
 class PromptApiView(MethodView):
@@ -87,7 +88,7 @@ class PromptApiView(MethodView):
         except Exception as e:
             logging.exception(
                 f"unexpected error getting company prompts: {e}")
-            return jsonify({"error_message": str(e)}), 500
+            return jsonify({"error_message": public_error_text(e, __name__)}), 500
 
     def _require_admin_auth(self, company_short_name: str) -> dict | tuple:
         """
@@ -122,7 +123,7 @@ class PromptApiView(MethodView):
             return jsonify({"status": "success"})
         except Exception as e:
             logging.exception(f"Error saving prompt {prompt_name}: {e}")
-            return jsonify({"status": "error", "message": str(e)}), 500
+            return jsonify({"status": "error", "message": public_error_text(e, __name__)}), 500
 
     def post(self, company_short_name, prompt_name=None):
         """Creates a new prompt."""
@@ -163,7 +164,7 @@ class PromptApiView(MethodView):
             return jsonify({"status": "error", "message": str(e)}), 500
         except Exception as e:
             logging.exception(f"Error creating prompt: {e}")
-            return jsonify({"status": "error", "message": str(e)}), 500
+            return jsonify({"status": "error", "message": public_error_text(e, __name__)}), 500
 
     def delete(self, company_short_name, prompt_name):
         """Deletes a prompt."""
@@ -179,4 +180,4 @@ class PromptApiView(MethodView):
             return jsonify({"status": "success"})
         except Exception as e:
             logging.exception(f"Error deleting prompt {prompt_name}: {e}")
-            return jsonify({"status": "error", "message": str(e)}), 500
+            return jsonify({"status": "error", "message": public_error_text(e, __name__)}), 500

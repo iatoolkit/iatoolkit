@@ -47,3 +47,39 @@ def test_each_error_gets_its_own_reference():
     second = unexpected_error_message(i18n, Exception("b"), where="t")
 
     assert first != second
+
+
+# --- public_error_text: what an HTTP response may carry for an exception ---------
+
+from iatoolkit.common.exceptions import IAToolkitException
+from iatoolkit.common.user_errors import is_user_facing, public_error_text
+
+
+def test_a_domain_error_for_the_person_keeps_its_message():
+    exc = IAToolkitException(IAToolkitException.ErrorType.EXIST, "An API key with that name already exists.")
+    assert public_error_text(exc, "t") == "An API key with that name already exists."
+
+
+def test_a_validation_value_error_keeps_its_message():
+    assert public_error_text(ValueError("name is required"), "t") == "name is required"
+
+
+def test_a_system_or_database_error_becomes_a_reference(caplog):
+    leaks = [
+        IAToolkitException(IAToolkitException.ErrorType.DATABASE_ERROR, "relation iat_users does not exist"),
+        RuntimeError("psycopg2.errors.UndefinedColumn: column temp_code_expires_at"),
+        KeyError("FERNET_KEY"),
+    ]
+    with caplog.at_level(logging.ERROR):
+        texts = [public_error_text(exc, "views.x") for exc in leaks]
+
+    for exc, text in zip(leaks, texts):
+        assert str(exc).strip("'") not in text
+        assert re.search(r"[0-9a-f]{8}", text)
+        assert text.split()[-1].strip(")") in caplog.text  # the reference is in the log, with the detail
+
+
+def test_a_value_error_subclass_from_a_library_is_not_trusted():
+    class DecodeError(ValueError):
+        pass
+    assert not is_user_facing(DecodeError("Expecting value: line 1 column 1"))

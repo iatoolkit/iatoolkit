@@ -12,6 +12,7 @@ from injector import inject
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.auth_service import AuthService
+from iatoolkit.common.user_errors import public_error_text
 
 
 class ConnectorsApiView(MethodView):
@@ -55,4 +56,4 @@ class ConnectorsApiView(MethodView):
 
         except Exception as e:
             logging.exception(f"Unexpected error listing connectors: {e}")
-            return jsonify({"status": "error", "message": str(e)}), 500
+            return jsonify({"status": "error", "message": public_error_text(e, __name__)}), 500

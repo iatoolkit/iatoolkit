@@ -15,6 +15,7 @@ from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.services.auth_service import AuthService
 from iatoolkit.services.prompt_resource_service import PromptResourceService
 from iatoolkit.common import access
+from iatoolkit.common.user_errors import public_error_text
 
 
 class PromptResourceApiView(MethodView):
@@ -80,7 +81,7 @@ class PromptResourceApiView(MethodView):
             return jsonify({"error": exc.message or str(exc)}), self._map_error_status(exc)
         except Exception as exc:
             logging.exception("Fatal error loading prompt resources")
-            return jsonify({"error": str(exc)}), 500
+            return jsonify({"error": public_error_text(exc, __name__)}), 500
 
     def put(self, company_short_name: str, prompt_name: str):
         auth = self._require_editor_or_admin_auth(company_short_name)
@@ -100,4 +101,4 @@ class PromptResourceApiView(MethodView):
             return jsonify({"error": exc.message or str(exc)}), self._map_error_status(exc)
         except Exception as exc:
             logging.exception("Fatal error saving prompt resources")
-            return jsonify({"error": str(exc)}), 500
+            return jsonify({"error": public_error_text(exc, __name__)}), 500

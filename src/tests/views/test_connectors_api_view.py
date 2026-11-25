@@ -105,4 +105,5 @@ class TestConnectorsApiView:
 
         assert response.status_code == 500
         assert response.json["status"] == "error"
-        assert "Boom" in response.json["message"]
+        assert "Boom" not in response.json["message"]  # BL-030: a reference, not the exception
+        assert "reference" in response.json["message"]
