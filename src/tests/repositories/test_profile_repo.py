@@ -5,7 +5,7 @@
 
 from iatoolkit.repositories.database_manager import DatabaseManager
 from iatoolkit.repositories.models import (User, Company, UserFeedback,
-                                           user_company, AccessLog)
+                                           user_company, AccessLog, UserIdentity)
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock
@@ -55,6 +55,41 @@ class TestProfileRepo:
         result = self.repo.get_user_by_google_sub('google-sub-123')
 
         assert result == self.user
+
+    def test_get_user_by_identity_matches_issuer_and_subject(self):
+        self.user.link_identity('https://idp.example.com', 'sub-1', 'fernando@opensoft.cl', True)
+        self.session.add(self.user)
+        self.session.commit()
+
+        assert self.repo.get_user_by_identity('https://idp.example.com', 'sub-1') == self.user
+        assert self.repo.get_user_by_identity('https://other.example.com', 'sub-1') is None
+        assert self.repo.get_user_by_identity('https://idp.example.com', 'sub-2') is None
+
+    def test_link_identity_refreshes_an_existing_link(self):
+        self.user.link_identity('https://idp.example.com', 'sub-1', 'old@opensoft.cl', False)
+        self.session.add(self.user)
+        self.session.commit()
+        linked_at = self.user.identities[0].linked_at
+
+        self.user.link_identity('https://idp.example.com', 'sub-1', 'new@opensoft.cl', True)
+        self.session.commit()
+
+        rows = self.session.query(UserIdentity).all()
+        assert len(rows) == 1
+        assert (rows[0].email, rows[0].email_verified, rows[0].linked_at) == ('new@opensoft.cl', True, linked_at)
+        assert rows[0].last_login_at is not None
+
+    def test_an_identity_belongs_to_one_user_only(self):
+        import pytest
+        from sqlalchemy.exc import IntegrityError
+        other = User(email='otro@opensoft.cl', first_name='O', last_name='U', password='x')
+        self.user.link_identity('https://idp.example.com', 'sub-1', None, False)
+        other.link_identity('https://idp.example.com', 'sub-1', None, False)
+        self.session.add_all([self.user, other])
+
+        with pytest.raises(IntegrityError):
+            self.session.commit()
+        self.session.rollback()
 
     def test_create_user_when_ok(self):
         new_user = self.repo.create_user(self.user)

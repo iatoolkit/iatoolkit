@@ -16,7 +16,7 @@ from iatoolkit.services.user_session_context_service import UserSessionContextSe
 from iatoolkit.services.configuration_service import ConfigurationService
 from flask_bcrypt import Bcrypt
 from iatoolkit.services.mail_service import MailService
-from iatoolkit.infra.google_auth_client import GoogleIdentity
+from iatoolkit.infra.google_auth_client import GoogleIdentity, GOOGLE_ISSUER
 import hashlib
 import hmac
 import re
@@ -181,6 +181,20 @@ class ProfileService:
         self.profile_repo.session.add(company)
         self.profile_repo.session.commit()
 
+    def _find_user_by_google_subject(self, subject: str) -> User | None:
+        # iat_user_identities first; google_sub for links made before it existed (BL-031).
+        user = self.profile_repo.get_user_by_identity(GOOGLE_ISSUER, subject)
+        return user or self.profile_repo.get_user_by_google_sub(subject)
+
+    @staticmethod
+    def _linked_google_subject(user: User) -> str | None:
+        identity = user.find_identity(GOOGLE_ISSUER)
+        return identity.subject if identity else user.google_sub
+
+    def _has_other_google_account(self, user: User, subject: str) -> bool:
+        linked = self._linked_google_subject(user)
+        return self._is_google_auth_user(user) and bool(linked) and linked != subject
+
     def _link_user_to_google(self, user: User, google_identity: GoogleIdentity):
         user.auth_method = 'google'
         user.google_sub = google_identity.subject
@@ -188,6 +202,8 @@ class ProfileService:
         user.google_email_verified = bool(google_identity.email_verified)
         user.google_linked_at = user.google_linked_at or datetime.now()
         user.verified = True
+        user.link_identity(GOOGLE_ISSUER, google_identity.subject,
+                           google_identity.email, google_identity.email_verified)
 
         first_name, last_name = self._resolve_google_names(google_identity.email, google_identity)
         if not str(user.first_name or "").strip():
@@ -248,7 +264,7 @@ class ProfileService:
                 "reason_code": "GOOGLE_EMAIL_NOT_VERIFIED",
             }
 
-        user = self.profile_repo.get_user_by_google_sub(google_identity.subject)
+        user = self._find_user_by_google_subject(google_identity.subject)
         if user:
             if str(user.email or "").strip().lower() != email:
                 return {
@@ -264,7 +280,7 @@ class ProfileService:
                     "message": self.i18n_service.t('errors.auth.user_not_found'),
                     "reason_code": "USER_NOT_FOUND",
                 }
-            if self._is_google_auth_user(user) and user.google_sub and user.google_sub != google_identity.subject:
+            if self._has_other_google_account(user, google_identity.subject):
                 return {
                     "success": False,
                     "message": self.i18n_service.t('errors.auth.google_account_conflict'),
@@ -554,7 +570,7 @@ class ProfileService:
             user = None
             persisted = False
             new_google_user = False
-            user_by_google_sub = self.profile_repo.get_user_by_google_sub(google_identity.subject)
+            user_by_google_sub = self._find_user_by_google_subject(google_identity.subject)
 
             provisioning_outcome = "existing_google_subject"
             policy_metadata = {}
@@ -585,7 +601,7 @@ class ProfileService:
                         user.id,
                         getattr(user, "auth_method", None),
                     )
-                    if self._is_google_auth_user(user) and user.google_sub and user.google_sub != google_identity.subject:
+                    if self._has_other_google_account(user, google_identity.subject):
                         return {
                             "success": False,
                             "message": self.i18n_service.t('errors.auth.google_account_conflict'),
@@ -614,6 +630,7 @@ class ProfileService:
                         google_email_verified=True,
                         google_linked_at=datetime.now(),
                     )
+                    user.link_identity(GOOGLE_ISSUER, google_identity.subject, email, True)
 
             if company not in user.companies:
                 logging.debug(

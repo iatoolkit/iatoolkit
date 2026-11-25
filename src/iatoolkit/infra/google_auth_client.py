@@ -14,6 +14,11 @@ from google.oauth2 import id_token
 from requests_oauthlib import OAuth2Session
 
 
+# The issuer Google signs its ID tokens with: the identity provider half of the
+# (issuer, subject) pair that links a Google account to a user (iat_user_identities).
+GOOGLE_ISSUER = "https://accounts.google.com"
+
+
 @dataclass(frozen=True)
 class GoogleIdentity:
     subject: str

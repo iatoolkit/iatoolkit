@@ -352,6 +352,34 @@ class User(Base):
         passive_deletes=True,
         lazy='dynamic'
     )
+    identities = relationship(
+        "UserIdentity",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
+    def find_identity(self, issuer: str) -> "UserIdentity | None":
+        """The identity this user has with one identity provider, if any."""
+        return next((i for i in self.identities if i.issuer == issuer), None)
+
+    def link_identity(self, issuer: str, subject: str, email: str | None,
+                      email_verified: bool) -> "UserIdentity":
+        """
+        Records that this user signs in as `subject` at `issuer`, or refreshes
+        that record. The caller checks first that no other user owns the pair:
+        (issuer, subject) is unique.
+        """
+        now = datetime.now()
+        identity = next((i for i in self.identities
+                         if i.issuer == issuer and i.subject == subject), None)
+        if identity is None:
+            identity = UserIdentity(issuer=issuer, subject=subject, linked_at=now)
+            self.identities.append(identity)
+        identity.email = email
+        identity.email_verified = bool(email_verified)
+        identity.last_login_at = now
+        return identity
 
     def to_dict(self):
         return {
@@ -364,6 +392,39 @@ class User(Base):
             'verified': self.verified,
             'companies': [company.to_dict() for company in self.companies]
         }
+
+class UserIdentity(Base):
+    """
+    An account at an external identity provider that signs in as a user: Google
+    today, the OpenID Connect provider a company configures next (BL-031).
+
+    The pair (issuer, subject) is what the provider guarantees to be stable and
+    unique, so it is what links an account to a user. The e-mail is kept only as
+    the provider last reported it: it can change, and two providers can claim the
+    same address.
+
+    Google sign-ins were linked through iat_users.google_sub before this table.
+    The login reads both and writes both until google_sub is retired; existing
+    rows are copied by iatoolkit-enterprise/migrations/2026-11-25-user-identities-google.sql.
+    """
+    __tablename__ = 'iat_user_identities'
+    __table_args__ = (
+        UniqueConstraint('issuer', 'subject', name='uq_user_identities_issuer_subject'),
+        Index('ix_user_identities_user_id', 'user_id'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey(f'{ORM_SCHEMA}.iat_users.id', ondelete='CASCADE'),
+                     nullable=False)
+    issuer = Column(String(512), nullable=False)
+    subject = Column(String(255), nullable=False)
+    email = Column(String, nullable=True)
+    email_verified = Column(Boolean, nullable=False, default=False)
+    linked_at = Column(DateTime, nullable=False, default=datetime.now)
+    last_login_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", back_populates="identities")
+
 
 class Tool(Base):
     """Represents a custom or system function that the LLM can call (tool)."""

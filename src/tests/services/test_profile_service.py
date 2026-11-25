@@ -16,7 +16,7 @@ from flask_bcrypt import generate_password_hash
 from iatoolkit.services.dispatcher_service import Dispatcher
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.services.language_service import LanguageService
-from iatoolkit.infra.google_auth_client import GoogleIdentity
+from iatoolkit.infra.google_auth_client import GoogleIdentity, GOOGLE_ISSUER
 
 
 # The SessionManager is used inside the 'profile_service' module.
@@ -50,6 +50,7 @@ class TestProfileService:
         self.mock_company.parameters = {}
         self.mock_repo.get_company_by_short_name.return_value = self.mock_company
         self.mock_repo.get_user_by_email.return_value = self.mock_user
+        self.mock_repo.get_user_by_identity.return_value = None
         self.mock_user.companies = [self.mock_company]
         self.mock_repo.session = MagicMock()
 
@@ -666,6 +667,47 @@ class TestProfileService:
 
         assert response['reason_code'] == 'GOOGLE_ACCOUNT_CONFLICT'
 
+    def test_identify_google_user_finds_the_user_by_linked_identity_first(self, mock_session_manager):
+        google_identity = GoogleIdentity(
+            subject='google-sub-1', email='test@email.com', email_verified=True,
+        )
+        self.mock_repo.get_user_by_identity.return_value = self.mock_user
+
+        response = self.service.identify_google_user(google_identity)
+
+        assert response == {'success': True, 'user_identifier': 'test@email.com'}
+        self.mock_repo.get_user_by_identity.assert_called_once_with(GOOGLE_ISSUER, 'google-sub-1')
+        self.mock_repo.get_user_by_google_sub.assert_not_called()
+
+    def test_identify_google_user_rejects_a_user_linked_to_another_google_identity(self, mock_session_manager):
+        # Linked only in iat_user_identities (google_sub empty): still a conflict.
+        google_identity = GoogleIdentity(
+            subject='google-sub-2', email='test@email.com', email_verified=True,
+        )
+        self.mock_repo.get_user_by_google_sub.return_value = None
+        self.mock_user.auth_method = 'google'
+        self.mock_user.link_identity(GOOGLE_ISSUER, 'google-sub-1', 'test@email.com', True)
+
+        response = self.service.identify_google_user(google_identity)
+
+        assert response['reason_code'] == 'GOOGLE_ACCOUNT_CONFLICT'
+
+    def test_login_with_google_links_the_identity_of_a_user_found_by_google_sub(self, mock_session_manager):
+        # A link from before iat_user_identities: found through google_sub, then copied over.
+        google_identity = GoogleIdentity(
+            subject='google-sub-1', email='test@email.com', email_verified=True,
+        )
+        self.mock_user.auth_method = 'google'
+        self.mock_user.google_sub = 'google-sub-1'
+        self.mock_repo.get_user_by_google_sub.return_value = self.mock_user
+        self.mock_repo.get_user_role_in_company.return_value = 'user'
+
+        response = self.service.login_with_google(self.mock_company.short_name, google_identity)
+
+        assert response['success'] is True
+        assert self.mock_user.find_identity(GOOGLE_ISSUER).subject == 'google-sub-1'
+        self.mock_repo.save_user.assert_called_once_with(self.mock_user)
+
     def test_global_identity_round_trip(self, mock_session_manager):
         self.service.set_global_identity('test@email.com', 'local')
 
@@ -699,6 +741,8 @@ class TestProfileService:
         assert response['success'] is True
         assert self.mock_user.auth_method == 'google'
         assert self.mock_user.google_sub == 'google-sub-1'
+        identity = self.mock_user.find_identity(GOOGLE_ISSUER)
+        assert (identity.subject, identity.email, identity.email_verified) == ('google-sub-1', 'test@email.com', True)
         assert self.mock_repo.save_user.called is True
         self.mock_session_context.save_profile_data.assert_called()
         self.mock_mail_service.send_mail.assert_not_called()
@@ -737,6 +781,7 @@ class TestProfileService:
         assert created_user.auth_method == 'google'
         assert created_user.password is None
         assert created_user.google_sub == 'google-sub-new'
+        assert [(i.issuer, i.subject) for i in created_user.identities] == [(GOOGLE_ISSUER, 'google-sub-new')]
         welcome_call = self.mock_mail_service.send_mail.call_args.kwargs
         assert welcome_call["company_short_name"] == self.mock_company.short_name
         assert welcome_call["recipient"] == "newuser@email.com"

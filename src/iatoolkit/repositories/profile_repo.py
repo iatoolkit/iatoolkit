@@ -4,7 +4,7 @@
 # IAToolkit is open source software.
 
 from iatoolkit.repositories.models import (User, Company, user_company,
-                                           UserFeedback, AccessLog)
+                                           UserFeedback, AccessLog, UserIdentity)
 from injector import inject
 from iatoolkit.repositories.database_manager import DatabaseManager
 from sqlalchemy import select, func, and_
@@ -29,6 +29,13 @@ class ProfileRepo:
     def get_user_by_google_sub(self, google_sub: str) -> User:
         user = self.session.query(User).filter_by(google_sub=google_sub).first()
         return user
+
+    def get_user_by_identity(self, issuer: str, subject: str) -> User | None:
+        """The user an external identity provider account signs in as."""
+        return (self.session.query(User)
+                .join(UserIdentity, UserIdentity.user_id == User.id)
+                .filter(UserIdentity.issuer == issuer, UserIdentity.subject == subject)
+                .first())
 
     def create_user(self, new_user: User):
         self.session.add(new_user)
