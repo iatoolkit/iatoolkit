@@ -56,11 +56,15 @@ class ProfileRepo:
     def verify_user(self, email):
         return self.update_user(email, verified=True)
 
-    def set_temp_code(self, email, temp_code):
-        return self.update_user(email, temp_code=temp_code)
+    def set_temp_code(self, email, temp_code_hash, expires_at):
+        return self.update_user(email, temp_code=temp_code_hash,
+                                temp_code_expires_at=expires_at, temp_code_attempts=0)
 
     def reset_temp_code(self, email):
-        return self.update_user(email, temp_code=None)
+        return self.update_user(email, temp_code=None, temp_code_expires_at=None, temp_code_attempts=0)
+
+    def record_failed_temp_code(self, email, attempts):
+        return self.update_user(email, temp_code_attempts=attempts)
 
     def update_password(self, email, hashed_password):
         return self.update_user(email, password=hashed_password)

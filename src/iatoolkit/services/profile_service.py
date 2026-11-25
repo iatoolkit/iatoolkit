@@ -17,13 +17,15 @@ from iatoolkit.services.configuration_service import ConfigurationService
 from flask_bcrypt import Bcrypt
 from iatoolkit.services.mail_service import MailService
 from iatoolkit.infra.google_auth_client import GoogleIdentity
-import random
+import hashlib
+import hmac
 import re
+import secrets
 import string
 import logging
 import time
 from html import escape
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Dict
 from sqlalchemy import update
 from iatoolkit.common.interfaces.signup_policy_resolver import SignupPolicyResolver
@@ -901,8 +903,13 @@ class ProfileService:
             user = self.profile_repo.get_user_by_email(email)
             if self._is_google_auth_user(user):
                 return {"error": self.i18n_service.t('errors.change_password.google_account_password_disabled')}
-            if not user or user.temp_code != temp_code:
+            if not user or not self._temp_code_matches(user, temp_code):
                 return {"error": self.i18n_service.t('errors.change_password.invalid_temp_code')}
+
+            # the same password policy as on signup
+            is_valid, message_key = self.validate_password(new_password or '')
+            if not is_valid:
+                return {"error": self.i18n_service.t(message_key)}
 
             # encrypt and save the password, make the temporary code invalid
             hashed_password = self.bcrypt.generate_password_hash(new_password).decode('utf-8')
@@ -915,26 +922,67 @@ class ProfileService:
             return {"error": self.i18n_service.t('errors.general.unexpected_error', error=str(e))}
 
     def forgot_password(self, company_short_name: str, email: str, reset_url: str):
+        # The answer is the same whether or not the email is registered (or belongs to
+        # a Google account): it must not tell anyone which emails have an account (BL-030).
+        success = {"message": self.i18n_service.t('flash_messages.forgot_password_success')}
         try:
-            # Verificar si el usuario existe
             user = self.profile_repo.get_user_by_email(email)
             if not user:
-                return {"error": self.i18n_service.t('errors.forgot_password.user_not_registered', email=email)}
+                logging.info("Password reset requested for an unregistered email.")
+                return success
 
             if self._is_google_auth_user(user):
-                return {"error": self.i18n_service.t('errors.forgot_password.google_account_password_disabled')}
+                logging.info("Password reset requested for a Google account (user_id=%s).", user.id)
+                return success
 
-            # Gen a temporary code and store in the repositories
-            temp_code = ''.join(random.choices(string.ascii_letters + string.digits, k=6)).upper()
-            self.profile_repo.set_temp_code(email, temp_code)
+            # A random code, stored only as its hash, valid for a short time.
+            temp_code = ''.join(secrets.choice(self.TEMP_CODE_ALPHABET) for _ in range(self.TEMP_CODE_LENGTH))
+            expires_at = datetime.now() + timedelta(minutes=self.TEMP_CODE_TTL_MINUTES)
+            self.profile_repo.set_temp_code(email, self._hash_temp_code(temp_code), expires_at)
 
             # send email to the user
-            self.send_forgot_password_email(company_short_name, user, reset_url)
+            self.send_forgot_password_email(company_short_name, user, reset_url, temp_code)
 
-            return {"message": self.i18n_service.t('flash_messages.forgot_password_success')}
+            return success
         except Exception as e:
             self._safe_rollback()
             return {"error": self.i18n_service.t('errors.general.unexpected_error', error=str(e))}
+
+    # Password reset code (BL-030): 8 characters from 36, 15 minutes, 5 wrong attempts.
+    TEMP_CODE_ALPHABET = string.ascii_uppercase + string.digits
+    TEMP_CODE_LENGTH = 8
+    TEMP_CODE_TTL_MINUTES = 15
+    TEMP_CODE_MAX_ATTEMPTS = 5
+
+    @staticmethod
+    def _hash_temp_code(temp_code: str) -> str:
+        normalized = str(temp_code or '').strip().upper()
+        return hashlib.sha256(normalized.encode('utf-8')).hexdigest()
+
+    def _temp_code_matches(self, user: User, temp_code: str) -> bool:
+        """
+        True when `temp_code` is the user's current reset code. A wrong code counts
+        as an attempt; once the attempts run out, or the code expires, it stops
+        working and a new one has to be requested.
+        """
+        stored_hash = getattr(user, 'temp_code', None)
+        expires_at = getattr(user, 'temp_code_expires_at', None)
+        if not stored_hash or not expires_at or datetime.now() > expires_at:
+            return False
+
+        attempts = int(getattr(user, 'temp_code_attempts', 0) or 0)
+        if attempts >= self.TEMP_CODE_MAX_ATTEMPTS:
+            return False
+
+        if temp_code and hmac.compare_digest(stored_hash, self._hash_temp_code(temp_code)):
+            return True
+
+        attempts += 1
+        if attempts >= self.TEMP_CODE_MAX_ATTEMPTS:
+            self.profile_repo.reset_temp_code(user.email)
+        else:
+            self.profile_repo.record_failed_temp_code(user.email, attempts)
+        return False
 
     def validate_password(self, password):
         """
@@ -1044,7 +1092,7 @@ class ProfileService:
                                     subject=subject,
                                     body=body)
 
-    def send_forgot_password_email(self, company_short_name: str, user: User, reset_url: str):
+    def send_forgot_password_email(self, company_short_name: str, user: User, reset_url: str, temp_code: str):
         # send email to the user
         subject = f"Recuperación de Contraseña "
         body = f"""
@@ -1074,7 +1122,7 @@ class ProfileService:
                                             </p>
                                             <p><strong>Tu código temporal es:</strong></p>
                                             <p style="font-size: 20px; font-weight: bold; text-align: center; background-color: #f8f9fa; padding: 10px; border-radius: 5px; border: 1px solid #ccc;">
-                                                {user.temp_code}
+                                                {escape(temp_code)}
                                             </p>
                                             <p>Si el botón no funciona, también puedes copiar y pegar el siguiente enlace en tu navegador:</p>
                                             <p style="word-break: break-word; color: #007bff;">

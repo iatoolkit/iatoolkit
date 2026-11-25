@@ -7,7 +7,7 @@ from iatoolkit.repositories.database_manager import DatabaseManager
 from iatoolkit.repositories.models import (User, Company, UserFeedback,
                                            user_company, AccessLog)
 from iatoolkit.repositories.profile_repo import ProfileRepo
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 from sqlalchemy.exc import OperationalError
 
@@ -81,10 +81,20 @@ class TestProfileRepo:
     def test_set_temp_code_when_ok(self):
         self.session.add(self.user)
         self.session.commit()
-        temp_code = 'CCGT'
-        user = self.repo.set_temp_code(self.user.email,temp_code)
+        code_hash = 'a' * 64
+        expires_at = datetime.now() + timedelta(minutes=15)
+        user = self.repo.set_temp_code(self.user.email, code_hash, expires_at)
 
-        assert user.temp_code == temp_code
+        assert user.temp_code == code_hash
+        assert user.temp_code_expires_at == expires_at
+        assert user.temp_code_attempts == 0
+
+    def test_record_failed_temp_code(self):
+        self.session.add(self.user)
+        self.session.commit()
+        user = self.repo.record_failed_temp_code(self.user.email, 3)
+
+        assert user.temp_code_attempts == 3
 
     def test_reset_temp_code_when_ok(self):
         self.session.add(self.user)
@@ -92,6 +102,8 @@ class TestProfileRepo:
         user = self.repo.reset_temp_code(self.user.email)
 
         assert user.temp_code == None
+        assert user.temp_code_expires_at is None
+        assert user.temp_code_attempts == 0
 
     def test_update_password_when_ok(self):
         self.session.add(self.user)

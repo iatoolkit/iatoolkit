@@ -329,7 +329,12 @@ class User(Base):
     verified = Column(Boolean, nullable=False, default=False)
     preferred_language = Column(String, nullable=True)
     verification_url = Column(String, nullable=True)
+    # Password reset code, stored as its SHA-256 hash (never the code itself), valid
+    # until temp_code_expires_at and for a few wrong attempts (BL-030).
+    # migration: iatoolkit-enterprise/migrations/2026-11-25-users-temp-code-expiry.sql
     temp_code = Column(String, nullable=True)
+    temp_code_expires_at = Column(DateTime, nullable=True)
+    temp_code_attempts = Column(Integer, nullable=False, default=0, server_default=sql_text("0"))
 
     companies = relationship(
         "Company",

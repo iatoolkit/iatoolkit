@@ -2,6 +2,8 @@
 # Product: IAToolkit
 
 import pytest
+import re
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
 from flask import Flask
 from iatoolkit.services.profile_service import ProfileService
@@ -417,37 +419,75 @@ class TestProfileService:
         )
         assert 'translated:errors.change_password.password_mismatch' == response['error']
 
-    def test_change_passworwd_when_invalid_code(self,mock_session_manager):
+    def _give_reset_code(self, code='ABCD2345', minutes_left=10, attempts=0):
+        self.mock_user.temp_code = ProfileService._hash_temp_code(code)
+        self.mock_user.temp_code_expires_at = datetime.now() + timedelta(minutes=minutes_left)
+        self.mock_user.temp_code_attempts = attempts
         self.mock_repo.get_user_by_email.return_value = self.mock_user
-        self.mock_user.temp_code = 'xYhvt'
-        response = self.service.change_password(
+        return code
+
+    def _change(self, temp_code, password='NewPass1!'):
+        return self.service.change_password(
             email='test@email.com',
-            temp_code='ABC',
-            new_password='pass1',
-            confirm_password='pass1'
+            temp_code=temp_code,
+            new_password=password,
+            confirm_password=password
         )
+
+    def test_change_passworwd_when_invalid_code(self,mock_session_manager):
+        self._give_reset_code('ABCD2345')
+        response = self._change('ZZZZ9999')
         assert 'translated:errors.change_password.invalid_temp_code' == response['error']
+        self.mock_repo.record_failed_temp_code.assert_called_once_with('test@email.com', 1)
+        self.mock_repo.update_password.assert_not_called()
 
     def test_change_password_when_ok(self,mock_session_manager):
-        self.mock_repo.get_user_by_email.return_value = self.mock_user
-        self.mock_user.temp_code = 'ABC'
-        response = self.service.change_password(
-            email='test@email.com',
-            temp_code=self.mock_user.temp_code,
-            new_password='pass1',
-            confirm_password='pass1'
-        )
+        code = self._give_reset_code('ABCD2345')
+        response = self._change(code)
+        assert 'translated:flash_messages.password_changed_success' == response['message']
+        self.mock_repo.update_password.assert_called_once()
+        self.mock_repo.reset_temp_code.assert_called_once_with('test@email.com')
+
+    def test_change_password_accepts_the_code_in_lowercase(self, mock_session_manager):
+        self._give_reset_code('ABCD2345')
+        response = self._change(' abcd2345 ')
         assert 'translated:flash_messages.password_changed_success' == response['message']
 
+    def test_change_password_when_code_expired(self, mock_session_manager):
+        code = self._give_reset_code('ABCD2345', minutes_left=-1)
+        response = self._change(code)
+        assert 'translated:errors.change_password.invalid_temp_code' == response['error']
+        self.mock_repo.update_password.assert_not_called()
+
+    def test_change_password_when_code_has_no_expiry(self, mock_session_manager):
+        """A code stored before BL-030 has no expiry: it no longer works."""
+        code = self._give_reset_code('ABCD2345')
+        self.mock_user.temp_code_expires_at = None
+        response = self._change(code)
+        assert 'translated:errors.change_password.invalid_temp_code' == response['error']
+
+    def test_change_password_when_attempts_exhausted(self, mock_session_manager):
+        code = self._give_reset_code('ABCD2345', attempts=ProfileService.TEMP_CODE_MAX_ATTEMPTS)
+        response = self._change(code)
+        assert 'translated:errors.change_password.invalid_temp_code' == response['error']
+        self.mock_repo.update_password.assert_not_called()
+
+    def test_change_password_last_wrong_attempt_invalidates_the_code(self, mock_session_manager):
+        self._give_reset_code('ABCD2345', attempts=ProfileService.TEMP_CODE_MAX_ATTEMPTS - 1)
+        self._change('ZZZZ9999')
+        self.mock_repo.reset_temp_code.assert_called_once_with('test@email.com')
+        self.mock_repo.record_failed_temp_code.assert_not_called()
+
+    def test_change_password_rejects_a_weak_password(self, mock_session_manager):
+        code = self._give_reset_code('ABCD2345')
+        response = self._change(code, password='weak')
+        assert 'translated:errors.validation.password_too_short' == response['error']
+        self.mock_repo.update_password.assert_not_called()
+
     def test_change_password_when_exception(self,mock_session_manager):
-        self.mock_repo.get_user_by_email.return_value = self.mock_user
+        code = self._give_reset_code('ABCD2345')
         self.mock_repo.update_password.side_effect = Exception('db error')
-        response = self.service.change_password(
-            email='test@email.com',
-            temp_code=self.mock_user.temp_code,
-            new_password='pass1',
-            confirm_password='pass1'
-        )
+        response = self._change(code)
         assert 'translated:errors.general.unexpected_error' == response['error']
         self.mock_i18n.t.assert_called_with('errors.general.unexpected_error', error='db error')
 
@@ -456,23 +496,21 @@ class TestProfileService:
         self.mock_user.password = None
         self.mock_repo.get_user_by_email.return_value = self.mock_user
 
-        response = self.service.change_password(
-            email='test@email.com',
-            temp_code='ABC',
-            new_password='pass1',
-            confirm_password='pass1'
-        )
+        response = self._change('ABC')
 
         assert response['error'] == 'translated:errors.change_password.google_account_password_disabled'
 
     def test_forgot_password_when_user_not_exist(self,mock_session_manager):
+        """Same answer as for a registered email: it must not reveal who has an account."""
         self.mock_repo.get_user_by_email.return_value = None
         response = self.service.forgot_password(
             company_short_name='test_company',
             email='test@email.com',
             reset_url='http://a_reset_utl'
         )
-        assert 'translated:errors.forgot_password.user_not_registered' == response['error']
+        assert 'translated:flash_messages.forgot_password_success' == response['message']
+        self.mock_repo.set_temp_code.assert_not_called()
+        self.mock_mail_service.send_mail.assert_not_called()
 
     def test_forgot_password_when_ok(self,mock_session_manager):
         self.mock_repo.get_user_by_email.return_value = self.mock_user
@@ -483,6 +521,15 @@ class TestProfileService:
         )
         assert 'translated:flash_messages.forgot_password_success' == response['message']
         self.mock_mail_service.send_mail.assert_called()
+
+        # only the hash is stored; the email carries the code itself
+        email, stored_hash, expires_at = self.mock_repo.set_temp_code.call_args.args
+        assert email == 'test@email.com'
+        assert re.fullmatch(r'[0-9a-f]{64}', stored_hash)
+        assert timedelta(minutes=14) < expires_at - datetime.now() <= timedelta(minutes=15)
+        body = str(self.mock_mail_service.send_mail.call_args)
+        codes = re.findall(r'\b[A-Z0-9]{8}\b', body)
+        assert any(ProfileService._hash_temp_code(c) == stored_hash for c in codes)
 
     def test_forgot_password_when_google_account(self, mock_session_manager):
         self.mock_user.auth_method = 'google'
@@ -495,7 +542,7 @@ class TestProfileService:
             reset_url='http://a_reset_utl'
         )
 
-        assert response['error'] == 'translated:errors.forgot_password.google_account_password_disabled'
+        assert 'translated:flash_messages.forgot_password_success' == response['message']
         self.mock_mail_service.send_mail.assert_not_called()
 
     def test_forgot_password_when_exception(self,mock_session_manager):
