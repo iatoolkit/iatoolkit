@@ -545,6 +545,30 @@ class TestProfileService:
         assert 'translated:flash_messages.forgot_password_success' == response['message']
         self.mock_mail_service.send_mail.assert_not_called()
 
+    def test_forgot_password_over_its_limit_answers_the_same_and_sends_nothing(self, mock_session_manager, monkeypatch):
+        """BL-030: a flood of reset requests for a mailbox sends no email and gives nothing away."""
+        from iatoolkit.common import rate_limiter
+        monkeypatch.setattr(rate_limiter, "over_limit", lambda bucket, identity, limit: bucket == "reset_request_account")
+        self.mock_repo.get_user_by_email.return_value = self.mock_user
+
+        response = self.service.forgot_password(company_short_name='test_company', email='test@email.com',
+                                                reset_url='http://a_reset_utl')
+
+        assert 'translated:flash_messages.forgot_password_success' == response['message']
+        self.mock_repo.set_temp_code.assert_not_called()
+        self.mock_mail_service.send_mail.assert_not_called()
+
+    def test_change_password_over_its_limit_is_refused(self, mock_session_manager, monkeypatch):
+        from iatoolkit.common import rate_limiter
+        monkeypatch.setattr(rate_limiter, "over_limit", lambda bucket, identity, limit: bucket == "password_change_ip")
+        code = self._give_reset_code('ABCD2345')
+
+        with Flask(__name__).test_request_context(headers={'CF-Connecting-IP': '9.9.9.9'}):
+            response = self._change(code)
+
+        assert response['error'] == 'translated:errors.auth.too_many_attempts'
+        self.mock_repo.update_password.assert_not_called()
+
     def test_forgot_password_when_exception(self,mock_session_manager):
         self.mock_repo.get_user_by_email.return_value = self.mock_user
         self.mock_mail_service.send_mail.side_effect = Exception('mail error')

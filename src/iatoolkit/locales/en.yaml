@@ -2870,6 +2870,7 @@ errors:
     model_denied: "You do not have access to the model {model}."
   timeout: "timeout expired."
   auth:
+    too_many_attempts: "Too many attempts. Wait a few minutes and try again."
     invalid_password: "The provided password is incorrect."
     user_not_found: "A user with that email address was not found."
     google_account_requires_google_login: "This account uses Google sign-in. Continue with Google to log in."

@@ -18,6 +18,8 @@ def setup_test_environment():
         'DATABASE_URI': 'sqlite:///:memory:',
         'REDIS_URL': 'redis://localhost:6379',
         'FLASK_ENV': 'testing',
+        # Rate limits off: they would count in the developer's Redis across tests (BL-030).
+        'IAT_RATE_LIMITS': 'off',
         'SECRET_KEY': 'test_secret_key',
         'CARPETA_API_URL': 'http://test-carpeta-api.com',
         'MIDDLEWARE_API_URL': 'http://test-middleware-api.com',

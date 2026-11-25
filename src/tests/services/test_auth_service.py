@@ -156,6 +156,31 @@ class TestAuthServiceVerify:
         # FIX: The service returns 402 for invalid keys, not 401.
         assert result['status_code'] == 402
 
+    def test_an_ip_that_sent_too_many_invalid_keys_gets_429(self, monkeypatch):
+        """BL-030: guessing keys is cut off per IP before the key is even looked up."""
+        from iatoolkit.common import rate_limiter
+        monkeypatch.setattr(rate_limiter, "is_blocked", lambda bucket, identity, limit: bucket == "api_key_ip")
+        self.mock_profile_service.get_current_session_info.return_value = {}
+
+        with self.app.test_request_context(headers={'Authorization': 'Bearer guess', 'CF-Connecting-IP': '9.9.9.9'}):
+            result = self.service.verify()
+
+        assert result['status_code'] == 429
+        self.mock_api_key_service.get_active_api_key_entry.assert_not_called()
+
+    def test_an_invalid_key_counts_as_a_failure_for_its_ip(self, monkeypatch):
+        from iatoolkit.common import rate_limiter
+        recorded = []
+        monkeypatch.setattr(rate_limiter, "is_blocked", lambda *args: False)
+        monkeypatch.setattr(rate_limiter, "record_failure", lambda bucket, identity, limit: recorded.append((bucket, identity)))
+        self.mock_profile_service.get_current_session_info.return_value = {}
+        self.mock_api_key_service.get_active_api_key_entry.return_value = None
+
+        with self.app.test_request_context(headers={'Authorization': 'Bearer guess', 'CF-Connecting-IP': '9.9.9.9'}):
+            self.service.verify()
+
+        assert recorded == [("api_key_ip", "9.9.9.9")]
+
     def test_a_rejected_api_key_is_never_logged_whole(self, caplog):
         self.mock_profile_service.get_current_session_info.return_value = {}
         self.mock_api_key_service.get_active_api_key_entry.return_value = None
@@ -306,6 +331,58 @@ class TestAuthServiceLoginFlows:
             reason_code='INVALID_CREDENTIALS',
             user_identifier=self.email
         )
+
+    def test_login_refused_while_the_account_is_rate_limited(self, monkeypatch):
+        """BL-030: same refusal whether or not the account exists; the password is not checked."""
+        from iatoolkit.common import rate_limiter
+        monkeypatch.setattr(rate_limiter, "over_limit", lambda *args: False)
+        monkeypatch.setattr(rate_limiter, "is_blocked", lambda bucket, identity, limit: bucket == "login_account")
+
+        with self.app.test_request_context():
+            result = self.service.login_local_user(self.company_short_name, self.email, "password")
+
+        assert result == {'success': False, 'message': 'translated:errors.auth.too_many_attempts',
+                          'reason_code': 'RATE_LIMITED'}
+        self.mock_profile_service.login.assert_not_called()
+        self.mock_log_access.assert_called_once_with(
+            company_short_name=self.company_short_name, user_identifier=self.email,
+            auth_type='local', outcome='failure', reason_code='RATE_LIMITED')
+
+    def test_global_login_refused_when_the_ip_is_over_its_limit(self, monkeypatch):
+        from iatoolkit.common import rate_limiter
+        monkeypatch.setattr(rate_limiter, "over_limit", lambda bucket, identity, limit: bucket == "login_ip")
+
+        with self.app.test_request_context(headers={'CF-Connecting-IP': '9.9.9.9'}):
+            result = self.service.login_global_local_user(self.email, "password")
+
+        assert result['reason_code'] == 'RATE_LIMITED'
+        self.mock_profile_service.authenticate_local_credentials.assert_not_called()
+
+    def test_a_failed_login_counts_and_a_successful_one_clears(self, monkeypatch):
+        from iatoolkit.common import rate_limiter
+        calls = []
+        monkeypatch.setattr(rate_limiter, "over_limit", lambda *args: False)
+        monkeypatch.setattr(rate_limiter, "is_blocked", lambda *args: False)
+        monkeypatch.setattr(rate_limiter, "record_failure", lambda bucket, identity, limit: calls.append(("fail", identity)))
+        monkeypatch.setattr(rate_limiter, "clear", lambda bucket, identity: calls.append(("clear", identity)))
+
+        with self.app.test_request_context():
+            self.mock_profile_service.login.return_value = {'success': False, 'message': 'x'}
+            self.service.login_local_user(self.company_short_name, self.email, "bad")
+            self.mock_profile_service.login.return_value = {'success': True, 'user_identifier': self.email}
+            self.service.login_local_user(self.company_short_name, self.email, "good")
+
+        assert calls == [("fail", self.email), ("clear", self.email)]
+
+    def test_redeem_refused_when_the_ip_redeems_too_often(self, monkeypatch):
+        from iatoolkit.common import rate_limiter
+        monkeypatch.setattr(rate_limiter, "over_limit", lambda bucket, identity, limit: bucket == "redeem_ip")
+
+        with self.app.test_request_context(headers={'CF-Connecting-IP': '9.9.9.9'}):
+            result = self.service.redeem_token_for_session(self.company_short_name, "token")
+
+        assert result['success'] is False
+        self.mock_jwt_service.validate_chat_jwt.assert_not_called()
 
     def test_redeem_token_success(self):
         """redeem_token should succeed, create a session, and log a successful 'redeem_token' access."""

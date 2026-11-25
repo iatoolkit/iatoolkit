@@ -2887,6 +2887,7 @@ errors:
 
 
   auth:
+    too_many_attempts: "Demasiados intentos. Espera unos minutos e inténtalo de nuevo."
     invalid_password: "La contraseña proporcionada es incorrecta."
     user_not_found: "No se encontró un usuario con ese correo."
     google_account_requires_google_login: "Esta cuenta usa acceso con Google. Continúa con Google para iniciar sesión."

@@ -3,8 +3,9 @@
 #
 # IAToolkit is open source software.
 
-from flask import request
+from flask import request, has_request_context
 from injector import inject
+from iatoolkit.common import rate_limiter
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.api_key_service import ApiKeyService
 from iatoolkit.services.jwt_service import JWTService
@@ -45,6 +46,10 @@ class AuthService:
 
     def login_local_user(self, company_short_name: str, email: str, password: str) -> dict:
         # try to autenticate a local user, register the event and return the result
+        limited = self._login_rate_limited(company_short_name, email)
+        if limited:
+            return limited
+
         auth_response = self.profile_service.login(
             company_short_name=company_short_name,
             email=email,
@@ -52,6 +57,7 @@ class AuthService:
         )
 
         if not auth_response.get('success'):
+            rate_limiter.record_failure('login_account', email, rate_limiter.LOGIN_FAILURES_PER_ACCOUNT)
             self.log_access(
                 company_short_name=company_short_name,
                 user_identifier=email,
@@ -60,6 +66,7 @@ class AuthService:
                 reason_code='INVALID_CREDENTIALS',
             )
         else:
+            rate_limiter.clear('login_account', email)
             self.log_access(
                 company_short_name=company_short_name,
                 auth_type='local',
@@ -71,6 +78,9 @@ class AuthService:
 
     def redeem_token_for_session(self, company_short_name: str, token: str) -> dict:
         # redeem a token for a session, register the event and return the result
+        if rate_limiter.over_limit('redeem_ip', self._client_ip(), rate_limiter.TOKEN_REDEEMS_PER_IP):
+            return self._refuse_redeem(company_short_name, 'RATE_LIMITED')
+
         payload = self.jwt_service.validate_chat_jwt(token)
 
         if not payload:
@@ -110,6 +120,27 @@ class AuthService:
                 user_identifier=user_identifier
             )
             return {'success': False, 'error': self.i18n_service.t('errors.auth.session_creation_failed')}
+
+    @staticmethod
+    def _client_ip() -> str | None:
+        return rate_limiter.client_ip(request) if has_request_context() else None
+
+    def _login_rate_limited(self, company_short_name: str, email: str) -> dict | None:
+        """A failure response when this account or this IP tried too often (BL-030).
+        The same answer whether or not the account exists."""
+        ip_over = rate_limiter.over_limit('login_ip', self._client_ip(), rate_limiter.LOGIN_ATTEMPTS_PER_IP)
+        if not ip_over and not rate_limiter.is_blocked('login_account', email,
+                                                       rate_limiter.LOGIN_FAILURES_PER_ACCOUNT):
+            return None
+        self.log_access(
+            company_short_name=company_short_name,
+            user_identifier=email,
+            auth_type='local',
+            outcome='failure',
+            reason_code='RATE_LIMITED',
+        )
+        return {'success': False, 'message': self.i18n_service.t('errors.auth.too_many_attempts'),
+                'reason_code': 'RATE_LIMITED'}
 
     def _refuse_redeem(self, company_short_name: str, reason_code: str, user_identifier: str = None) -> dict:
         self.log_access(
@@ -209,8 +240,13 @@ class AuthService:
 
     def login_global_local_user(self, email: str, password: str) -> dict:
         # company-less login: authenticates the person, the company is chosen later
+        limited = self._login_rate_limited(self.GLOBAL_ACCESS_SCOPE, email)
+        if limited:
+            return limited
+
         auth_response = self.profile_service.authenticate_local_credentials(email=email, password=password)
         if not auth_response.get('success'):
+            rate_limiter.record_failure('login_account', email, rate_limiter.LOGIN_FAILURES_PER_ACCOUNT)
             self.log_access(
                 company_short_name=self.GLOBAL_ACCESS_SCOPE,
                 user_identifier=email,
@@ -220,6 +256,7 @@ class AuthService:
             )
             return auth_response
 
+        rate_limiter.clear('login_account', email)
         self.profile_service.set_global_identity(auth_response['user_identifier'], 'local')
         self.log_access(
             company_short_name=self.GLOBAL_ACCESS_SCOPE,
@@ -323,9 +360,17 @@ class AuthService:
                     "error_message": self.i18n_service.t('errors.auth.authentication_required'),
                     "status_code": 401}
 
+        # An IP that keeps sending invalid keys is guessing them (BL-030).
+        client_ip = self._client_ip()
+        if rate_limiter.is_blocked('api_key_ip', client_ip, rate_limiter.INVALID_API_KEYS_PER_IP):
+            return {"success": False,
+                    "error_message": self.i18n_service.t('errors.auth.too_many_attempts'),
+                    "status_code": 429}
+
         # check if the api-key is valid and active
         api_key_entry = self.api_key_service.get_active_api_key_entry(api_key)
         if not api_key_entry:
+            rate_limiter.record_failure('api_key_ip', client_ip, rate_limiter.INVALID_API_KEYS_PER_IP)
             # Never the key itself: a mistyped or just-rotated key would end up in the logs.
             logging.error("Invalid or inactive IAToolkit API Key: %s", self.key_fingerprint(api_key))
             return {"success": False,

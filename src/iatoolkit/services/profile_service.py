@@ -31,6 +31,7 @@ from sqlalchemy import update
 from iatoolkit.common.interfaces.signup_policy_resolver import SignupPolicyResolver
 from iatoolkit.services.signup_policy_resolver import AllowAllSignupPolicyResolver
 from iatoolkit.common import access
+from iatoolkit.common import rate_limiter
 from iatoolkit.common.user_errors import unexpected_error_message
 
 
@@ -230,8 +231,8 @@ class ProfileService:
             return {'success': True, 'user_identifier': user.email}
         except Exception as e:
             self._safe_rollback()
-            logging.error(f"Error in authenticate_local_credentials: {e}")
-            return {'success': False, "message": str(e)}
+            return {'success': False, "message": unexpected_error_message(
+                self.i18n_service, e, where="profile_service.authenticate_local_credentials")}
 
     def identify_google_user(self, google_identity: GoogleIdentity) -> dict:
         """
@@ -317,7 +318,8 @@ class ProfileService:
         except Exception as e:
             self._safe_rollback()
             logging.error(f"Error in login: {e}")
-            return {'success': False, "message": str(e)}
+            return {'success': False, "message": unexpected_error_message(
+                self.i18n_service, e, where="profile_service.login")}
 
     def save_user_profile(self, company: Company, user_identifier: str, user_profile: dict):
         """
@@ -897,6 +899,11 @@ class ProfileService:
                          new_password: str,
                          confirm_password: str):
         try:
+            client_ip = rate_limiter.client_ip(request) if has_request_context() else None
+            if rate_limiter.over_limit('password_change_ip', client_ip,
+                                       rate_limiter.PASSWORD_CHANGE_ATTEMPTS_PER_IP):
+                return {"error": self.i18n_service.t('errors.auth.too_many_attempts')}
+
             if new_password != confirm_password:
                 return {"error": self.i18n_service.t('errors.change_password.password_mismatch')}
 
@@ -927,6 +934,14 @@ class ProfileService:
         # a Google account): it must not tell anyone which emails have an account (BL-030).
         success = {"message": self.i18n_service.t('flash_messages.forgot_password_success')}
         try:
+            # Too many requests for this mailbox or from this IP: same answer, no email (BL-030).
+            client_ip = rate_limiter.client_ip(request) if has_request_context() else None
+            if rate_limiter.over_limit('reset_request_ip', client_ip,
+                                       rate_limiter.PASSWORD_RESET_REQUESTS_PER_IP) or \
+                    rate_limiter.over_limit('reset_request_account', email,
+                                            rate_limiter.PASSWORD_RESET_REQUESTS_PER_ACCOUNT):
+                return success
+
             user = self.profile_repo.get_user_by_email(email)
             if not user:
                 logging.info("Password reset requested for an unregistered email.")
