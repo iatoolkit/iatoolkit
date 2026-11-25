@@ -127,10 +127,12 @@ class ApiKey(Base):
     created_at = Column(DateTime, default=datetime.now)
     last_used_at = Column(DateTime, nullable=True) # Opcional: para rastrear uso
     # A key is a service account that acts as itself ("service:<key name>"). Only with
-    # this on may it name the user it acts for, who must belong to the company
-    # (BL-010, Fase 0). Keys created before it existed keep acting for users;
-    # migration: iatoolkit-enterprise/migrations/2026-10-18-api-keys-can-act-for-users.sql
-    can_act_for_users = Column(Boolean, nullable=False, default=False, server_default=sql_text("true"))
+    # this on may it name the user it acts for (BL-010, Fase 0). That user need not be a
+    # member of the company: some tenants act for external end users. Keys created
+    # before the column existed kept acting for users (TRUE); new ones start without it.
+    # migrations: iatoolkit-enterprise/migrations/2026-10-18-api-keys-can-act-for-users.sql,
+    #             iatoolkit-enterprise/migrations/2026-11-25-api-keys-act-for-users-default-false.sql
+    can_act_for_users = Column(Boolean, nullable=False, default=False, server_default=sql_text("false"))
 
     company = relationship("Company", back_populates="api_keys")
 
