@@ -1,0 +1,16 @@
+# Dependency updates (BL-034 R8): a PR when a dependency has a newer version,
+# grouped so security fixes arrive together; GitHub Actions pinned versions too.
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"

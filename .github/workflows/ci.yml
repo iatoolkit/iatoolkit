@@ -39,3 +39,28 @@ jobs:
       - name: Run tests
         run: |
           uv run --no-sync pytest --maxfail=1 --disable-warnings -q
+
+  # Known vulnerabilities in the runtime dependencies, from uv.lock (BL-034 R8).
+  # Reported on every push; not blocking until the pinned versions with published
+  # fixes are upgraded - then drop continue-on-error so a new one fails CI.
+  audit:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13.15'
+
+      - name: Audit dependencies
+        run: |
+          pip install uv==0.12.19
+          uv export --frozen --no-dev --no-emit-project --no-hashes --format requirements-txt -o requirements-audit.txt
+          uvx --from pip-audit==2.10.1 pip-audit -r requirements-audit.txt --no-deps --disable-pip \
+            --progress-spinner off --desc off -f markdown -o audit.md || rc=$?
+          cat audit.md >> "$GITHUB_STEP_SUMMARY"
+          exit ${rc:-0}
