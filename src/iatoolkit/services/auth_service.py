@@ -5,6 +5,7 @@
 
 from flask import request, has_request_context
 from injector import inject
+from iatoolkit.common.audit_log import emit_audit_event
 from iatoolkit.common import rate_limiter
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.api_key_service import ApiKeyService
@@ -537,6 +538,9 @@ class AuthService:
             )
             session.add(log_entry)
             session.commit()
+            emit_audit_event("access", company=company_short_name, user=user_identifier, auth_type=auth_type,
+                             outcome=outcome, reason=reason_code, source_ip=source_ip, path=path,
+                             user_agent_hash=ua_hash)
 
         except Exception as e:
             logging.error(f"error writting to AccessLog: {e}", exc_info=False)

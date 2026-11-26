@@ -1,14 +1,75 @@
 from __future__ import annotations
 
+import json
 import logging
 import os
+import re
 import sys
 import time
+from datetime import datetime, timezone
 from urllib.parse import urlsplit
 
 LOG_FORMAT = "%(asctime)s - IATOOLKIT - %(name)s - %(levelname)s - %(message)s"
 LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 RUNTIME_LOGGER_NAME = "iatoolkit.runtime"
+
+LOG_FORMAT_ENV = "IAT_LOG_FORMAT"          # "text" (default) or "json"
+LOG_SERVICE_ENV = "IAT_LOG_SERVICE_NAME"   # the "service" field of JSON logs
+
+# key=value pairs of an "event=..." line; a value may be "quoted".
+_EVENT_FIELD = re.compile(r'([A-Za-z_][\w.]*)=("(?:[^"\\]|\\.)*"|\S*)')
+
+
+class JsonLogFormatter(logging.Formatter):
+    """One JSON object per line, for a SIEM or a log platform to index without parsers
+    (BL-034, R13).
+
+    Fixed fields: @timestamp (UTC), level, logger, service, message. A message of the
+    form "event=<name> key=value ..." also carries each pair as its own field, so
+    `event`, `company`, `reason`... are searchable. An audit record (see
+    iatoolkit.common.audit_log) carries its fields as given. An exception goes in
+    error.type / error.message / error.stack.
+    """
+
+    def __init__(self, service: str | None = None):
+        super().__init__()
+        self.service = service or os.getenv(LOG_SERVICE_ENV) or "iatoolkit"
+
+    def format(self, record: logging.LogRecord) -> str:
+        message = record.getMessage()
+        payload = {
+            "@timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc)
+            .isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+            "level": record.levelname,
+            "logger": record.name,
+            "service": self.service,
+            "message": message,
+        }
+        audit_fields = getattr(record, "audit", None)
+        if isinstance(audit_fields, dict):
+            payload.update({key: value for key, value in audit_fields.items() if key not in payload})
+        elif message.startswith("event="):
+            for key, raw in _EVENT_FIELD.findall(message):
+                if key in payload:
+                    continue
+                if len(raw) >= 2 and raw[0] == '"' and raw[-1] == '"':
+                    try:
+                        raw = json.loads(raw)
+                    except ValueError:
+                        raw = raw[1:-1]
+                payload[key] = raw
+        if record.exc_info:
+            payload["error.type"] = record.exc_info[0].__name__ if record.exc_info[0] else None
+            payload["error.message"] = str(record.exc_info[1])
+            payload["error.stack"] = self.formatException(record.exc_info)
+        return json.dumps(payload, ensure_ascii=False, default=str)
+
+
+def build_log_formatter() -> logging.Formatter:
+    if str(os.getenv(LOG_FORMAT_ENV) or "").strip().lower() == "json":
+        return JsonLogFormatter()
+    return logging.Formatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
+
 
 _ORIGINAL_BASIC_CONFIG = logging.basicConfig
 _BASIC_CONFIG_PATCHED = False
@@ -96,7 +157,7 @@ def _dedupe_rq_loghandlers() -> None:
 
 
 def configure_runtime_logging() -> None:
-    formatter = logging.Formatter(LOG_FORMAT, datefmt=LOG_DATE_FORMAT)
+    formatter = build_log_formatter()
     log_level = _runtime_log_level()
 
     _ensure_stdout_handler(logging.getLogger(), formatter, log_level)

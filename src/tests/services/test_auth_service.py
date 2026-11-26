@@ -741,6 +741,23 @@ class TestAuthServiceLogAccess:
         assert captured_log.request_path == test_path
         assert captured_log.user_agent_hash == ua_hash
 
+    def test_log_access_also_emits_an_audit_event(self, monkeypatch):
+        """BL-034 R13: with IAT_AUDIT_LOG_EVENTS the access reaches the log for a SIEM."""
+        from unittest.mock import patch
+        monkeypatch.setenv("IAT_AUDIT_LOG_EVENTS", "true")
+
+        with self.app.test_request_context("/acme/login", headers={"X-Forwarded-For": "10.0.0.9"}):
+            with patch("iatoolkit.services.auth_service.emit_audit_event") as emit:
+                self.service.log_access(company_short_name="acme", auth_type="local",
+                                        outcome="failure", user_identifier="ana", reason_code="BAD_PASSWORD")
+
+        emit.assert_called_once()
+        kind, fields = emit.call_args.args[0], emit.call_args.kwargs
+        assert kind == "access"
+        assert fields["company"] == "acme" and fields["user"] == "ana"
+        assert fields["outcome"] == "failure" and fields["reason"] == "BAD_PASSWORD"
+        assert fields["source_ip"] == "10.0.0.9"
+
     def test_log_access_handles_missing_x_forwarded_for(self):
         """Test that source_ip falls back to remote_addr if X-Forwarded-For is not present."""
         with self.app.test_request_context():  # No specific headers
