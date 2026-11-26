@@ -361,6 +361,7 @@ class IAToolkit:
                 logging.warning(f"Error removing SQLAlchemy scoped session: {e}")
 
     def _setup_redis_sessions(self):
+        from iatoolkit.infra.redis_tls import redis_tls_kwargs
         redis_url = self._get_config_value('REDIS_URL')
         if not redis_url:
             logging.warning("⚠️ REDIS_URL not configured, will use memory sessions")
@@ -373,8 +374,8 @@ class IAToolkit:
                 port=url.port,
                 password=url.password,
                 ssl=(url.scheme == "rediss"),
-                ssl_cert_reqs=None,
                 max_connections=self._get_redis_max_connections(),
+                **redis_tls_kwargs(redis_url),
             )
 
             self.app.config.update({

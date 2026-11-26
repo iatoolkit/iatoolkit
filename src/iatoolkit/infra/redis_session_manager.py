@@ -9,6 +9,8 @@ import redis
 import json
 from urllib.parse import urlparse
 
+from iatoolkit.infra.redis_tls import redis_tls_kwargs
+
 
 class RedisSessionManager:
     """
@@ -40,15 +42,16 @@ class RedisSessionManager:
     def _get_client(cls):
         if cls._client is None:
             # Usar exactamente los mismos parámetros que Flask-Session
-            url = urlparse(os.environ.get("REDIS_URL"))
+            redis_url = os.environ.get("REDIS_URL")
+            url = urlparse(redis_url)
             cls._client = redis.Redis(
                 host=url.hostname,
                 port=url.port,
                 password=url.password,
                 ssl=(url.scheme == "rediss"),
-                ssl_cert_reqs=None,
                 decode_responses=True,  # Importante para strings
                 max_connections=cls._get_max_connections(),
+                **redis_tls_kwargs(redis_url),
             )
             # verify connection
             cls._client.ping()
