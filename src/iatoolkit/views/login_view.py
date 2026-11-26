@@ -82,21 +82,20 @@ class LoginView(BaseLoginView):
             home_template = self.utility.get_company_template(company_short_name, template_name)
 
             if not home_template:
-                if (
+                # No home page of its own (e.g. a company entered from its own portal):
+                # the same sign-in page the home shows, with the error flashed on it.
+                hosted = (
                     Utility.is_hosted_company_record(company)
                     or self.utility.is_hosted_company_runtime(company_short_name)
-                ):
-                    return render_template(
-                        "home_hosted_default.html",
-                        company_short_name=company_short_name,
-                        company=company,
-                        branding=branding_data,
-                        form_data={"email": email},
-                        **login_context,
-                    ), 400
-
-                return render_template('error.html',
-                                       message=f'Home template ({template_name}) not found.'), 500
+                )
+                return render_template(
+                    "home_hosted_default.html" if hosted else "home_default.html",
+                    company_short_name=company_short_name,
+                    company=company,
+                    branding=branding_data,
+                    form_data={"email": email},
+                    **login_context,
+                ), 400
 
             return render_template_string(
                 home_template,

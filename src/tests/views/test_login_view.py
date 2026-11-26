@@ -277,6 +277,25 @@ class TestLoginView:
         assert mock_render.call_args[0][0] == "home_hosted_default.html"
         assert mock_render.call_args[1]["company_short_name"] == self.company_short_name
 
+    @patch("iatoolkit.views.login_view.render_template")
+    def test_failed_login_renders_the_sign_in_for_a_company_without_home(self, mock_render):
+        """Maxxa has no home page of its own: a failed login shows its sign-in again, not an error."""
+        self.auth_service.login_local_user.return_value = {"success": False, "message": "Invalid credentials"}
+        self.profile_service.get_company_by_short_name.return_value.runtime_mode = "static"
+        self.utility.get_company_template.return_value = None
+        self.utility.is_hosted_company_runtime.return_value = False
+        mock_render.return_value = "SIGN IN"
+
+        resp = self.client.post(
+            f"/{self.company_short_name}/login",
+            data={"email": self.email, "password": self.password, "lang": "es"},
+        )
+
+        assert resp.status_code == 400
+        assert resp.data == b"SIGN IN"
+        assert mock_render.call_args[0][0] == "home_default.html"
+        assert mock_render.call_args[1]["form_data"] == {"email": self.email}
+
     @patch("iatoolkit.views.login_view.SessionManager")
     def test_google_login_start_redirects_to_google(self, mock_session_manager):
         resp = self.client.get(f"/{self.company_short_name}/login/google?lang=es")
