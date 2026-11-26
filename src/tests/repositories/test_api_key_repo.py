@@ -123,3 +123,28 @@ class TestApiKeyRepo:
         result = self.repo.get_active_api_key_by_company(self.company)
         assert result is not None
         assert result.key_hash == ApiKeyRepo.hash_key('k-active')
+
+    def test_touch_last_used_records_the_first_use(self):
+        key = ApiKey(company_id=self.company.id, key_name='k', key_hash=ApiKeyRepo.hash_key('k'))
+        self.session.add(key)
+        self.session.commit()
+
+        self.repo.touch_last_used(key, timedelta(minutes=15))
+
+        self.session.expire_all()
+        assert self.session.get(ApiKey, key.id).last_used_at is not None
+
+    def test_touch_last_used_skips_a_recent_use_and_updates_an_old_one(self):
+        recent = datetime.now() - timedelta(minutes=5)
+        old = datetime.now() - timedelta(hours=2)
+        fresh = ApiKey(company_id=self.company.id, key_name='fresh', key_hash=ApiKeyRepo.hash_key('f'), last_used_at=recent)
+        stale = ApiKey(company_id=self.company.id, key_name='stale', key_hash=ApiKeyRepo.hash_key('s'), last_used_at=old)
+        self.session.add_all([fresh, stale])
+        self.session.commit()
+
+        self.repo.touch_last_used(fresh, timedelta(minutes=15))
+        self.repo.touch_last_used(stale, timedelta(minutes=15))
+
+        self.session.expire_all()
+        assert self.session.get(ApiKey, fresh.id).last_used_at == recent
+        assert self.session.get(ApiKey, stale.id).last_used_at > old

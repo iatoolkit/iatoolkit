@@ -5,6 +5,7 @@
 
 import secrets
 import string
+from datetime import timedelta
 from typing import Dict
 from injector import inject
 from iatoolkit.repositories.models import ApiKey
@@ -16,6 +17,9 @@ from iatoolkit.repositories.api_key_repo import ApiKeyRepo
 class ApiKeyService:
     # How many characters of a key the console shows to tell keys apart.
     KEY_PREFIX_LENGTH = 6
+    # How often the last use of a key is written: enough to tell an idle key from one
+    # in use (to review keys and their delegation, BL-034 R2) without a write per call.
+    LAST_USED_INTERVAL = timedelta(minutes=15)
 
     @inject
     def __init__(self,
@@ -50,7 +54,10 @@ class ApiKeyService:
         return company, None
 
     def get_active_api_key_entry(self, api_key_value: str) -> ApiKey | None:
-        return self.api_key_repo.get_active_api_key_entry(api_key_value)
+        api_key = self.api_key_repo.get_active_api_key_entry(api_key_value)
+        if api_key is not None:
+            self.api_key_repo.touch_last_used(api_key, self.LAST_USED_INTERVAL)
+        return api_key
 
     def list_api_keys(self, company_short_name: str) -> Dict:
         company, error = self._get_company(company_short_name)

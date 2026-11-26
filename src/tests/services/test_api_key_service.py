@@ -151,3 +151,16 @@ class TestApiKeyService:
         assert len(result['api-key']) == 40
         stored = self.mock_api_key_repo.create_api_key.call_args.args[0]
         assert stored.key_hash == ApiKeyRepo.hash_key(result['api-key'])
+
+    def test_an_active_key_records_its_use(self):
+        key = ApiKey(id=7, company_id=10, key_name='k')
+        self.mock_api_key_repo.get_active_api_key_entry.return_value = key
+
+        assert self.service.get_active_api_key_entry('secret') is key
+        self.mock_api_key_repo.touch_last_used.assert_called_once_with(key, ApiKeyService.LAST_USED_INTERVAL)
+
+    def test_an_unknown_key_records_nothing(self):
+        self.mock_api_key_repo.get_active_api_key_entry.return_value = None
+
+        assert self.service.get_active_api_key_entry('nope') is None
+        self.mock_api_key_repo.touch_last_used.assert_not_called()
