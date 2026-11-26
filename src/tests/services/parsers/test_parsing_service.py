@@ -254,3 +254,20 @@ def test_parse_document_basic_keeps_ocr_disabled_for_prompt_attachments():
     request = basic_provider.parse.call_args.args[0]
     assert request.provider_config == {"provider": "basic"}
     assert request.metadata["source"] == "prompt_task_attachment"
+
+
+def test_a_disguised_file_is_refused_before_any_provider_runs():
+    """BL-034 R12: every parse (RAG, parse API, tasks, MCP, chat context) checks the bytes first."""
+    import pytest
+    from unittest.mock import MagicMock
+    from iatoolkit.common.exceptions import IAToolkitException
+
+    provider_factory = MagicMock()
+    service = ParsingService(provider_resolver=MagicMock(), provider_factory=provider_factory)
+
+    with pytest.raises(IAToolkitException):
+        service.parse_document(company_short_name="acme", filename="invoice.pdf",
+                               content=b"<html><script>x</script></html>")
+    with pytest.raises(IAToolkitException):
+        service.extract_text_for_context(filename="notes.txt", content=b"\x7fELF\x02\x01\x01")
+    provider_factory.get_provider.assert_not_called()

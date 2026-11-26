@@ -14,6 +14,7 @@ from time import perf_counter
 
 from injector import inject, singleton
 
+from iatoolkit.common.upload_guard import check_upload
 from iatoolkit.services.parsers.contracts import ParseRequest, ParseResult
 from iatoolkit.services.parsers.pdf_ocr_detection import analyze_pdf_ocr_need
 from iatoolkit.services.parsers.provider_factory import ParsingProviderFactory
@@ -43,6 +44,8 @@ class ParsingService:
                        collection_id: int | None = None,
                        document_id: int | None = None,
                        provider_config: dict | None = None) -> ParseResult:
+        # Every parse (RAG ingestion, the parse API, tasks, MCP) looks at the bytes first (BL-034, R12).
+        check_upload(filename, content)
         metadata = metadata or {}
         effective_provider_config = deepcopy(provider_config or {})
         metadata_provider_config = metadata.get("parse_options") if isinstance(metadata.get("parse_options"), dict) else {}
@@ -94,6 +97,7 @@ class ParsingService:
                                  filename: str,
                                  content: bytes,
                                  company_short_name: str = "default") -> str:
+        check_upload(filename, content)
         basic_provider = self.provider_factory.get_provider("basic")
         request = ParseRequest(
             company_short_name=company_short_name,

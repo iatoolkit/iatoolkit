@@ -63,7 +63,7 @@ class TestAttachmentPolicyService:
         plan = self.service.build_attachment_plan(
             company_short_name="acme",
             provider="openai",
-            files=[{"filename": "report.pdf", "base64": "U0FNUExF"}],
+            files=[{"filename": "report.pdf", "base64": "JVBERi0xLjQgU0FNUExF"}],
             policy={"attachment_mode": "native_only", "attachment_fallback": "fail"},
         )
 
@@ -77,7 +77,7 @@ class TestAttachmentPolicyService:
         plan = self.service.build_attachment_plan(
             company_short_name="acme",
             provider="unknown",
-            files=[{"filename": "report.pdf", "base64": "U0FNUExF"}],
+            files=[{"filename": "report.pdf", "base64": "JVBERi0xLjQgU0FNUExF"}],
             policy={"attachment_mode": "native_only", "attachment_fallback": "fail"},
         )
 
@@ -90,7 +90,7 @@ class TestAttachmentPolicyService:
         plan = self.service.build_attachment_plan(
             company_short_name="acme",
             provider="unknown",
-            files=[{"filename": "photo.png", "base64": "U0FNUExF"}],
+            files=[{"filename": "photo.png", "base64": "iVBORw0KGgpTQU1QTEU="}],
             policy={"attachment_mode": "extracted_only", "attachment_fallback": "extract"},
         )
 
@@ -103,7 +103,7 @@ class TestAttachmentPolicyService:
         plan = self.service.build_attachment_plan(
             company_short_name="acme",
             provider="unknown",
-            files=[{"filename": "photo.png", "base64": "U0FNUExF"}],
+            files=[{"filename": "photo.png", "base64": "iVBORw0KGgpTQU1QTEU="}],
             policy={"attachment_mode": "native_only", "attachment_fallback": "fail"},
         )
 
@@ -136,7 +136,7 @@ class TestAttachmentPolicyService:
         plan = self.service.build_attachment_plan(
             company_short_name="acme",
             provider="openrouter",
-            files=[{"filename": "photo.png", "base64": "U0FNUExF"}],
+            files=[{"filename": "photo.png", "base64": "iVBORw0KGgpTQU1QTEU="}],
             policy={"attachment_mode": "native_only", "attachment_fallback": "fail"},
             model="deepseek/deepseek-v4-pro",
         )
@@ -152,7 +152,7 @@ class TestAttachmentPolicyService:
         plan = self.service.build_attachment_plan(
             company_short_name="acme",
             provider="openrouter",
-            files=[{"filename": "photo.png", "base64": "U0FNUExF"}],
+            files=[{"filename": "photo.png", "base64": "iVBORw0KGgpTQU1QTEU="}],
             policy={"attachment_mode": "native_only", "attachment_fallback": "extract"},
             model="deepseek/deepseek-v4-pro",
         )
@@ -205,7 +205,7 @@ class TestAttachmentPolicyService:
         plan = self.service.build_attachment_plan(
             company_short_name="acme",
             provider="unknown",
-            files=[{"filename": "report.pdf", "base64": "U0FNUExF"}],
+            files=[{"filename": "report.pdf", "base64": "JVBERi0xLjQgU0FNUExF"}],
             policy={"attachment_mode": "native_plus_extracted", "attachment_fallback": "fail"},
         )
 
@@ -225,3 +225,21 @@ class TestAttachmentPolicyService:
             "attachment_mode": "native_only",
             "attachment_fallback": "fail",
         }
+
+
+    def test_a_disguised_executable_is_refused_before_reaching_the_model(self):
+        """BL-034 R12: native attachments are not parsed, so their bytes are checked here."""
+        exe = bytearray(b"MZ" + b"\x00" * 0x3E)
+        exe[0x3C:0x40] = (0x40).to_bytes(4, "little")
+        payload = base64.b64encode(bytes(exe) + b"PE\x00\x00").decode()
+
+        plan = self.service.build_attachment_plan(
+            company_short_name="acme",
+            provider="openai",
+            files=[{"filename": "photo.png", "base64": payload}],
+            policy={"attachment_mode": "native_only"},
+        )
+
+        assert plan["files_for_context"] == []
+        assert plan["native_attachments"] == []
+        assert plan["errors"] and plan["errors"][0].startswith("photo.png:")

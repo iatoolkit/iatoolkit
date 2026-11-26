@@ -13,6 +13,8 @@ import mimetypes
 
 from injector import inject
 
+from iatoolkit.common.exceptions import IAToolkitException
+from iatoolkit.common.upload_guard import HEAD_BYTES, check_upload
 from iatoolkit.common.model_registry import ModelRegistry
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.common.util import Utility
@@ -100,6 +102,14 @@ class AttachmentPolicyService:
             stats["total_files"] += 1
             meta = self._normalize_file_meta(file_obj)
             filename = meta.get("name") or "attachment"
+
+            # Native attachments go to the model without being parsed: look at the
+            # bytes here too (BL-034, R12).
+            upload_error = self._upload_error(filename, meta)
+            if upload_error:
+                errors.append(f"{filename}: {upload_error}")
+                stats["errors"] += 1
+                continue
 
             if meta.get("is_image"):
                 wants_native = self._wants_native(mode, meta, capabilities)
@@ -286,6 +296,20 @@ class AttachmentPolicyService:
         merged.setdefault("max_file_size_mb", 0)
         merged.setdefault("max_files_per_request", 0)
         return merged
+
+    def _upload_error(self, filename: str, meta: dict) -> str | None:
+        payload = meta.get("payload")
+        if not payload:
+            return None
+        try:
+            content = self.util.normalize_base64_payload(payload)
+        except Exception:
+            return None  # not base64: whoever reads it later refuses it
+        try:
+            check_upload(filename, content[:HEAD_BYTES], size=len(content))
+        except IAToolkitException as e:
+            return str(e.message or "The file was refused.")
+        return None
 
     def _normalize_file_meta(self, file_obj: dict) -> dict:
         if not isinstance(file_obj, dict):

@@ -27,6 +27,7 @@ from iatoolkit import __version__ as IATOOLKIT_VERSION
 from iatoolkit.runtime_logging import configure_runtime_logging, install_flask_request_logging
 from iatoolkit.common.security_headers import install_security_headers
 from iatoolkit.common.csrf_guard import install_csrf_guard
+from iatoolkit.common.upload_guard import max_request_bytes
 from iatoolkit.services.configuration_service import ConfigurationService
 
 # global variable for the unique instance of IAToolkit
@@ -321,6 +322,9 @@ class IAToolkit:
             'SESSION_USE_SIGNER': True,
             'IATOOLKIT_SECRET_KEY': iatoolkit_secret_key,
             'JWT_ALGORITHM': 'HS256',
+            # Every request body, multipart or JSON with base64 files, is capped here;
+            # a larger one gets 413 before any view reads it (BL-034, R12).
+            'MAX_CONTENT_LENGTH': max_request_bytes(),
         })
 
         # 2. ProxyFix para no tener problemas con iframes y rutas

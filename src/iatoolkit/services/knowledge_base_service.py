@@ -5,6 +5,7 @@
 
 
 from iatoolkit.repositories.models import Document, VSDoc, Company, DocumentStatus
+from iatoolkit.common.upload_guard import check_upload
 from iatoolkit.repositories.document_repo import DocumentRepo
 from iatoolkit.repositories.vs_repo import VSRepo
 from iatoolkit.repositories.models import CollectionType
@@ -97,6 +98,8 @@ class KnowledgeBaseService:
         Returns:
             The created Document object.
         """
+        # Refused before anything is stored (BL-034, R12).
+        check_upload(filename, content)
         if not metadata:
             metadata = {}
 

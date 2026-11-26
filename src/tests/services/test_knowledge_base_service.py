@@ -3,6 +3,7 @@
 #
 # IAToolkit is open source software.
 
+import hashlib
 import pytest
 from unittest.mock import MagicMock
 from types import SimpleNamespace
@@ -47,7 +48,7 @@ class TestKnowledgeBaseService:
 
         self.company = Company(id=1, short_name='acme', name='Acme Corp')
         self.filename = 'contract.pdf'
-        self.content = b'PDF content'
+        self.content = b'%PDF-1.4 content'
         self.metadata = {'type': 'contract'}
 
         self.mock_i18n_service.t.side_effect = lambda key, **kwargs: f"translated:{key}"
@@ -69,7 +70,7 @@ class TestKnowledgeBaseService:
         assert result == existing_doc
         self.mock_doc_repo.get_by_hash.assert_called_once_with(
             self.company.id,
-            "7e7f04c8b5646f7ad29b1cb0c8085d4ff9c6b08f2a632f496641b31f524c7b98",
+            hashlib.sha256(self.content).hexdigest(),
             None,
         )
         self.mock_doc_repo.insert.assert_not_called()
@@ -146,11 +147,11 @@ class TestKnowledgeBaseService:
         self.mock_storage.upload_document.return_value = "key"
         self.mock_doc_repo.get_by_hash.return_value = None
 
-        self.service.ingest_document_sync(self.company, "file.pdf", b"data", metadata=metadata)
+        self.service.ingest_document_sync(self.company, "file.pdf", b"%PDF-1.4 data", metadata=metadata)
 
         self.mock_doc_repo.get_by_hash.assert_called_once_with(
             self.company.id,
-            "3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7",
+            hashlib.sha256(b"%PDF-1.4 data").hexdigest(),
             99,
         )
         inserted_doc = self.mock_doc_repo.insert.call_args[0][0]
@@ -171,7 +172,7 @@ class TestKnowledgeBaseService:
             images=[],
         )
 
-        self.service.ingest_document_sync(self.company, "file.pdf", b"data")
+        self.service.ingest_document_sync(self.company, "file.pdf", b"%PDF-1.4 data")
 
         vs_docs = self.mock_vs_repo.add_document.call_args[0][1]
         assert len(vs_docs) == 1
