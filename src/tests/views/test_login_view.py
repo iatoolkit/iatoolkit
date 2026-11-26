@@ -13,6 +13,18 @@ from iatoolkit.views.login_view import (
 from iatoolkit.views.base_login_view import BaseLoginView
 
 
+
+def _state_store_mock():
+    """oauth_state_store replaced: pending sign-ins come from `peek`, responses pass through."""
+    store = MagicMock()
+    store.with_binding_cookie.side_effect = lambda response: response
+    store.peek.return_value = None
+    return store
+
+
+def _peek_from(pending: dict):
+    return lambda namespace, state: pending.get(state)
+
 class TestLoginView:
     """Test suite for LoginView and FinalizeContextView."""
 
@@ -296,35 +308,33 @@ class TestLoginView:
         assert mock_render.call_args[0][0] == "home_default.html"
         assert mock_render.call_args[1]["form_data"] == {"email": self.email}
 
-    @patch("iatoolkit.views.login_view.SessionManager")
-    def test_google_login_start_redirects_to_google(self, mock_session_manager):
+    @patch("iatoolkit.views.login_view.oauth_state_store", new_callable=_state_store_mock)
+    def test_google_login_start_redirects_to_google(self, mock_state_store):
         resp = self.client.get(f"/{self.company_short_name}/login/google?lang=es")
 
         assert resp.status_code == 302
         assert resp.headers["Location"] == "https://accounts.google.com/mock"
         self.google_auth_client.build_authorization_url.assert_called_once()
-        mock_session_manager.set.assert_called_once()
+        mock_state_store.save.assert_called_once()
 
-    @patch("iatoolkit.views.login_view.SessionManager")
-    def test_google_login_start_persists_safe_next_target(self, mock_session_manager):
+    @patch("iatoolkit.views.login_view.oauth_state_store", new_callable=_state_store_mock)
+    def test_google_login_start_persists_safe_next_target(self, mock_state_store):
         resp = self.client.get(
             f"/{self.company_short_name}/login/google?lang=es&next=/{self.company_short_name}/admin/dashboard"
         )
 
         assert resp.status_code == 302
-        saved_states = mock_session_manager.set.call_args.args[1]
-        saved_state = next(iter(saved_states.values()))
+        saved_state = mock_state_store.save.call_args.args[2]
         assert saved_state["next_target"] == f"/{self.company_short_name}/admin/dashboard"
 
-    @patch("iatoolkit.views.login_view.SessionManager")
-    def test_google_login_start_ignores_unsafe_next_target(self, mock_session_manager):
+    @patch("iatoolkit.views.login_view.oauth_state_store", new_callable=_state_store_mock)
+    def test_google_login_start_ignores_unsafe_next_target(self, mock_state_store):
         resp = self.client.get(
             f"/{self.company_short_name}/login/google?lang=es&next=https://evil.example/path"
         )
 
         assert resp.status_code == 302
-        saved_states = mock_session_manager.set.call_args.args[1]
-        saved_state = next(iter(saved_states.values()))
+        saved_state = mock_state_store.save.call_args.args[2]
         assert "next_target" not in saved_state
 
     def test_google_login_start_redirects_home_when_disabled(self):
@@ -335,15 +345,15 @@ class TestLoginView:
         assert resp.status_code == 302
         assert f"/{self.company_short_name}/home?lang=es" in resp.headers["Location"]
 
-    @patch("iatoolkit.views.login_view.SessionManager")
-    def test_google_login_callback_delegates_to_base_handler(self, mock_session_manager, monkeypatch):
-        mock_session_manager.get.return_value = {
+    @patch("iatoolkit.views.login_view.oauth_state_store", new_callable=_state_store_mock)
+    def test_google_login_callback_delegates_to_base_handler(self, mock_state_store, monkeypatch):
+        mock_state_store.peek.side_effect = _peek_from({
             "oauth-state": {
                 "nonce": "oauth-nonce",
                 "company_short_name": self.company_short_name,
                 "lang": "es",
             }
-        }
+        })
         self.auth_service.login_google_user.return_value = {
             "success": True,
             "user_identifier": self.user_identifier,
@@ -362,16 +372,16 @@ class TestLoginView:
         assert resp.status_code == 200
         assert resp.data == b"GOOGLE-OK"
 
-    @patch("iatoolkit.views.login_view.SessionManager")
-    def test_google_login_callback_redirects_to_safe_next_target(self, mock_session_manager):
-        mock_session_manager.get.return_value = {
+    @patch("iatoolkit.views.login_view.oauth_state_store", new_callable=_state_store_mock)
+    def test_google_login_callback_redirects_to_safe_next_target(self, mock_state_store):
+        mock_state_store.peek.side_effect = _peek_from({
             "oauth-state": {
                 "nonce": "oauth-nonce",
                 "company_short_name": self.company_short_name,
                 "lang": "es",
                 "next_target": f"/{self.company_short_name}/admin/dashboard",
             }
-        }
+        })
         self.auth_service.login_google_user.return_value = {
             "success": True,
             "user_identifier": self.user_identifier,
@@ -384,17 +394,17 @@ class TestLoginView:
         auth_call = self.auth_service.login_google_user.call_args.kwargs
         assert auth_call["lang"] == "es"
         assert auth_call["welcome_url"] == f"http://localhost/{self.company_short_name}/admin/dashboard"
-        mock_session_manager.remove.assert_called_once_with("google_oauth_states")
+        mock_state_store.discard.assert_called_once_with("google", "oauth-state")
 
-    @patch("iatoolkit.views.login_view.SessionManager")
-    def test_google_login_callback_redirects_home_on_auth_failure(self, mock_session_manager):
-        mock_session_manager.get.return_value = {
+    @patch("iatoolkit.views.login_view.oauth_state_store", new_callable=_state_store_mock)
+    def test_google_login_callback_redirects_home_on_auth_failure(self, mock_state_store):
+        mock_state_store.peek.side_effect = _peek_from({
             "oauth-state": {
                 "nonce": "oauth-nonce",
                 "company_short_name": self.company_short_name,
                 "lang": "en",
             }
-        }
+        })
         self.auth_service.login_google_user.return_value = {
             "success": False,
             "message": "Google failed",
@@ -407,8 +417,8 @@ class TestLoginView:
         assert resp.status_code == 302
         assert f"/{self.company_short_name}/home?lang=en" in resp.headers["Location"]
 
-    @patch("iatoolkit.views.login_view.SessionManager")
-    def test_google_login_callback_preserves_state_for_oauth_error_retry(self, mock_session_manager):
+    @patch("iatoolkit.views.login_view.oauth_state_store", new_callable=_state_store_mock)
+    def test_google_login_callback_preserves_state_for_oauth_error_retry(self, mock_state_store):
         pending_states = {
             "oauth-state": {
                 "nonce": "oauth-nonce",
@@ -416,7 +426,7 @@ class TestLoginView:
                 "lang": "en",
             }
         }
-        mock_session_manager.get.return_value = pending_states
+        mock_state_store.peek.side_effect = _peek_from(pending_states)
 
         resp = self.client.get(
             "/auth/google/callback?state=oauth-state&error=access_denied"
@@ -425,12 +435,12 @@ class TestLoginView:
         assert resp.status_code == 302
         assert f"/{self.company_short_name}/home?lang=en" in resp.headers["Location"]
         self.auth_service.login_google_user.assert_not_called()
-        mock_session_manager.set.assert_not_called()
-        mock_session_manager.remove.assert_not_called()
+        mock_state_store.save.assert_not_called()
+        mock_state_store.discard.assert_not_called()
 
-    @patch("iatoolkit.views.login_view.SessionManager")
-    def test_google_login_callback_rejects_invalid_state(self, mock_session_manager):
-        mock_session_manager.get.return_value = {}
+    @patch("iatoolkit.views.login_view.oauth_state_store", new_callable=_state_store_mock)
+    def test_google_login_callback_rejects_invalid_state(self, mock_state_store):
+        mock_state_store.peek.return_value = None
 
         resp = self.client.get(
             "/auth/google/callback?state=bad-state&code=auth-code"
@@ -439,6 +449,26 @@ class TestLoginView:
         assert resp.status_code == 302
         assert "/home?lang=en" in resp.headers["Location"]
         self.auth_service.login_google_user.assert_not_called()
+
+    def test_google_sign_in_survives_a_session_rewritten_by_another_tab(self, monkeypatch):
+        """Production (maxxa): a 50-second admin request wrote back a stale session while the
+        person was at Google, and the callback found no state."""
+        from iatoolkit.infra.redis_session_manager import RedisSessionManager
+        from tests.common.test_oauth_state_store import FakeRedis
+        monkeypatch.setattr(RedisSessionManager, "_client", FakeRedis())
+        self.auth_service.login_google_user.return_value = {"success": True, "user_identifier": self.user_identifier}
+        monkeypatch.setattr(BaseLoginView, "_handle_login_path", lambda *args: ("GOOGLE-OK", 200), raising=True)
+
+        self.client.get(f"/{self.company_short_name}/login/google?lang=es")
+        state = self.google_auth_client.build_authorization_url.call_args.kwargs["state"]
+        with self.client.session_transaction() as sess:
+            sess.clear()
+            sess["user_identifier"] = "someone@example.com"
+
+        resp = self.client.get(f"/auth/google/callback?state={state}&code=auth-code")
+
+        assert resp.data == b"GOOGLE-OK"
+        assert self.auth_service.login_google_user.call_args.kwargs["state"] == state
 
     def test_finalize_success_renders_chat(self):
         """FinalizeContextView should finalize context and render chat on success."""

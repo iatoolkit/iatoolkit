@@ -12,6 +12,18 @@ from iatoolkit.views.login_view import (
 from iatoolkit.views.base_login_view import BaseLoginView
 
 
+
+def _state_store_mock():
+    """oauth_state_store replaced: pending sign-ins come from `peek`, responses pass through."""
+    store = MagicMock()
+    store.with_binding_cookie.side_effect = lambda response: response
+    store.peek.return_value = None
+    return store
+
+
+def _peek_from(pending: dict):
+    return lambda namespace, state: pending.get(state)
+
 class TestGlobalLoginView:
 
     @pytest.fixture(autouse=True)
@@ -117,24 +129,24 @@ class TestGlobalLoginView:
         assert mock_render.call_args.kwargs["login_next"] == "/mcp/authorize"
         assert mock_render.call_args.kwargs["form_data"] == {"email": "user@example.com"}
 
-    @patch("iatoolkit.views.login_view.SessionManager")
-    def test_google_start_stores_global_state(self, mock_session_manager):
-        mock_session_manager.get.return_value = {}
+    @patch("iatoolkit.views.login_view.oauth_state_store", new_callable=_state_store_mock)
+    def test_google_start_stores_global_state(self, mock_state_store):
+        mock_state_store.peek.return_value = None
 
         resp = self.client.get("/auth/login/google?lang=es&next=/mcp/authorize")
 
         assert resp.status_code == 302
         assert resp.headers["Location"] == "https://accounts.google.com/mock"
-        saved_state = next(iter(mock_session_manager.set.call_args.args[1].values()))
+        saved_state = mock_state_store.save.call_args.args[2]
         assert saved_state["global"] is True
         assert saved_state["next_target"] == "/mcp/authorize"
         assert "company_short_name" not in saved_state
 
-    @patch("iatoolkit.views.login_view.SessionManager")
-    def test_callback_with_global_state_identifies_and_returns_to_next(self, mock_session_manager):
-        mock_session_manager.get.return_value = {
+    @patch("iatoolkit.views.login_view.oauth_state_store", new_callable=_state_store_mock)
+    def test_callback_with_global_state_identifies_and_returns_to_next(self, mock_state_store):
+        mock_state_store.peek.side_effect = _peek_from({
             "oauth-state": {"nonce": "n", "global": True, "lang": "es", "next_target": "/mcp/authorize?x=1"},
-        }
+        })
         self.auth_service.login_global_google_user.return_value = {
             "success": True,
             "user_identifier": "user@example.com",
@@ -148,13 +160,13 @@ class TestGlobalLoginView:
         assert call["code"] == "auth-code"
         assert call["nonce"] == "n"
         self.auth_service.login_google_user.assert_not_called()
-        mock_session_manager.remove.assert_called_once_with("google_oauth_states")
+        mock_state_store.discard.assert_called_once_with("google", "oauth-state")
 
-    @patch("iatoolkit.views.login_view.SessionManager")
-    def test_callback_with_global_state_failure_returns_to_global_login(self, mock_session_manager):
-        mock_session_manager.get.return_value = {
+    @patch("iatoolkit.views.login_view.oauth_state_store", new_callable=_state_store_mock)
+    def test_callback_with_global_state_failure_returns_to_global_login(self, mock_state_store):
+        mock_state_store.peek.side_effect = _peek_from({
             "oauth-state": {"nonce": "n", "global": True, "lang": "es", "next_target": "/mcp/authorize"},
-        }
+        })
         self.auth_service.login_global_google_user.return_value = {"success": False, "message": "nope"}
 
         resp = self.client.get("/auth/google/callback?state=oauth-state&code=auth-code")

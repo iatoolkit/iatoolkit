@@ -3,6 +3,7 @@
 #
 # IAToolkit is open source software.
 
+import json
 from unittest.mock import MagicMock
 from urllib.parse import parse_qs, urlparse
 
@@ -11,8 +12,11 @@ from flask import Flask
 
 from iatoolkit.common.interfaces.identity_provider_resolver import CompanyIdentityProvider
 from iatoolkit.infra.oidc_client import OidcAuthorizationRequest, OidcError, OidcProviderConfig
+from iatoolkit.common import oauth_state_store
+from iatoolkit.infra.redis_session_manager import RedisSessionManager
 from iatoolkit.views import sso_login_view
-from iatoolkit.views.sso_login_view import PENDING_KEY, SsoLoginCallbackView, SsoLoginStartView
+from iatoolkit.views.sso_login_view import SsoLoginCallbackView, SsoLoginStartView
+from tests.common.test_oauth_state_store import FakeRedis
 
 ISSUER = "https://login.example-idp.com/tenant-1/v2.0"
 
@@ -31,6 +35,8 @@ class TestSsoLoginViews:
     def setup(self, monkeypatch):
         self.app = Flask(__name__)
         self.app.secret_key = "test-secret"
+        self.redis = FakeRedis()
+        monkeypatch.setattr(RedisSessionManager, "_client", self.redis)
         self.client = self.app.test_client()
 
         self.profile_service = MagicMock()
@@ -73,8 +79,9 @@ class TestSsoLoginViews:
         self.app.add_url_rule("/", endpoint="root_redirect", view_func=lambda: "root")
 
     def _pending(self):
-        with self.client.session_transaction() as sess:
-            return dict(sess.get(PENDING_KEY) or {})
+        prefix = "oauth_state:sso:"
+        return {key[len(prefix):]: json.loads(raw)["entry"] for key, raw in self.redis.data.items()
+                if key.startswith(prefix)}
 
     # ------------------------------------------------------------------- start
 
@@ -120,14 +127,35 @@ class TestSsoLoginViews:
         assert urlparse(response.location).path == "/acme/home"
         assert self._pending() == {}
 
-    def test_only_the_latest_pending_sign_ins_are_kept(self):
-        for _ in range(sso_login_view.MAX_PENDING + 3):
-            self.client.get("/acme/login/sso")
+    def test_sign_ins_started_in_two_tabs_both_finish(self):
+        self.client.get("/acme/login/sso")
+        self.client.get("/acme/login/sso")
+        self.auth_service.login_sso_user.return_value = {"success": True, "user_identifier": "ana@acme.com"}
 
-        pending = self._pending()
-        assert len(pending) == sso_login_view.MAX_PENDING
-        assert f"state-{sso_login_view.MAX_PENDING + 3}" in pending
-        assert "state-1" not in pending
+        assert self.client.get("/auth/sso/callback?state=state-2&code=c").status_code == 200
+        assert self.client.get("/auth/sso/callback?state=state-1&code=c").status_code == 200
+        assert self.auth_service.login_sso_user.call_count == 2
+
+    def test_a_rewritten_session_does_not_lose_the_pending_sign_in(self):
+        """A slow request from another tab writes back the session it read before the sign-in."""
+        self.client.get("/acme/login/sso")
+        with self.client.session_transaction() as sess:
+            sess.clear()
+            sess["user_identifier"] = "someone@acme.com"
+        self.auth_service.login_sso_user.return_value = {"success": True, "user_identifier": "ana@acme.com"}
+
+        response = self.client.get("/auth/sso/callback?state=state-1&code=code-1")
+
+        assert response.status_code == 200
+        self.auth_service.login_sso_user.assert_called_once()
+
+    def test_another_browser_cannot_finish_the_sign_in(self):
+        self.client.get("/acme/login/sso")
+
+        response = self.app.test_client().get("/auth/sso/callback?state=state-1&code=code-1")
+
+        assert urlparse(response.location).path == "/"
+        self.auth_service.login_sso_user.assert_not_called()
 
     # ---------------------------------------------------------------- callback
 
@@ -168,8 +196,8 @@ class TestSsoLoginViews:
 
     def test_an_expired_pending_sign_in_is_refused(self, monkeypatch):
         self.client.get("/acme/login/sso")
-        real_time = sso_login_view.time.time
-        monkeypatch.setattr(sso_login_view.time, "time", lambda: real_time() + sso_login_view.PENDING_TTL_SECONDS + 1)
+        real_time = oauth_state_store.time.time
+        monkeypatch.setattr(oauth_state_store.time, "time", lambda: real_time() + oauth_state_store.TTL_SECONDS + 1)
 
         response = self.client.get("/auth/sso/callback?state=state-1&code=code-1")
 

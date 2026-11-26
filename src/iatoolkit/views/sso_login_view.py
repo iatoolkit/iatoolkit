@@ -8,13 +8,13 @@ Sign-in with the identity provider a company configured (BL-031).
 
 ``/<company>/login/sso`` sends the browser to the company's provider;
 ``/auth/sso/callback`` is the single return URL every company registers at its
-provider. What ties the two together is a pending entry in the server-side
-session, keyed by ``state``: the company, the issuer, the nonce and the PKCE
-verifier. Nothing the provider sends back is trusted to name the company.
+provider. What ties the two together is a pending sign-in kept by
+``oauth_state_store`` under ``state`` and bound to the browser that started it: the
+company, the issuer, the nonce and the PKCE verifier. Nothing the provider sends
+back is trusted to name the company.
 """
 
 import logging
-import time
 from urllib.parse import urljoin
 
 from flask import flash, redirect, render_template, request, url_for
@@ -22,7 +22,7 @@ from flask.views import MethodView
 from injector import inject
 
 from iatoolkit.common.interfaces.identity_provider_resolver import IdentityProviderResolver
-from iatoolkit.common.session_manager import SessionManager
+from iatoolkit.common import oauth_state_store
 from iatoolkit.common.user_errors import unexpected_error_message
 from iatoolkit.infra.oidc_client import OidcClient, OidcError, normalize_issuer
 from iatoolkit.common.util import Utility
@@ -37,27 +37,7 @@ from iatoolkit.services.query_service import QueryService
 from iatoolkit.views.base_login_view import BaseLoginView
 from iatoolkit.views.login_view import _normalize_safe_next_target
 
-PENDING_KEY = "sso_oauth_states"
-# A sign-in has this long to come back from the provider.
-PENDING_TTL_SECONDS = 10 * 60
-# Several tabs may start a sign-in at once; older entries beyond this are dropped.
-MAX_PENDING = 5
-
-
-def _pending_states() -> dict:
-    pending = SessionManager.get(PENDING_KEY, {})
-    if not isinstance(pending, dict):
-        return {}
-    now = time.time()
-    return {state: entry for state, entry in pending.items()
-            if isinstance(entry, dict) and now - float(entry.get("issued_at") or 0) < PENDING_TTL_SECONDS}
-
-
-def _store_pending_states(pending: dict) -> None:
-    if pending:
-        SessionManager.set(PENDING_KEY, pending)
-    else:
-        SessionManager.remove(PENDING_KEY)
+STATE_NAMESPACE = "sso"
 
 
 class SsoLoginStartView(MethodView):
@@ -97,20 +77,15 @@ class SsoLoginStartView(MethodView):
             flash(self.i18n_service.t(exc.message_key), 'error')
             return redirect(home)
 
-        pending = _pending_states()
-        for stale in sorted(pending, key=lambda s: pending[s].get("issued_at") or 0)[:max(0, len(pending) - MAX_PENDING + 1)]:
-            pending.pop(stale)
-        pending[authorization.state] = {
+        oauth_state_store.save(STATE_NAMESPACE, authorization.state, {
             'company_short_name': company_short_name,
             'issuer': normalize_issuer(provider.oidc.issuer),
             'nonce': authorization.nonce,
             'code_verifier': authorization.code_verifier,
             'lang': current_lang,
             'next_target': next_target,
-            'issued_at': time.time(),
-        }
-        _store_pending_states(pending)
-        return redirect(authorization.url)
+        })
+        return oauth_state_store.with_binding_cookie(redirect(authorization.url))
 
 
 class SsoLoginCallbackView(BaseLoginView):
@@ -135,9 +110,7 @@ class SsoLoginCallbackView(BaseLoginView):
         code = request.args.get('code') or ''
         provider_error = request.args.get('error')
 
-        pending = _pending_states()
-        entry = pending.pop(state, None) if state else None
-        _store_pending_states(pending)      # single use, whatever happens next
+        entry = oauth_state_store.take(STATE_NAMESPACE, state)      # single use, whatever happens next
 
         if not entry:
             logging.warning("SSO callback with a missing or expired state.")

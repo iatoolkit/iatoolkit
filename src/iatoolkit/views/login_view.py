@@ -7,7 +7,7 @@ from flask.views import MethodView
 from flask import (request, redirect, render_template, url_for,
                    render_template_string, flash)
 from injector import inject
-from iatoolkit.common.session_manager import SessionManager
+from iatoolkit.common import oauth_state_store
 from iatoolkit.infra.google_auth_client import GoogleAuthClient
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.auth_service import AuthService
@@ -24,6 +24,10 @@ import secrets
 from urllib.parse import urljoin, urlparse
 from iatoolkit.common import access
 from iatoolkit.common.user_errors import unexpected_error_message
+
+
+# Pending Google sign-ins in oauth_state_store, company and global alike.
+GOOGLE_STATE_NAMESPACE = "google"
 
 
 def _normalize_safe_next_target(raw_target: str | None) -> str | None:
@@ -166,18 +170,14 @@ class GoogleLoginStartView(MethodView):
             _external=True,
         )
 
-        pending_states = SessionManager.get('google_oauth_states', {})
-        if not isinstance(pending_states, dict):
-            pending_states = {}
-
-        pending_states[state] = {
+        pending_state = {
             'nonce': nonce,
             'company_short_name': company_short_name,
             'lang': current_lang,
         }
         if next_target:
-            pending_states[state]['next_target'] = next_target
-        SessionManager.set('google_oauth_states', pending_states)
+            pending_state['next_target'] = next_target
+        oauth_state_store.save(GOOGLE_STATE_NAMESPACE, state, pending_state)
 
         try:
             logging.debug(
@@ -196,7 +196,7 @@ class GoogleLoginStartView(MethodView):
             flash(self.i18n_service.t('errors.auth.google_login_failed'), 'error')
             return redirect(url_for('home', company_short_name=company_short_name, lang=current_lang))
 
-        return redirect(authorization_url)
+        return oauth_state_store.with_binding_cookie(redirect(authorization_url))
 
 
 class GoogleLoginCallbackView(BaseLoginView):
@@ -205,18 +205,14 @@ class GoogleLoginCallbackView(BaseLoginView):
         code = request.args.get('code') or ''
         oauth_error = request.args.get('error')
 
-        pending_states = SessionManager.get('google_oauth_states', {})
-        if not isinstance(pending_states, dict):
-            pending_states = {}
-
-        pending_state = pending_states.get(state)
+        pending_state = oauth_state_store.peek(GOOGLE_STATE_NAMESPACE, state)
 
         company_short_name = (pending_state or {}).get('company_short_name')
         current_lang = (pending_state or {}).get('lang') or request.args.get('lang') or 'en'
         next_target = _normalize_safe_next_target((pending_state or {}).get('next_target'))
 
         if pending_state and pending_state.get('global'):
-            return self._finish_global_login(state, code, oauth_error, pending_states, pending_state)
+            return self._finish_global_login(state, code, oauth_error, pending_state)
 
         if not pending_state or not company_short_name:
             logging.warning("Google login callback missing or expired oauth state. state=%s", state)
@@ -240,11 +236,7 @@ class GoogleLoginCallbackView(BaseLoginView):
             flash(self.i18n_service.t('errors.auth.google_login_failed'), 'error')
             return redirect(url_for('home', company_short_name=company_short_name, lang=current_lang))
 
-        pending_states.pop(state, None)
-        if pending_states:
-            SessionManager.set('google_oauth_states', pending_states)
-        else:
-            SessionManager.remove('google_oauth_states')
+        oauth_state_store.discard(GOOGLE_STATE_NAMESPACE, state)
 
         redirect_uri = url_for(
             'login_google_callback',
@@ -315,15 +307,11 @@ class GoogleLoginCallbackView(BaseLoginView):
             ), 500
 
 
-    def _finish_global_login(self, state, code, oauth_error, pending_states, pending_state):
+    def _finish_global_login(self, state, code, oauth_error, pending_state):
         current_lang = pending_state.get('lang') or 'en'
         next_target = _normalize_safe_next_target(pending_state.get('next_target'))
 
-        pending_states.pop(state, None)
-        if pending_states:
-            SessionManager.set('google_oauth_states', pending_states)
-        else:
-            SessionManager.remove('google_oauth_states')
+        oauth_state_store.discard(GOOGLE_STATE_NAMESPACE, state)
 
         if oauth_error or not code:
             logging.warning(
@@ -410,17 +398,14 @@ class GlobalGoogleLoginStartView(MethodView):
 
         state = secrets.token_urlsafe(24)
         nonce = secrets.token_urlsafe(24)
-        pending_states = SessionManager.get('google_oauth_states', {})
-        if not isinstance(pending_states, dict):
-            pending_states = {}
-        pending_states[state] = {
+        pending_state = {
             'nonce': nonce,
             'global': True,
             'lang': current_lang,
         }
         if next_target:
-            pending_states[state]['next_target'] = next_target
-        SessionManager.set('google_oauth_states', pending_states)
+            pending_state['next_target'] = next_target
+        oauth_state_store.save(GOOGLE_STATE_NAMESPACE, state, pending_state)
 
         try:
             authorization_url = self.google_auth_client.build_authorization_url(
@@ -432,7 +417,7 @@ class GlobalGoogleLoginStartView(MethodView):
             flash(self.i18n_service.t('errors.auth.google_login_failed'), 'error')
             return redirect(url_for('global_login', lang=current_lang, next=next_target))
 
-        return redirect(authorization_url)
+        return oauth_state_store.with_binding_cookie(redirect(authorization_url))
 
 
 class FinalizeContextView(MethodView):
