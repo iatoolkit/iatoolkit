@@ -906,6 +906,17 @@ class ProfileService:
         )
 
 
+    def _invitation_is_for(self, company_short_name: str, invite_token: str | None, email: str) -> bool:
+        """Whether invite_token is a pending invitation to this company for this address."""
+        if not invite_token:
+            return False
+        try:
+            invited_email = self.signup_policy_resolver.invitation_email(company_short_name, invite_token)
+        except Exception as exc:
+            logging.warning("Invitation lookup failed for %s: %s", company_short_name, type(exc).__name__)
+            return False
+        return bool(invited_email) and str(invited_email).strip().lower() == str(email or "").strip().lower()
+
     def signup(self,
                company_short_name: str,
                email: str,
@@ -941,6 +952,11 @@ class ProfileService:
                     return {"error": self.i18n_service.t(policy_decision.reason_key)}
                 return {"error": self.i18n_service.t('errors.signup.signup_not_allowed')}
 
+            # Arriving through an invitation sent to this very address proves the
+            # address: no verification e-mail, and the view can sign the person in.
+            # Read before claiming, which consumes the invitation.
+            invited = self._invitation_is_for(company_short_name, invite_token, email)
+
             # check if user exists
             existing_user = self.profile_repo.get_user_by_email(email)
             if existing_user:
@@ -964,7 +980,8 @@ class ProfileService:
                     existing_user.companies.append(company)
                     self.profile_repo.save_user(existing_user)
                     self._promote_bootstrap_owner_if_needed(company, existing_user)
-                    return {"message": self.i18n_service.t('flash_messages.user_associated_success')}
+                    return {"message": self.i18n_service.t('flash_messages.user_associated_success'),
+                            "invited_signup": invited}
 
             # add the new user
             if password != confirm_password:
@@ -981,7 +998,7 @@ class ProfileService:
             # account verification can be skiped with this security parameter
             verified = False
             cfg = self.config_service.get_configuration(company_short_name, 'parameters')
-            if cfg and not cfg.get('verify_account', True):
+            if invited or (cfg and not cfg.get('verify_account', True)):
                 verified = True
                 message = self.i18n_service.t('flash_messages.signup_success_no_verification')
 
@@ -1008,11 +1025,11 @@ class ProfileService:
             self._promote_bootstrap_owner_if_needed(company, new_user)
 
             # send email with verification
-            if not cfg or cfg.get('verify_account', True):
+            if not verified:
                 self.send_verification_email(new_user, company_short_name)
                 message = self.i18n_service.t('flash_messages.signup_success')
 
-            return {"message": message}
+            return {"message": message, "invited_signup": invited}
         except Exception as e:
             self._safe_rollback()
             return {"error": unexpected_error_message(self.i18n_service, e, where="profile_service")}

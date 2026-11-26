@@ -36,6 +36,7 @@ class TestHomeView:
         self.test_company = Company(id=1, name="Test Co", short_name="test_co")
         self.profile_service.get_company_by_short_name.return_value = self.test_company
         self.branding_service.get_company_branding.return_value = {"name": "Test Co Branding"}
+        self.profile_service.get_current_session_info.return_value = {}
 
         # Registrar la vista principal
         view = HomeView.as_view("home",
@@ -47,6 +48,10 @@ class TestHomeView:
 
         # Ruta dummy para que url_for() en el template de error no falle.
         # Es importante tenerla aunque no se use directamente en el test.
+        @self.app.route("/<string:company_short_name>/chat", endpoint="chat")
+        def dummy_chat(company_short_name):
+            return "Chat"
+
         @self.app.route("/<string:company_short_name>/home_dummy", endpoint="home_dummy_for_error")
         def dummy_home_for_error_template(company_short_name):
             return "Dummy Home"
@@ -96,3 +101,42 @@ class TestHomeView:
         mock_render_template.assert_called_once()
         assert mock_render_template.call_args[0][0] == "home_hosted_default.html"
         assert mock_render_template.call_args[1]["company_short_name"] == "test_co"
+
+    @patch('iatoolkit.views.home_view.render_template')
+    def test_missing_template_renders_the_sign_in_for_a_company_without_home(self, mock_render_template):
+        """A company entered from its own portal (Maxxa) has no home: show its sign-in, not an error."""
+        self.test_company.runtime_mode = "static"
+        self.utility.get_company_template.return_value = None
+        self.utility.is_hosted_company_runtime.return_value = False
+        mock_render_template.return_value = "Sign in"
+
+        response = self.client.get("/test_co/home.html?lang=es")
+
+        assert response.status_code == 200
+        assert mock_render_template.call_args[0][0] == "home_default.html"
+        assert mock_render_template.call_args[1]["company_short_name"] == "test_co"
+
+    def test_missing_template_sends_a_signed_in_person_to_the_chat(self):
+        self.test_company.runtime_mode = "static"
+        self.utility.get_company_template.return_value = None
+        self.profile_service.get_current_session_info.return_value = {
+            "user_identifier": "ana@maxxa.cl", "company_short_name": "test_co"}
+
+        response = self.client.get("/test_co/home.html?lang=es")
+
+        assert response.status_code == 302
+        assert response.location == "/test_co/chat?lang=es"
+
+    @patch('iatoolkit.views.home_view.render_template')
+    def test_a_session_of_another_company_does_not_skip_the_sign_in(self, mock_render_template):
+        self.test_company.runtime_mode = "static"
+        self.utility.get_company_template.return_value = None
+        self.utility.is_hosted_company_runtime.return_value = False
+        self.profile_service.get_current_session_info.return_value = {
+            "user_identifier": "ana@otra.cl", "company_short_name": "otra"}
+        mock_render_template.return_value = "Sign in"
+
+        response = self.client.get("/test_co/home.html")
+
+        assert response.status_code == 200
+        assert mock_render_template.call_args[0][0] == "home_default.html"

@@ -351,6 +351,7 @@ ui:
     confirm_password_label: "Confirmar Contraseña"
     signup_button: "Crear Cuenta"
     google_button: "Registrarme con Google"
+    google_invite_hint: "Usa Google solo si {email} es una cuenta de Google. Si no, crea tu cuenta con el formulario."
     or_signup_with_email: "o regístrate con email"
     already_have_account: "¿Ya tienes una cuenta?"
     login_link: "Inicia Sesión"

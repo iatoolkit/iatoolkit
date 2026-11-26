@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{# The home of a company that has no home page of its own (one that is normally
+   entered from its own portal, for instance). Only the sign-in: whoever has a
+   session is sent to the chat before reaching here. #}
+
+{% block title %}{{ branding.name }}{% endblock %}
+
+{% block styles %}
+    <style>
+        {{ branding.css_variables | safe }}
+    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles/chat_public.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+{% include '_company_header.html' %}
+
+<div class="container my-4 my-md-5">
+    <div class="row justify-content-center">
+        <div class="col-lg-5 col-md-7">
+            {% include '_login_widget.html' %}
+        </div>
+    </div>
+</div>
+</div>
+{% endblock %}

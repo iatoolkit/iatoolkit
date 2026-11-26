@@ -45,6 +45,7 @@ class TestSignupView:
         self.signup_guard_service.issue_form_token.return_value = 'form-token'
         self.signup_guard_service.check.return_value = None
         self.signup_guard_service.client_ip.return_value = '203.0.113.7'
+        self.auth_service = MagicMock()
 
         self.test_company = Company(id=1, name="Empresa de Prueba", short_name="test_company")
         self.profile_service.get_company_by_short_name.return_value = self.test_company
@@ -57,13 +58,18 @@ class TestSignupView:
                                   profile_service=self.profile_service,
                                   branding_service=self.branding_service,
                                   i18n_service=self.i8n_service,
-                                  signup_guard_service=self.signup_guard_service,)
+                                  signup_guard_service=self.signup_guard_service,
+                                  auth_service=self.auth_service,)
         self.app.add_url_rule("/<string:company_short_name>/signup", view_func=view, methods=["GET", "POST"])
 
         # --- CORRECCIÓN: Añadir rutas dummy con los endpoints correctos ---
         @self.app.route("/<string:company_short_name>/home.html", endpoint="home")
         def dummy_home(company_short_name):
             return "Página Home", 200
+
+        @self.app.route("/<string:company_short_name>/finalize", endpoint="finalize_no_token")
+        def dummy_finalize(company_short_name):
+            return "Chat", 200
 
         @self.app.route("/<string:company_short_name>/verify/<token>", endpoint="verify_account")
         def dummy_verify_account(company_short_name, token):
@@ -244,3 +250,43 @@ class TestSignupView:
         assert flashed_messages == [('error', 'translated:errors.signup.form_expired')]
         self.profile_service.signup.assert_not_called()
         assert mock_render_template.call_args.kwargs['form_token'] == 'form-token'
+
+    def test_an_invited_signup_signs_the_person_in_and_opens_the_chat(self):
+        self.profile_service.signup.return_value = {"message": "ok", "invited_signup": True}
+        self.auth_service.login_local_user.return_value = {"success": True, "user_identifier": "ana@acme.com"}
+
+        response = self.client.post("/test_company/signup?lang=es", data={
+            "first_name": "Ana", "last_name": "P", "email": "Ana@Acme.com",
+            "password": "Secret123!", "confirm_password": "Secret123!", "invite_token": "tok",
+        })
+
+        assert response.status_code == 302
+        assert response.location == "/test_company/finalize?lang=es"
+        self.auth_service.login_local_user.assert_called_once_with(
+            company_short_name="test_company", email="ana@acme.com", password="Secret123!")
+
+    def test_an_invited_signup_whose_login_fails_goes_home_as_before(self):
+        self.profile_service.signup.return_value = {"message": "ok", "invited_signup": True}
+        self.auth_service.login_local_user.return_value = {"success": False}
+
+        with self.client:
+            response = self.client.post("/test_company/signup", data={
+                "first_name": "Ana", "last_name": "P", "email": "ana@acme.com",
+                "password": "Secret123!", "confirm_password": "Secret123!", "invite_token": "tok",
+            })
+            flashed = get_flashed_messages(with_categories=True)
+
+        assert response.status_code == 302
+        assert "/test_company/home.html" in response.location
+        assert flashed == [("success", "ok")]
+
+    def test_a_signup_without_invitation_does_not_sign_in(self):
+        self.profile_service.signup.return_value = {"message": "check your e-mail", "invited_signup": False}
+
+        response = self.client.post("/test_company/signup", data={
+            "first_name": "Ana", "last_name": "P", "email": "ana@acme.com",
+            "password": "Secret123!", "confirm_password": "Secret123!",
+        })
+
+        assert "/test_company/home.html" in response.location
+        self.auth_service.login_local_user.assert_not_called()

@@ -6,6 +6,7 @@
 from flask.views import MethodView
 from flask import render_template, request, url_for, redirect, flash, make_response
 from iatoolkit.services.profile_service import ProfileService
+from iatoolkit.services.auth_service import AuthService
 from iatoolkit.services.branding_service import BrandingService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.services.signup_guard_service import SignupGuardService
@@ -20,8 +21,10 @@ class SignupView(MethodView):
     def __init__(self, profile_service: ProfileService,
                  branding_service: BrandingService,
                  i18n_service: I18nService,
-                 signup_guard_service: SignupGuardService):
+                 signup_guard_service: SignupGuardService,
+                 auth_service: AuthService = None):
         self.profile_service = profile_service
+        self.auth_service = auth_service
         self.branding_service = branding_service # 3. Guardar la instancia
         self.i18n_service = i18n_service
         self.signup_guard_service = signup_guard_service
@@ -149,6 +152,18 @@ class SignupView(MethodView):
                     response.headers['Referrer-Policy'] = 'no-referrer'
                     response.headers['Cache-Control'] = 'no-store'
                 return response
+
+            if response.get("invited_signup") and self.auth_service is not None:
+                # The invitation proved the address: sign the person in and open the
+                # chat, through the same login as the form (access log, rate limits).
+                login = self.auth_service.login_local_user(
+                    company_short_name=company_short_name,
+                    email=str(email or "").strip().lower(),
+                    password=password,
+                )
+                if login.get('success'):
+                    return redirect(url_for('finalize_no_token', company_short_name=company_short_name,
+                                            lang=current_lang or 'en'))
 
             flash(response["message"], 'success')
             return redirect(url_for('home', company_short_name=company_short_name, lang=current_lang))

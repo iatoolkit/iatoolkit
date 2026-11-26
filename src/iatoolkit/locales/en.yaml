@@ -337,6 +337,7 @@ ui:
     confirm_password_label: "Confirm Password"
     signup_button: "Create Account"
     google_button: "Sign up with Google"
+    google_invite_hint: "Use Google only if {email} is a Google account. Otherwise, create your account with the form."
     or_signup_with_email: "or sign up with email"
     already_have_account: "Already have an account?"
     login_link: "Log In"

@@ -37,6 +37,12 @@
                             <i class="bi bi-google"></i>
                             {{ t('ui.signup.google_button') }}
                         </a>
+                        {% if invited_email %}
+                        {# The invitation is for this address: Google only helps if it is a Google account. #}
+                        <p class="text-muted small text-center mt-n3 mb-4" id="google-invite-hint">
+                            {{ t('ui.signup.google_invite_hint', email=invited_email) }}
+                        </p>
+                        {% endif %}
                         {% endif %}
 
                         {% if (methods.sso or google_login_enabled|default(false)) and methods.password %}

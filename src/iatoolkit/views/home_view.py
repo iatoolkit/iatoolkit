@@ -1,5 +1,5 @@
 # iatoolkit/views/home_view.py
-from flask import render_template, render_template_string
+from flask import redirect, render_template, render_template_string, request, url_for
 from flask.views import MethodView
 from injector import inject
 from iatoolkit.services.profile_service import ProfileService
@@ -46,31 +46,27 @@ class HomeView(MethodView):
             template_name = self.util.get_template_by_language("home")
             home_template = self.util.get_company_template(company_short_name, template_name)
 
-            # 2. Verificamos si el archivo de plantilla personalizado no existe.
+            # 2. No home page of its own (e.g. a company entered from its own portal).
             if not home_template:
-                # Hosted tenants do not require filesystem home templates.
-                if (
+                # Someone already signed in has nothing to do here: straight to the chat.
+                session_info = self.profile_service.get_current_session_info(company_short_name=company_short_name)
+                if session_info.get('user_identifier') and session_info.get('company_short_name') == company_short_name:
+                    lang = request.args.get('lang')
+                    return redirect(url_for('chat', company_short_name=company_short_name,
+                                            **({'lang': lang} if lang else {})))
+
+                # Hosted tenants get the onboarding home; any other company, just the sign-in.
+                hosted = (
                     Utility.is_hosted_company_record(company)
                     or self.util.is_hosted_company_runtime(company_short_name)
-                ):
-                    return render_template(
-                        "home_hosted_default.html",
-                        company_short_name=company_short_name,
-                        company=company,
-                        branding=branding_data,
-                        **login_context,
-                    )
-
-                message = self.i18n_service.t(
-                    'errors.templates.home_template_not_found',
-                    company_short_name=company_short_name
                 )
                 return render_template(
-                    "error.html",
+                    "home_hosted_default.html" if hosted else "home_default.html",
                     company_short_name=company_short_name,
+                    company=company,
                     branding=branding_data,
-                    message=message
-                ), 500
+                    **login_context,
+                )
 
             # 3. Si el archivo existe, intentamos leerlo y renderizarlo.
             return render_template_string(

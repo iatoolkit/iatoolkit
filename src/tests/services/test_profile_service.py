@@ -328,6 +328,60 @@ class TestProfileService:
         assert response['message'] == 'translated:flash_messages.signup_success_no_verification'
         self.mock_mail_service.send_mail.assert_not_called()
 
+    def _invitation_resolver(self, invited_email):
+        from iatoolkit.common.interfaces.signup_policy_resolver import SignupPolicyDecision, SignupPolicyResolver
+        resolver = MagicMock(spec=SignupPolicyResolver)
+        resolver.evaluate_signup.return_value = SignupPolicyDecision(allowed=True)
+        resolver.claim_signup.return_value = True
+        resolver.invitation_email.return_value = invited_email
+        self.service.signup_policy_resolver = resolver
+        return resolver
+
+    def test_signup_through_an_invitation_needs_no_verification(self, mock_session_manager):
+        """The invitation was sent to this address: opening it proves the address."""
+        self.mock_repo.get_user_by_email.return_value = None
+        resolver = self._invitation_resolver('Invited@Email.com')
+        created = []
+        self.mock_repo.create_user.side_effect = lambda user: created.append(user) or user
+
+        response = self.service.signup(
+            self.mock_company.short_name, email='invited@email.com', first_name='Ana', last_name='P',
+            password="Password$1", confirm_password="Password$1",
+            verification_url='http://verification', invite_token='tok')
+
+        assert response == {'message': 'translated:flash_messages.signup_success_no_verification',
+                            'invited_signup': True}
+        assert created[0].verified is True
+        self.mock_mail_service.send_mail.assert_not_called()
+        resolver.invitation_email.assert_called_once_with(self.mock_company.short_name, 'tok')
+
+    def test_an_invitation_for_another_address_still_requires_verification(self, mock_session_manager):
+        self.mock_repo.get_user_by_email.return_value = None
+        self._invitation_resolver('someone.else@email.com')
+        created = []
+        self.mock_repo.create_user.side_effect = lambda user: created.append(user) or user
+
+        response = self.service.signup(
+            self.mock_company.short_name, email='invited@email.com', first_name='Ana', last_name='P',
+            password="Password$1", confirm_password="Password$1",
+            verification_url='http://verification', invite_token='tok')
+
+        assert response['invited_signup'] is False
+        assert created[0].verified is False
+        self.mock_mail_service.send_mail.assert_called()
+
+    def test_an_existing_user_joining_through_an_invitation_is_flagged(self, mock_session_manager):
+        self._invitation_resolver('test@email.com')
+        self.mock_user.companies = []
+
+        response = self.service.signup(
+            self.mock_company.short_name, email='test@email.com', first_name='Test', last_name='User',
+            password="password", confirm_password="password",
+            verification_url='http://verification', invite_token='tok')
+
+        assert response == {'message': 'translated:flash_messages.user_associated_success',
+                            'invited_signup': True}
+
     def test_signup_when_exception(self, mock_session_manager):
         self.mock_repo.get_user_by_email.side_effect = Exception('an error')
         response = self.service.signup(
