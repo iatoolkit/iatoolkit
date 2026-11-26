@@ -12,7 +12,7 @@ import inspect
 from injector import inject
 from typing import Dict
 from flask import current_app, has_app_context
-from itsdangerous import URLSafeSerializer, BadSignature
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from iatoolkit.infra.connectors.file_connector import FileConnector
 from iatoolkit.infra.connectors.file_connector_factory import FileConnectorFactory
@@ -20,7 +20,11 @@ from iatoolkit.common.exceptions import IAToolkitException
 from iatoolkit.common.interfaces.secret_provider import SecretProvider
 from iatoolkit.services.configuration_service import ConfigurationService
 
-DOWNLOAD_TOKEN_SALT = "iatoolkit-download-token-v1"
+# v2 carries a timestamp and expires (BL-034): /download/<token> needs no session, so a
+# link must not work forever. v1 tokens (no expiry) are no longer accepted.
+DOWNLOAD_TOKEN_SALT = "iatoolkit-download-token-v2"
+# How long a download link works, in days (IAT_DOWNLOAD_TOKEN_MAX_AGE_DAYS overrides).
+DEFAULT_DOWNLOAD_TOKEN_MAX_AGE_DAYS = 30
 
 
 class StorageService:
@@ -310,7 +314,10 @@ class StorageService:
 
         serializer = self._get_download_serializer()
         try:
-            payload = serializer.loads(token)
+            payload = serializer.loads(token, max_age=self._download_token_max_age_seconds())
+        except SignatureExpired as e:
+            logging.info("Expired download token.")
+            raise IAToolkitException(IAToolkitException.ErrorType.CALL_ERROR, "Expired download token.") from e
         except BadSignature as e:
             raise IAToolkitException(IAToolkitException.ErrorType.CALL_ERROR, "Invalid download token.") from e
 
@@ -320,7 +327,20 @@ class StorageService:
             raise IAToolkitException(IAToolkitException.ErrorType.CALL_ERROR, "Invalid download token payload.")
         return payload
 
-    def _get_download_serializer(self) -> URLSafeSerializer:
+    @staticmethod
+    def _download_token_max_age_seconds() -> int:
+        raw = str(os.getenv("IAT_DOWNLOAD_TOKEN_MAX_AGE_DAYS") or "").strip()
+        try:
+            days = float(raw) if raw else DEFAULT_DOWNLOAD_TOKEN_MAX_AGE_DAYS
+        except ValueError:
+            logging.warning("IAT_DOWNLOAD_TOKEN_MAX_AGE_DAYS=%r is not a number; using %s.",
+                            raw, DEFAULT_DOWNLOAD_TOKEN_MAX_AGE_DAYS)
+            days = DEFAULT_DOWNLOAD_TOKEN_MAX_AGE_DAYS
+        if days <= 0:
+            days = DEFAULT_DOWNLOAD_TOKEN_MAX_AGE_DAYS
+        return int(days * 86400)
+
+    def _get_download_serializer(self) -> URLSafeTimedSerializer:
         """
         Returns the serializer used for signed download tokens.
         """
@@ -328,4 +348,4 @@ class StorageService:
         if not secret_key:
             raise IAToolkitException(IAToolkitException.ErrorType.CONFIG_ERROR, "SECRET_KEY is not configured.")
 
-        return URLSafeSerializer(secret_key=secret_key, salt=DOWNLOAD_TOKEN_SALT)
+        return URLSafeTimedSerializer(secret_key=secret_key, salt=DOWNLOAD_TOKEN_SALT)
