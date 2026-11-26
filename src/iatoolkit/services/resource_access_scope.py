@@ -199,6 +199,10 @@ class ResourceAccessScope:
         return [str(k) for k in self.session.execute(
             select(KnowledgeWiki.wiki_key).where(KnowledgeWiki.company_id == company_id)).scalars()]
 
+    def document_collection(self, company_short_name: str, document_id) -> str | None:
+        """The collection a document of this company belongs to, or None."""
+        return self._document_collection(company_short_name, document_id)
+
     def _document_collection(self, company_short_name: str, document_id) -> str | None:
         try:
             doc_id = int(document_id)

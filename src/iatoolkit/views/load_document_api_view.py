@@ -12,6 +12,7 @@ from iatoolkit.services.knowledge_base_service import KnowledgeBaseService
 from iatoolkit.services.auth_service import AuthService
 from iatoolkit.repositories.profile_repo import ProfileRepo
 from iatoolkit.common.user_errors import public_error_text
+from iatoolkit.common import access
 
 
 class LoadDocumentApiView(MethodView):
@@ -38,6 +39,11 @@ class LoadDocumentApiView(MethodView):
             auth_result = self.auth_service.verify_for_company(company_short_name)
             if not auth_result.get("success"):
                 return jsonify(auth_result), auth_result.get("status_code")
+
+            # A person signed in must be able to edit the company, as the knowledge
+            # console asks; an API key acts for the company (BL-034, R15).
+            if "user_role" in auth_result and not access.person_can(company_short_name, auth_result, access.EDIT):
+                return jsonify({"error": "Forbidden"}), 403
 
             filename = req_data.get('filename', False)
             base64_content = req_data.get('content', '')

@@ -392,6 +392,26 @@ class TestRagApiView:
         assert response.status_code == 404
         assert response.get_json()['result'] == 'error'
 
+    def test_delete_file_with_a_session_needs_edit(self):
+        """BL-034 R15: seeing a document (USE) is not enough to delete it."""
+        self.mock_auth_service.verify_for_company.return_value = {
+            "success": True, "user_identifier": "ana@acme.com", "company_short_name": "acme", "user_role": "user"}
+
+        response = self.client.delete(f'/{self.company_short_name}/api/rag/files/123')
+
+        assert response.status_code == 403
+        self.mock_kb_service.delete_document.assert_not_called()
+
+    def test_delete_file_with_an_editor_session_deletes(self):
+        self.mock_auth_service.verify_for_company.return_value = {
+            "success": True, "user_identifier": "ed@acme.com", "company_short_name": "acme", "user_role": "editor"}
+        self.mock_kb_service.delete_document.return_value = True
+
+        response = self.client.delete(f'/{self.company_short_name}/api/rag/files/123')
+
+        assert response.status_code == 200
+        self.mock_kb_service.delete_document.assert_called_with(123)
+
     # --- Search Tests ---
 
     def test_search_success(self):

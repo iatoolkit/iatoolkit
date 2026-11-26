@@ -63,6 +63,23 @@ class RagApiView(MethodView):
             return None
         return jsonify({'result': 'error', 'message': 'No access to that document.'}), 403
 
+    def _document_edit_denied(self, company_short_name: str, auth_result: dict, document_id):
+        """Deleting needs EDIT over the document's collection (BL-034, R15). Seeing it
+        (USE) is not enough. An API key acts for the company."""
+        from iatoolkit.common import access
+        if "user_role" not in auth_result:
+            return None
+        collection = None
+        if access.Access.registered():
+            collection = self._access_scope().document_collection(company_short_name, document_id)
+        if collection:
+            allowed = access.person_can(company_short_name, auth_result, access.EDIT, "rag_collection", collection)
+        else:
+            allowed = access.person_can(company_short_name, auth_result, access.EDIT)
+        if allowed:
+            return None
+        return jsonify({'result': 'error', 'message': 'Not allowed to delete that document.'}), 403
+
     @staticmethod
     def _permission_denied(exc: IAToolkitException):
         if exc.error_type == IAToolkitException.ErrorType.PERMISSION:
@@ -316,7 +333,8 @@ class RagApiView(MethodView):
                 return jsonify(auth_result), auth_result.get("status_code")
 
             # 2. Call Service
-            denied = self._document_denied(company_short_name, auth_result, document_id)
+            denied = (self._document_denied(company_short_name, auth_result, document_id)
+                      or self._document_edit_denied(company_short_name, auth_result, document_id))
             if denied:
                 return denied
             success = self.knowledge_base_service.delete_document(document_id)

@@ -152,3 +152,38 @@ class TestLoadDocumentView:
             company=mock_company,
             metadata={"key": "value"}
         )
+
+    # --- BL-034 R15: a person signed in needs EDIT ---
+
+    def _payload(self):
+        return {"company": "test_company", "filename": "f.txt",
+                "content": base64.b64encode(b"x").decode("utf-8")}
+
+    def test_post_with_a_session_of_a_plain_user_is_forbidden(self):
+        self.mock_auth.verify_for_company.return_value = {
+            "success": True, "user_identifier": "ana@acme.com", "user_role": "user"}
+
+        response = self.client.post(self.url, json=self._payload())
+
+        assert response.status_code == 403
+        self.mock_kb_service.ingest_document_sync.assert_not_called()
+
+    def test_post_with_a_session_of_an_editor_loads_the_document(self):
+        self.mock_auth.verify_for_company.return_value = {
+            "success": True, "user_identifier": "ed@acme.com", "user_role": "editor"}
+        self.mock_kb_service.ingest_document_sync.return_value = MagicMock(id=7)
+
+        response = self.client.post(self.url, json=self._payload())
+
+        assert response.status_code == 200
+        self.mock_kb_service.ingest_document_sync.assert_called_once()
+
+    def test_post_with_an_api_key_keeps_working(self):
+        self.mock_auth.verify_for_company.return_value = {
+            "success": True, "user_identifier": "service:etl", "auth_type": "api_key"}
+        self.mock_kb_service.ingest_document_sync.return_value = MagicMock(id=8)
+
+        response = self.client.post(self.url, json=self._payload())
+
+        assert response.status_code == 200
+

@@ -13,6 +13,7 @@ from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.knowledge_base_service import KnowledgeBaseService
 from iatoolkit.repositories.llm_query_repo import LLMQueryRepo
 from iatoolkit.repositories.models import PromptCategory, Tool
+from iatoolkit.common import access
 import logging
 from iatoolkit.common.user_errors import public_error_text
 
@@ -43,6 +44,11 @@ class CategoriesApiView(MethodView):
             auth_result = self.auth_service.verify_for_company(company_short_name)
             if not auth_result.get("success"):
                 return jsonify(auth_result), 401
+
+            # Syncing replaces the lists (missing prompt categories are deleted): a
+            # person signed in must edit the company; an API key acts for it (BL-034, R15).
+            if "user_role" in auth_result and not access.person_can(company_short_name, auth_result, access.EDIT):
+                return jsonify({"error": "Forbidden"}), 403
 
             # 2. Get Company
             company = self.profile_service.get_company_by_short_name(company_short_name)
@@ -95,6 +101,11 @@ class CategoriesApiView(MethodView):
             auth_result = self.auth_service.verify_for_company(company_short_name)
             if not auth_result.get("success"):
                 return jsonify(auth_result), 401
+
+            # Syncing replaces the lists (missing prompt categories are deleted): a
+            # person signed in must edit the company; an API key acts for it (BL-034, R15).
+            if "user_role" in auth_result and not access.person_can(company_short_name, auth_result, access.EDIT):
+                return jsonify({"error": "Forbidden"}), 403
 
             # 2. Get Company
             company = self.profile_service.get_company_by_short_name(company_short_name)

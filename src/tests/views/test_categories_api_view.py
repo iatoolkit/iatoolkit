@@ -142,3 +142,24 @@ class TestCategoriesView:
             self.company_short_name,
             payload["collection_type_details"]
         )
+
+    def test_post_with_a_session_of_a_plain_user_is_forbidden(self):
+        """BL-034 R15: syncing deletes missing prompt categories; a USE member cannot."""
+        self.auth_service.verify_for_company.return_value = {
+            'success': True, 'user_identifier': 'ana@acme.com', 'user_role': 'user'}
+
+        response = self.client.post(f'/{self.company_short_name}/api/categories',
+                                    json={"prompt_categories": []})
+
+        assert response.status_code == 403
+        self.prompt_service.sync_prompt_categories.assert_not_called()
+
+    def test_post_with_a_session_of_an_editor_syncs(self):
+        self.auth_service.verify_for_company.return_value = {
+            'success': True, 'user_identifier': 'ed@acme.com', 'user_role': 'editor'}
+
+        response = self.client.post(f'/{self.company_short_name}/api/categories',
+                                    json={"prompt_categories": ["A"]})
+
+        assert response.status_code == 200
+        self.prompt_service.sync_prompt_categories.assert_called_once()
