@@ -435,6 +435,13 @@ ui:
     retry: "Retry"
     last_used: "Last used"
     never_used: "No recorded use"
+    mcp_clients_title: "Connected AI assistants"
+    mcp_clients_intro: "Claude, ChatGPT or other assistants you authorized to use IAToolkit with your account and permissions. Removing one ends its access; it will have to ask for authorization again."
+    mcp_clients_empty: "You have not connected any assistant."
+    mcp_clients_revoke: "Remove access"
+    mcp_clients_confirm: "Remove this assistant's access? It will have to ask for authorization again."
+    mcp_clients_since: "Connected"
+    mcp_clients_unknown: "Unnamed assistant"
 
   wiki_page:
     trail_label: "Location in the wiki"
@@ -2475,6 +2482,19 @@ ui:
     delete_error: "Error deleting the bridge."
     rotate_error: "Error rotating the API key."
 
+  mcp_connections:
+    title: "Connected assistants"
+    subtitle: "Connections the company's people authorized from Claude, ChatGPT or other MCP clients. Revoking one stops it from renewing its access at once; its current access ends within an hour."
+    person: "Person"
+    client: "Assistant"
+    since: "Connected"
+    last_used: "Last used"
+    revoke: "Revoke"
+    confirm: "Revoke this connection? The assistant will have to ask for authorization again."
+    empty: "No assistants connected."
+    load_error: "Connections could not be loaded."
+    revoke_error: "The connection could not be revoked."
+    unknown_client: "Unnamed assistant"
   mcp_service_tokens:
     menu_label: "MCP Tokens"
     title: "MCP Tokens"
