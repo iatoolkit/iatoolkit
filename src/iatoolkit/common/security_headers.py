@@ -18,6 +18,11 @@ Configuration (config dict or environment):
 - IAT_CSP_MODE: "report" (default), "enforce" or "off".
 - IAT_FRAME_ANCESTORS: who may embed the pages, space separated
   (default "'self'"), e.g. "'self' https://portal.example.com".
+
+`form-action` covers the redirects that follow a form's POST. A page whose form
+sends the browser to another origin on purpose (the MCP consent screen, whose POST
+redirects to the gateway's callback) names that origin with `allow_form_action()`,
+and only that page's policy widens.
 """
 
 import json
@@ -25,7 +30,7 @@ import logging
 import os
 from urllib.parse import urlsplit
 
-from flask import Flask, request
+from flask import Flask, g, request
 
 CSP_REPORT_PATH = "/csp-report"
 CSP_MODES = ("report", "enforce", "off")
@@ -40,7 +45,41 @@ HSTS_VALUE = "max-age=31536000"
 MAX_REPORT_BYTES = 16 * 1024
 
 
-def build_csp(frame_ancestors: str) -> str:
+_FORM_ACTION_ATTR = "_iat_csp_form_action_origins"
+
+
+def allow_form_action(url: str | None) -> bool:
+    """Let the form of the page being rendered post to, or be redirected to, the origin
+    of `url` (http/https only). Returns whether an origin was added."""
+    origin = _plain_origin(url)
+    if not origin:
+        return False
+    origins = getattr(g, _FORM_ACTION_ATTR, None)
+    if origins is None:
+        origins = []
+        setattr(g, _FORM_ACTION_ATTR, origins)
+    if origin not in origins:
+        origins.append(origin)
+    return True
+
+
+def _plain_origin(url: str | None) -> str | None:
+    """scheme://host[:port] of an http(s) URL, or None; nothing else reaches the header."""
+    try:
+        parts = urlsplit(str(url or "").strip())
+        host = parts.hostname
+        port = parts.port
+    except ValueError:
+        return None
+    if parts.scheme not in ("https", "http") or not host:
+        return None
+    if not all(ch.isalnum() or ch in ".-" for ch in host):
+        return None
+    return f"{parts.scheme}://{host}{f':{port}' if port else ''}"
+
+
+def build_csp(frame_ancestors: str, form_action_origins: tuple[str, ...] | list[str] = ()) -> str:
+    form_action = " ".join(["'self'", *form_action_origins])
     directives = [
         "default-src 'self'",
         f"script-src 'self' 'unsafe-inline' {CDN_SOURCES} https://www.googletagmanager.com",
@@ -52,7 +91,7 @@ def build_csp(frame_ancestors: str) -> str:
         f"frame-ancestors {frame_ancestors}",
         "object-src 'none'",
         "base-uri 'self'",
-        "form-action 'self'",
+        f"form-action {form_action}",
         f"report-uri {CSP_REPORT_PATH}",
     ]
     return "; ".join(directives)
@@ -90,7 +129,8 @@ def install_security_headers(app: Flask, config: dict | None = None) -> None:
             headers.setdefault("Strict-Transport-Security", HSTS_VALUE)
         if csp_header and "Content-Security-Policy" not in headers \
                 and "Content-Security-Policy-Report-Only" not in headers:
-            headers[csp_header] = csp
+            extra = tuple(getattr(g, _FORM_ACTION_ATTR, None) or ())
+            headers[csp_header] = build_csp(frame_ancestors, extra) if extra else csp
         return response
 
     app.add_url_rule(CSP_REPORT_PATH, "csp_report", _csp_report, methods=["POST"])

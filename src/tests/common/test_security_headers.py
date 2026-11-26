@@ -106,3 +106,63 @@ def test_google_analytics_can_send_its_hits():
     policy = _client().get("/page").headers["Content-Security-Policy-Report-Only"]
     connect = next(d for d in policy.split("; ") if d.startswith("connect-src"))
     assert "https://*.google-analytics.com" in connect
+
+
+# --- BL-034 R1: a page whose form redirects to another origin names it ---
+
+def _app(config=None):
+    app = Flask(__name__)
+    install_security_headers(app, config or {})
+
+    @app.route("/")
+    def index():
+        return "ok"
+
+    return app
+
+
+def _csp_of(response):
+    return response.headers.get("Content-Security-Policy-Report-Only") or response.headers.get("Content-Security-Policy")
+
+
+def _form_action(response):
+    return next(d for d in _csp_of(response).split("; ") if d.startswith("form-action"))
+
+
+def test_form_action_is_self_by_default():
+    app = _app()
+    assert _form_action(app.test_client().get("/")) == "form-action 'self'"
+
+
+def test_a_page_can_allow_its_form_to_reach_one_more_origin():
+    from iatoolkit.common.security_headers import allow_form_action
+    app = _app({"IAT_CSP_MODE": "enforce"})
+
+    @app.get("/consent")
+    def consent():
+        allow_form_action("https://mcp.example.com/acme/oauth/callback?x=1")
+        allow_form_action("https://mcp.example.com/other")
+        return "consent"
+
+    assert _form_action(app.test_client().get("/consent")) == "form-action 'self' https://mcp.example.com"
+    # only that page widens
+    assert _form_action(app.test_client().get("/")) == "form-action 'self'"
+
+
+def test_only_a_plain_http_origin_reaches_the_policy():
+    from iatoolkit.common.security_headers import allow_form_action
+    app = _app()
+    results = {}
+
+    @app.get("/try")
+    def try_():
+        for value in ("javascript:alert(1)", "https://a.example.com; script-src *", "data:text/html,x",
+                      "https://user:pw@b.example.com:8443/cb", "", None):
+            results[value] = allow_form_action(value)
+        return "ok"
+
+    response = app.test_client().get("/try")
+
+    assert _form_action(response) == "form-action 'self' https://b.example.com:8443"
+    assert results["https://user:pw@b.example.com:8443/cb"] is True
+    assert not any(v for k, v in results.items() if k != "https://user:pw@b.example.com:8443/cb")
