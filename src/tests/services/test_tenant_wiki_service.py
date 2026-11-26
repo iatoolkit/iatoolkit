@@ -1545,3 +1545,27 @@ class TestWikiPageIndex:
         result = self.service.search_pages("acme", wiki_key="sales", query="enterprise discount", limit=5)
 
         assert [r["path"] for r in result["results"]] == ["pricing.md"]
+
+    def test_a_timed_out_index_search_answers_busy_and_does_not_scan(self, monkeypatch):
+        """SOP-654: under a burst the scan of every page would only add load."""
+        from iatoolkit.repositories.knowledge_wiki_repo import WikiSearchTimeout
+
+        self.sync_two_pages()
+        repo = self.service.knowledge_wiki_repo
+        monkeypatch.setattr(repo, "is_postgres", lambda: True)
+
+        def timed_out(*args, **kwargs):
+            raise WikiSearchTimeout("slow")
+
+        monkeypatch.setattr(repo, "hybrid_search_pages", timed_out)
+        scanned = MagicMock(side_effect=AssertionError("must not scan"))
+        monkeypatch.setattr(repo, "list_pages", scanned)
+        index = MagicMock()
+        index.query_embedding.return_value = None
+        monkeypatch.setattr(type(self.service), "page_index_service", property(lambda self: index))
+
+        result = self.service.search_pages("acme", wiki_key="sales", query="enterprise discount", limit=5)
+
+        assert result["status"] == "error" and result["results"] == []
+        assert "busy" in result["error_message"]
+        scanned.assert_not_called()

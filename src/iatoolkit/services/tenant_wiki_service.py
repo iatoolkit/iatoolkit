@@ -19,7 +19,7 @@ from urllib.parse import quote
 from flask import has_request_context, request
 from injector import inject
 
-from iatoolkit.repositories.knowledge_wiki_repo import KnowledgeWikiRepo
+from iatoolkit.repositories.knowledge_wiki_repo import KnowledgeWikiRepo, WikiSearchTimeout
 from iatoolkit.repositories.models import (
     Company,
     KnowledgeWiki,
@@ -1125,9 +1125,19 @@ class TenantWikiService:
                     if wiki and self.normalize_wiki_key(wiki.wiki_key) in allowed_keys
                 ]
 
-        indexed = self._indexed_search(
-            company_short_name, wikis, query, normalized_query, limit, user_identifier, visibility_filter,
-            audience_keys=audience_keys)
+        try:
+            indexed = self._indexed_search(
+                company_short_name, wikis, query, normalized_query, limit, user_identifier, visibility_filter,
+                audience_keys=audience_keys)
+        except WikiSearchTimeout:
+            return {
+                "status": "error",
+                "query": query,
+                "wiki_key": normalized_wiki_key,
+                "count": 0,
+                "results": [],
+                "error_message": "the wiki search is busy; try again in a moment",
+            }
         if indexed is not None:
             return {
                 "status": "success",
@@ -1207,6 +1217,12 @@ class TenantWikiService:
             ranked = self.knowledge_wiki_repo.hybrid_search_pages(
                 [wiki.id for wiki in live], query, embedding, candidates=self.INDEX_CANDIDATES,
                 audience_keys=audience_keys)
+        except WikiSearchTimeout:
+            # Not the scan: when the database is that slow, reading every page
+            # into Python only makes it slower for everyone.
+            self.knowledge_wiki_repo.rollback()
+            logging.warning("Wiki search timed out for %s", company_short_name)
+            raise
         except Exception as exc:
             self.knowledge_wiki_repo.rollback()
             logging.warning("Indexed wiki search failed for %s, scanning instead: %s", company_short_name, exc)

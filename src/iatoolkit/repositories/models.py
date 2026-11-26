@@ -11,7 +11,9 @@ from sqlalchemy.orm import relationship, class_mapper
 from sqlalchemy.sql import func, literal_column
 from sqlalchemy.sql import text as sql_text
 from sqlalchemy import UniqueConstraint, Index
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
+from sqlalchemy import Computed
+from sqlalchemy.ext.compiler import compiles
 from datetime import datetime
 from pgvector.sqlalchemy import Vector
 import enum
@@ -100,6 +102,20 @@ class KnowledgeWikiSyncStatus(str, enum.Enum):
 # - PostgreSQL: JSONB (for jsonb operators/functions/indexing)
 # - SQLite/others (tests): JSON
 JSON_NATIVE = JSON().with_variant(JSONB, "postgresql")
+
+
+class PostgresOnlyComputed(Computed):
+    """A generated column whose expression only Postgres understands (to_tsvector...).
+
+    On SQLite (the tests) the column is a plain one that stays NULL: the code
+    that reads it runs on Postgres only.
+    """
+    inherit_cache = True
+
+
+@compiles(PostgresOnlyComputed, "sqlite")
+def _plain_column_on_sqlite(element, compiler, **kw):
+    return ""
 
 
 # relation table for many-to-many relationship between companies and users
@@ -1108,6 +1124,14 @@ class KnowledgeWikiPageIndex(Base):
                      nullable=False, index=True)
     company_id = Column(Integer, ForeignKey(f"{ORM_SCHEMA}.iat_companies.id", ondelete="CASCADE"), nullable=False)
     search_text = Column(Text, nullable=False, default="")
+    # The words of search_text, computed by Postgres when the row is written. The
+    # search ranks with it: recomputing to_tsvector of every matching page (up to
+    # 60k characters each) on each search cost seconds and, under a burst of
+    # searches, exhausted the connection pool (SOP-654).
+    # Added to an existing table: migrations/2026-11-26-wiki-page-index-search-tsv.sql.
+    search_tsv = Column(TSVECTOR().with_variant(Text(), "sqlite"),
+                        PostgresOnlyComputed("to_tsvector('simple'::regconfig, search_text)", persisted=True),
+                        nullable=True)
     content_hash = Column(String(64), nullable=False, default="")
     # Dynamic size, as iat_vsdocs: whatever the company's embedding model returns.
     embedding = Column(Vector, nullable=True)
@@ -1115,11 +1139,8 @@ class KnowledgeWikiPageIndex(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
 
     __table_args__ = (
-        Index(
-            "ix_iat_knowledge_wiki_page_index_text_simple_tsv",
-            func.to_tsvector(literal_column("'simple'::regconfig"), search_text),
-            postgresql_using="gin",
-        ).ddl_if(dialect="postgresql"),
+        Index("ix_iat_knowledge_wiki_page_index_search_tsv", search_tsv,
+              postgresql_using="gin").ddl_if(dialect="postgresql"),
     )
 
 

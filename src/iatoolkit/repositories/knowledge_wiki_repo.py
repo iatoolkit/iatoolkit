@@ -25,6 +25,10 @@ from iatoolkit.repositories.models import (
 )
 
 
+class WikiSearchTimeout(Exception):
+    """The hybrid wiki search was cancelled by its statement timeout."""
+
+
 class KnowledgeWikiRepo:
     @inject
     def __init__(self, db_manager: DatabaseManager):
@@ -347,6 +351,9 @@ class KnowledgeWikiRepo:
         return getattr(getattr(bind, "dialect", None), "name", "") == "postgresql"
 
     RRF_K = 60
+    # The hybrid search takes ~10-100 ms with the stored tsvector.
+    SEARCH_TIMEOUT_MS = 10000
+    QUERY_CANCELED = "57014"
 
     def hybrid_search_pages(self, wiki_ids: list[int], query_text: str, query_embedding: list[float] | None,
                             candidates: int = 40, audience_keys: list | None = None) -> list[tuple[int, float]]:
@@ -359,7 +366,7 @@ class KnowledgeWikiRepo:
         """
         if not wiki_ids:
             return []
-        tsvector = "to_tsvector('simple'::regconfig, i.search_text)"
+        tsvector = "i.search_tsv"
         tsquery = "replace(plainto_tsquery('simple'::regconfig, :text_terms)::text, ' & ', ' | ')::tsquery"
         params = {"wiki_ids": list(wiki_ids), "text_terms": query_text or "", "candidates": int(candidates),
                   "archived": KnowledgeWikiPageStatus.ARCHIVED.name}
@@ -408,7 +415,19 @@ class KnowledgeWikiRepo:
             ORDER BY rrf_score DESC, page_id ASC
             LIMIT :candidates
         """
-        rows = self.session.execute(text(sql), params).fetchall()
+        # A search that takes longer is cancelled (WikiSearchTimeout) instead of
+        # holding its pool connection: a burst of slow searches must not leave
+        # every other request of the process without one (SOP-654).
+        previous = self.session.execute(text("SELECT current_setting('statement_timeout')")).scalar()
+        self.session.execute(text("SELECT set_config('statement_timeout', :ms, true)"),
+                             {"ms": str(self.SEARCH_TIMEOUT_MS)})
+        try:
+            rows = self.session.execute(text(sql), params).fetchall()
+        except Exception as exc:
+            if getattr(getattr(exc, "orig", None), "pgcode", None) == self.QUERY_CANCELED:
+                raise WikiSearchTimeout(f"wiki search took longer than {self.SEARCH_TIMEOUT_MS} ms") from exc
+            raise
+        self.session.execute(text("SELECT set_config('statement_timeout', :ms, true)"), {"ms": previous})
         return [(int(row[0]), float(row[1])) for row in rows]
 
     def create_page_revision(
