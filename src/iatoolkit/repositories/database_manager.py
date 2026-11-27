@@ -289,13 +289,21 @@ class DatabaseManager(DatabaseProvider):
         timeout_ms = max(int(self.statement_timeout_seconds * 1000), 1)
         session.execute(text(f"SET LOCAL statement_timeout = {timeout_ms}"))
 
-    def create_all(self):
-        # if there is a schema defined, make sure it exists before creating tables
-        if self.schema and self._is_postgres():
-            with self._engine.begin() as conn:
-                conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {self.schema}"))
+    #: Serializes create_all across processes booting at once (gunicorn workers, pods):
+    #: two of them creating the same new table at the same time made one fail its boot.
+    CREATE_ALL_LOCK_KEY = 7309001
 
-        Base.metadata.create_all(self._engine)
+    def create_all(self):
+        if self._is_postgres():
+            # One process at a time: the others wait, then find the tables already there.
+            with self._engine.begin() as conn:
+                conn.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": self.CREATE_ALL_LOCK_KEY})
+                # if there is a schema defined, make sure it exists before creating tables
+                if self.schema:
+                    conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {self.schema}"))
+                Base.metadata.create_all(conn)
+        else:
+            Base.metadata.create_all(self._engine)
         applied_patches = self._apply_bootstrap_patches()
         if applied_patches:
             logging.info(

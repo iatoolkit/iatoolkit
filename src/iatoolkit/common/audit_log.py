@@ -44,8 +44,10 @@ def _text_value(value) -> str:
     return text
 
 
-def emit_audit_event(kind: str, **fields) -> None:
-    """Write one audit record to the audit logger. Never raises: auditing must not break the request."""
+def emit_audit_event(kind: str, /, **fields) -> None:
+    """Write one audit record to the audit logger. Never raises: auditing must not break the request.
+
+    `kind` is positional only, so a record may carry a field of its own named "kind"."""
     if not audit_events_enabled():
         return
     try:

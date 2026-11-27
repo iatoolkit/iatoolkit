@@ -45,6 +45,19 @@ class TestDatabaseManager(unittest.TestCase):
         self.db_manager.create_all()
         mock_create_all.assert_called_once_with(self.mock_engine)
 
+    @patch('iatoolkit.repositories.database_manager.Base.metadata.create_all')
+    def test_create_all_on_postgres_waits_for_the_other_booting_processes(self, mock_create_all):
+        """Two workers creating the same new table at once made one fail its boot."""
+        conn = MagicMock()
+        self.mock_engine.begin.return_value.__enter__.return_value = conn
+        with patch.object(self.db_manager, "_is_postgres", return_value=True), \
+                patch.object(self.db_manager, "_apply_bootstrap_patches", return_value=[]):
+            self.db_manager.create_all()
+
+        statements = [str(call.args[0]) for call in conn.execute.call_args_list]
+        assert "pg_advisory_xact_lock" in statements[0]
+        mock_create_all.assert_called_once_with(conn)
+
     @patch('iatoolkit.repositories.database_manager.Base.metadata.drop_all')
     def test_drop_all(self, mock_drop_all):
         """Prueba que drop_all elimina las tablas usando la metadata de Base."""

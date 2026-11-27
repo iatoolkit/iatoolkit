@@ -102,3 +102,11 @@ def test_a_failed_emit_never_raises(monkeypatch):
             raise RuntimeError("no")
 
     emit_audit_event("access", company=Unprintable())
+
+
+def test_a_record_may_carry_its_own_kind_field(caplog, monkeypatch):
+    """An MCP request record has a request kind; it must not clash with the event's kind."""
+    monkeypatch.setenv("IAT_AUDIT_LOG_EVENTS", "true")
+    with caplog.at_level("INFO", logger="iatoolkit.audit"):
+        emit_audit_event("mcp_request", company="acme", kind="tool")
+    assert "event=audit_mcp_request" in caplog.text and "kind=tool" in caplog.text
