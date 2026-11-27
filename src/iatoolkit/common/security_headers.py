@@ -19,6 +19,12 @@ Configuration (config dict or environment):
 - IAT_FRAME_ANCESTORS: who may embed the pages, space separated
   (default "'self'"), e.g. "'self' https://portal.example.com".
 
+Own resources are named by the app's own origin besides 'self'. The templates
+build absolute URLs to /static (`url_for(..., _external=True)`) and the JS calls the
+API at `request.url_root`. When another site serves a page through a reverse proxy
+(Maxxa's internal portal does), 'self' is that site, and without the app's origin
+the browser would block the chat's own CSS and JS while the CDNs still load.
+
 `form-action` covers the redirects that follow a form's POST. A page whose form
 sends the browser to another origin on purpose (the MCP consent screen, whose POST
 redirects to the gateway's callback) names that origin with `allow_form_action()`,
@@ -78,15 +84,19 @@ def _plain_origin(url: str | None) -> str | None:
     return f"{parts.scheme}://{host}{f':{port}' if port else ''}"
 
 
-def build_csp(frame_ancestors: str, form_action_origins: tuple[str, ...] | list[str] = ()) -> str:
+def build_csp(frame_ancestors: str,
+              form_action_origins: tuple[str, ...] | list[str] = (),
+              app_origin: str | None = None) -> str:
     form_action = " ".join(["'self'", *form_action_origins])
+    # 'self' plus the app's own origin: they differ when a proxy serves the page.
+    own = f"'self' {app_origin}" if app_origin else "'self'"
     directives = [
-        "default-src 'self'",
-        f"script-src 'self' 'unsafe-inline' {CDN_SOURCES} https://www.googletagmanager.com",
-        f"style-src 'self' 'unsafe-inline' {CDN_SOURCES} https://fonts.googleapis.com",
-        f"font-src 'self' data: {CDN_SOURCES} https://fonts.gstatic.com",
-        "img-src 'self' data: blob: https:",
-        f"connect-src 'self' {ANALYTICS_CONNECT_SOURCES}",
+        f"default-src {own}",
+        f"script-src {own} 'unsafe-inline' {CDN_SOURCES} https://www.googletagmanager.com",
+        f"style-src {own} 'unsafe-inline' {CDN_SOURCES} https://fonts.googleapis.com",
+        f"font-src {own} data: {CDN_SOURCES} https://fonts.gstatic.com",
+        f"img-src {own} data: blob: https:",
+        f"connect-src {own} {ANALYTICS_CONNECT_SOURCES}",
         "frame-src 'self'",
         f"frame-ancestors {frame_ancestors}",
         "object-src 'none'",
@@ -116,7 +126,6 @@ def install_security_headers(app: Flask, config: dict | None = None) -> None:
         logging.warning("IAT_CSP_MODE=%s is not one of %s; using 'report'.", mode, ", ".join(CSP_MODES))
         mode = "report"
     frame_ancestors = _setting(app, config, "IAT_FRAME_ANCESTORS", DEFAULT_FRAME_ANCESTORS)
-    csp = build_csp(frame_ancestors)
     csp_header = {"report": "Content-Security-Policy-Report-Only",
                   "enforce": "Content-Security-Policy"}.get(mode)
 
@@ -130,7 +139,7 @@ def install_security_headers(app: Flask, config: dict | None = None) -> None:
         if csp_header and "Content-Security-Policy" not in headers \
                 and "Content-Security-Policy-Report-Only" not in headers:
             extra = tuple(getattr(g, _FORM_ACTION_ATTR, None) or ())
-            headers[csp_header] = build_csp(frame_ancestors, extra) if extra else csp
+            headers[csp_header] = build_csp(frame_ancestors, extra, _plain_origin(request.host_url))
         return response
 
     app.add_url_rule(CSP_REPORT_PATH, "csp_report", _csp_report, methods=["POST"])

@@ -166,3 +166,15 @@ def test_only_a_plain_http_origin_reaches_the_policy():
     assert _form_action(response) == "form-action 'self' https://b.example.com:8443"
     assert results["https://user:pw@b.example.com:8443/cb"] is True
     assert not any(v for k, v in results.items() if k != "https://user:pw@b.example.com:8443/cb")
+
+
+def test_own_resources_allowed_by_the_app_origin_when_a_proxy_serves_the_page():
+    # A portal that proxies the chat makes 'self' its own origin; the absolute
+    # /static URLs and API calls point at the app's origin, which must stay allowed.
+    policy = _client({"IAT_CSP_MODE": "enforce"}).get(
+        "/page", base_url="https://iatoolkit.example.com").headers["Content-Security-Policy"]
+
+    for directive in ("default-src", "script-src", "style-src", "font-src", "img-src", "connect-src"):
+        assert f"{directive} 'self' https://iatoolkit.example.com" in policy
+    assert "frame-ancestors 'self';" in policy
+    assert "form-action 'self';" in policy
