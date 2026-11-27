@@ -37,6 +37,9 @@ class Dispatcher:
         # The schema shown is the person's: their sources and tables (BL-017).
         "iat_sql_schema",
     }
+    #: The tool whose results are masked when a company masks pii (BL-034, R11).
+    SQL_QUERY_TOOL = "iat_sql_query"
+    CHART_TOOL = "iat_chart"
     _tool_execution_hook = None
     # Tool types this module executes itself; an extension cannot take them over.
     BUILTIN_TOOL_TYPES = frozenset({"SYSTEM", "INFERENCE", "HTTP", "NATIVE"})
@@ -58,6 +61,31 @@ class Dispatcher:
         self._company_registry = None
         self._company_instances = None
         self._company_instances_revision = -1
+
+    @staticmethod
+    def _pii_masking_for(company_short_name: str, function_name: str):
+        """The masking service when this tool's data is masked or restored for
+        this company (BL-034, R11), None otherwise."""
+        from iatoolkit.services.pii_masking_service import TOOLS_WITH_RESTORED_ARGUMENTS, PiiMaskingService
+        if function_name != Dispatcher.SQL_QUERY_TOOL and function_name not in TOOLS_WITH_RESTORED_ARGUMENTS:
+            return None
+        from iatoolkit import current_iatoolkit
+        try:
+            service = current_iatoolkit().get_injector().get(PiiMaskingService)
+        except Exception:
+            # No running IAToolkit (unit tests of the dispatcher alone): nothing to mask with.
+            return None
+        return service if service.is_enabled(company_short_name) else None
+
+    def _restore_pii_arguments(self, pii_masking, company_short_name: str, function_name: str,
+                               user_identifier: str | None, kwargs: dict) -> dict:
+        """Tokens the model wrote go back to their values: in the SQL it runs, and
+        in what the Excel, PDF and chart tools build for the person."""
+        if function_name == self.SQL_QUERY_TOOL:
+            restored = dict(kwargs)
+            restored["query"] = pii_masking.restore_sql(company_short_name, user_identifier, kwargs.get("query"))
+            return restored
+        return pii_masking.restore_arguments(company_short_name, user_identifier, kwargs)
 
     @staticmethod
     def _scope_tool_call(company_short_name: str, function_name: str, user_identifier: str | None,
@@ -348,9 +376,19 @@ class Dispatcher:
 
             logging.debug(f"Dispatching SYSTEM tool: {function_name}")
             handler_kwargs = dict(kwargs)
+            pii_masking = self._pii_masking_for(company_short_name, function_name)
+            if pii_masking is not None:
+                handler_kwargs = self._restore_pii_arguments(
+                    pii_masking, company_short_name, function_name, user_identifier, handler_kwargs)
             if user_identifier and function_name in self.USER_SCOPED_SYSTEM_TOOLS:
                 handler_kwargs["user_identifier"] = user_identifier
             result = handler(company_short_name, **handler_kwargs)
+            if pii_masking is not None and function_name == self.SQL_QUERY_TOOL:
+                result = pii_masking.mask_sql_result(
+                    company_short_name, user_identifier, handler_kwargs.get("database_key"),
+                    handler_kwargs.get("query"), result, channel="chat")
+            elif pii_masking is not None and function_name == self.CHART_TOOL:
+                result = pii_masking.mask_chart_result(company_short_name, user_identifier, kwargs, result)
             # An evaluation replaying an agent is not a use of the company's knowledge.
             if (function_name in memory_tools.KNOWLEDGE_TOOLS
                     and str(runtime_source or "").strip().lower() != EVALUATION_REQUEST_SOURCE):

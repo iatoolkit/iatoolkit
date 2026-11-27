@@ -591,6 +591,18 @@ class TestConfigurationService:
         errors = self.service.validate_configuration(self.COMPANY_NAME)
         assert any("mcp.server_url" in e and "absolute HTTPS" in e for e in errors)
 
+    @pytest.mark.parametrize("value, valid", [("mask", True), (False, True), ("off", True), ("restore", False)])
+    def test_validate_configuration_checks_pii_masking_mode(self, value, valid):
+        config = copy.deepcopy(MOCK_VALID_CONFIG)
+        config["privacy"] = {"pii_masking": value}
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert any("privacy.pii_masking" in e for e in errors) is not valid
+
     def test_validate_configuration_accepts_embedding_provider_startup_warmup(self):
         valid_config = copy.deepcopy(MOCK_VALID_CONFIG)
         valid_config["embedding_provider"]["warmup_on_startup"] = True

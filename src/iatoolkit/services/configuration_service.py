@@ -531,6 +531,16 @@ class ConfigurationService:
             else:
                 self._validate_mcp_url_config(mcp_config, add_error)
 
+        # Masking of pii columns in SQL results (BL-034, R11).
+        privacy_config = config.get("privacy")
+        if privacy_config is not None:
+            if not isinstance(privacy_config, dict):
+                add_error("privacy", "Must be a dictionary.")
+            else:
+                from iatoolkit.services.pii_masking_service import MODES as PII_MASKING_MODES, normalize_mode
+                if normalize_mode(privacy_config.get("pii_masking")) is None:
+                    add_error("privacy.pii_masking", f"Must be one of: {list(PII_MASKING_MODES)}.")
+
         # The model the tenant picked for each system agent (see SystemAgentRunner).
         system_agents = config.get("system_agents")
         if system_agents is not None:

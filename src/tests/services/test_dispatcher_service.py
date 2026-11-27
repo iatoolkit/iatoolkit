@@ -266,6 +266,34 @@ class TestDispatcher:
         self.mock_sample_company_instance.handle_request.assert_not_called()
         assert result == {"file": "test.xlsx"}
 
+    def test_sql_results_are_masked_and_tokens_restored_when_the_company_masks_pii(self):
+        """BL-034 R11: the query runs with the values, the model gets tokens back."""
+        mock_tool_def = MagicMock(spec=Tool)
+        mock_tool_def.tool_type = Tool.TYPE_SYSTEM
+        self.mock_tool_service.get_tool_definition.return_value = mock_tool_def
+        mock_handler = MagicMock(return_value='[{"rut": "1-9"}]')
+        self.mock_tool_service.get_system_handler.return_value = mock_handler
+        masking = MagicMock()
+        masking.restore_sql.return_value = "SELECT rut FROM t WHERE rut = '1-9'"
+        masking.mask_sql_result.return_value = '[{"rut": "[PII-aaaaaaaaaaaa]"}]'
+
+        with patch.object(Dispatcher, "_pii_masking_for", return_value=masking):
+            result = self.dispatcher.dispatch(
+                "sample", "iat_sql_query", user_identifier="ana",
+                database_key="ventas", query="SELECT rut FROM t WHERE rut = '[PII-aaaaaaaaaaaa]'")
+
+        masking.restore_sql.assert_called_once_with(
+            "sample", "ana", "SELECT rut FROM t WHERE rut = '[PII-aaaaaaaaaaaa]'")
+        mock_handler.assert_called_once_with(
+            "sample", database_key="ventas", query="SELECT rut FROM t WHERE rut = '1-9'")
+        masking.mask_sql_result.assert_called_once_with(
+            "sample", "ana", "ventas", "SELECT rut FROM t WHERE rut = '1-9'", '[{"rut": "1-9"}]', channel="chat")
+        assert result == '[{"rut": "[PII-aaaaaaaaaaaa]"}]'
+
+    def test_pii_masking_is_off_without_a_running_toolkit(self):
+        assert Dispatcher._pii_masking_for("sample", "iat_sql_query") is None
+        assert Dispatcher._pii_masking_for("sample", "iat_memory_search") is None
+
     def test_dispatch_user_scoped_system_function_passes_user_identifier_explicitly(self):
         mock_tool_def = MagicMock(spec=Tool)
         mock_tool_def.tool_type = Tool.TYPE_SYSTEM
