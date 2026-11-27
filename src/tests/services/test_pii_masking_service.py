@@ -83,6 +83,7 @@ def test_modes_read_from_company_yaml():
     assert normalize_mode(False) == "off"  # YAML reads a bare `off` as false
     assert normalize_mode(True) == "mask"
     assert normalize_mode(" MASK ") == "mask"
+    assert normalize_mode("mask_and_restore") == "mask_and_restore"
     assert normalize_mode("restore") is None
 
 
@@ -164,3 +165,28 @@ def test_chart_with_inline_data_hides_values_the_model_wrote_as_tokens(service, 
     masked = service.mask_chart_result("acme", "ana", {"data": [{"cliente": token, "monto": 10}]}, result)
 
     assert masked["data"]["rows"][0][0] == token
+
+
+def test_person_view_only_when_the_company_restores(service, redis_store):
+    assert service.person_view("acme", "ana") is None  # mode is `mask`
+    service.configuration_service.get_configuration.side_effect = \
+        lambda company, key: {"pii_masking": "mask_and_restore"} if key == "privacy" else None
+    assert service.person_view("acme", None) is None
+    assert service.person_view("acme", "ana") is not None
+
+
+def test_a_turn_result_is_restored_for_its_person_only(service, redis_store):
+    service.configuration_service.get_configuration.side_effect = \
+        lambda company, key: {"pii_masking": "mask_and_restore"} if key == "privacy" else None
+    token = service.mask_sql_result("acme", "ana", "ventas", "SELECT nombre FROM clientes",
+                                    [{"nombre": "Ana <Pérez>"}])[0]["nombre"]
+    result = {"answer": f"<p>Cliente {token}</p>", "answer_text": f"Cliente {token}",
+              "structured_output": {"cliente": token}, "query_id": 7}
+
+    restored = service.person_view("acme", "ana").restore_result(result)
+
+    assert restored["answer"] == "<p>Cliente Ana &lt;Pérez&gt;</p>"
+    assert restored["answer_text"] == "Cliente Ana <Pérez>"
+    assert restored["structured_output"] == {"cliente": "Ana <Pérez>"}
+    assert result["answer_text"] == f"Cliente {token}"  # the original is not touched
+    assert service.person_view("acme", "pedro").restore_result(result)["answer_text"] == f"Cliente {token}"

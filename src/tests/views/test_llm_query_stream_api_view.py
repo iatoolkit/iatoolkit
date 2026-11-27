@@ -76,6 +76,37 @@ class TestLLMQueryStreamApiView:
         assert kwargs["model"] == "gpt-5"
         assert kwargs["client_data"] == {"source": "chat_ui"}
 
+    def test_pii_tokens_reach_the_person_as_values(self, monkeypatch):
+        """BL-034 R11: a token cut between deltas is restored whole, and held text
+        goes out before the next event so the order is kept."""
+        from iatoolkit.common import pii_masking
+        from iatoolkit.services.pii_masking_service import PersonView
+        from iatoolkit.views import llmquery_stream_api_view as stream_view
+
+        token = "[PII-0123456789ab]"
+        values = {token: "Ana Pérez"}
+        monkeypatch.setattr(stream_view, "person_view_for", lambda company, user: PersonView(
+            lambda t: values.get(t, pii_masking.MISSING)))
+
+        def fake_llm_query(**kwargs):
+            sink = kwargs["event_sink"]
+            sink.emit("text_delta", {"text": "Cliente [PII-0123"})
+            sink.emit("text_delta", {"text": "456789ab] y [PII"})
+            sink.emit("round_end", {"round": 1, "has_tool_calls": False})
+            return {"answer": f"<p>Cliente {token}</p>", "query_id": 7}
+
+        self.query.llm_query.side_effect = fake_llm_query
+
+        events = _parse_sse(self.client.post(self.url, json={"question": "x"}).get_data(as_text=True))
+
+        assert events == [
+            ("text_delta", {"text": "Cliente "}),
+            ("text_delta", {"text": "Ana Pérez y "}),
+            ("text_delta", {"text": "[PII"}),
+            ("round_end", {"round": 1, "has_tool_calls": False}),
+            ("final", {"answer": "<p>Cliente Ana Pérez</p>", "query_id": 7}),
+        ]
+
     def test_a_failed_turn_ends_with_an_error_event(self):
         self.query.llm_query.return_value = {"error": True, "error_message": "el modelo falló"}
 

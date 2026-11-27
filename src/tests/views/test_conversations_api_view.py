@@ -119,6 +119,33 @@ class TestConversationsApi:
         assert event == {"id": event["id"], "role": "system_event", "created_at": event["created_at"],
                          "content": "falló", "event": "error"}
 
+    def test_history_restores_pii_tokens_for_its_owner_before_rendering(self, api, monkeypatch):
+        """BL-034 R11: what is stored keeps the token; the owner reads the value."""
+        from iatoolkit.common import pii_masking
+        from iatoolkit.services.pii_masking_service import PersonView
+        from iatoolkit.views import conversations_api_view
+
+        token = "[PII-0123456789ab]"
+        seen = []
+
+        def person_view_for(company, user):
+            seen.append(user)
+            return PersonView(lambda t: "Ana" if t == token else pii_masking.MISSING)
+
+        monkeypatch.setattr(conversations_api_view, "person_view_for", person_view_for)
+        conversation = api.service.create("acme", ANA, title="x")
+        query = LLMQuery(company_id=api.company.id, user_identifier=ANA, query="q", output=f"Cliente {token}")
+        api.session.add(query)
+        api.session.commit()
+        api.service.append_turn(conversation, question="q", answer_text=f"Cliente {token}",
+                                llm_query_id=query.id, user_identifier=ANA)
+
+        body = api.get(f"/acme/api/conversations/{conversation.public_id}/messages").get_json()
+
+        assert body["messages"][1]["answer"] == "<p>Cliente Ana</p>"
+        assert seen == [ANA]
+        assert api.session.get(LLMQuery, query.id).output == f"Cliente {token}"
+
     def test_a_failed_authentication_is_returned(self, api):
         api.auth.verify_for_company.return_value = {"success": False, "status_code": 401, "error_message": "auth"}
 

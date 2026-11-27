@@ -13,6 +13,7 @@ from injector import inject
 
 from iatoolkit.services.auth_service import AuthService
 from iatoolkit.services.chat_stream import QueueEventSink
+from iatoolkit.services.pii_masking_service import person_view_for
 from iatoolkit.services.configuration_service import ConfigurationService
 from iatoolkit.services.i18n_service import I18nService
 from iatoolkit.services.query_service import QueryService
@@ -70,6 +71,8 @@ class LLMQueryStreamApiView(MethodView):
             return jsonify({"error": True, "error_message": self.i18n_service.t('errors.general.unexpected_error')}), 500
 
         sink = QueueEventSink()
+        # The values behind pii tokens, for this person's eyes only (BL-034, R11).
+        person_view = person_view_for(company_short_name, user_identifier)
         unexpected_error_message = self.i18n_service.t('errors.general.unexpected_error')
 
         @copy_current_request_context
@@ -98,7 +101,7 @@ class LLMQueryStreamApiView(MethodView):
         threading.Thread(target=run_turn, name="chat-stream-turn", daemon=True).start()
 
         return Response(
-            self._relay(sink),
+            self._relay(sink, person_view),
             mimetype="text/event-stream",
             headers={
                 "Cache-Control": "no-cache, no-transform",
@@ -107,7 +110,7 @@ class LLMQueryStreamApiView(MethodView):
             },
         )
 
-    def _relay(self, sink: QueueEventSink):
+    def _relay(self, sink: QueueEventSink, person_view=None):
         try:
             # Sent at once, so the browser's fetch resolves before the first model call.
             yield ": stream open\n\n"
@@ -116,11 +119,34 @@ class LLMQueryStreamApiView(MethodView):
                     yield ": ping\n\n"
                     continue
                 event, payload = item
-                yield format_sse(event, payload)
+                if person_view is None:
+                    yield format_sse(event, payload)
+                    continue
+                for restored_event, restored_payload in restore_event(person_view, event, payload):
+                    yield format_sse(restored_event, restored_payload)
         except GeneratorExit:
             # The browser went away (stop button, closed tab): stop the turn.
             sink.cancel()
             raise
+
+
+def restore_event(person_view, event: str, payload):
+    """The events with pii tokens replaced by their values. Text is restored as it
+    streams, holding back a token cut between two deltas; whatever is held is
+    sent before any other event, so the order the chat draws stays the same."""
+    if event in ("text_delta", "reasoning_delta"):
+        restorer = person_view.text if event == "text_delta" else person_view.reasoning
+        text = restorer.feed((payload or {}).get("text") or "")
+        if text:
+            yield event, dict(payload, text=text)
+        return
+    for delta_event, restorer in (("reasoning_delta", person_view.reasoning), ("text_delta", person_view.text)):
+        held = restorer.flush()
+        if held:
+            yield delta_event, {"text": held}
+    if event == "final":
+        payload = person_view.restore_result(payload)
+    yield event, payload
 
 
 def format_sse(event: str, payload) -> str:

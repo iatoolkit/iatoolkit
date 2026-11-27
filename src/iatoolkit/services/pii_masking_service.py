@@ -9,7 +9,7 @@ Masking of `pii` columns in SQL results before they reach the model (BL-034, R11
 Turned on per company in company.yaml:
 
     privacy:
-      pii_masking: mask        # off (default) | mask
+      pii_masking: mask_and_restore   # off (default) | mask | mask_and_restore
 
 With `mask`, the values of columns marked `pii: true` in a source's schema files
 (written by the SQL modeler and by knowledge tables) leave each SQL result as
@@ -23,8 +23,12 @@ for the person who received it, so that:
   value it stands for;
 - the Excel, PDF and charts the model builds for the person carry the values.
 
-The answer text keeps the tokens: putting the values back into what the person
-reads is a later stage, since it touches the history and the stream.
+With `mask_and_restore`, what the person reads in the chat also carries the
+values: the streamed text, the final answer and the conversation history are
+restored on their way to the browser, from that person's own tokens. What is
+stored (iat_queries, the history given back to the model) keeps the tokens, and
+so does what reaches anyone else: an API key caller, an MCP client, an operator
+monitoring the run. With `mask` the person reads the tokens too.
 
 Limits: only marked columns are masked (a free-text column with personal data
 in it is not), and what the person writes in the chat goes to the model as is.
@@ -49,7 +53,8 @@ from iatoolkit.services.sql_service import SqlService
 
 MODE_OFF = "off"
 MODE_MASK = "mask"
-MODES = (MODE_OFF, MODE_MASK)
+MODE_MASK_AND_RESTORE = "mask_and_restore"
+MODES = (MODE_OFF, MODE_MASK, MODE_MASK_AND_RESTORE)
 
 
 def normalize_mode(value) -> str | None:
@@ -96,7 +101,17 @@ class PiiMaskingService:
         return normalize_mode(privacy.get("pii_masking")) or MODE_OFF
 
     def is_enabled(self, company_short_name: str) -> bool:
-        return self.mode(company_short_name) == MODE_MASK
+        return self.mode(company_short_name) in (MODE_MASK, MODE_MASK_AND_RESTORE)
+
+    def restores_for_person(self, company_short_name: str) -> bool:
+        return self.mode(company_short_name) == MODE_MASK_AND_RESTORE
+
+    def person_view(self, company_short_name: str, user_identifier: str | None):
+        """What restores the values in what this person reads, None when the
+        company does not restore them."""
+        if not user_identifier or not self.restores_for_person(company_short_name):
+            return None
+        return PersonView(self._cached_resolver(company_short_name, user_identifier))
 
     @staticmethod
     def _token_ttl_seconds() -> int:
@@ -292,6 +307,18 @@ class PiiMaskingService:
         resolve = self._resolver(company_short_name, user_identifier, tokens)
         return pii_masking.replace_tokens_in(arguments, resolve)
 
+    def _cached_resolver(self, company_short_name: str, user_identifier: str):
+        """Resolves tokens one by one as they show up (a stream), each read once."""
+        known: dict[str, object] = {}
+
+        def resolve(token: str):
+            if token not in known:
+                known[token] = self._load(company_short_name, user_identifier, [token]).get(
+                    token, pii_masking.MISSING)
+            return known[token]
+
+        return resolve
+
     def _resolver(self, company_short_name: str, user_identifier: str | None, tokens: list[str]):
         values = self._load(company_short_name, user_identifier, tokens)
         return lambda token: values.get(token, pii_masking.MISSING)
@@ -356,3 +383,53 @@ def _collect_pii_columns(node, names: set[str]) -> None:
     elif isinstance(node, list):
         for item in node:
             _collect_pii_columns(item, names)
+
+
+#: Fields of a turn's result that hold text the person reads.
+_PERSON_TEXT_FIELDS = ("answer_text", "output_text", "reasoning_content")
+_PERSON_DATA_FIELDS = ("structured_output", "parsed_output")
+
+
+class PersonView:
+    """Puts the values back into what one person reads in the chat."""
+
+    def __init__(self, resolve):
+        self.resolve = resolve
+        self.text = pii_masking.StreamingTokenRestorer(resolve)
+        self.reasoning = pii_masking.StreamingTokenRestorer(resolve)
+
+    def restore_text(self, text):
+        if not isinstance(text, str) or not pii_masking.TOKEN_RE.search(text):
+            return text
+        return pii_masking.replace_tokens(text, self.resolve)
+
+    def restore_result(self, result: dict) -> dict:
+        """A turn's result as the person receives it. `answer` is already HTML:
+        each value is escaped before it goes in."""
+        if not isinstance(result, dict):
+            return result
+        restored = dict(result)
+        answer = restored.get("answer")
+        if isinstance(answer, str) and pii_masking.TOKEN_RE.search(answer):
+            restored["answer"] = pii_masking.replace_tokens(answer, self.resolve, html=True)
+        for field in _PERSON_TEXT_FIELDS:
+            if field in restored:
+                restored[field] = self.restore_text(restored[field])
+        for field in _PERSON_DATA_FIELDS:
+            if restored.get(field) is not None:
+                restored[field] = pii_masking.replace_tokens_in(restored[field], self.resolve)
+        return restored
+
+
+def person_view_for(company_short_name: str, user_identifier: str | None) -> PersonView | None:
+    """The person view from the running IAToolkit, for views that read it per request."""
+    if not user_identifier:
+        return None
+    try:
+        from iatoolkit import current_iatoolkit
+
+        service = current_iatoolkit().get_injector().get(PiiMaskingService)
+        return service.person_view(company_short_name, user_identifier)
+    except Exception as exc:
+        logging.debug("pii masking: no person view for %s: %s", company_short_name, exc)
+        return None

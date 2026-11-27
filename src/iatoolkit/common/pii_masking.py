@@ -25,6 +25,7 @@ This module holds the parts that need no application state:
 from __future__ import annotations
 
 import hashlib
+import html as _html
 import hmac
 import json
 import re
@@ -162,10 +163,11 @@ def find_tokens(text: str) -> list[str]:
     return [f"[{TOKEN_PREFIX}{match}]" for match in TOKEN_RE.findall(str(text or ""))]
 
 
-def replace_tokens(text: str, resolve: Callable[[str], object], *, sql: bool = False) -> str:
+def replace_tokens(text: str, resolve: Callable[[str], object], *, sql: bool = False,
+                   html: bool = False) -> str:
     """Replaces each known token with its value. In SQL the value goes inside the
-    quotes the model already wrote, so a quote in it is doubled; unknown tokens
-    are left as written."""
+    quotes the model already wrote, so a quote in it is doubled; in HTML it is
+    escaped. Unknown tokens are left as written."""
 
     def substitute(match: re.Match) -> str:
         token = match.group(0)
@@ -175,7 +177,11 @@ def replace_tokens(text: str, resolve: Callable[[str], object], *, sql: bool = F
         rendered = value if isinstance(value, str) else (
             json.dumps(value, ensure_ascii=False, default=str) if isinstance(value, (dict, list)) else str(value)
         )
-        return rendered.replace("'", "''") if sql else rendered
+        if sql:
+            return rendered.replace("'", "''")
+        if html:
+            return _html.escape(rendered, quote=True)
+        return rendered
 
     return TOKEN_RE.sub(substitute, str(text))
 
@@ -191,6 +197,32 @@ def replace_tokens_in(payload, resolve: Callable[[str], object]):
     if isinstance(payload, dict):
         return {key: replace_tokens_in(value, resolve) for key, value in payload.items()}
     return payload
+
+
+TOKEN_LENGTH = len("[PII-") + 12 + 1
+_PARTIAL_TOKEN_RE = re.compile(r"\[(P(I(I(-[0-9a-f]{0,12})?)?)?)?")
+
+
+class StreamingTokenRestorer:
+    """Restores tokens in text that arrives in pieces: a token cut between two
+    pieces is held back until it is complete (at most 17 characters)."""
+
+    def __init__(self, resolve: Callable[[str], object]):
+        self.resolve = resolve
+        self.pending = ""
+
+    def feed(self, text: str) -> str:
+        data = self.pending + (text or "")
+        cut = len(data)
+        start = data.rfind("[", max(0, len(data) - TOKEN_LENGTH + 1))
+        if start != -1 and _PARTIAL_TOKEN_RE.fullmatch(data[start:]):
+            cut = start
+        ready, self.pending = data[:cut], data[cut:]
+        return replace_tokens(ready, self.resolve) if ready else ""
+
+    def flush(self) -> str:
+        rest, self.pending = self.pending, ""
+        return replace_tokens(rest, self.resolve) if rest else ""
 
 
 class _Missing:

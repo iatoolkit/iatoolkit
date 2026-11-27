@@ -160,3 +160,36 @@ class TestLLMQueryApiView:
 
         response = self.client.post(self.url, json={})
         assert response.status_code == 400
+
+
+class TestLLMQueryApiPiiRestore:
+    """BL-034 R11: a person in the chat reads values; an API key caller keeps tokens."""
+
+    TOKEN = "[PII-0123456789ab]"
+
+    @pytest.fixture(autouse=True)
+    def setup(self, monkeypatch):
+        from iatoolkit.common import pii_masking
+        from iatoolkit.services.pii_masking_service import PersonView
+        from iatoolkit.views import llmquery_api_view
+
+        values = {self.TOKEN: "Ana"}
+        monkeypatch.setattr(llmquery_api_view, "person_view_for", lambda company, user: PersonView(
+            lambda t: values.get(t, pii_masking.MISSING)))
+        self.app = Flask(__name__)
+        self.client = self.app.test_client()
+        self.auth = MagicMock(spec=AuthService)
+        self.query = MagicMock(spec=QueryService)
+        self.query.llm_query.return_value = {"answer": f"<p>{self.TOKEN}</p>"}
+        view = LLMQueryApiView.as_view('llm_query_api', auth_service=self.auth, query_service=self.query,
+                                       profile_service=MagicMock(spec=ProfileService),
+                                       i18n_service=MagicMock(spec=I18nService))
+        self.app.add_url_rule('/<company_short_name>/api/query', view_func=view, methods=['POST'])
+
+    def test_a_web_session_reads_the_values(self):
+        self.auth.verify_for_company.return_value = {"success": True, "user_identifier": "ana", "auth_type": "session"}
+        assert self.client.post('/acme/api/query', json={"question": "x"}).get_json()["answer"] == "<p>Ana</p>"
+
+    def test_an_api_key_keeps_the_tokens(self):
+        self.auth.verify_for_company.return_value = {"success": True, "user_identifier": "ana", "auth_type": "api_key"}
+        assert self.client.post('/acme/api/query', json={"question": "x"}).get_json()["answer"] == f"<p>{self.TOKEN}</p>"

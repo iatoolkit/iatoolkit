@@ -591,7 +591,7 @@ class TestConfigurationService:
         errors = self.service.validate_configuration(self.COMPANY_NAME)
         assert any("mcp.server_url" in e and "absolute HTTPS" in e for e in errors)
 
-    @pytest.mark.parametrize("value, valid", [("mask", True), (False, True), ("off", True), ("restore", False)])
+    @pytest.mark.parametrize("value, valid", [("mask", True), ("mask_and_restore", True), (False, True), ("off", True), ("restore", False)])
     def test_validate_configuration_checks_pii_masking_mode(self, value, valid):
         config = copy.deepcopy(MOCK_VALID_CONFIG)
         config["privacy"] = {"pii_masking": value}

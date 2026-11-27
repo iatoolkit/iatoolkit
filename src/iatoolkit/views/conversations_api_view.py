@@ -27,6 +27,7 @@ from flask.views import MethodView
 from injector import inject
 
 from iatoolkit.common.exceptions import IAToolkitException
+from iatoolkit.services.pii_masking_service import person_view_for
 from iatoolkit.repositories.models import Conversation
 from iatoolkit.services.auth_service import AuthService
 from iatoolkit.services.configuration_service import ConfigurationService
@@ -83,6 +84,15 @@ class ConversationsApiView(MethodView):
         except ValueError:
             return None
 
+    @staticmethod
+    def _shown(conversation, person_view) -> dict:
+        """A conversation as its owner sees it: a title the agent wrote from an
+        answer may hold pii tokens, restored like the answer (BL-034, R11)."""
+        shown = conversation.to_dict()
+        if person_view is not None and isinstance(shown.get("title"), str):
+            shown["title"] = person_view.restore_text(shown["title"])
+        return shown
+
     # ------------------------------------------------------------------ routes
     def get(self, company_short_name: str, conversation_id: str | None = None, resource: str | None = None):
         try:
@@ -99,12 +109,14 @@ class ConversationsApiView(MethodView):
                     found = self.conversation_service.search_for_user(
                         company_short_name, user_identifier, search, archived=archived, before=before,
                         limit=limit + 1)
-                    conversations = [dict(item.to_dict(), match=match) for item, match in found[:limit]]
+                    view = person_view_for(company_short_name, user_identifier)
+                    conversations = [dict(self._shown(item, view), match=match) for item, match in found[:limit]]
                     return jsonify({"conversations": conversations, "has_more": len(found) > limit}), 200
+                view = person_view_for(company_short_name, user_identifier)
                 items = self.conversation_service.list_for_user(
                     company_short_name, user_identifier, archived=archived, before=before, limit=limit + 1)
                 return jsonify({
-                    "conversations": [item.to_dict() for item in items[:limit]],
+                    "conversations": [self._shown(item, view) for item in items[:limit]],
                     "has_more": len(items) > limit,
                 }), 200
 
@@ -113,13 +125,19 @@ class ConversationsApiView(MethodView):
             if conversation is None:
                 return self._not_found()
             if resource == "messages":
+                # The values behind pii tokens, restored for this person before the
+                # answer is rendered (BL-034, R11).
+                person_view = person_view_for(company_short_name, user_identifier)
+                restore = person_view.restore_text if person_view is not None else (lambda text: text)
                 messages = self.conversation_service.messages_for_display(
                     conversation,
-                    answer_formatter=lambda text, parts: self.llm_client.format_answer(text or "", parts=parts),
+                    answer_formatter=lambda text, parts: self.llm_client.format_answer(
+                        restore(text or ""), parts=parts),
                     file_retention_days=self._file_retention_days(company_short_name),
                 )
-                return jsonify({"conversation": conversation.to_dict(), "messages": messages}), 200
-            return jsonify({"conversation": conversation.to_dict()}), 200
+                return jsonify({"conversation": self._shown(conversation, person_view), "messages": messages}), 200
+            return jsonify({"conversation": self._shown(
+                conversation, person_view_for(company_short_name, user_identifier))}), 200
         except Exception as e:
             return self._unexpected(e)
 
@@ -148,7 +166,8 @@ class ConversationsApiView(MethodView):
         # POST .../title: the chat asks for it once the first answer is on screen,
         # so writing it never delays an answer. Kept as is when the person chose it.
         self.conversation_service.generate_title(company_short_name, user_identifier, conversation)
-        return jsonify({"conversation": conversation.to_dict()}), 200
+        return jsonify({"conversation": self._shown(
+            conversation, person_view_for(company_short_name, user_identifier))}), 200
 
     def patch(self, company_short_name: str, conversation_id: str | None = None, resource: str | None = None):
         try:

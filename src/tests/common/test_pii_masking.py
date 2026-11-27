@@ -79,3 +79,33 @@ class TestTokens:
         restored = pii_masking.replace_tokens_in(
             payload, lambda t: "ana@acme.cl" if t == token else pii_masking.MISSING)
         assert restored == {"rows": [["ana@acme.cl", 3]], "title": "Cliente ana@acme.cl", "n": 1}
+
+
+class TestStreamingTokenRestorer:
+    TOKEN = "[PII-0123456789ab]"
+
+    def restorer(self):
+        values = {self.TOKEN: "Ana Pérez"}
+        return pii_masking.StreamingTokenRestorer(lambda t: values.get(t, pii_masking.MISSING))
+
+    def test_token_cut_between_deltas_is_restored_whole(self):
+        restorer = self.restorer()
+        pieces = ["El cliente [P", "II-01234", "56789ab] tiene ", "3 créditos"]
+        out = "".join(restorer.feed(piece) for piece in pieces) + restorer.flush()
+        assert out == "El cliente Ana Pérez tiene 3 créditos"
+
+    def test_held_text_is_only_a_possible_token(self):
+        restorer = self.restorer()
+        assert restorer.feed("ver [enlace") == "ver [enlace"
+        assert restorer.feed("total [") == "total "
+        assert restorer.feed("x]") == "[x]"
+
+    def test_flush_returns_an_unfinished_token_as_written(self):
+        restorer = self.restorer()
+        assert restorer.feed("fin [PII-01") == "fin "
+        assert restorer.flush() == "[PII-01"
+
+    def test_html_replacement_escapes_the_value(self):
+        token = self.TOKEN
+        out = pii_masking.replace_tokens(f"<td>{token}</td>", lambda t: "<b>x</b>", html=True)
+        assert out == "<td>&lt;b&gt;x&lt;/b&gt;</td>"

@@ -2,6 +2,7 @@ from flask.views import MethodView
 from flask import request, jsonify
 from injector import inject
 from iatoolkit.services.query_service import QueryService
+from iatoolkit.services.pii_masking_service import person_view_for
 from iatoolkit.services.auth_service import AuthService
 from iatoolkit.services.profile_service import ProfileService
 from iatoolkit.services.i18n_service import I18nService
@@ -86,6 +87,12 @@ class LLMQueryApiView(MethodView):
                 return jsonify(result), 409
 
             compact_llm_query_result(result)
+            if auth_result.get("auth_type") != "api_key":
+                # A person in the chat reads the values behind pii tokens; an API
+                # caller, which may be a model, keeps the tokens (BL-034, R11).
+                person_view = person_view_for(company_short_name, user_identifier)
+                if person_view is not None:
+                    result = person_view.restore_result(result)
 
             return jsonify(result), 200
 
