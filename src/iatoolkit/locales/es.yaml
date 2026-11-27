@@ -843,6 +843,8 @@ ui:
     access_group_admins_desc: "Administran la empresa: equipo, agentes, conocimiento y ajustes."
     access_group_editors_desc: "Editan todos los recursos desde la consola."
     access_group_everyone_desc: "Todas las personas de la empresa."
+    access_group_internal_runs: "Ejecuciones internas"
+    access_group_internal_runs_desc: "Pipelines, jobs y otras ejecuciones sin una persona detrás. Empieza administrando la empresa; restríngelo cuando quieras."
     access_readonly: "Solo quienes administran la empresa pueden cambiar el acceso."
     access_level_help_3: "Además, decidir quién tiene acceso."
     access_level_help_2: "Además, cambiar su configuración o contenido."

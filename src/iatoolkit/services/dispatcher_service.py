@@ -88,12 +88,20 @@ class Dispatcher:
         return pii_masking.restore_arguments(company_short_name, user_identifier, kwargs)
 
     @staticmethod
+    def _run_principal_if_checked() -> str | None:
+        """service:run:default when calls are checked (groups registered), else None."""
+        from iatoolkit.common import access, run_identity
+        return run_identity.DEFAULT_RUN_PRINCIPAL if access.Access.registered() else None
+
+    @staticmethod
     def _scope_tool_call(company_short_name: str, function_name: str, user_identifier: str | None,
                          kwargs: dict) -> dict:
-        from iatoolkit.common import access
-        if not user_identifier or not access.Access.registered():
-            # No person (internal runs), or no groups (core alone): nothing is restricted.
+        from iatoolkit.common import access, run_identity
+        if not access.Access.registered():
+            # No groups (core alone): nothing is restricted.
             return kwargs
+        # A call with no identity acts as service:run:default (BL-034, R7).
+        principal = run_identity.effective(user_identifier)
         from iatoolkit import current_iatoolkit
         from iatoolkit.services.resource_access_scope import ResourceAccessScope
         try:
@@ -102,7 +110,7 @@ class Dispatcher:
             # No running IAToolkit (unit tests of the dispatcher alone): nothing to scope with.
             return kwargs
         scope = injector.get(ResourceAccessScope)
-        return scope.scope_tool_call(company_short_name, function_name, user_identifier, kwargs)
+        return scope.scope_tool_call(company_short_name, function_name, principal, kwargs)
 
     def _safe_rollback(self):
         """
@@ -269,12 +277,14 @@ class Dispatcher:
             )
 
         execution_id = uuid4().hex
+        # The audit records who the call acted as: the person, or the run's identity (R7).
+        acting_as = user_identifier or self._run_principal_if_checked()
         self._notify_tool_execution_hook(
             "before_dispatch",
             execution_id=execution_id,
             company_short_name=company_short_name,
             function_name=function_name,
-            user_identifier=user_identifier,
+            user_identifier=acting_as,
             runtime_source=_iat_runtime_source,
             tool_def=tool_def,
             arguments=dict(kwargs),
@@ -287,7 +297,7 @@ class Dispatcher:
                 execution_id=execution_id,
                 company_short_name=company_short_name,
                 function_name=function_name,
-                user_identifier=user_identifier,
+                user_identifier=acting_as,
                 runtime_source=_iat_runtime_source,
                 tool_def=tool_def,
                 arguments=dict(kwargs),
@@ -313,7 +323,7 @@ class Dispatcher:
                 execution_id=execution_id,
                 company_short_name=company_short_name,
                 function_name=function_name,
-                user_identifier=user_identifier,
+                user_identifier=acting_as,
                 runtime_source=_iat_runtime_source,
                 tool_def=tool_def,
                 arguments=dict(kwargs),
@@ -328,7 +338,7 @@ class Dispatcher:
                 execution_id=execution_id,
                 company_short_name=company_short_name,
                 function_name=function_name,
-                user_identifier=user_identifier,
+                user_identifier=acting_as,
                 runtime_source=_iat_runtime_source,
                 tool_def=tool_def,
                 arguments=dict(kwargs),

@@ -829,6 +829,8 @@ ui:
     access_group_admins_desc: "Administer the company: team, agents, knowledge and settings."
     access_group_editors_desc: "Edit every resource from the console."
     access_group_everyone_desc: "Everyone in the company."
+    access_group_internal_runs: "Internal runs"
+    access_group_internal_runs_desc: "Pipelines, jobs and other runs with no person behind them. Starts as company administration; narrow it when you choose."
     access_readonly: "Only those who administer the company can change access."
     access_level_help_3: "Also decide who has access."
     access_level_help_2: "Also change its configuration or content."

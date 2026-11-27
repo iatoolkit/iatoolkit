@@ -290,6 +290,22 @@ class TestDispatcher:
             "sample", "ana", "ventas", "SELECT rut FROM t WHERE rut = '1-9'", '[{"rut": "1-9"}]', channel="chat")
         assert result == '[{"rut": "[PII-aaaaaaaaaaaa]"}]'
 
+    def test_a_call_without_identity_is_checked_as_the_default_run(self):
+        """BL-034 R7: internal runs are no longer unchecked."""
+        from iatoolkit.common import access
+        scope = MagicMock()
+        scope.scope_tool_call.side_effect = lambda company, name, principal, kwargs: dict(kwargs, checked_as=principal)
+        toolkit = MagicMock()
+        toolkit.get_injector.return_value.get.return_value = scope
+        with patch.object(access.Access, "registered", return_value=True), \
+                patch("iatoolkit.current_iatoolkit", return_value=toolkit):
+            assert Dispatcher._scope_tool_call("sample", "iat_sql_query", None, {})["checked_as"] == \
+                "service:run:default"
+            assert Dispatcher._scope_tool_call("sample", "iat_sql_query", "service:run:x", {})["checked_as"] == \
+                "service:run:x"
+        # Without groups (core alone) nothing is checked.
+        assert Dispatcher._scope_tool_call("sample", "iat_sql_query", None, {"a": 1}) == {"a": 1}
+
     def test_pii_masking_is_off_without_a_running_toolkit(self):
         assert Dispatcher._pii_masking_for("sample", "iat_sql_query") is None
         assert Dispatcher._pii_masking_for("sample", "iat_memory_search") is None
