@@ -654,6 +654,78 @@ class TestQueryService:
         assert invoke_kwargs["attachments"][0]["name"] == "sales.csv"
         assert invoke_kwargs["execution_metadata"]["attachments"]["stats"]["native_sent_count"] == 1
 
+    def _native_pdf_plan(self):
+        return {
+            "files_for_context": [],
+            "native_attachments": [
+                {"name": "contrato.pdf", "mime_type": "application/pdf", "base64": "UERG"}
+            ],
+            "errors": [],
+            "policy": {"attachment_mode": "native_only", "attachment_fallback": "extract"},
+            "capabilities": {"supports_native_files": True},
+            "stats": {"total_files": 1, "native_sent_count": 1, "extract_candidates": 0,
+                      "fallback_to_extract": 0, "errors": 0},
+        }
+
+    def _ask_with_native_pdf(self):
+        self.mock_attachment_policy_service.build_attachment_plan.side_effect = None
+        self.mock_attachment_policy_service.build_attachment_plan.return_value = self._native_pdf_plan()
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "q", [])
+        self.mock_history_manager.populate_request_params.side_effect = (
+            lambda handle, prompt, ignore: setattr(handle, "request_params", {"context_history": None}) or False
+        )
+        self.mock_llm_client.invoke.return_value = {"valid_response": True, "answer": "ok"}
+        return self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            question="¿qué dice la cláusula 5?",
+            files=[{"filename": "contrato.pdf", "base64": "UERG"}],
+            model="gpt-test",
+        )
+
+    def test_llm_query_keeps_native_attachment_text_in_the_history(self):
+        """A native PDF reaches the model on its turn only: its text must stay for the next one."""
+        self.mock_context_builder.build_native_attachments_history_context.return_value = (
+            "\n<document name='contrato.pdf'>\nCláusula 5\n</document>\n"
+        )
+
+        result = self._ask_with_native_pdf()
+
+        assert result["valid_response"] is True
+        # The model still gets the prompt alone, with the file beside it.
+        assert self.mock_llm_client.invoke.call_args.kwargs["context"] == "prompt"
+        self.mock_context_builder.build_native_attachments_history_context.assert_called_once_with(
+            self._native_pdf_plan()["native_attachments"]
+        )
+        stored_prompt = self.mock_history_manager.update_history.call_args.args[1]
+        assert stored_prompt.startswith("prompt\n")
+        assert "Cláusula 5" in stored_prompt
+
+    def test_llm_query_saves_the_turn_when_native_attachment_text_fails(self):
+        self.mock_context_builder.build_native_attachments_history_context.side_effect = Exception("boom")
+
+        result = self._ask_with_native_pdf()
+
+        assert result["valid_response"] is True
+        assert self.mock_history_manager.update_history.call_args.args[1] == "prompt"
+
+    def test_llm_query_without_native_attachments_stores_the_prompt_as_is(self):
+        self.mock_context_builder.build_user_turn_prompt.return_value = ("prompt", "q", [])
+        self.mock_history_manager.populate_request_params.side_effect = (
+            lambda handle, prompt, ignore: setattr(handle, "request_params", {"context_history": None}) or False
+        )
+        self.mock_llm_client.invoke.return_value = {"valid_response": True, "answer": "ok"}
+
+        self.service.llm_query(
+            company_short_name=MOCK_COMPANY_SHORT_NAME,
+            user_identifier=MOCK_LOCAL_USER_ID,
+            question="hola",
+            model="gpt-test",
+        )
+
+        self.mock_context_builder.build_native_attachments_history_context.assert_not_called()
+        assert self.mock_history_manager.update_history.call_args.args[1] == "prompt"
+
     def test_llm_query_returns_error_when_attachment_policy_fails(self):
         self.mock_attachment_policy_service.build_attachment_plan.side_effect = None
         self.mock_context_builder.get_prompt_output_contract.return_value = {

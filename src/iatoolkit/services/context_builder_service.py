@@ -640,6 +640,50 @@ class ContextBuilderService:
 
         return user_turn_prompt, effective_question, images
 
+    def build_native_attachments_history_context(self, native_attachments: list) -> str:
+        """The text of the files that went to the model as native attachments, for the history.
+
+        A native attachment reaches the model on its own turn only: the history
+        keeps the turn's prompt, which never held the file. Without its text the
+        next question about the document finds nothing. A file with no text to
+        extract (a scan) leaves a note, so the model asks for it again instead
+        of answering from memory.
+        """
+        if not native_attachments:
+            return ""
+
+        parts = []
+        for attachment in native_attachments:
+            if not isinstance(attachment, dict):
+                continue
+            filename = str(attachment.get("name") or attachment.get("filename") or "attachment").strip()
+            document_text = ""
+            try:
+                payload = attachment.get("base64") or attachment.get("content")
+                if payload:
+                    document_text = self.parsing_service.extract_text_for_context(
+                        filename=filename,
+                        content=self.util.normalize_base64_payload(payload),
+                    ).strip()
+            except Exception as e:
+                logging.warning(f"Could not extract the text of native attachment '{filename}' for the history: {e}")
+
+            if document_text:
+                parts.append(f"\n<document name='{filename}'>\n{document_text}\n</document>\n")
+            else:
+                parts.append(
+                    f"\n<document name='{filename}'>\n[No text could be extracted from this file for the "
+                    f"conversation history. If a later question needs its content, ask the user to attach it "
+                    f"again.]\n</document>\n"
+                )
+
+        if not parts:
+            return ""
+        return (
+            "\n### Documentos adjuntos en este turno (texto extraído para el historial):\n"
+            + "".join(parts)
+        )
+
     def compute_context_version(self, context_string: str) -> str:
         """Computes a SHA256 hash of the context string to track changes."""
         try:

@@ -1604,6 +1604,27 @@ class QueryService:
         return self._record_conversation_turn(conversation, user_identifier, question, prompt_name, files,
                                               response)
 
+    def _history_turn_prompt(self, user_turn_prompt: str, attachment_plan: dict | None) -> str:
+        """The turn as the history keeps it: the prompt plus the text of its native attachments.
+
+        Native attachments go to the model beside the prompt, not in it, so the
+        stored turn lost them and the next question about the file found
+        nothing (seen in production: a 112k-token PDF turn followed by a 30k
+        one). Their extracted text goes into the history instead.
+        """
+        native_attachments = (attachment_plan or {}).get("native_attachments") or []
+        if not native_attachments:
+            return user_turn_prompt
+        try:
+            attachments_context = self.context_builder.build_native_attachments_history_context(native_attachments)
+        except Exception as e:
+            # The turn is saved without them rather than not at all.
+            logging.warning(f"Could not add the native attachments to the history: {e}")
+            return user_turn_prompt
+        if not attachments_context:
+            return user_turn_prompt
+        return f"{user_turn_prompt}\n{attachments_context}"
+
     def _record_conversation_turn(self, conversation, user_identifier: str, question: str,
                                   prompt_name: str | None, files: list | None, response: dict) -> dict:
         """The turn, kept in its conversation: answered, failed or stopped."""
@@ -2070,7 +2091,9 @@ class QueryService:
             turn_cancelled = event_sink is not None and event_sink.is_cancelled() is True
             if not is_agent_execution and not turn_cancelled:
                 self.history_manager.update_history(
-                    history_handle, user_turn_prompt, response
+                    history_handle,
+                    self._history_turn_prompt(user_turn_prompt, attachment_plan),
+                    response,
                 )
 
             return response

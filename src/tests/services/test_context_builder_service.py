@@ -450,6 +450,39 @@ class TestContextBuilderService:
         assert images[0]['name'] == 'photo.jpg'
         assert images[0]['base64'] == 'imagebytes'
 
+    def test_native_attachments_history_context_keeps_the_extracted_text(self):
+        self.mock_util.normalize_base64_payload.return_value = b'%PDF'
+        self.mock_parsing_service.extract_text_for_context.return_value = "  Cláusula 5: plazo  "
+
+        context = self.service.build_native_attachments_history_context(
+            [{"name": "contrato.pdf", "mime_type": "application/pdf", "base64": "JVBERg=="}]
+        )
+
+        assert "<document name='contrato.pdf'>\nCláusula 5: plazo\n</document>" in context
+        self.mock_parsing_service.extract_text_for_context.assert_called_once_with(
+            filename="contrato.pdf", content=b'%PDF'
+        )
+
+    def test_native_attachments_history_context_notes_a_file_without_text(self):
+        """A scan has no text: the history says so, so the model asks for the file again."""
+        self.mock_util.normalize_base64_payload.return_value = b'%PDF'
+        self.mock_parsing_service.extract_text_for_context.side_effect = [
+            "", Exception("broken pdf"),
+        ]
+
+        context = self.service.build_native_attachments_history_context([
+            {"name": "escaneo.pdf", "base64": "JVBERg=="},
+            {"name": "roto.pdf", "base64": "JVBERg=="},
+        ])
+
+        assert "<document name='escaneo.pdf'>" in context
+        assert "<document name='roto.pdf'>" in context
+        assert context.count("No text could be extracted") == 2
+
+    def test_native_attachments_history_context_is_empty_without_attachments(self):
+        assert self.service.build_native_attachments_history_context([]) == ""
+        self.mock_parsing_service.extract_text_for_context.assert_not_called()
+
     def test_process_attachments_handles_errors_gracefully(self):
         """Should append error tags to context if file processing fails, instead of crashing."""
         # Arrange
