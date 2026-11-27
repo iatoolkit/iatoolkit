@@ -540,6 +540,11 @@ class ConfigurationService:
                 from iatoolkit.services.pii_masking_service import MODES as PII_MASKING_MODES, normalize_mode
                 if normalize_mode(privacy_config.get("pii_masking")) is None:
                     add_error("privacy.pii_masking", f"Must be one of: {list(PII_MASKING_MODES)}.")
+                # Retention of personal data (BL-034, R9).
+                from iatoolkit.services.privacy.retention_service import parse_retention
+                for retention_error in parse_retention(privacy_config)[1]:
+                    section, _, message = retention_error.partition(": ")
+                    add_error(section, message)
 
         # The model the tenant picked for each system agent (see SystemAgentRunner).
         system_agents = config.get("system_agents")

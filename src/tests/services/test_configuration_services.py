@@ -603,6 +603,18 @@ class TestConfigurationService:
         errors = self.service.validate_configuration(self.COMPANY_NAME)
         assert any("privacy.pii_masking" in e for e in errors) is not valid
 
+    def test_validate_configuration_checks_retention_days(self):
+        config = copy.deepcopy(MOCK_VALID_CONFIG)
+        config["privacy"] = {"retention": {"conversations_days": 365, "audit_days": 0}}
+
+        self.mock_asset_repo.exists.return_value = True
+        self.mock_asset_repo.read_text.return_value = "yaml"
+        self.mock_utility.load_yaml_from_string.return_value = config
+
+        errors = self.service.validate_configuration(self.COMPANY_NAME)
+        assert any("privacy.retention.audit_days" in e for e in errors)
+        assert not any("conversations_days" in e for e in errors)
+
     def test_validate_configuration_accepts_embedding_provider_startup_warmup(self):
         valid_config = copy.deepcopy(MOCK_VALID_CONFIG)
         valid_config["embedding_provider"]["warmup_on_startup"] = True

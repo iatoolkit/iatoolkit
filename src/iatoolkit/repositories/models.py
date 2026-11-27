@@ -1795,3 +1795,24 @@ class CompanyModelEntitlement(Base):
 
     def to_dict(self):
         return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
+
+
+class DataErasureRequest(Base):
+    """The receipt of erasing a person from a company (BL-034, R9): who asked,
+    when, and how many rows each table lost or had pseudonymized. Never the
+    erased data, and never who was erased: only the pseudonym that replaced them."""
+    __tablename__ = 'iat_data_erasure_requests'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    company_short_name = Column(String(120), nullable=False, index=True)
+    pseudonym = Column(String(64), nullable=False, index=True)
+    requested_by = Column(String(255), nullable=False)
+    status = Column(String(16), nullable=False, default="completed")
+    #: The account's outcome: left_company, deleted or not_found.
+    account_outcome = Column(String(32), nullable=True)
+    summary = Column(JSON, nullable=False, default=dict)
+    files_deleted = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime, default=datetime.now, nullable=False)
+
+    def to_dict(self):
+        return {column.key: getattr(self, column.key) for column in class_mapper(self.__class__).columns}
